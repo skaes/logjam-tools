@@ -23,7 +23,7 @@ On OS X using MacPorts:
 * Install zmq and czmq ports (or use brew, if you like it better)
 
 ```
-git clone git://github.com/skaes/logjam-zmq-device.git
+git clone git://github.com/skaes/logjam-device.git
 cd logjam-zmq-device
 make
 sudo make install
