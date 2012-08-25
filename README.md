@@ -21,12 +21,17 @@ On OS X using MacPorts:
 
 * Follow instructions https://github.com/alanxz/rabbitmq-c on how to install librabbitmq
 * Install zmq and czmq ports (or use brew, if you like it better)
-* make
-* sudo make install
+
+```
+git clone git://github.com/skaes/logjam-zmq-device.git
+cd logjam-zmq-device
+make
+sudo make install
+```
 
 ## Usage
 
-For now, the device needs to be running on thesame machine as rabbitmq
+For now, the device needs to be running on the same machine as rabbitmq
 
 ```logjam-device <device-port> <rabbitmq-port>```
 
