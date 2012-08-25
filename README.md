@@ -8,6 +8,10 @@ For now, it's just a bridge to rabbitmq.
 
 On my iMac, one device can forward 20K messages per second (4K message size).
 
+Which is about 20 times faster than my original attempt using ruby.
+
+See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
+
 
 ## Dependencies
 
