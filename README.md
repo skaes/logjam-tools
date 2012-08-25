@@ -28,7 +28,7 @@ On OS X using MacPorts:
 
 ```
 git clone git://github.com/skaes/logjam-device.git
-cd logjam-zmq-device
+cd logjam-device
 make
 sudo make install
 ```
