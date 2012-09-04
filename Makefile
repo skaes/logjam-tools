@@ -28,5 +28,5 @@ uninstall:
 test: tester
 	for i in $(TEN); do (ulimit -n $(ULIMIT); ./tester 500 100000&); done
 
-run:
-	./logjam-device 12345 5672
+run: logjam-device
+	ulimit -n $(ULIMIT); ./logjam-device 12345 5672

@@ -71,6 +71,7 @@ int main(int argc, char const * const *argv)
   int rc;
   int my_port;
   int rabbit_port;
+  unsigned long received_count = 0;
 
   my_port = atoi(argv[1]);
   rabbit_port = atoi(argv[2]);
@@ -107,7 +108,7 @@ int main(int argc, char const * const *argv)
   die_on_amqp_error(amqp_get_rpc_reply(conn), "Opening channel");
 
   // hash of already declared exchanges
-  zhash_t * exchanges = zhash_new();
+  zhash_t *exchanges = zhash_new();
 
   // process tasks forever
   while (1) {
@@ -133,6 +134,7 @@ int main(int argc, char const * const *argv)
       printf("Received only %d message parts\n", i);
       goto cleanup;
     }
+    received_count++;
 
     // extract data
     amqp_bytes_t exchange_name;
@@ -162,6 +164,8 @@ int main(int argc, char const * const *argv)
     message_body.len   = zmq_msg_size(&message_parts[2]);
     message_body.bytes = zmq_msg_data(&message_parts[2]);
 
+    //printf("publishing\n");
+
     // send message to rabbit
     die_on_error(amqp_basic_publish(conn,
 				    1,
@@ -178,6 +182,8 @@ int main(int argc, char const * const *argv)
       zmq_msg_close(&message_parts[i]);
     }
   }
+
+  printf("received %lu messages", received_count);
 
   // close zmq socket and context
   zmq_close(receiver);
