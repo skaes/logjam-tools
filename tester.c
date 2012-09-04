@@ -45,7 +45,8 @@ zmsg_send_dont_wait(zmsg_t **self_p, void *socket)
 
 int main(int argc, char const * const *argv)
 {
-  int message_count = argc>1 ? atoi(argv[1]) : 100000;
+  int socket_count  = argc>1 ? atoi(argv[1]) : 1;
+  int message_count = argc>2 ? atoi(argv[2]) : 100000;
   int rc;
 
   zctx_t *context = zctx_new();
@@ -53,30 +54,44 @@ int main(int argc, char const * const *argv)
   zctx_set_hwm(context, 1);
   zctx_set_linger(context, 100);
 
-  void *socket = zsocket_new(context, ZMQ_PUSH);
-  assert(socket);
-  // zsocket_set_sndtimeo(socket, 10);
-  zsocket_set_hwm(socket, 100);
-  zsocket_set_linger(socket, 1000);
-  zsocket_set_reconnect_ivl(socket, 100); // 100 ms
-  zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
-  // printf("hwm %d\n", zsocket_hwm(socket));
-  // printf("sndbuf %d\n", zsocket_sndbuf(socket));
-  // printf("swap %d\n", zsocket_swap(socket));
-  // printf("linger %d\n", zsocket_linger(socket));
-  // printf("sndtimeo %d\n", zsocket_sndtimeo(socket));
-  // printf("reconnect_ivl %d\n", zsocket_reconnect_ivl(socket));
-  // printf("reconnect_ivl_max %d\n", zsocket_reconnect_ivl_max(socket));
+  // zmq 2.2 only supports up to 512 sockets
+  assert_x(ZMQ_VERSION <= 20200 && socket_count > 512,
+           "zeromq < 3.2 only supports up to 512 sockets");
 
-  rc = zsocket_connect(socket, "tcp://localhost:12345");
-  assert(rc==0);
+  void **sockets = malloc(socket_count * sizeof(void*));
+
+  int j;
+  for (j=0; j<socket_count; j++) {
+    void *socket = zsocket_new(context, ZMQ_PUSH);
+    if (NULL==socket) {
+      printf("Error occurred during %dth call to zsocket_new: %s\n", j, zmq_strerror (errno));
+      exit(1);
+    }
+    // zsocket_set_sndtimeo(socket, 10);
+    zsocket_set_hwm(socket, 10);
+    zsocket_set_linger(socket, 50);
+    zsocket_set_reconnect_ivl(socket, 100); // 100 ms
+    zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
+    // printf("hwm %d\n", zsocket_hwm(socket));
+    // printf("sndbuf %d\n", zsocket_sndbuf(socket));
+    // printf("swap %d\n", zsocket_swap(socket));
+    // printf("linger %d\n", zsocket_linger(socket));
+    // printf("sndtimeo %d\n", zsocket_sndtimeo(socket));
+    // printf("reconnect_ivl %d\n", zsocket_reconnect_ivl(socket));
+    // printf("reconnect_ivl_max %d\n", zsocket_reconnect_ivl_max(socket));
+
+    rc = zsocket_connect(socket, "tcp://localhost:12345");
+    assert(rc==0);
+    sockets[j] = socket;
+    zclock_sleep(10); // sleep 10 ms
+  }
 
   char data[MESSAGE_BODY_SIZE];
   memset(data, 'a', MESSAGE_BODY_SIZE);
 
   char *exchanges[2] = {"zmq-device-1", "zmq-device-2"};
 
-  int i = 0, sent = 0, lost = 0;
+  int i = 0, queued = 0, rejected = 0;
   for (i=0; i<message_count; i++) {
     if (zctx_interrupted)
       break;
@@ -85,20 +100,23 @@ int main(int argc, char const * const *argv)
     zmsg_addstr(message, "logjam.zmq.test.%d", i);
     zmsg_addmem(message, data, MESSAGE_BODY_SIZE);
     // zmsg_dump(message);
-    rc = zmsg_send_dont_wait(&message, socket);
+    rc = zmsg_send_dont_wait(&message, sockets[i%socket_count]);
     assert(message == NULL);
     if (rc == 0) {
-      sent++;
+      queued++;
     } else {
-      lost++;
+      rejected++;
     }
-    usleep(20);
+    // usleep(20);
+    usleep(1000);
   }
 
-  printf("sent: %d\n", sent);
-  printf("lost: %d\n", lost);
+  printf("queued:   %8d\n", queued);
+  printf("rejected: %8d\n", rejected);
 
-  zsocket_destroy(context, socket);
+  for (i=0;i<socket_count;i++) {
+    zsocket_destroy(context, sockets[i]);
+  }
   zctx_destroy(&context);
 
   return 0;
