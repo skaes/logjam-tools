@@ -9,19 +9,26 @@
 #include <amqp.h>
 #include <amqp_framing.h>
 
-void die_on_error(int x, char const *context) {
+
+void log_error(int x, char const *context) {
   if (x < 0) {
     char *errstr = amqp_error_string(-x);
     fprintf(stderr, "%s: %s\n", context, errstr);
     free(errstr);
+  }
+}
+
+void die_on_error(int x, char const *context) {
+  if (x < 0) {
+    log_error(x, context);
     exit(1);
   }
 }
 
-void die_on_amqp_error(amqp_rpc_reply_t x, char const *context) {
+int log_amqp_error(amqp_rpc_reply_t x, char const *context) {
   switch (x.reply_type) {
     case AMQP_RESPONSE_NORMAL:
-      return;
+      return 0;
 
     case AMQP_RESPONSE_NONE:
       fprintf(stderr, "%s: missing RPC reply type!\n", context);
@@ -56,7 +63,13 @@ void die_on_amqp_error(amqp_rpc_reply_t x, char const *context) {
       break;
   }
 
-  exit(1);
+  return 1;
+}
+
+void die_on_amqp_error(amqp_rpc_reply_t x, char const *context) {
+  if (0 != log_amqp_error(x, context)) {
+    exit(1);
+  }
 }
 
 void assert_x(int rc, const char* error_text) {
@@ -66,41 +79,43 @@ void assert_x(int rc, const char* error_text) {
   }
 }
 
+static char* rabbit_host = "localhost";
+static int   rabbit_port = 5672;
+
 int main(int argc, char const * const *argv)
 {
   int rc;
   int my_port;
-  int rabbit_port;
   unsigned long received_count = 0;
 
   my_port = atoi(argv[1]);
   rabbit_port = atoi(argv[2]);
 
-  void *context = zmq_init(1);
+  // create context
+  zctx_t *context = zctx_new();
   assert_x(context==NULL, "zmq_init failed");
 
-  //  Socket to receive messages on
-  void *receiver = zmq_socket(context, ZMQ_PULL);
+  // set default socket options
+  zctx_set_linger(context, 100);
+  zctx_set_hwm(context, 1000);
+
+  // create socket to receive messages on
+  void *receiver = zsocket_new(context, ZMQ_PULL);
   assert_x(receiver==NULL, "zmq socket creation failed");
 
-  //  Configure the socket
-  int64_t hwm = 100;
-  rc = zmq_setsockopt(receiver, ZMQ_HWM, &hwm, sizeof hwm);
-  assert_x(rc, "could not set zmq HWM");
+  //  configure the socket
+  zsocket_set_hwm(receiver, 100);
+  zsocket_set_linger(receiver, 1000);
 
-  char connection_spec[256];
-  int last = snprintf(connection_spec, sizeof(connection_spec), "tcp://*:%d", my_port);
-  connection_spec[last] = 0;
-
-  rc = zmq_bind(receiver, connection_spec);
-  assert_x(rc, "zmq socket creation failed");
+  rc = zsocket_bind(receiver, "tcp://%s:%d", "*", my_port);
+  assert_x(rc!=my_port, "zmq socket bind failed");
 
   // setup amqp connection
   int sockfd;
   amqp_connection_state_t conn;
   conn = amqp_new_connection();
 
-  die_on_error(sockfd = amqp_open_socket("localhost", rabbit_port), "Opening socket");
+  die_on_error(sockfd = amqp_open_socket(rabbit_host, rabbit_port), "Opening socket");
   amqp_set_sockfd(conn, sockfd);
 
   die_on_amqp_error(amqp_login(conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest"), "Logging in");
@@ -111,13 +126,13 @@ int main(int argc, char const * const *argv)
   zhash_t *exchanges = zhash_new();
 
   // process tasks forever
-  while (1) {
+  while (!zctx_interrupted) {
     // read the message parts
     int i = 0;
     zmq_msg_t message_parts[3];
     int64_t more;
     size_t more_size = sizeof(more);
-    while (1) {
+    while (!zctx_interrupted) {
       // printf("receiving part %d\n", i+1);
       if (i>2) {
         printf("Received more than 3 message parts\n");
@@ -131,7 +146,9 @@ int main(int argc, char const * const *argv)
       i++;
     }
     if (i<2) {
-      printf("Received only %d message parts\n", i);
+      if (!zctx_interrupted) {
+        printf("Received only %d message parts\n", i);
+      }
       goto cleanup;
     }
     received_count++;
@@ -181,13 +198,14 @@ int main(int argc, char const * const *argv)
     for(;i>=0;i--) {
       zmq_msg_close(&message_parts[i]);
     }
+
   }
 
   printf("received %lu messages", received_count);
 
   // close zmq socket and context
-  zmq_close(receiver);
-  zmq_term(context);
+  zsocket_destroy(context, receiver);
+  zctx_destroy(&context);
 
   // close amqp connection
   die_on_amqp_error(amqp_channel_close(conn, 1, AMQP_REPLY_SUCCESS), "Closing channel");
