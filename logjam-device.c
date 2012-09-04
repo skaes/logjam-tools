@@ -84,7 +84,7 @@ static int   rabbit_port = 5672;
 
 int main(int argc, char const * const *argv)
 {
-  int rc;
+  int rc=0, amqp_rc=0;
   int my_port;
   unsigned long received_count = 0;
 
@@ -115,12 +115,20 @@ int main(int argc, char const * const *argv)
   amqp_connection_state_t conn;
   conn = amqp_new_connection();
 
-  die_on_error(sockfd = amqp_open_socket(rabbit_host, rabbit_port), "Opening socket");
+  die_on_error(sockfd = amqp_open_socket(rabbit_host, rabbit_port), "Opening RabbitMQ socket");
+
+#if defined(__APPLE__) && defined(SO_NOSIGPIPE)
+  // why doesn't librabbitmq do this, eh?
+  int one = 1; /* for setsockopt */
+  setsockopt(sockfd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
+
   amqp_set_sockfd(conn, sockfd);
 
-  die_on_amqp_error(amqp_login(conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest"), "Logging in");
+  die_on_amqp_error(amqp_login(conn, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest"),
+                    "Logging in to RabbitMQ");
   amqp_channel_open(conn, 1);
-  die_on_amqp_error(amqp_get_rpc_reply(conn), "Opening channel");
+  die_on_amqp_error(amqp_get_rpc_reply(conn), "Opening AMQP channel");
 
   // hash of already declared exchanges
   zhash_t *exchanges = zhash_new();
@@ -170,7 +178,7 @@ int main(int argc, char const * const *argv)
       amqp_bytes_t exchange_type;
       exchange_type = amqp_cstring_bytes("topic");
       amqp_exchange_declare(conn, 1, exchange_name, exchange_type, 0, 0, amqp_empty_table);
-      die_on_amqp_error(amqp_get_rpc_reply(conn), "Declaring exchange");
+      die_on_amqp_error(amqp_get_rpc_reply(conn), "Declaring AMQP exchange");
     }
 
     amqp_bytes_t routing_key;
@@ -184,15 +192,19 @@ int main(int argc, char const * const *argv)
     //printf("publishing\n");
 
     // send message to rabbit
-    die_on_error(amqp_basic_publish(conn,
-				    1,
-				    exchange_name,
-				    routing_key,
-				    0,
-				    0,
-				    NULL,
-				    message_body),
-		 "Publishing");
+    amqp_rc = amqp_basic_publish(conn,
+                                 1,
+                                 exchange_name,
+                                 routing_key,
+                                 0,
+                                 0,
+                                 NULL,
+                                 message_body);
+
+    if (amqp_rc < 0) {
+      log_error(amqp_rc, "Publishing via AMQP");
+      zctx_interrupted = 1;
+    }
 
   cleanup:
     for(;i>=0;i--) {
@@ -208,9 +220,11 @@ int main(int argc, char const * const *argv)
   zctx_destroy(&context);
 
   // close amqp connection
-  die_on_amqp_error(amqp_channel_close(conn, 1, AMQP_REPLY_SUCCESS), "Closing channel");
-  die_on_amqp_error(amqp_connection_close(conn, AMQP_REPLY_SUCCESS), "Closing connection");
-  die_on_error(amqp_destroy_connection(conn), "Ending connection");
+  if (amqp_rc >= 0) {
+    log_amqp_error(amqp_channel_close(conn, 1, AMQP_REPLY_SUCCESS), "Closing AMQP channel");
+    log_amqp_error(amqp_connection_close(conn, AMQP_REPLY_SUCCESS), "Closing AMQP connection");
+  }
+  log_error(amqp_destroy_connection(conn), "Ending AMQP connection");
 
-  return 0;
+  return (amqp_rc < 0);
 }
