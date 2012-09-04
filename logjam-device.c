@@ -138,8 +138,7 @@ int main(int argc, char const * const *argv)
     // read the message parts
     int i = 0;
     zmq_msg_t message_parts[3];
-    int64_t more;
-    size_t more_size = sizeof(more);
+
     while (!zctx_interrupted) {
       // printf("receiving part %d\n", i+1);
       if (i>2) {
@@ -148,8 +147,7 @@ int main(int argc, char const * const *argv)
       }
       zmq_msg_init(&message_parts[i]);
       zmq_recv(receiver, &message_parts[i], 0);
-      zmq_getsockopt(receiver, ZMQ_RCVMORE, &more, &more_size);
-      if (!more)
+      if (!zsocket_rcvmore(receiver))
         break;
       i++;
     }
