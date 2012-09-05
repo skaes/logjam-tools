@@ -144,7 +144,11 @@ int read_message_and_forward_to_amqp(zloop_t *loop, zmq_pollitem_t *item, void *
       exit(1);
     }
     zmq_msg_init(&message_parts[i]);
+#if ZMQ_VERSION >= 30200
+    zmq_recvmsg(receiver, &message_parts[i], 0);
+#else
     zmq_recv(receiver, &message_parts[i], 0);
+#endif
     if (!zsocket_rcvmore(receiver))
       break;
     i++;
