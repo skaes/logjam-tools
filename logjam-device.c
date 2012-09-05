@@ -130,7 +130,7 @@ int timer_event(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 }
 
 
-int read_message_and_forward_to_amqp(zloop_t *loop, zmq_pollitem_t *item, void *arg)
+int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publisher)
 {
   int i = 0;
   zmq_msg_t message_parts[3];
@@ -160,6 +160,10 @@ int read_message_and_forward_to_amqp(zloop_t *loop, zmq_pollitem_t *item, void *
     goto cleanup;
   }
   received_messages_count++;
+
+  // forward to subscribers
+  zmq_sendmsg(publisher, &message_parts[1], ZMQ_SNDMORE);
+  zmq_sendmsg(publisher, &message_parts[2], 0);
 
   // extract data
   amqp_bytes_t exchange_name;
@@ -217,10 +221,12 @@ int read_message_and_forward_to_amqp(zloop_t *loop, zmq_pollitem_t *item, void *
 int main(int argc, char const * const *argv)
 {
   int rc=0, amqp_rc=0;
-  int my_port;
+  int rcv_port, pub_port;
 
-  my_port = atoi(argv[1]);
+  rcv_port = atoi(argv[1]);
   rabbit_port = atoi(argv[2]);
+  // TOODO: figure out sensible port numbers
+  pub_port = rcv_port + 1;
 
   // create context
   zctx_t *context = zctx_new();
@@ -238,8 +244,18 @@ int main(int argc, char const * const *argv)
   zsocket_set_hwm(receiver, 100);
   zsocket_set_linger(receiver, 1000);
 
-  rc = zsocket_bind(receiver, "tcp://%s:%d", "*", my_port);
-  assert_x(rc!=my_port, "zmq socket bind failed");
+  rc = zsocket_bind(receiver, "tcp://%s:%d", "*", rcv_port);
+  assert_x(rc!=rcv_port, "zmq socket bind failed");
+
+  // create socket for publishing
+  void *publisher = zsocket_new(context, ZMQ_PUB);
+  assert_x(publisher==NULL, "zmq socket creation failed");
+
+  zsocket_set_hwm(publisher, 1000);
+  zsocket_set_linger(publisher, 1000);
+
+  rc = zsocket_bind(publisher, "tcp://%s:%d", "*", pub_port);
+  assert_x(rc!=pub_port, "zmq socket bind failed");
 
   setup_amqp_connection();
 
@@ -259,7 +275,7 @@ int main(int argc, char const * const *argv)
   zmq_pollitem_t item;
   item.socket = receiver;
   item.events =  ZMQ_POLLIN;
-  rc = zloop_poller(loop, &item, read_message_and_forward_to_amqp, NULL);
+  rc = zloop_poller(loop, &item, read_message_and_forward, publisher);
   assert(rc == 0);
 
   rc = zloop_start(loop);
