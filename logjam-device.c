@@ -66,16 +66,33 @@ int log_amqp_error(amqp_rpc_reply_t x, char const *context) {
   return 1;
 }
 
-void die_on_amqp_error(amqp_rpc_reply_t x, char const *context) {
+void die_on_amqp_error(amqp_rpc_reply_t x, char const *context)
+{
   if (0 != log_amqp_error(x, context)) {
     exit(1);
   }
 }
 
-void assert_x(int rc, const char* error_text) {
+void assert_x(int rc, const char* error_text)
+{
   if (rc != 0) {
     printf("Failed assertion: %s\n", error_text);
     exit(1);
+  }
+}
+
+void log_zmq_error(int rc)
+{
+  if (rc != 0) {
+    printf("errno: %d: %s\n", errno, zmq_strerror(errno));
+  }
+}
+
+void assert_zmq_rc(int rc)
+{
+  if (rc != 0) {
+    printf("rc: %d: %s\n", errno, zmq_strerror(errno));
+    assert(rc == 0);
   }
 }
 
@@ -129,10 +146,9 @@ int timer_event(zloop_t *loop, zmq_pollitem_t *item, void *arg)
   return 0;
 }
 
-
 int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publisher)
 {
-  int i = 0;
+  int i = 0, rc = 0;
   zmq_msg_t message_parts[3];
   void *receiver = item->socket;
 
@@ -162,12 +178,28 @@ int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publishe
   received_messages_count++;
 
   // forward to subscribers
+  zmq_msg_t message_copy[2];
+  zmq_msg_init(&message_copy[0]);
+  zmq_msg_init(&message_copy[1]);
+  rc = zmq_msg_copy(&message_copy[0], &message_parts[1]);
+  assert(rc == 0);
+  rc = zmq_msg_copy(&message_copy[1], &message_parts[2]);
+  assert(rc == 0);
+
 #if ZMQ_VERSION >= 30200
-  zmq_sendmsg(publisher, &message_parts[1], ZMQ_SNDMORE);
-  zmq_sendmsg(publisher, &message_parts[2], 0);
+  rc = zmq_sendmsg(publisher, &message_copy[0], ZMQ_SNDMORE);
+  if (rc == 0) {
+    rc = zmq_sendmsg(publisher, &message_copy[1], 0);
+    // assert_zmq_rc(rc);
+  } else {
+    log_zmq_error(rc);
+  }
 #else
-  zmq_send(publisher, &message_parts[1], ZMQ_SNDMORE);
-  zmq_send(publisher, &message_parts[2], 0);
+  rc = zmq_send(publisher, &message_copy[0], ZMQ_SNDMORE);
+  if (rc == 0) {
+    rc = zmq_send(publisher, &message_copy[1], 0);
+    assert_zmq_rc(rc);
+  }
 #endif
 
   // extract data
@@ -220,8 +252,8 @@ int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publishe
     zmq_msg_close(&message_parts[i]);
   }
 
+  return 0;
 }
-
 
 int main(int argc, char const * const *argv)
 {
@@ -237,9 +269,10 @@ int main(int argc, char const * const *argv)
   zctx_t *context = zctx_new();
   assert_x(context==NULL, "zmq_init failed");
 
-  // set default socket options
+  // configure the context
   zctx_set_linger(context, 100);
   zctx_set_hwm(context, 1000);
+  // zctx_set_iothreads(context, 2);
 
   // create socket to receive messages on
   void *receiver = zsocket_new(context, ZMQ_PULL);
@@ -262,6 +295,12 @@ int main(int argc, char const * const *argv)
   rc = zsocket_bind(publisher, "tcp://%s:%d", "*", pub_port);
   assert_x(rc!=pub_port, "zmq socket bind failed");
 
+  zmsg_t *test_message = zmsg_new();
+  zmsg_addstr(test_message, "testtesttest");
+  zmsg_addstr(test_message, "data");
+  zmsg_send(&test_message, publisher);
+  assert(test_message==NULL);
+
   setup_amqp_connection();
 
   // so far, no exchanges are known
@@ -279,14 +318,14 @@ int main(int argc, char const * const *argv)
   // setup handler for the receiver socket
   zmq_pollitem_t item;
   item.socket = receiver;
-  item.events =  ZMQ_POLLIN;
+  item.events = ZMQ_POLLIN;
   rc = zloop_poller(loop, &item, read_message_and_forward, publisher);
   assert(rc == 0);
 
   rc = zloop_start(loop);
   // printf("zloop return: %d", rc);
 
-  zloop_destroy (&loop);
+  zloop_destroy(&loop);
   assert(loop == NULL);
 
   printf("received %lu messages", received_messages_count);
