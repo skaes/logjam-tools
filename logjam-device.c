@@ -162,8 +162,13 @@ int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publishe
   received_messages_count++;
 
   // forward to subscribers
+#if ZMQ_VERSION >= 30200
   zmq_sendmsg(publisher, &message_parts[1], ZMQ_SNDMORE);
   zmq_sendmsg(publisher, &message_parts[2], 0);
+#else
+  zmq_send(publisher, &message_parts[1], ZMQ_SNDMORE);
+  zmq_send(publisher, &message_parts[2], 0);
+#endif
 
   // extract data
   amqp_bytes_t exchange_name;
