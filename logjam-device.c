@@ -166,8 +166,8 @@ int publish_on_amqp_transport(zmq_msg_t *message_parts)
 
   // extract data
   amqp_bytes_t exchange_name;
-  exchange_name.len   = zmq_msg_size(key);
-  exchange_name.bytes = zmq_msg_data(key);
+  exchange_name.len   = zmq_msg_size(exchange);
+  exchange_name.bytes = zmq_msg_data(exchange);
 
   char *exchange_string = malloc(exchange_name.len + 1);
   memcpy(exchange_string, exchange_name.bytes, exchange_name.len);
