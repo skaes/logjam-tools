@@ -127,6 +127,87 @@ void setup_amqp_connection()
 }
 
 
+int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
+{
+  int rc=0;
+  zmq_msg_t *key  = &message_parts[1];
+  zmq_msg_t *body = &message_parts[2];
+
+#if ZMQ_VERSION >= 30200
+  rc = zmq_msg_send(key, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+  if (rc != -1) {
+    rc = zmq_msg_send(body, publisher, ZMQ_DONTWAIT);
+    if (rc == -1) {
+      log_zmq_error(rc);
+    }
+  } else {
+    log_zmq_error(rc);
+  }
+#else
+  rc = zmq_send(publisher, key, ZMQ_SNDMORE|ZMQ_NOBLOCK);
+  if (rc != 0) {
+    log_zmq_error(rc);
+  } else {
+    rc = zmq_send(publisher, body, ZMQ_NOBLOCK);
+    if (rc != 0) {
+      log_zmq_error(rc);
+    }
+  }
+#endif
+
+  return rc;
+}
+
+int publish_on_amqp_transport(zmq_msg_t *message_parts)
+{
+  zmq_msg_t *exchange  = &message_parts[0];
+  zmq_msg_t *key       = &message_parts[1];
+  zmq_msg_t *body      = &message_parts[2];
+
+  // extract data
+  amqp_bytes_t exchange_name;
+  exchange_name.len   = zmq_msg_size(key);
+  exchange_name.bytes = zmq_msg_data(key);
+
+  char *exchange_string = malloc(exchange_name.len + 1);
+  memcpy(exchange_string, exchange_name.bytes, exchange_name.len);
+  exchange_string[exchange_name.len] = 0;
+
+  int found = zhash_insert(exchanges, exchange_string, NULL);
+  if (-1 == found) {
+    free(exchange_string);
+  } else {
+    // declare exchange, as we haven't seen it before
+    amqp_bytes_t exchange_type;
+    exchange_type = amqp_cstring_bytes("topic");
+    amqp_exchange_declare(connection, 1, exchange_name, exchange_type, 0, 0, amqp_empty_table);
+    die_on_amqp_error(amqp_get_rpc_reply(connection), "Declaring AMQP exchange");
+  }
+
+  amqp_bytes_t routing_key;
+  routing_key.len   = zmq_msg_size(key);
+  routing_key.bytes = zmq_msg_data(key);
+
+  amqp_bytes_t message_body;
+  message_body.len   = zmq_msg_size(body);
+  message_body.bytes = zmq_msg_data(body);
+
+  //printf("publishing\n");
+
+  // send message to rabbit
+  amqp_rc = amqp_basic_publish(connection,
+                               1,
+                               exchange_name,
+                               routing_key,
+                               0,
+                               0,
+                               NULL,
+                               message_body);
+
+  return amqp_rc;
+}
+
+
 void shutdown_amqp_connection()
 {
   // close amqp connection
@@ -177,75 +258,15 @@ int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publishe
   }
   received_messages_count++;
 
-  // forward to subscribers
-  zmq_msg_t message_copy[2];
-  zmq_msg_init(&message_copy[0]);
-  zmq_msg_init(&message_copy[1]);
-  rc = zmq_msg_copy(&message_copy[0], &message_parts[1]);
-  assert(rc == 0);
-  rc = zmq_msg_copy(&message_copy[1], &message_parts[2]);
-  assert(rc == 0);
-
-#if ZMQ_VERSION >= 30200
-  rc = zmq_sendmsg(publisher, &message_copy[0], ZMQ_SNDMORE);
-  if (rc == 0) {
-    rc = zmq_sendmsg(publisher, &message_copy[1], 0);
-    // assert_zmq_rc(rc);
-  } else {
-    log_zmq_error(rc);
-  }
-#else
-  rc = zmq_send(publisher, &message_copy[0], ZMQ_SNDMORE);
-  if (rc == 0) {
-    rc = zmq_send(publisher, &message_copy[1], 0);
-    assert_zmq_rc(rc);
-  }
-#endif
-
-  // extract data
-  amqp_bytes_t exchange_name;
-  exchange_name.len   = zmq_msg_size(&message_parts[0]);
-  exchange_name.bytes = zmq_msg_data(&message_parts[0]);
-
-  char *exchange_string = malloc(exchange_name.len + 1);
-  memcpy(exchange_string, exchange_name.bytes, exchange_name.len);
-  exchange_string[exchange_name.len] = 0;
-
-  int found = zhash_insert(exchanges, exchange_string, NULL);
-  if (-1 == found) {
-    free(exchange_string);
-  } else {
-    // declare exchange, as we haven't seen it before
-    amqp_bytes_t exchange_type;
-    exchange_type = amqp_cstring_bytes("topic");
-    amqp_exchange_declare(connection, 1, exchange_name, exchange_type, 0, 0, amqp_empty_table);
-    die_on_amqp_error(amqp_get_rpc_reply(connection), "Declaring AMQP exchange");
-  }
-
-  amqp_bytes_t routing_key;
-  routing_key.len   = zmq_msg_size(&message_parts[1]);
-  routing_key.bytes = zmq_msg_data(&message_parts[1]);
-
-  amqp_bytes_t message_body;
-  message_body.len   = zmq_msg_size(&message_parts[2]);
-  message_body.bytes = zmq_msg_data(&message_parts[2]);
-
-  //printf("publishing\n");
-
-  // send message to rabbit
-  amqp_rc = amqp_basic_publish(connection,
-                               1,
-                               exchange_name,
-                               routing_key,
-                               0,
-                               0,
-                               NULL,
-                               message_body);
+  int amqp_rc = publish_on_amqp_transport(&message_parts[0]);
 
   if (amqp_rc < 0) {
     log_error(amqp_rc, "Publishing via AMQP");
     zctx_interrupted = 1;
+    goto cleanup;
   }
+
+  publish_on_zmq_transport(&message_parts[0], publisher);
 
  cleanup:
   for(;i>=0;i--) {
