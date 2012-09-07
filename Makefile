@@ -5,7 +5,7 @@ LIB_PATHS=-L/usr/local/lib -L/opt/local/lib
 OPTS=-O3 -ggdb
 ZLIBS=-lzmq -lczmq
 
-TEN=0 1 2 3 4 5 6 7 8
+FIVE=0 1 2 3 4
 ULIMIT=20000
 
 PROGRAMS=logjam-device tester test_subscriber test_publisher
@@ -34,7 +34,7 @@ uninstall:
 	rm -f /usr/local/bin/logjam-device
 
 test: tester
-	for i in $(TEN); do (ulimit -n $(ULIMIT); ./tester 500 100000&); done
+	for i in $(FIVE); do (ulimit -n $(ULIMIT); ./tester 500 100000&); done
 
 run: logjam-device
 	ulimit -n $(ULIMIT); ./logjam-device 12345 5672
