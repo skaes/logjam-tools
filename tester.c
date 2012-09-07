@@ -90,6 +90,7 @@ int main(int argc, char const * const *argv)
   memset(data, 'a', MESSAGE_BODY_SIZE);
 
   char *exchanges[2] = {"zmq-device-1", "zmq-device-2"};
+  char *keys[2] = {"1","2"};
 
   int i = 0, queued = 0, rejected = 0;
   for (i=0; i<message_count; i++) {
@@ -97,7 +98,7 @@ int main(int argc, char const * const *argv)
       break;
     zmsg_t *message = zmsg_new();
     zmsg_addstr(message, exchanges[i%2]);
-    zmsg_addstr(message, "logjam.zmq.test.%d", i);
+    zmsg_addstr(message, "logjam.zmq.test.%d.%d", i%2, i);
     zmsg_addmem(message, data, MESSAGE_BODY_SIZE);
     // zmsg_dump(message);
     rc = zmsg_send_dont_wait(&message, sockets[i%socket_count]);
