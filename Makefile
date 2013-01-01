@@ -34,7 +34,7 @@ uninstall:
 	rm -f /usr/local/bin/logjam-device
 
 test: tester
-	for i in $(FIVE); do (ulimit -n $(ULIMIT); ./tester 500 100000&); done
+	for i in $(FIVE); do (ulimit -n $(ULIMIT); ./tester 200 100000&); done
 
 run: logjam-device
-	ulimit -n $(ULIMIT); ./logjam-device 12345 5672
+	ulimit -n $(ULIMIT); ./logjam-device 12345 localhost

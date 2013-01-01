@@ -283,10 +283,20 @@ int main(int argc, char const * const *argv)
   int rc=0, amqp_rc=0;
   int rcv_port, pub_port;
 
+  if (argc<2) {
+    fprintf(stdout, "usage: %s pull-port [rabbit-host]\n\trabbit-host defaults to localhost\n", argv[0]);
+    return 1;
+  }
+
   rcv_port = atoi(argv[1]);
-  rabbit_port = atoi(argv[2]);
-  // TOODO: figure out sensible port numbers
+  if (argc==3) {
+    rabbit_host = (char*)argv[2];
+  }
+  // TODO: figure out sensible port numbers
   pub_port = rcv_port + 1;
+
+  fprintf(stdout, "started logjam-device. pull-port: %d, pub-port: %d, rabbit-host: %s)\n",
+          rcv_port, pub_port, rabbit_host);
 
   // create context
   zctx_t *context = zctx_new();
