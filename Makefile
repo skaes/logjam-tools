@@ -1,6 +1,6 @@
 .PHONY: all clean install uninstall test run
 
-INCLUDE_PATHS=-I/opt/local/include -I/usr/local/include
+INCLUDE_PATHS=-I/usr/local/include -I/opt/local/include
 LIB_PATHS=-L/usr/local/lib -L/opt/local/lib
 OPTS=-O3 -ggdb
 ZLIBS=-lzmq -lczmq
