@@ -283,6 +283,9 @@ int main(int argc, char const * const *argv)
   int rc=0, amqp_rc=0;
   int rcv_port, pub_port;
 
+  setvbuf(stdout,NULL,_IOLBF,0);
+  setvbuf(stderr,NULL,_IOLBF,0);
+
   if (argc<2) {
     fprintf(stdout, "usage: %s pull-port [rabbit-host]\n\trabbit-host defaults to localhost\n", argv[0]);
     return 1;
