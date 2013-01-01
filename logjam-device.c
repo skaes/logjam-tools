@@ -178,9 +178,11 @@ int publish_on_amqp_transport(zmq_msg_t *message_parts)
     free(exchange_string);
   } else {
     // declare exchange, as we haven't seen it before
+    amqp_boolean_t passive = 0;
+    amqp_boolean_t durable = 1;
     amqp_bytes_t exchange_type;
     exchange_type = amqp_cstring_bytes("topic");
-    amqp_exchange_declare(connection, 1, exchange_name, exchange_type, 0, 0, amqp_empty_table);
+    amqp_exchange_declare(connection, 1, exchange_name, exchange_type, passive, durable, amqp_empty_table);
     die_on_amqp_error(amqp_get_rpc_reply(connection), "Declaring AMQP exchange");
   }
 
