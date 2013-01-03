@@ -331,11 +331,13 @@ int main(int argc, char const * const *argv)
   rc = zsocket_bind(publisher, "tcp://%s:%d", "*", pub_port);
   assert_x(rc!=pub_port, "zmq socket bind failed");
 
+  /* test code
   zmsg_t *test_message = zmsg_new();
   zmsg_addstr(test_message, "testtesttest");
   zmsg_addstr(test_message, "data");
   zmsg_send(&test_message, publisher);
   assert(test_message==NULL);
+  */
 
   setup_amqp_connection();
 
