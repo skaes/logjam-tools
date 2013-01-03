@@ -28,7 +28,7 @@ clean:
 	rm -f $(PROGRAMS) $(wildcard *.o)
 
 install:
-	cp logjam-device /usr/local/bin
+	install logjam-device /usr/local/bin
 
 uninstall:
 	rm -f /usr/local/bin/logjam-device
