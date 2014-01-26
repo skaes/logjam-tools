@@ -51,19 +51,19 @@ int main(int argc, char const * const *argv)
 
   zctx_t *context = zctx_new();
   assert(context);
-  zctx_set_hwm(context, 1);
+  zctx_set_sndhwm(context, 1);
   zctx_set_linger(context, 100);
 
   void *pusher = zsocket_new(context, ZMQ_PUSH);
   assert(pusher);
-  zsocket_set_hwm(pusher, 1000);
+  zsocket_set_sndhwm(pusher, 1000);
   zsocket_set_linger(pusher, 500);
   rc = zsocket_connect(pusher, "tcp://localhost:12345");
   assert(rc==0);
 
   void *puller = zsocket_new(context, ZMQ_PULL);
   assert(puller);
-  zsocket_set_hwm(puller, 1000);
+  zsocket_set_rcvhwm(puller, 1000);
   zsocket_set_linger(puller, 500);
   rc = zsocket_bind(puller, "tcp://*:12345");
   if (rc != 12345){
@@ -73,7 +73,7 @@ int main(int argc, char const * const *argv)
 
   void *publisher = zsocket_new(context, ZMQ_PUB);
   assert(publisher);
-  zsocket_set_hwm(publisher, 1000);
+  zsocket_set_sndhwm(publisher, 1000);
   zsocket_set_linger(publisher, 500);
   rc = zsocket_bind(publisher, "tcp://*:12346");
   assert(rc==12346);

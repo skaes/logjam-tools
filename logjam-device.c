@@ -133,7 +133,6 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
   zmq_msg_t *key  = &message_parts[1];
   zmq_msg_t *body = &message_parts[2];
 
-#if ZMQ_VERSION >= 30200
   rc = zmq_msg_send(key, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
   if (rc != -1) {
     rc = zmq_msg_send(body, publisher, ZMQ_DONTWAIT);
@@ -143,22 +142,11 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
   } else {
     log_zmq_error(rc);
   }
-#else
-  rc = zmq_send(publisher, key, ZMQ_SNDMORE|ZMQ_NOBLOCK);
-  if (rc != 0) {
-    log_zmq_error(rc);
-  } else {
-    rc = zmq_send(publisher, body, ZMQ_NOBLOCK);
-    if (rc != 0) {
-      log_zmq_error(rc);
-    }
-  }
-#endif
 
   return rc;
 }
 
-int publish_on_amqp_transport(zmq_msg_t *message_parts)
+int publish_on_amqp_transport(amqp_connection_state_t connection, zmq_msg_t *message_parts)
 {
   zmq_msg_t *exchange  = &message_parts[0];
   zmq_msg_t *key       = &message_parts[1];
@@ -243,11 +231,7 @@ int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publishe
       exit(1);
     }
     zmq_msg_init(&message_parts[i]);
-#if ZMQ_VERSION >= 30200
     zmq_recvmsg(receiver, &message_parts[i], 0);
-#else
-    zmq_recv(receiver, &message_parts[i], 0);
-#endif
     if (!zsocket_rcvmore(receiver))
       break;
     i++;
@@ -307,7 +291,7 @@ int main(int argc, char const * const *argv)
 
   // configure the context
   zctx_set_linger(context, 100);
-  zctx_set_hwm(context, 1000);
+  zctx_set_rcvhwm(context, 1000);
   // zctx_set_iothreads(context, 2);
 
   // create socket to receive messages on
@@ -315,7 +299,7 @@ int main(int argc, char const * const *argv)
   assert_x(receiver==NULL, "zmq socket creation failed");
 
   //  configure the socket
-  zsocket_set_hwm(receiver, 100);
+  zsocket_set_rcvhwm(receiver, 100);
   zsocket_set_linger(receiver, 1000);
 
   rc = zsocket_bind(receiver, "tcp://%s:%d", "*", rcv_port);
@@ -325,7 +309,7 @@ int main(int argc, char const * const *argv)
   void *publisher = zsocket_new(context, ZMQ_PUB);
   assert_x(publisher==NULL, "zmq socket creation failed");
 
-  zsocket_set_hwm(publisher, 1000);
+  zsocket_set_sndhwm(publisher, 1000);
   zsocket_set_linger(publisher, 1000);
 
   rc = zsocket_bind(publisher, "tcp://%s:%d", "*", pub_port);

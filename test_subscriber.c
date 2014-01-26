@@ -20,13 +20,13 @@ int main(int argc, char const * const *argv)
 
   zctx_t *context = zctx_new();
   assert(context);
-  zctx_set_hwm(context, 1);
+  zctx_set_rcvhwm(context, 1);
   zctx_set_linger(context, 100);
 
   void *socket = zsocket_new(context, ZMQ_SUB);
   assert(socket);
 
-  zsocket_set_hwm(socket, 1000);
+  zsocket_set_rcvhwm(socket, 1000);
   zsocket_set_linger(socket, 500);
   zsocket_set_reconnect_ivl(socket, 100); // 100 ms
   zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s

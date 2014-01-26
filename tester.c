@@ -51,7 +51,7 @@ int main(int argc, char const * const *argv)
 
   zctx_t *context = zctx_new();
   assert(context);
-  zctx_set_hwm(context, 1);
+  zctx_set_sndhwm(context, 1);
   zctx_set_linger(context, 100);
 
   // zmq 2.2 only supports up to 512 sockets
@@ -68,7 +68,7 @@ int main(int argc, char const * const *argv)
       exit(1);
     }
     // zsocket_set_sndtimeo(socket, 10);
-    zsocket_set_hwm(socket, 10);
+    zsocket_set_sndhwm(socket, 10);
     zsocket_set_linger(socket, 50);
     zsocket_set_reconnect_ivl(socket, 100); // 100 ms
     zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
