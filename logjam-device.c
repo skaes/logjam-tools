@@ -100,15 +100,13 @@ static char* rabbit_host = "localhost";
 static int   rabbit_port = 5672;
 static unsigned long received_messages_count = 0;
 static int TIMER_ID = 1;
-static amqp_connection_state_t connection;
-static int amqp_rc = 0;
 // hash of already declared exchanges
 static zhash_t *exchanges = NULL;
 
-void setup_amqp_connection()
+amqp_connection_state_t setup_amqp_connection()
 {
   int sockfd;
-  connection = amqp_new_connection();
+  amqp_connection_state_t connection = amqp_new_connection();
 
   die_on_error(sockfd = amqp_open_socket(rabbit_host, rabbit_port), "Opening RabbitMQ socket");
 
@@ -124,6 +122,8 @@ void setup_amqp_connection()
                     "Logging in to RabbitMQ");
   amqp_channel_open(connection, 1);
   die_on_amqp_error(amqp_get_rpc_reply(connection), "Opening AMQP channel");
+
+  return connection;
 }
 
 
@@ -185,20 +185,19 @@ int publish_on_amqp_transport(amqp_connection_state_t connection, zmq_msg_t *mes
   //printf("publishing\n");
 
   // send message to rabbit
-  amqp_rc = amqp_basic_publish(connection,
-                               1,
-                               exchange_name,
-                               routing_key,
-                               0,
-                               0,
-                               NULL,
-                               message_body);
-
+  int amqp_rc = amqp_basic_publish(connection,
+                                   1,
+                                   exchange_name,
+                                   routing_key,
+                                   0,
+                                   0,
+                                   NULL,
+                                   message_body);
   return amqp_rc;
 }
 
 
-void shutdown_amqp_connection()
+void shutdown_amqp_connection(amqp_connection_state_t connection, int amqp_rc)
 {
   // close amqp connection
   if (amqp_rc >= 0) {
@@ -217,11 +216,20 @@ int timer_event(zloop_t *loop, zmq_pollitem_t *item, void *arg)
   return 0;
 }
 
-int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publisher)
+typedef struct {
+    void *publisher;
+    amqp_connection_state_t connection;
+    int amqp_rc;
+} publisher_state_t;
+
+int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
 {
   int i = 0, rc = 0;
   zmq_msg_t message_parts[3];
   void *receiver = item->socket;
+  publisher_state_t *state = (publisher_state_t*)callback_data;
+  void *publisher = state->publisher;
+  amqp_connection_state_t connection = state->connection;
 
   // read the message parts
   while (!zctx_interrupted) {
@@ -244,10 +252,10 @@ int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publishe
   }
   received_messages_count++;
 
-  int amqp_rc = publish_on_amqp_transport(&message_parts[0]);
+  state->amqp_rc = publish_on_amqp_transport(connection, &message_parts[0]);
 
-  if (amqp_rc < 0) {
-    log_error(amqp_rc, "Publishing via AMQP");
+  if (state->amqp_rc < 0) {
+    log_error(state->amqp_rc, "Publishing via AMQP");
     zctx_interrupted = 1;
     goto cleanup;
   }
@@ -264,7 +272,7 @@ int read_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *publishe
 
 int main(int argc, char const * const *argv)
 {
-  int rc=0, amqp_rc=0;
+  int rc=0;
   int rcv_port, pub_port;
 
   setvbuf(stdout,NULL,_IOLBF,0);
@@ -323,7 +331,7 @@ int main(int argc, char const * const *argv)
   assert(test_message==NULL);
   */
 
-  setup_amqp_connection();
+  amqp_connection_state_t connection = setup_amqp_connection();
 
   // so far, no exchanges are known
   exchanges = zhash_new();
@@ -341,7 +349,8 @@ int main(int argc, char const * const *argv)
   zmq_pollitem_t item;
   item.socket = receiver;
   item.events = ZMQ_POLLIN;
-  rc = zloop_poller(loop, &item, read_message_and_forward, publisher);
+  publisher_state_t publisher_state = {publisher, connection, 0};
+  rc = zloop_poller(loop, &item, read_zmq_message_and_forward, &publisher_state);
   assert(rc == 0);
 
   rc = zloop_start(loop);
@@ -356,7 +365,7 @@ int main(int argc, char const * const *argv)
   zsocket_destroy(context, receiver);
   zctx_destroy(&context);
 
-  shutdown_amqp_connection();
+  shutdown_amqp_connection(connection, publisher_state.amqp_rc);
 
-  return (amqp_rc < 0);
+  return (publisher_state.amqp_rc < 0);
 }
