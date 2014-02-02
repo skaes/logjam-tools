@@ -273,18 +273,19 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
 }
 
 void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
-  //TODO: pass in env string
-  char const *exchange = "logjam-device-internal-edge";
+  char const *exchange = "logjam-device-internal";
   char const *bindingkey = "#";
-  amqp_bytes_t queuename = amqp_cstring_bytes("logjam-device-queue");
+  amqp_bytes_t queuename = amqp_cstring_bytes("logjam-device-internal");
   amqp_connection_state_t conn = setup_amqp_connection();
 
-  amqp_queue_declare_ok_t *r = amqp_queue_declare(conn, 1, queuename, 0, 0, 0, 1,
-                                                  amqp_empty_table);
+  // amqp_queue_declare(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t queue,
+  //                    amqp_boolean_t passive, amqp_boolean_t durable, amqp_boolean_t exclusive, amqp_boolean_t auto_delete,
+  //                    amqp_table_t arguments);
+
+  amqp_queue_declare_ok_t *r = amqp_queue_declare(conn, 1, queuename, 0, 0, 1, 1, amqp_empty_table);
   die_on_amqp_error(amqp_get_rpc_reply(conn), "Declaring queue");
 
-  amqp_queue_bind(conn, 1, queuename, amqp_cstring_bytes(exchange), amqp_cstring_bytes(bindingkey),
-                  amqp_empty_table);
+  amqp_queue_bind(conn, 1, queuename, amqp_cstring_bytes(exchange), amqp_cstring_bytes(bindingkey), amqp_empty_table);
   die_on_amqp_error(amqp_get_rpc_reply(conn), "Binding queue");
 
   amqp_basic_consume(conn, 1, queuename, amqp_empty_bytes, 0, 1, 0, amqp_empty_table);
