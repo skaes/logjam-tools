@@ -24,9 +24,11 @@ void log_zmq_error(int rc)
 int timer_event(zloop_t *loop, zmq_pollitem_t *item, void *pusher)
 {
   int rc;
+  static int message_count = 0;
   zmsg_t *message = zmsg_new();
-  zmsg_addstr(message, "testtesttest");
-  zmsg_addstr(message, "data");
+  zmsg_addstr(message, "request-stream-test-development");
+  zmsg_addstr(message, "routing-key");
+  zmsg_addstr(message, "message-body %d", message_count++);
   rc = zmsg_send(&message, pusher);
   if (!zctx_interrupted) {
     assert(rc==0);

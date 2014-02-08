@@ -130,19 +130,25 @@ amqp_connection_state_t setup_amqp_connection()
 int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
 {
   int rc=0;
-  zmq_msg_t *key  = &message_parts[1];
-  zmq_msg_t *body = &message_parts[2];
+  zmq_msg_t *exchange  = &message_parts[0];
+  zmq_msg_t *key       = &message_parts[1];
+  zmq_msg_t *body      = &message_parts[2];
 
-  rc = zmq_msg_send(key, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
-  if (rc != -1) {
-    rc = zmq_msg_send(body, publisher, ZMQ_DONTWAIT);
-    if (rc == -1) {
-      log_zmq_error(rc);
-    }
-  } else {
+  rc = zmq_msg_send(exchange, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+  if (rc == -1) {
     log_zmq_error(rc);
+    return rc;
   }
-
+  rc = zmq_msg_send(key, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+  if (rc == -1) {
+    log_zmq_error(rc);
+    return rc;
+  }
+  rc = zmq_msg_send(body, publisher, ZMQ_DONTWAIT);
+  if (rc == -1) {
+    log_zmq_error(rc);
+    return rc;
+  }
   return rc;
 }
 

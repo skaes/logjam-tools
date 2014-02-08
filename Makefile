@@ -8,12 +8,15 @@ ZLIBS=-lzmq -lczmq
 FIVE=0 1 2 3 4
 ULIMIT=20000
 
-PROGRAMS=logjam-device tester test_subscriber test_publisher
+PROGRAMS=logjam-device logjam-proxy tester test_subscriber test_publisher
 
 all: $(PROGRAMS)
 
 logjam-device: logjam-device.c
 	gcc -o logjam-device $(INCLUDE_PATHS) $(OPTS) $(LIB_PATHS) $(ZLIBS) -lrabbitmq logjam-device.c
+
+logjam-proxy: logjam-proxy.c
+	gcc -o logjam-proxy $(INCLUDE_PATHS) $(LIB_PATHS) $(OPTS) $(ZLIBS) logjam-proxy.c
 
 tester: tester.c
 	gcc -o tester $(INCLUDE_PATHS) $(LIB_PATHS) $(OPTS) $(ZLIBS) tester.c

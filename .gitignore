@@ -2,6 +2,7 @@
 *~
 *.o
 logjam-device
+logjam-proxy
 tester
 test_publisher
 test_subscriber

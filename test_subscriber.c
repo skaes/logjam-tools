@@ -39,13 +39,13 @@ int main(int argc, char const * const *argv)
   zmsg_t *msg = NULL;
 
   while (1) {
-    msg = zmsg_recv (socket);
+    msg = zmsg_recv(socket);
     if (zctx_interrupted)
       break;
     assert(msg);
-    assert(zmsg_size(msg) == 2);
+    assert(zmsg_size(msg) == 3);
     zmsg_dump(msg);
-    zmsg_destroy (&msg);
+    zmsg_destroy(&msg);
   }
 
   zsocket_destroy(context, socket);
