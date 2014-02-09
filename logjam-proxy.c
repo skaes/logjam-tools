@@ -9,15 +9,15 @@
 
 void assert_x(int rc, const char* error_text) {
   if (rc != 0) {
-    printf("Failed assertion: %s\n", error_text);
-    exit(1);
+      printf("Failed assertion: %s\n", error_text);
+      exit(1);
   }
 }
 
 void log_zmq_error(int rc)
 {
   if (rc != 0) {
-    printf("rc: %d, errno: %d (%s)\n", rc, errno, zmq_strerror(errno));
+      printf("rc: %d, errno: %d (%s)\n", rc, errno, zmq_strerror(errno));
   }
 }
 
@@ -107,46 +107,58 @@ int forward_message_for_subscription(zmsg_t *msg, subscription_t *subscription)
     return 0;
 }
 
-int main(int argc, char const * const *argv)
+void get_subscription_and_forward_message(zmsg_t* msg)
 {
-  char *subscription_endpoint = "tcp://localhost:12346";
-  char *test_stream =  "request-stream-test-development";
+    zframe_t* topic_frame = zmsg_first(msg);
+    size_t frame_length = zframe_size(topic_frame);
+    char key[frame_length+1];
+    memcpy(key, zframe_data(topic_frame), frame_length);
+    key[frame_length] = '\0';
 
-  zctx_t *context = zctx_new();
-  assert(context);
-  zctx_set_rcvhwm(context, 1000);
-  zctx_set_linger(context, 100);
-
-  subscriptions = zhash_new();
-  void *socket = sub_socket_new(context, subscription_endpoint);
-  add_subscription(context, socket, test_stream);
-
-  while (1) {
-    zmsg_t *msg = zmsg_recv(socket);
-    if (zctx_interrupted)
-      break;
-
-    assert(msg);
-    assert(zmsg_size(msg) == 3);
-    zmsg_dump(msg);
-
-    char *key = zframe_strdup(zmsg_first(msg));
     subscription_t *subscription = zhash_lookup(subscriptions, key);
 
     if (subscription) {
         forward_message_for_subscription(msg, subscription);
     } else {
-        printf("no subscription for: %s\n", key);
+        fprintf(stderr, "no subscription for: %s\n", key);
+    }
+}
+
+int main(int argc, char const * const *argv)
+{
+    char *subscription_endpoint = "tcp://localhost:12346";
+    char *test_stream =  "request-stream-test-development";
+
+    setvbuf(stdout,NULL,_IOLBF,0);
+    setvbuf(stderr,NULL,_IOLBF,0);
+
+    zctx_t *context = zctx_new();
+    assert(context);
+    zctx_set_rcvhwm(context, 1000);
+    zctx_set_linger(context, 100);
+
+    subscriptions = zhash_new();
+    void *socket = sub_socket_new(context, subscription_endpoint);
+    add_subscription(context, socket, test_stream);
+
+    while (1) {
+        zmsg_t *msg = zmsg_recv(socket);
+        if (zctx_interrupted)
+            break;
+
+        assert(msg);
+        assert(zmsg_size(msg) == 3);
+        zmsg_dump(msg);
+
+        get_subscription_and_forward_message(msg);
+
+        zmsg_destroy(&msg);
     }
 
-    zmsg_destroy(&msg);
-    free(key);
-  }
+    zhash_foreach(subscriptions, dump_subscription, NULL);
 
-  zhash_foreach(subscriptions, dump_subscription, NULL);
+    zsocket_destroy(context, socket);
+    zctx_destroy(&context);
 
-  zsocket_destroy(context, socket);
-  zctx_destroy(&context);
-
-  return 0;
+    return 0;
 }
