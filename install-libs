@@ -1,0 +1,24 @@
+#!/bin/sh
+wget https://github.com/alanxz/rabbitmq-c/releases/download/v0.4.1/rabbitmq-c-0.4.1.tar.gz
+tar xzvf rabbitmq-c-0.4.1.tar.gz
+cd rabbitmq-c-0.4.1
+./configure
+make
+sudo make install
+cd ..
+# rm -rf rabbitmq-c-0.4.1*
+wget http://download.zeromq.org/zeromq-3.2.4.tar.gz
+tar xzvf zeromq-3.2.4.tar.gz
+cd zeromq-3.2.4
+./configure
+make
+sudo make install
+cd ..
+# rm -rf zeromq-3.2.4*
+wget http://download.zeromq.org/czmq-2.0.3.tar.gz
+tar xzvf czmq-2.0.3.tar.gz
+cd czmq-2.0.3
+./configure
+make
+sudo make install
+cd ..
