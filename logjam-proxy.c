@@ -188,7 +188,7 @@ int main(int argc, char const * const *argv)
 
         assert(msg);
         assert(zmsg_size(msg) == 3);
-        zmsg_dump(msg);
+        // zmsg_dump(msg);
 
         get_subscription_and_forward_message(msg);
 
