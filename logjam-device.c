@@ -99,7 +99,6 @@ void assert_zmq_rc(int rc)
 static char* rabbit_host = "localhost";
 static int   rabbit_port = 5672;
 static unsigned long received_messages_count = 0;
-static int TIMER_ID = 1;
 // hash of already declared exchanges
 static zhash_t *exchanges = NULL;
 
@@ -419,7 +418,8 @@ int main(int argc, char const * const *argv)
   zloop_set_verbose(loop, 0);
 
   // calculate statistics every 1000 ms
-  rc = zloop_timer(loop, 1000, 0, timer_event, &TIMER_ID);
+  int timer_id = 1;
+  rc = zloop_timer(loop, 1000, 0, timer_event, &timer_id);
   assert(rc == 0);
 
   // setup handler for the receiver socket

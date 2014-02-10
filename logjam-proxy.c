@@ -154,9 +154,45 @@ void* configure(zconfig_t *config, zctx_t *context)
     return sub_socket;
 }
 
+static unsigned long received_messages_count = 0;
+
+int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
+{
+  void *sub_socket = item->socket;
+  zmsg_t *msg = zmsg_recv(sub_socket);
+
+  if (zctx_interrupted) goto cleanup;
+
+  if (msg) {
+      if (zmsg_size(msg) == 3) {
+          received_messages_count++;
+          // zmsg_dump(msg);
+          get_subscription_and_forward_message(msg);
+      } else {
+          fprintf(stderr, "received invalid message\n");
+          zmsg_dump(msg);
+      }
+  }
+
+ cleanup:
+  if (msg) zmsg_destroy(&msg);
+
+  return 0;
+}
+
+int timer_event(zloop_t *loop, zmq_pollitem_t *item, void *arg)
+{
+  static unsigned long last_received_count = 0;
+  printf("processed %lu messages.\n", received_messages_count-last_received_count);
+  last_received_count = received_messages_count;
+  return 0;
+}
+
 int main(int argc, char const * const *argv)
 {
+    int rc;
     const char *config_file = "logjam.conf";
+
     if (argc > 2) {
         fprintf(stderr, "usage: %s [config-file]\n", argv[0]);
         exit(0);
@@ -168,6 +204,7 @@ int main(int argc, char const * const *argv)
         fprintf(stderr, "missing config file: %s\n", config_file);
         exit(0);
     }
+
     zconfig_t* config = zconfig_load((char*)config_file);
 
     setvbuf(stdout,NULL,_IOLBF,0);
@@ -176,24 +213,36 @@ int main(int argc, char const * const *argv)
     zctx_t *context = zctx_new();
     assert(context);
     zctx_set_rcvhwm(context, 1000);
+    zctx_set_sndhwm(context, 1000);
     zctx_set_linger(context, 100);
 
     subscriptions = zhash_new();
     void *sub_socket = configure(config, context);
 
-    while (1) {
-        zmsg_t *msg = zmsg_recv(sub_socket);
-        if (zctx_interrupted)
-            break;
+    // set up event loop
+    zloop_t *loop = zloop_new();
+    assert(loop);
+    zloop_set_verbose(loop, 0);
 
-        assert(msg);
-        assert(zmsg_size(msg) == 3);
-        // zmsg_dump(msg);
+    // calculate statistics every 1000 ms
+    int timer_id = 1;
+    rc = zloop_timer(loop, 1000, 0, timer_event, &timer_id);
+    assert(rc == 0);
 
-        get_subscription_and_forward_message(msg);
+    // setup handler for the receiver socket
+    zmq_pollitem_t item;
+    item.socket = sub_socket;
+    item.events = ZMQ_POLLIN;
+    rc = zloop_poller(loop, &item, read_zmq_message_and_forward, NULL);
+    assert(rc == 0);
 
-        zmsg_destroy(&msg);
-    }
+    rc = zloop_start(loop);
+    // printf("zloop return: %d", rc);
+
+    zloop_destroy(&loop);
+    assert(loop == NULL);
+
+    printf("received %lu messages", received_messages_count);
 
     zhash_foreach(subscriptions, dump_subscription, NULL);
 
