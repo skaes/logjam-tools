@@ -1,4 +1,4 @@
-.PHONY: all clean install uninstall test run
+.PHONY: all clean install uninstall test run libs
 
 INCLUDE_PATHS=-I/usr/local/include -I/opt/local/include
 LIB_PATHS=-L/usr/local/lib -L/opt/local/lib
@@ -32,12 +32,17 @@ clean:
 
 install:
 	install logjam-device /usr/local/bin
+	install logjam-proxy /usr/local/bin
 
 uninstall:
 	rm -f /usr/local/bin/logjam-device
+	rm -f /usr/local/bin/logjam-proxy
 
 test: tester
 	for i in $(FIVE); do (ulimit -n $(ULIMIT); ./tester 200 100000&); done
 
 run: logjam-device
 	ulimit -n $(ULIMIT); ./logjam-device 12345 localhost
+
+libs:
+	./install-libs
