@@ -5,7 +5,8 @@ LIB_PATHS=-L/usr/local/lib -L/opt/local/lib
 OPTS=-O3 -ggdb
 ZLIBS=-lzmq -lczmq
 
-FIVE=0 1 2 3 4
+#TEST_PUBLISHERS=1 2 3 4 5
+TEST_PUBLISHERS=1
 ULIMIT=20000
 
 PROGRAMS=logjam-device logjam-proxy tester test_subscriber test_publisher
@@ -39,7 +40,7 @@ uninstall:
 	rm -f /usr/local/bin/logjam-proxy
 
 test: tester
-	for i in $(FIVE); do (ulimit -n $(ULIMIT); ./tester 200 100000&); done
+	for i in $(TEST_PUBLISHERS); do (ulimit -n $(ULIMIT); ./tester 200 100000&); done
 
 run: logjam-device
 	ulimit -n $(ULIMIT); ./logjam-device 12345 localhost

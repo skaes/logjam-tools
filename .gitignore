@@ -6,3 +6,10 @@ logjam-proxy
 tester
 test_publisher
 test_subscriber
+.deps
+autom4te.cache
+.dirstamp
+/Makefile
+/config.status
+/configure
+/conf
