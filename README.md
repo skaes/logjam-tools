@@ -21,17 +21,21 @@ See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
 
 # Installation
 
-On OS X using MacPorts:
+On OS X:
 
-* Follow instructions https://github.com/alanxz/rabbitmq-c on how to install librabbitmq
-* Install zmq and czmq ports (or use brew, if you like it better)
+* Install zmq, czmq and rabbitmq-c ports (or use brew, if you like it better)
+
+```
+sudo port install zmq, czmq, rabbitmq-c
+```
+
+Then
 
 ```
 git clone git://github.com/skaes/logjam-tools.git
 cd logjam-tools
-sh autogen.sh
 ./configure
-make all check
+make
 sudo make install
 ```
 
@@ -42,6 +46,12 @@ For now, the device needs to be running on the same machine as rabbitmq
 ```logjam-device <device-port> <rabbitmq-port>```
 
 ## Testing on OS X
+
+First, build the test programs:
+
+```
+make check
+```
 
 In order to run the tests on OS X you will need to increase two kernel paramters: number
 of total files per system and number of open files per process. The easiest way to do this

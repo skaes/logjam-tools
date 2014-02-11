@@ -1,11 +1,9 @@
 AUTOMAKE_OPTIONS = subdir-objects
 ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS}
 
-LOGJAM_CPPFLAGS = -I/opt/local/include -I/usr/local/include
-AM_CPPFLAGS = $(DEPS_CFLAGS) $(LOGJAM_CPPFLAGS)
-
-LOGJAM_LIBS = -L/opt/local/lib -L/usr/local/lib -lzmq -lczmq -lrabbitmq
-LDADD = $(DEPS_LIBS) $(LOGJAM_LIBS)
+AM_CPPFLAGS = $(OPTDIR_CPPFLAGS) $(DEPS_CFLAGS)
+AM_CFLAGS = -Wall
+LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS)
 
 bin_PROGRAMS = logjam-device logjam-proxy
 check_PROGRAMS = tester test_subscriber test_publisher
