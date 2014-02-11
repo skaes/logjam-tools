@@ -25,7 +25,6 @@ static zhash_t *subscriptions = NULL;
 
 void* sub_socket_new(zctx_t *context)
 {
-    int rc;
     void *socket = zsocket_new(context, ZMQ_SUB);
     assert(socket);
     zsocket_set_rcvhwm(socket, 1000);
