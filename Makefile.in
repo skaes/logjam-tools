@@ -78,7 +78,7 @@ NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
 bin_PROGRAMS = logjam-device$(EXEEXT) logjam-proxy$(EXEEXT)
-check_PROGRAMS = tester$(EXEEXT) test_subscriber$(EXEEXT) \
+noinst_PROGRAMS = tester$(EXEEXT) test_subscriber$(EXEEXT) \
 	test_publisher$(EXEEXT)
 subdir = .
 DIST_COMMON = $(srcdir)/Makefile.in $(srcdir)/Makefile.am \
@@ -95,7 +95,7 @@ mkinstalldirs = $(install_sh) -d
 CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
-PROGRAMS = $(bin_PROGRAMS)
+PROGRAMS = $(bin_PROGRAMS) $(noinst_PROGRAMS)
 am__dirstamp = $(am__leading_dot)dirstamp
 am_logjam_device_OBJECTS = src/logjam-device.$(OBJEXT)
 logjam_device_OBJECTS = $(am_logjam_device_OBJECTS)
@@ -298,6 +298,11 @@ tester_SOURCES = src/tester.c
 test_publisher_SOURCES = src/test_publisher.c
 test_subscriber_SOURCES = src/test_subscriber.c
 dist_noinst_SCRIPTS = autogen.sh
+
+#local rules
+#TEST_PUBLISHERS=1 2 3 4 5
+TEST_PUBLISHERS = 1
+ULIMIT = 20000
 all: all-am
 
 .SUFFIXES:
@@ -379,8 +384,8 @@ uninstall-binPROGRAMS:
 clean-binPROGRAMS:
 	-test -z "$(bin_PROGRAMS)" || rm -f $(bin_PROGRAMS)
 
-clean-checkPROGRAMS:
-	-test -z "$(check_PROGRAMS)" || rm -f $(check_PROGRAMS)
+clean-noinstPROGRAMS:
+	-test -z "$(noinst_PROGRAMS)" || rm -f $(noinst_PROGRAMS)
 src/$(am__dirstamp):
 	@$(MKDIR_P) src
 	@: > src/$(am__dirstamp)
@@ -670,7 +675,6 @@ distcleancheck: distclean
 	       $(distcleancheck_listfiles) ; \
 	       exit 1; } >&2
 check-am: all-am
-	$(MAKE) $(AM_MAKEFLAGS) $(check_PROGRAMS)
 check: check-am
 all-am: Makefile $(PROGRAMS) $(SCRIPTS)
 installdirs:
@@ -711,7 +715,7 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-binPROGRAMS clean-checkPROGRAMS clean-generic \
+clean-am: clean-binPROGRAMS clean-generic clean-noinstPROGRAMS \
 	mostlyclean-am
 
 distclean: distclean-am
@@ -782,11 +786,11 @@ ps-am:
 
 uninstall-am: uninstall-binPROGRAMS
 
-.MAKE: check-am install-am install-strip
+.MAKE: install-am install-strip
 
 .PHONY: CTAGS GTAGS TAGS all all-am am--refresh check check-am clean \
-	clean-binPROGRAMS clean-checkPROGRAMS clean-cscope \
-	clean-generic cscope cscopelist-am ctags ctags-am dist \
+	clean-binPROGRAMS clean-cscope clean-generic \
+	clean-noinstPROGRAMS cscope cscopelist-am ctags ctags-am dist \
 	dist-all dist-bzip2 dist-gzip dist-lzip dist-shar dist-tarZ \
 	dist-xz dist-zip distcheck distclean distclean-compile \
 	distclean-generic distclean-tags distcleancheck distdir \
@@ -801,6 +805,12 @@ uninstall-am: uninstall-binPROGRAMS
 	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
 	uninstall-am uninstall-binPROGRAMS
 
+
+test: tester
+	for i in $(TEST_PUBLISHERS); do (ulimit -n $(ULIMIT); ./tester 200 100000&); done
+
+run: logjam-device
+	ulimit -n $(ULIMIT); ./logjam-device 12345 localhost
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.
