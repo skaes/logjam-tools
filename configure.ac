@@ -10,8 +10,8 @@ test -z "$OLD_CFLAGS" && OLD_CFLAGS="-O3 -ggdb"
 OLD_CC=$CC
 test -z "$OLD_CC" && test `uname -s` = "Darwin" && OLD_CC="clang"
 AC_PROG_CC
-CFLAGS=$OLD_CFLAGS
-CC=$OLD_CC
+test -z "$OLD_CFLAGS" || CFLAGS=$OLD_CFLAGS
+test -z "$OLD_CC" || CC=$OLD_CC
 
 AC_CONFIG_FILES([Makefile])
 
