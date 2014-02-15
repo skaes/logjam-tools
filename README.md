@@ -39,6 +39,12 @@ make
 sudo make install
 ```
 
+The `configure` script will try to use `pkg-config` to find the
+required libraries. If `pkg-config` is not installed, it assumes the
+libriaries are installed under `/usr/local` or `/opt/local`. If
+they're somewhere else, you can specify
+`--with-opt-dir=dir1:dir2:dir3` as argument to `autogens.sh` (or `configure`).
+
 ## Usage
 
 For now, the device needs to be running on the same machine as rabbitmq
