@@ -34,7 +34,7 @@ Then
 ```
 git clone git://github.com/skaes/logjam-tools.git
 cd logjam-tools
-./configure
+sh autogen.sh
 make
 sudo make install
 ```
