@@ -90,7 +90,7 @@ int main(int argc, char const * const *argv)
   memset(data, 'a', MESSAGE_BODY_SIZE);
 
   char *exchanges[2] = {"zmq-device-1", "zmq-device-2"};
-  char *keys[2] = {"1","2"};
+  // char *keys[2] = {"1","2"};
 
   int i = 0, queued = 0, rejected = 0;
   for (i=0; i<message_count; i++) {
