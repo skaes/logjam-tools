@@ -123,36 +123,6 @@ void get_subscription_and_forward_message(zmsg_t* msg)
     }
 }
 
-void* configure(zconfig_t *config, zctx_t *context)
-{
-    int rc;
-    zconfig_t *current;
-
-    void* sub_socket = sub_socket_new(context);
-
-    zconfig_t *endpoints = zconfig_locate(config, "frontend/endpoints");
-    current = zconfig_child(endpoints);
-    assert(current);
-    do {
-        char *binding = zconfig_value(current);
-        rc = zsocket_connect(sub_socket, binding);
-        assert(rc == 0);
-        current = zconfig_next(current);
-    } while (current);
-
-    char *ipcdir = zconfig_resolve(config, "ipcdir", "/tmp");
-    zconfig_t *streams = zconfig_locate(config, "backend/streams");
-    current = zconfig_child(streams);
-    assert(current);
-    do {
-        char *stream = zconfig_name(current);
-        add_subscription(context, sub_socket, stream, ipcdir);
-        current = zconfig_next(current);
-    } while (current);
-
-    return sub_socket;
-}
-
 static unsigned long received_messages_count = 0;
 
 int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
@@ -187,6 +157,79 @@ int timer_event(zloop_t *loop, zmq_pollitem_t *item, void *arg)
   return 0;
 }
 
+
+typedef struct {
+    zconfig_t *config;
+    zmq_pollitem_t item;
+} sub_socket_info_t;
+
+// create and configure a sub socket and add it to the event loop
+sub_socket_info_t* sub_socket_info_new(zconfig_t *endpoint, zctx_t *context, zloop_t* loop)
+{
+    int rc;
+    zconfig_t *current;
+    void *sub_socket = sub_socket_new(context);
+    sub_socket_info_t *info = malloc(sizeof(sub_socket_info_t));
+    assert(info);
+    info->config = endpoint;
+
+    current = zconfig_child(endpoint);
+    assert(current);
+    do {
+        char *binding = zconfig_value(current);
+        int rc = zsocket_connect(sub_socket, binding);
+        assert(rc == 0);
+        current = zconfig_next(current);
+    } while (current);
+
+    // setup handler for the receiver socket
+    info->item.socket = sub_socket;
+    info->item.events = ZMQ_POLLIN;
+    rc = zloop_poller(loop, &info->item, read_zmq_message_and_forward, &info);
+    assert(rc == 0);
+
+    return info;
+}
+
+zhash_t* configure_sub_sockets(zconfig_t *config, zctx_t *context, zloop_t *loop)
+{
+    zconfig_t *current;
+    zhash_t *sockets = zhash_new();
+    zconfig_t *endpoints = zconfig_locate(config, "frontend/endpoints");
+    current = zconfig_child(endpoints);
+    assert(current);
+    do {
+        sub_socket_info_t *info = sub_socket_info_new(current, context, loop);
+        char *environment = zconfig_name(current);
+        assert(environment);
+        int rc = zhash_insert(sockets, environment, info);
+        assert(rc==0);
+        current = zconfig_next(current);
+    } while (current);
+    return sockets;
+}
+
+void configure_proxy(zconfig_t *config, zctx_t *context, zloop_t *loop)
+{
+    zconfig_t *current;
+    zhash_t *sub_sockets = configure_sub_sockets(config, context, loop);
+    char *ipcdir = zconfig_resolve(config, "ipcdir", "/tmp");
+    zconfig_t *streams = zconfig_locate(config, "backend/streams");
+    current = zconfig_child(streams);
+    assert(current);
+    do {
+        char application[256];
+        char environment[256];
+        char *stream = zconfig_name(current);
+        int items_converted = sscanf(stream, "request-stream-%[^-]-%[^-]", application, environment);
+        assert(items_converted == 2);
+        sub_socket_info_t *info = zhash_lookup(sub_sockets, environment);
+        assert(info);
+        add_subscription(context, info->item.socket, stream, ipcdir);
+        current = zconfig_next(current);
+    } while (current);
+}
+
 int main(int argc, char const * const *argv)
 {
     int rc;
@@ -215,9 +258,6 @@ int main(int argc, char const * const *argv)
     zctx_set_sndhwm(context, 1000);
     zctx_set_linger(context, 100);
 
-    subscriptions = zhash_new();
-    void *sub_socket = configure(config, context);
-
     // set up event loop
     zloop_t *loop = zloop_new();
     assert(loop);
@@ -228,12 +268,9 @@ int main(int argc, char const * const *argv)
     rc = zloop_timer(loop, 1000, 0, timer_event, &timer_id);
     assert(rc == 0);
 
-    // setup handler for the receiver socket
-    zmq_pollitem_t item;
-    item.socket = sub_socket;
-    item.events = ZMQ_POLLIN;
-    rc = zloop_poller(loop, &item, read_zmq_message_and_forward, NULL);
-    assert(rc == 0);
+    // configure sub sockets and subscriptions
+    subscriptions = zhash_new();
+    configure_proxy(config, context, loop);
 
     rc = zloop_start(loop);
     // printf("zloop return: %d", rc);
@@ -245,7 +282,6 @@ int main(int argc, char const * const *argv)
 
     zhash_foreach(subscriptions, dump_subscription, NULL);
 
-    zsocket_destroy(context, sub_socket);
     zctx_destroy(&context);
 
     return 0;
