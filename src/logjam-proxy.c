@@ -22,13 +22,14 @@ void log_zmq_error(int rc)
 }
 
 static zhash_t *subscriptions = NULL;
+static zhash_t *sub_sockets = NULL;
 
 void* sub_socket_new(zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_SUB);
     assert(socket);
     zsocket_set_rcvhwm(socket, 1000);
-    zsocket_set_linger(socket, 500);
+    zsocket_set_linger(socket, 0);
     zsocket_set_reconnect_ivl(socket, 100); // 100 ms
     zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
     return socket;
@@ -36,7 +37,8 @@ void* sub_socket_new(zctx_t *context)
 
 typedef struct {
     char *stream;
-    void *socket;
+    void *push_socket;
+    void *sub_socket;
     size_t messages_transmitted;
     size_t messages_dropped;
 } subscription_t;
@@ -47,7 +49,7 @@ void* worker_socket_new(zctx_t *context, char* file_name, char* ipcdir)
     void *socket = zsocket_new(context, ZMQ_PUSH);
     assert(socket);
     zsocket_set_sndhwm(socket, 5000);
-    zsocket_set_linger(socket, 100);
+    zsocket_set_linger(socket, 0);
     assert(ipcdir);
     assert(*ipcdir == '/');
     rc = zsocket_connect(socket, "ipc:/%s/%s", ipcdir, file_name);
@@ -62,8 +64,9 @@ void add_subscription(zctx_t *context, void* sub_socket, char* stream, char* ipc
     subscription->stream = stream;
     subscription->messages_dropped = 0;
     subscription->messages_transmitted = 0;
-    subscription->socket = worker_socket_new(context, stream, ipcdir);
-    assert(subscription->socket);
+    subscription->push_socket = worker_socket_new(context, stream, ipcdir);
+    assert(subscription->push_socket);
+    subscription->sub_socket = sub_socket;
     zsocket_set_subscribe(sub_socket, stream);
     zhash_update(subscriptions, stream, subscription);
 }
@@ -78,25 +81,35 @@ int dump_subscription(const char *key, void *item, void *argument)
     return 0;
 }
 
+int cancel_subscription(const char *key, void *item, void *argument)
+{
+    subscription_t *sub = item;
+    zctx_t *context = argument;
+    printf("cancelling subscription: %s\n", sub->stream);
+    zsocket_set_unsubscribe(sub->sub_socket, sub->stream);
+    zsocket_destroy(context, sub->push_socket);
+    return 0;
+}
+
 int forward_message_for_subscription(zmsg_t *msg, subscription_t *subscription)
 {
     int rc;
     zframe_t *stream = zmsg_pop(msg);
-    rc = zframe_send(&stream, subscription->socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
+    rc = zframe_send(&stream, subscription->push_socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
     if (rc!=0) {
         subscription->messages_dropped++;
         // log_zmq_error(rc);
         return rc;
     }
     zframe_t *routing_key = zmsg_pop(msg);
-    rc = zframe_send(&routing_key, subscription->socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
+    rc = zframe_send(&routing_key, subscription->push_socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
     if (rc!=0) {
         subscription->messages_dropped++;
         // log_zmq_error(rc);
         return rc;
     }
     zframe_t *message_body = zmsg_pop(msg);
-    rc = zframe_send(&message_body, subscription->socket, ZFRAME_DONTWAIT);
+    rc = zframe_send(&message_body, subscription->push_socket, ZFRAME_DONTWAIT);
     if (rc!=0) {
         subscription->messages_dropped++;
         // log_zmq_error(rc);
@@ -163,6 +176,16 @@ typedef struct {
     zmq_pollitem_t item;
 } sub_socket_info_t;
 
+
+int close_sub_socket(const char *key, void *item, void *argument)
+{
+    sub_socket_info_t *info = item;
+    zctx_t *context = argument;
+    printf("closing sub socket for enironment: %s\n", zconfig_name(info->config));
+    zsocket_destroy(context, info->item.socket);
+    return 0;
+}
+
 // create and configure a sub socket and add it to the event loop
 sub_socket_info_t* sub_socket_info_new(zconfig_t *endpoint, zctx_t *context, zloop_t* loop)
 {
@@ -191,10 +214,9 @@ sub_socket_info_t* sub_socket_info_new(zconfig_t *endpoint, zctx_t *context, zlo
     return info;
 }
 
-zhash_t* configure_sub_sockets(zconfig_t *config, zctx_t *context, zloop_t *loop)
+void configure_sub_sockets(zconfig_t *config, zctx_t *context, zloop_t *loop)
 {
     zconfig_t *current;
-    zhash_t *sockets = zhash_new();
     zconfig_t *endpoints = zconfig_locate(config, "frontend/endpoints");
     current = zconfig_child(endpoints);
     assert(current);
@@ -202,19 +224,19 @@ zhash_t* configure_sub_sockets(zconfig_t *config, zctx_t *context, zloop_t *loop
         sub_socket_info_t *info = sub_socket_info_new(current, context, loop);
         char *environment = zconfig_name(current);
         assert(environment);
-        int rc = zhash_insert(sockets, environment, info);
+        int rc = zhash_insert(sub_sockets, environment, info);
         assert(rc==0);
         current = zconfig_next(current);
     } while (current);
-    return sockets;
 }
 
 void configure_proxy(zconfig_t *config, zctx_t *context, zloop_t *loop)
 {
     zconfig_t *current;
-    zhash_t *sub_sockets = configure_sub_sockets(config, context, loop);
     char *ipcdir = zconfig_resolve(config, "ipcdir", "/tmp");
     zconfig_t *streams = zconfig_locate(config, "backend/streams");
+    configure_sub_sockets(config, context, loop);
+
     current = zconfig_child(streams);
     assert(current);
     do {
@@ -270,6 +292,7 @@ int main(int argc, char const * const *argv)
 
     // configure sub sockets and subscriptions
     subscriptions = zhash_new();
+    sub_sockets = zhash_new();
     configure_proxy(config, context, loop);
 
     rc = zloop_start(loop);
@@ -279,9 +302,11 @@ int main(int argc, char const * const *argv)
     assert(loop == NULL);
 
     printf("received %lu messages", received_messages_count);
-
     zhash_foreach(subscriptions, dump_subscription, NULL);
 
+    // cancel all subscriptions and close all sockets
+    zhash_foreach(subscriptions, cancel_subscription, context);
+    zhash_foreach(sub_sockets, close_sub_socket, context);
     zctx_destroy(&context);
 
     return 0;
