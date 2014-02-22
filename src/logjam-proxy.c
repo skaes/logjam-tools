@@ -96,6 +96,8 @@ int forward_message_for_subscription(zmsg_t *msg, subscription_t *subscription)
     int rc;
     zframe_t *stream = zmsg_pop(msg);
     rc = zframe_send(&stream, subscription->push_socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
+    if (zctx_interrupted)
+        return 0;
     if (rc!=0) {
         subscription->messages_dropped++;
         // log_zmq_error(rc);
@@ -103,6 +105,8 @@ int forward_message_for_subscription(zmsg_t *msg, subscription_t *subscription)
     }
     zframe_t *routing_key = zmsg_pop(msg);
     rc = zframe_send(&routing_key, subscription->push_socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
+    if (zctx_interrupted)
+        return 0;
     if (rc!=0) {
         subscription->messages_dropped++;
         // log_zmq_error(rc);
@@ -110,6 +114,8 @@ int forward_message_for_subscription(zmsg_t *msg, subscription_t *subscription)
     }
     zframe_t *message_body = zmsg_pop(msg);
     rc = zframe_send(&message_body, subscription->push_socket, ZFRAME_DONTWAIT);
+    if (zctx_interrupted)
+        return 0;
     if (rc!=0) {
         subscription->messages_dropped++;
         // log_zmq_error(rc);
