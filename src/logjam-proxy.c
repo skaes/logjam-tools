@@ -52,7 +52,7 @@ void* worker_socket_new(zctx_t *context, char* file_name, char* ipcdir)
     zsocket_set_linger(socket, 0);
     assert(ipcdir);
     assert(*ipcdir == '/');
-    rc = zsocket_connect(socket, "ipc:/%s/%s", ipcdir, file_name);
+    rc = zsocket_bind(socket, "ipc://%s/%s", ipcdir, file_name);
     assert(rc == 0);
     return socket;
 }
