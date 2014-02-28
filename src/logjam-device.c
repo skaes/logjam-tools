@@ -287,7 +287,7 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
   //                    amqp_boolean_t passive, amqp_boolean_t durable, amqp_boolean_t exclusive, amqp_boolean_t auto_delete,
   //                    amqp_table_t arguments);
 
-  amqp_queue_declare(conn, 1, queuename, 0, 0, 1, 1, amqp_empty_table);
+  amqp_queue_declare(conn, 1, queuename, 0, 0, 0, 1, amqp_empty_table);
   die_on_amqp_error(amqp_get_rpc_reply(conn), "Declaring queue");
 
   amqp_queue_bind(conn, 1, queuename, amqp_cstring_bytes(exchange), amqp_cstring_bytes(bindingkey), amqp_empty_table);
