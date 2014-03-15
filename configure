@@ -3602,7 +3602,7 @@ if test "${with_opt_dir+set}" = set; then :
 		OPTDIR_LDFLAGS="$val"
 
 
-                DEPS_LIBS="-lrabbitmq -lzmq -lczmq"
+                DEPS_LIBS="-lrabbitmq -lzmq -lczmq -ljson-c"
 
 
 fi
@@ -3672,7 +3672,7 @@ fi
 
                             OPTDIR_LDFLAGS="-L/usr/local/lib -L/opt/local/lib"
 
-                            DEPS_LIBS="-lrabbitmq -lzmq -lczmq"
+                            DEPS_LIBS="-lrabbitmq -lzmq -lczmq  -ljson-c"
 
 
 elif test $pkg_failed = untried; then
@@ -3682,7 +3682,7 @@ $as_echo "no" >&6; }
 
                             OPTDIR_LDFLAGS="-L/usr/local/lib -L/opt/local/lib"
 
-                            DEPS_LIBS="-lrabbitmq -lzmq -lczmq"
+                            DEPS_LIBS="-lrabbitmq -lzmq -lczmq  -ljson-c"
 
 
 else
