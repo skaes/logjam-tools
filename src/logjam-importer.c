@@ -56,7 +56,38 @@ typedef struct {
     void *push_socket;
     msg_stats_t msg_stats;
     json_tokener* tokener;
+    void *processors;
 } parser_state_t;
+
+/* processor state */
+typedef struct {
+    char *stream;
+    char *date;
+    int request_count;
+    void *modules;
+    void *totals;
+    void *minutes;
+    void *quants;
+} processor_t;
+
+/* apdex strcut */
+typedef struct {
+    long happy;
+    long satisfied;
+    long tolerating;
+    long frustrated;
+} apdex_counts_t;
+
+/* request info */
+typedef struct {
+    const char* page;
+    const char* module;
+    double total_time;
+    int response_code;
+    int severity;
+    int minute;
+    apdex_counts_t apdex;
+} request_data_t;
 
 /* stats updater state */
 typedef struct {
@@ -127,6 +158,33 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
     }
 }
 
+processor_t* processor_new(char *stream, char *date)
+{
+    processor_t *p = malloc(sizeof(processor_t));
+    p->stream = stream;
+    p->date = date;
+    p->request_count = 0;
+    p->modules = zhash_new();
+    p->totals = zhash_new();
+    p->minutes = zhash_new();
+    p->quants = zhash_new();
+    return p;
+}
+
+processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
+{
+    size_t n = zframe_size(stream_frame);
+    char stream[n+1];
+    memcpy(stream, zframe_data(stream_frame), n);
+    stream[n] = '\0';
+    processor_t *p = zhash_lookup(parser_state->processors, stream);
+    if (p == NULL) {
+        p = processor_new(zframe_strdup(stream_frame), NULL/*date*/);
+        zhash_insert(parser_state->processors, p->stream, p);
+    }
+    return p;
+}
+
 void* parser_pull_socket_new(zctx_t *context)
 {
     int rc;
@@ -144,6 +202,12 @@ void* parser_pull_socket_new(zctx_t *context)
     return socket;
 }
 
+void dump_json_object(json_object *jobj) {
+    const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PLAIN);
+    printf("%s\n", json_str);
+    // don't try to free the json string. it will crash.
+}
+
 json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
 {
     char* json_data = (char*)zframe_data(body);
@@ -157,9 +221,7 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
         // const char *json_str_orig = zframe_strdup(body);
         // printf("%s\n", json_str_orig);
         // free(json_str_orig);
-        // const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PLAIN);
-        // printf("%s\n", json_str);
-        // don't try to free the json string. it will crash.
+        // dump_json_object(jobj);
     }
     if (tokener->char_offset < json_data_len) // XXX shouldn't access internal fields
     {
@@ -170,21 +232,196 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
     return jobj;
 }
 
-void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *state)
+int ignore_request(json_object *request)
 {
-    zmsg_dump(msg);
+    //TODO: how to implement this generically
+    return 0;
+}
+
+const char* append_to_json_string(json_object **jobj, const char* old_str, const char* add_str)
+{
+    int old_len = strlen(old_str);
+    int add_len = strlen(add_str);
+    int new_len = old_len + add_len;
+    char new_str_value[new_len+1];
+    memcpy(new_str_value, old_str, old_len);
+    memcpy(new_str_value + old_len, add_str, add_len);
+    new_str_value[new_len] = '\0';
+    json_object_put(*jobj);
+    *jobj = json_object_new_string(new_str_value);
+    return json_object_get_string(*jobj);
+}
+
+const char* processor_setup_page(processor_t *self, json_object *request)
+{
+    json_object *page_obj = NULL;
+    if (json_object_object_get_ex(request, "action", &page_obj)) {
+        json_object_get(page_obj);
+        json_object_object_del(request, "action");
+    } else {
+        page_obj = json_object_new_string("Unknown#unknown_method");
+    }
+
+    const char *page_str = json_object_get_string(page_obj);
+
+    if (!strchr(page_str, '#'))
+        page_str = append_to_json_string(&page_obj, page_str, "#unknown_method");
+    else if (page_str[strlen(page_str)-1] == '#')
+        page_str = append_to_json_string(&page_obj, page_str, "unknown_method");
+
+    json_object_object_add(request, "page", page_obj);
+
+    return page_str;
+}
+
+const char* processor_setup_module(processor_t *self, const char *page)
+{
+    int max_mod_len = strlen(page);
+    char module_str[max_mod_len+1];
+    char *mod_ptr = strchr(page, ':');
+    strcpy(module_str, "::");
+    if (mod_ptr != NULL){
+        if (mod_ptr != page) {
+            int mod_len = mod_ptr - page;
+            memcpy(module_str, page, mod_len);
+            module_str[mod_len] = '\0';
+        }
+    } else {
+        char *action_ptr = strchr(page, '#');
+        if (action_ptr != NULL) {
+            int mod_len = action_ptr - page;
+            memcpy(module_str, page, mod_len);
+            module_str[mod_len] = '\0';
+        }
+    }
+    char *module = zhash_lookup(self->modules, module_str);
+    if (module == NULL) {
+        module = malloc(strlen(module_str)+1);
+        assert(module);
+        strcpy(module, module_str);
+        int rc = zhash_insert(self->modules, module, module);
+        assert(rc == 0);
+    }
+    // printf("page: %s\n", page);
+    // printf("module: %s\n", module);
+    return module;
+}
+
+int processor_setup_response_code(processor_t *self, json_object *request)
+{
+    json_object *code_obj = NULL;
+    int response_code = 500;
+    if (json_object_object_get_ex(request, "code", &code_obj)) {
+        json_object_get(code_obj);
+        json_object_object_del(request, "code");
+        response_code = json_object_get_int(code_obj);
+    } else {
+        code_obj = json_object_new_int(response_code);
+    }
+    json_object_object_add(request, "response_code", code_obj);
+    // printf("response_code: %d\n", response_code);
+    return response_code;
+}
+
+double processor_setup_total_time(processor_t *self, json_object *request)
+{
+    // TODO: might be better to drop requests without total_time
+    double total_time;
+    json_object *total_time_obj = NULL;
+    if (json_object_object_get_ex(request, "total_time", &total_time_obj)) {
+        total_time = json_object_get_double(total_time_obj);
+        if (total_time == 0.0) {
+            total_time = 1.0;
+            total_time_obj = json_object_new_double(total_time);
+            json_object_object_add(request, "total_time", total_time_obj);
+        }
+    } else {
+        total_time = 1.0;
+        total_time_obj = json_object_new_double(total_time);
+        json_object_object_add(request, "total_time", total_time_obj);
+    }
+    // printf("total_time: %f\n", total_time);
+    return total_time;
+}
+
+int processor_setup_severity(processor_t *self, json_object *request)
+{
+    // TODO: autodetect severity form log lines if present
+    int severity = 5;
+    json_object *severity_obj = NULL;
+    if (json_object_object_get_ex(request, "severity", &severity_obj)) {
+        severity = json_object_get_int(severity_obj);
+    } else {
+        severity_obj = json_object_new_int(severity);
+        json_object_object_add(request, "severity", severity_obj);
+    }
+    // printf("severity: %d\n", severity);
+    return severity;
+}
+
+int processor_setup_minute(processor_t *self, json_object *request)
+{
+    // TODO: protect against bad started_at data
+    int minute = 0;
+    json_object *started_at_obj = NULL;
+    if (json_object_object_get_ex(request, "started_at", &started_at_obj)) {
+        const char *started_at = json_object_get_string(started_at_obj);
+        char hours[3] = {started_at[11], started_at[12], '\0'};
+        char minutes[3] = {started_at[14], started_at[15], '\0'};
+        minute = 60 * atoi(hours) + atoi(minutes);
+    }
+    json_object *minute_obj = json_object_new_int(minute);
+    json_object_object_add(request, "minute", minute_obj);
+    // printf("minute: %d\n", minute);
+    return minute;
+}
+
+void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
+{
+    if (ignore_request(request)) return;
+    self->request_count++;
+
+    // dump_json_object(request);
+    request_data_t request_data;
+    request_data.page = processor_setup_page(self, request);
+    request_data.module = processor_setup_module(self, request_data.page);
+    request_data.response_code = processor_setup_response_code(self, request);
+    request_data.total_time = processor_setup_total_time(self, request);
+    request_data.severity = processor_setup_severity(self, request);
+    request_data.minute = processor_setup_minute(self, request);
+    // dump_json_object(request);
+}
+
+void processor_add_event(processor_t *self, parser_state_t *pstate, json_object *request)
+{
+    // TODO: not yet implemented
+}
+
+void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_object *request)
+{
+    // TODO: not yet implemented
+}
+
+void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
+{
+    // zmsg_dump(msg);
     zframe_t *stream  = zmsg_first(msg);
     zframe_t *topic   = zmsg_next(msg);
-    zframe_t *body    = zmsg_next(msg);
-    json_object *jobj = parse_json_body(body, state->tokener);
-    if (jobj != NULL) {
-        double total_time = 0.0;
-        json_object *total_time_obj = NULL;
-        if (json_object_object_get_ex(jobj, "total_time", &total_time_obj)) {
-            total_time = json_object_get_double(total_time_obj);
+    zframe_t *body    = zmsg_last(msg);
+    json_object *request = parse_json_body(body, parser_state->tokener);
+    if (request != NULL) {
+        char *topic_str = (char*) zframe_data(topic);
+        processor_t *processor = processor_create(stream, parser_state, request);
+        if (!strncmp("logs", topic_str, 4))
+            processor_add_request(processor, parser_state, request);
+        else if (!strncmp("javascript", topic_str, 10))
+            processor_add_js_exception(processor, parser_state, request);
+        else if (!strncmp("events", topic_str, 6))
+            processor_add_event(processor, parser_state, request);
+        else {
+            // silently ignore unknown request data
         }
-        printf("total_time: %f\n", total_time);
-        json_object_put(jobj);
+        json_object_put(request);
     }
 }
 
@@ -194,6 +431,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
     state.controller_socket = pipe;
     state.pull_socket = parser_pull_socket_new(ctx);
     assert( state.tokener = json_tokener_new() );
+    assert( state.processors = zhash_new() );
     while (!zctx_interrupted) {
         zmsg_t *msg = zmsg_recv(state.pull_socket);
         if (msg != NULL) {
@@ -209,7 +447,6 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     state.controller_socket = pipe;
     while (!zctx_interrupted) {
         sleep(1);
-        printf("stats updater not yet implementd\n");
     }
 }
 
@@ -219,13 +456,11 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     state.controller_socket = pipe;
     while (!zctx_interrupted) {
         sleep(1);
-        printf("request writer not yet implementd\n");
     }
 }
 
 int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
-  printf("forwarding not yet implementd\n");
   return 0;
 }
 

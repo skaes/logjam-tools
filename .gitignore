@@ -13,3 +13,4 @@ autom4te.cache
 /config.status
 /conf
 logjam-importer
+.gdbinit
