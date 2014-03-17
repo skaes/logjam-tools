@@ -531,7 +531,7 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
   return 0;
 }
 
-void add_resources_of_type(zconfig_t *config, const char *type, char **type_map, size_t *type_idx)
+void add_resources_of_type(const char *type, char **type_map, size_t *type_idx)
 {
     char path[256] = {'\0'};
     strcpy(path, "metrics/");
@@ -573,16 +573,16 @@ void add_resources_of_type(zconfig_t *config, const char *type, char **type_map,
 }
 
 // setup bidirectional mapping between resource names and small integers
-void setup_resource_maps(zconfig_t *config)
+void setup_resource_maps()
 {
     //TODO: move this to autoconf
     assert(sizeof(size_t) == sizeof(void*));
 
     resource_to_int = zhash_new();
-    add_resources_of_type(config, "time", time_resources, &last_time_resource_index);
-    add_resources_of_type(config, "calls", call_resources, &last_call_resource_index);
-    add_resources_of_type(config, "memory", memory_resources, &last_memory_resource_index);
-    add_resources_of_type(config, "heap", heap_resources, &last_heap_resource_index);
+    add_resources_of_type("time", time_resources, &last_time_resource_index);
+    add_resources_of_type("calls", call_resources, &last_call_resource_index);
+    add_resources_of_type("memory", memory_resources, &last_memory_resource_index);
+    add_resources_of_type("heap", heap_resources, &last_heap_resource_index);
     last_resource_index--;
 
     for (size_t j=0; j<=last_resource_index; j++) {
@@ -610,7 +610,7 @@ int main(int argc, char const * const *argv)
 
     // load config
     config = zconfig_load((char*)config_file);
-    setup_resource_maps(config);
+    setup_resource_maps();
 
     setvbuf(stdout,NULL,_IOLBF,0);
     setvbuf(stderr,NULL,_IOLBF,0);
