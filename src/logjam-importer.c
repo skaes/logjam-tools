@@ -26,6 +26,38 @@ void log_zmq_error(int rc)
 /* global config */
 static zconfig_t* config = NULL;
 
+/* resource maps */
+#define MAX_RESOURCE_COUNT 100
+static zhash_t* resource_to_int = NULL;
+static char *int_to_resource[MAX_RESOURCE_COUNT];
+static size_t last_resource_index = 0;
+
+static char *time_resources[MAX_RESOURCE_COUNT];
+static size_t last_time_resource_index = 0;
+
+static char *other_time_resources[MAX_RESOURCE_COUNT];
+static size_t last_other_time_resource_index = 0;
+
+static char *call_resources[MAX_RESOURCE_COUNT];
+static size_t last_call_resource_index = 0;
+
+static char *memory_resources[MAX_RESOURCE_COUNT];
+static size_t last_memory_resource_index = 0;
+
+static char *heap_resources[MAX_RESOURCE_COUNT];
+static size_t last_heap_resource_index = 0;
+
+static inline size_t r2i(const char* resource)
+{
+    return (size_t)zhash_lookup(resource_to_int, resource);
+}
+
+static inline const char* i2r(size_t i)
+{
+    assert(i <= last_resource_index);
+    return (const char*)(int_to_resource[i]);
+}
+
 /* msg stats */
 typedef struct {
     size_t transmitted;
@@ -376,6 +408,39 @@ int processor_setup_minute(processor_t *self, json_object *request)
     return minute;
 }
 
+void processor_setup_other_time(processor_t *self, json_object *request, double total_time)
+{
+    double other_time = total_time;
+    for (size_t i = 0; i <= last_other_time_resource_index; i++) {
+        json_object *time_val;
+        if (json_object_object_get_ex(request, other_time_resources[i], &time_val)) {
+            double v = json_object_get_double(time_val);
+            other_time -= v;
+        }
+    }
+    json_object_object_add(request, "other_time", json_object_new_double(other_time));
+    // printf("other_time: %f\n", other_time);
+}
+
+void processor_setup_allocated_memory(processor_t *self, json_object *request)
+{
+    json_object *allocated_memory_obj;
+    if (json_object_object_get_ex(request, "allocated_memory", &allocated_memory_obj))
+        return;
+    json_object *allocated_objects_obj;
+    if (!json_object_object_get_ex(request, "allocated_objects", &allocated_objects_obj))
+        return;
+    json_object *allocated_bytes_obj;
+    if (json_object_object_get_ex(request, "allocated_bytes", &allocated_bytes_obj)) {
+        long allocated_objects = json_object_get_int64(allocated_objects_obj);
+        long allocated_bytes = json_object_get_int64(allocated_bytes_obj);
+        // assume 64bit ruby
+        long allocated_memory = allocated_bytes + allocated_objects * 40;
+        json_object_object_add(request, "allocated_memory", json_object_new_int64(allocated_memory));
+        // printf("allocated memory: %lu\n", allocated_memory);
+    }
+}
+
 void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
 {
     if (ignore_request(request)) return;
@@ -386,9 +451,11 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
     request_data.response_code = processor_setup_response_code(self, request);
-    request_data.total_time = processor_setup_total_time(self, request);
     request_data.severity = processor_setup_severity(self, request);
     request_data.minute = processor_setup_minute(self, request);
+    request_data.total_time = processor_setup_total_time(self, request);
+    processor_setup_other_time(self, request, request_data.total_time);
+    processor_setup_allocated_memory(self, request);
     // dump_json_object(request);
 }
 
@@ -464,6 +531,66 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
   return 0;
 }
 
+void add_resources_of_type(zconfig_t *config, const char *type, char **type_map, size_t *type_idx)
+{
+    char path[256] = {'\0'};
+    strcpy(path, "metrics/");
+    strcpy(path+strlen("metrics/"), type);
+    zconfig_t *metrics = zconfig_locate(config, path);
+    assert(metrics);
+    zconfig_t *metric = zconfig_child(metrics);
+    assert(metric);
+    do {
+        char *resource = zconfig_name(metric);
+        zhash_insert(resource_to_int, resource, (void*)last_resource_index);
+        int_to_resource[last_resource_index++] = resource;
+        type_map[(*type_idx)++] = resource;
+        metric = zconfig_next(metric);
+        assert(last_resource_index < MAX_RESOURCE_COUNT);
+    } while (metric);
+    (*type_idx) -= 1;
+
+    // set up other_time_resources
+    if (!strcmp(type, "time")) {
+        for (size_t k = 0; k <= *type_idx; k++) {
+            char *r = type_map[k];
+            if (strcmp(r, "total_time") && strcmp(r, "gc_time") && strcmp(r, "other_time")) {
+                other_time_resources[last_other_time_resource_index++] = r;
+            }
+        }
+        last_other_time_resource_index--;
+
+        // printf("other time resources:\n");
+        // for (size_t j=0; j<=last_other_time_resource_index; j++) {
+        //      puts(other_time_resources[j]);
+        // }
+    }
+
+    // printf("%s resources:\n", type);
+    // for (size_t j=0; j<=*type_idx; j++) {
+    //     puts(type_map[j]);
+    // }
+}
+
+// setup bidirectional mapping between resource names and small integers
+void setup_resource_maps(zconfig_t *config)
+{
+    //TODO: move this to autoconf
+    assert(sizeof(size_t) == sizeof(void*));
+
+    resource_to_int = zhash_new();
+    add_resources_of_type(config, "time", time_resources, &last_time_resource_index);
+    add_resources_of_type(config, "calls", call_resources, &last_call_resource_index);
+    add_resources_of_type(config, "memory", memory_resources, &last_memory_resource_index);
+    add_resources_of_type(config, "heap", heap_resources, &last_heap_resource_index);
+    last_resource_index--;
+
+    for (size_t j=0; j<=last_resource_index; j++) {
+        const char *r = i2r(j);
+        printf("%s = %zu\n", r, r2i(r));
+    }
+}
+
 int main(int argc, char const * const *argv)
 {
     int rc;
@@ -483,6 +610,7 @@ int main(int argc, char const * const *argv)
 
     // load config
     config = zconfig_load((char*)config_file);
+    setup_resource_maps(config);
 
     setvbuf(stdout,NULL,_IOLBF,0);
     setvbuf(stderr,NULL,_IOLBF,0);
