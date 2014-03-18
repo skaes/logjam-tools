@@ -95,7 +95,7 @@ typedef struct {
 typedef struct {
     char *stream;
     char *date;
-    int request_count;
+    size_t request_count;
     void *modules;
     void *totals;
     void *minutes;
@@ -114,11 +114,17 @@ typedef struct {
 
 /* increments */
 typedef struct {
+    double val;
+    double val_squared;
+} metric_pair_t;
+
+typedef struct {
     size_t request_count;
-    double *metrics;
-    double *metrics_sq;
+    metric_pair_t *metrics;
     json_object *others;
 } increments_t;
+
+#define METRICS_ARRAY_SIZE (sizeof(metric_pair_t) * (last_resource_index + 1))
 
 /* stats updater state */
 typedef struct {
@@ -263,6 +269,124 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
     return jobj;
 }
 
+increments_t* increments_new()
+{
+    const size_t inc_size = sizeof(increments_t);
+    increments_t* increments = malloc(inc_size);
+    memset(increments, 0, inc_size);
+
+    const size_t metrics_size = METRICS_ARRAY_SIZE;
+    increments->metrics = malloc(metrics_size);
+    memset(increments->metrics, 0, metrics_size);
+
+    increments->request_count = 1;
+    increments->others = json_object_new_object();
+    return increments;
+}
+
+void increments_destroy(increments_t **increments)
+{
+    json_object_put((*increments)->others);
+    free((*increments)->metrics);
+    free(*increments);
+    *increments = NULL;
+}
+
+increments_t* increments_clone(increments_t* increments)
+{
+    increments_t* new_increments = increments_new();
+    new_increments->request_count = increments->request_count;
+    memcpy(new_increments->metrics, increments->metrics, METRICS_ARRAY_SIZE);
+    json_object_object_foreach(increments->others, key, value) {
+        json_object_get(value);
+        json_object_object_add(new_increments->others, key, value);
+    }
+    return new_increments;
+}
+
+void increments_fill_metrics(increments_t *increments, json_object *request)
+{
+    const int n = last_resource_index;
+    for (size_t i=0; i <= n; i++) {
+        json_object* metrics_value;
+        if (json_object_object_get_ex(request, int_to_resource[i], &metrics_value)) {
+            double v = json_object_get_double(metrics_value);
+            metric_pair_t *p = &increments->metrics[i];
+            p->val = v;
+            p->val_squared = v*v;
+        }
+    }
+}
+
+#define NEW_FLOAT1 (json_object_new_double(1.0))
+
+void increments_fill_apdex(increments_t *increments, request_data_t *request_data)
+{
+    double total_time = request_data->total_time;
+    long response_code = request_data->response_code;
+    json_object *others = increments->others;
+
+    if (total_time >= 2000 || response_code >= 500) {
+        json_object_object_add(others, "apdex.frustrated", NEW_FLOAT1);
+    } else if (total_time < 100) {
+        json_object_object_add(others, "apdex.happy", NEW_FLOAT1);
+        json_object_object_add(others, "apdex.satisfied", NEW_FLOAT1);
+    } else if (total_time < 500) {
+        json_object_object_add(others, "apdex.satisfied", NEW_FLOAT1);
+    } else if (total_time < 2000) {
+        json_object_object_add(others, "apdex.tolerating", NEW_FLOAT1);
+    }
+}
+
+void increments_fill_response_code(increments_t *increments, request_data_t *request_data)
+{
+    json_object *one = json_object_new_double(1.0);
+    char rsp[256];
+    snprintf(rsp, 256, "response.%d", request_data->response_code);
+    json_object_object_add(increments->others, rsp, one);
+}
+
+void increments_fill_severity(increments_t *increments, request_data_t *request_data)
+{
+    json_object *one = json_object_new_double(1.0);
+    char sev[256];
+    snprintf(sev, 256, "severity.%d", request_data->severity);
+    json_object_object_add(increments->others, sev, one);
+}
+
+void increments_fill_exceptions(increments_t *increments, request_data_t *request_data)
+{
+    // TODO: implement
+}
+
+void increments_fill_caller_info(increments_t *increments, request_data_t *request_data)
+{
+    // TODO: implement
+}
+
+void increments_add(increments_t *stored_increments, increments_t* increments)
+{
+    stored_increments->request_count += increments->request_count;
+    for (size_t i=0; i<=last_resource_index; i++) {
+        metric_pair_t *stored = &(stored_increments->metrics[i]);
+        metric_pair_t *addend = &(increments->metrics[i]);
+        stored->val += addend->val;
+        stored->val_squared += addend->val_squared;
+    }
+    json_object_object_foreach(increments->others, key, value) {
+        double addend = json_object_get_double(value);
+        json_object *stored_obj;
+        json_object *new_obj;
+        if (json_object_object_get_ex(stored_increments->others, key, &stored_obj)) {
+            double stored = json_object_get_double(stored_obj);
+            new_obj = json_object_new_double(stored + addend);
+        } else {
+            new_obj = json_object_new_double(addend);
+        }
+        json_object_object_add(stored_increments->others, key, new_obj);
+    }
+}
+
 int ignore_request(json_object *request)
 {
     //TODO: how to implement this generically
@@ -281,6 +405,42 @@ const char* append_to_json_string(json_object **jobj, const char* old_str, const
     json_object_put(*jobj);
     *jobj = json_object_new_string(new_str_value);
     return json_object_get_string(*jobj);
+}
+
+int dump_module_name(const char* key, void *module, void *arg)
+{
+    printf("module: %s\n", (char*)module);
+    return 0;
+}
+
+void dump_metrics(metric_pair_t *metrics)
+{
+    for (size_t i=0; i<=last_resource_index; i++) {
+        if (metrics[i].val > 0) {
+            printf("%s:%f:%f\n", int_to_resource[i], metrics[i].val, metrics[i].val_squared);
+        }
+    }
+}
+
+int dump_increments(const char *key, void *total, void *arg)
+{
+    puts("------------------------------------------------");
+    printf("action: %s\n", key);
+    increments_t* increments = total;
+    printf("requests: %zu\n", increments->request_count);
+    dump_metrics(increments->metrics);
+    dump_json_object(increments->others);
+    return 0;
+}
+
+void processor_dump_state(processor_t *self)
+{
+    puts("================================================");
+    printf("stream: %s\n", self->stream);
+    printf("processed requests: %zu\n", self->request_count);
+    zhash_foreach(self->modules, dump_module_name, NULL);
+    zhash_foreach(self->totals, dump_increments, NULL);
+    zhash_foreach(self->minutes, dump_increments, NULL);
 }
 
 const char* processor_setup_page(processor_t *self, json_object *request)
@@ -440,89 +600,30 @@ void processor_setup_allocated_memory(processor_t *self, json_object *request)
     }
 }
 
-increments_t* increments_new(request_data_t* request_data, json_object *request)
+void processor_add_totals(processor_t *self, const char* namespace, increments_t *increments)
 {
-    const size_t inc_size = sizeof(increments_t);
-    increments_t* increments = malloc(inc_size);
-    memset(increments, 0, inc_size);
-
-    const size_t metrics_size = sizeof(double) * (last_resource_index + 1);
-    increments->metrics = malloc(metrics_size);
-    memset(increments->metrics, 0, metrics_size);
-
-    increments->metrics_sq = malloc(metrics_size);
-    memset(increments->metrics_sq, 0, metrics_size);
-
-    increments->request_count = 1;
-    increments->others = json_object_new_object();
-    return increments;
-}
-
-void increments_destroy(increments_t **increments)
-{
-    json_object_put((*increments)->others);
-    free((*increments)->metrics);
-    free((*increments)->metrics_sq);
-    free(*increments);
-    *increments = NULL;
-}
-
-void increments_fill_metrics(increments_t *increments, json_object *request)
-{
-    const int n = last_resource_index;
-    for (size_t i=0; i <= n; i++) {
-        json_object* metrics_value;
-        if (json_object_object_get_ex(request, int_to_resource[i], &metrics_value)) {
-            double v = json_object_get_double(metrics_value);
-            increments->metrics[i] = v;
-            increments->metrics_sq[i] = v*v;
-        }
+    increments_t *stored_increments = zhash_lookup(self->totals, namespace);
+    if (stored_increments) {
+        increments_add(stored_increments, increments);
+    } else {
+        increments_t *duped_increments = increments_clone(increments);
+        int rc = zhash_insert(self->totals, strdup(namespace), duped_increments);
+        assert(rc == 0);
     }
 }
 
-void increments_fill_apdex(increments_t *increments, request_data_t *request_data)
+void processor_add_minutes(processor_t *self, const char* namespace, size_t minute, increments_t *increments)
 {
-    double total_time = request_data->total_time;
-    long response_code = request_data->response_code;
-    json_object *one = json_object_new_double(1.0);
-    json_object *others = increments->others;
-
-    if (total_time >= 2000 || response_code >= 500) {
-        json_object_object_add(others, "apdex.frustrated", one);
-    } else if (total_time < 100) {
-        json_object_object_add(others, "apdex.happy", one);
-        json_object_object_add(others, "apdex.satisfied", one);
-    } else if (total_time < 500) {
-        json_object_object_add(others, "apdex.satisfied", one);
-    } else if (total_time < 2000) {
-        json_object_object_add(others, "apdex.tolerating", one);
+    char key[2000];
+    snprintf(key, 2000, "%lu-%s", minute, namespace);
+    increments_t *stored_increments = zhash_lookup(self->minutes, key);
+    if (stored_increments) {
+        increments_add(stored_increments, increments);
+    } else {
+        increments_t *duped_increments = increments_clone(increments);
+        int rc = zhash_insert(self->minutes, strdup(key), duped_increments);
+        assert(rc == 0);
     }
-}
-
-void increments_fill_response_code(increments_t *increments, request_data_t *request_data)
-{
-    json_object *one = json_object_new_double(1.0);
-    char rsp[256];
-    snprintf(rsp, 256, "response.%d", request_data->response_code);
-    json_object_object_add(increments->others, rsp, one);
-}
-
-void increments_fill_severity(increments_t *increments, request_data_t *request_data)
-{
-    json_object *one = json_object_new_double(1.0);
-    char rsp[256];
-    snprintf(rsp, 256, "severity.%d", request_data->severity);
-    json_object_object_add(increments->others, rsp, one);
-}
-
-void increments_fill_exceptions(increments_t *increments, request_data_t *request_data)
-{
-    // TODO: implement
-}
-
-void increments_fill_caller_info(increments_t *increments, request_data_t *request_data)
-{
-    // TODO: implement
 }
 
 void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
@@ -541,7 +642,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     processor_setup_other_time(self, request, request_data.total_time);
     processor_setup_allocated_memory(self, request);
 
-    increments_t* increments = increments_new(&request_data, request);
+    increments_t* increments = increments_new();
     increments_fill_metrics(increments, request);
     increments_fill_apdex(increments, &request_data);
     increments_fill_response_code(increments, &request_data);
@@ -549,8 +650,19 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     increments_fill_exceptions(increments, &request_data);
     increments_fill_caller_info(increments, &request_data);
 
+    processor_add_totals(self, request_data.page, increments);
+    processor_add_totals(self, request_data.module, increments);
+    processor_add_totals(self, "all_pages", increments);
+
+    processor_add_minutes(self, request_data.page, request_data.minute, increments);
+    processor_add_minutes(self, request_data.module, request_data.minute, increments);
+    processor_add_minutes(self, "all_pages", request_data.minute, increments);
+
     increments_destroy(&increments);
     // dump_json_object(request);
+    // if (self->request_count % 100 == 0) {
+    //     processor_dump_state(self);
+    // }
 }
 
 void processor_add_event(processor_t *self, parser_state_t *pstate, json_object *request)
