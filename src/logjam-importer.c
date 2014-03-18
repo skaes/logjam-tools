@@ -102,14 +102,6 @@ typedef struct {
     void *quants;
 } processor_t;
 
-/* apdex strcut */
-typedef struct {
-    long happy;
-    long satisfied;
-    long tolerating;
-    long frustrated;
-} apdex_counts_t;
-
 /* request info */
 typedef struct {
     const char* page;
@@ -118,8 +110,15 @@ typedef struct {
     int response_code;
     int severity;
     int minute;
-    apdex_counts_t apdex;
 } request_data_t;
+
+/* increments */
+typedef struct {
+    size_t request_count;
+    double *metrics;
+    double *metrics_sq;
+    json_object *others;
+} increments_t;
 
 /* stats updater state */
 typedef struct {
@@ -441,6 +440,91 @@ void processor_setup_allocated_memory(processor_t *self, json_object *request)
     }
 }
 
+increments_t* increments_new(request_data_t* request_data, json_object *request)
+{
+    const size_t inc_size = sizeof(increments_t);
+    increments_t* increments = malloc(inc_size);
+    memset(increments, 0, inc_size);
+
+    const size_t metrics_size = sizeof(double) * (last_resource_index + 1);
+    increments->metrics = malloc(metrics_size);
+    memset(increments->metrics, 0, metrics_size);
+
+    increments->metrics_sq = malloc(metrics_size);
+    memset(increments->metrics_sq, 0, metrics_size);
+
+    increments->request_count = 1;
+    increments->others = json_object_new_object();
+    return increments;
+}
+
+void increments_destroy(increments_t **increments)
+{
+    json_object_put((*increments)->others);
+    free((*increments)->metrics);
+    free((*increments)->metrics_sq);
+    free(*increments);
+    *increments = NULL;
+}
+
+void increments_fill_metrics(increments_t *increments, json_object *request)
+{
+    const int n = last_resource_index;
+    for (size_t i=0; i <= n; i++) {
+        json_object* metrics_value;
+        if (json_object_object_get_ex(request, int_to_resource[i], &metrics_value)) {
+            double v = json_object_get_double(metrics_value);
+            increments->metrics[i] = v;
+            increments->metrics_sq[i] = v*v;
+        }
+    }
+}
+
+void increments_fill_apdex(increments_t *increments, request_data_t *request_data)
+{
+    double total_time = request_data->total_time;
+    long response_code = request_data->response_code;
+    json_object *one = json_object_new_double(1.0);
+    json_object *others = increments->others;
+
+    if (total_time >= 2000 || response_code >= 500) {
+        json_object_object_add(others, "apdex.frustrated", one);
+    } else if (total_time < 100) {
+        json_object_object_add(others, "apdex.happy", one);
+        json_object_object_add(others, "apdex.satisfied", one);
+    } else if (total_time < 500) {
+        json_object_object_add(others, "apdex.satisfied", one);
+    } else if (total_time < 2000) {
+        json_object_object_add(others, "apdex.tolerating", one);
+    }
+}
+
+void increments_fill_response_code(increments_t *increments, request_data_t *request_data)
+{
+    json_object *one = json_object_new_double(1.0);
+    char rsp[256];
+    snprintf(rsp, 256, "response.%d", request_data->response_code);
+    json_object_object_add(increments->others, rsp, one);
+}
+
+void increments_fill_severity(increments_t *increments, request_data_t *request_data)
+{
+    json_object *one = json_object_new_double(1.0);
+    char rsp[256];
+    snprintf(rsp, 256, "severity.%d", request_data->severity);
+    json_object_object_add(increments->others, rsp, one);
+}
+
+void increments_fill_exceptions(increments_t *increments, request_data_t *request_data)
+{
+    // TODO: implement
+}
+
+void increments_fill_caller_info(increments_t *increments, request_data_t *request_data)
+{
+    // TODO: implement
+}
+
 void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
 {
     if (ignore_request(request)) return;
@@ -456,6 +540,16 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     request_data.total_time = processor_setup_total_time(self, request);
     processor_setup_other_time(self, request, request_data.total_time);
     processor_setup_allocated_memory(self, request);
+
+    increments_t* increments = increments_new(&request_data, request);
+    increments_fill_metrics(increments, request);
+    increments_fill_apdex(increments, &request_data);
+    increments_fill_response_code(increments, &request_data);
+    increments_fill_severity(increments, &request_data);
+    increments_fill_exceptions(increments, &request_data);
+    increments_fill_caller_info(increments, &request_data);
+
+    increments_destroy(&increments);
     // dump_json_object(request);
 }
 
