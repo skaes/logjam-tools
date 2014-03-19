@@ -212,7 +212,7 @@ void processor_destroy(void* processor)
 {
     //void* because we want to use it as a zhash_free_fn
     processor_t* p = processor;
-    printf("destroying processor: %s\n", p->stream);
+    printf("destroying processor: %s. requests: %zu\n", p->stream, p->request_count);
     free(p->stream);
     zhash_destroy(&p->modules);
     zhash_destroy(&p->totals);
@@ -748,9 +748,9 @@ void parser(void *args, zctx_t *ctx, void *pipe)
             // tick
             printf("parser: tick\n");
             msg = zmsg_recv(state.controller_socket);
-            // zhash_foreach(state.processors, processor_dump_state_from_zhash, NULL);
-            // replace this when we start inserting into mongodb
-            zhash_destroy(&state.processors);
+            zmsg_t *answer = zmsg_new();
+            zmsg_pushmem(answer, &state.processors, sizeof(zhash_t*));
+            zmsg_send(&answer, state.controller_socket);
             state.processors = processor_hash_new();
         } else if (socket == state.pull_socket) {
             msg = zmsg_recv(state.pull_socket);
@@ -770,7 +770,16 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     stats_updater_state_t state;
     state.controller_socket = pipe;
     while (!zctx_interrupted) {
-        sleep(1);
+        zmsg_t *msg = zmsg_recv(pipe);
+        if (msg != NULL) {
+            zframe_t *first = zmsg_first(msg);
+            assert(zframe_size(first) == sizeof(zhash_t*));
+            zhash_t *processors;
+            memcpy(&processors, zframe_data(first), sizeof(zhash_t*));
+            // zhash_foreach(processors, processor_dump_state_from_zhash, NULL);
+            // replace this when we start inserting into mongodb
+            zhash_destroy(&processors);
+        }
     }
 }
 
@@ -790,6 +799,8 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     assert(tick);
     zmsg_addstr(tick, "tick");
     zmsg_send(&tick, state->parser_pipe);
+    zmsg_t *response = zmsg_recv(state->parser_pipe);
+    zmsg_send(&response, state->stats_updater_pipe);
     return 0;
 }
 
