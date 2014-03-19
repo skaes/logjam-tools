@@ -2544,7 +2544,7 @@ fi
 # AC_CONFIG_HEADERS([config.h])
 
 OLD_CFLAGS=$CFLAGS
-test -z "$OLD_CFLAGS" && OLD_CFLAGS="-O3 -ggdb"
+test -z "$OLD_CFLAGS" && OLD_CFLAGS="-O3 -ggdb -I/usr/local/include/libbson-1.0 -I/usr/local/include/libmongoc-1.0"
 OLD_CC=$CC
 test -z "$OLD_CC" && test `uname -s` = "Darwin" && OLD_CC="clang"
 ac_ext=c
@@ -3602,7 +3602,7 @@ if test "${with_opt_dir+set}" = set; then :
 		OPTDIR_LDFLAGS="$val"
 
 
-                DEPS_LIBS="-lrabbitmq -lzmq -lczmq -ljson-c"
+                DEPS_LIBS="-lrabbitmq -lzmq -lczmq -ljson-c -lbson-1.0 -lmongoc-1.0"
 
 
 fi
@@ -3672,7 +3672,7 @@ fi
 
                             OPTDIR_LDFLAGS="-L/usr/local/lib -L/opt/local/lib"
 
-                            DEPS_LIBS="-lrabbitmq -lzmq -lczmq  -ljson-c"
+                            DEPS_LIBS="-lrabbitmq -lzmq -lczmq -ljson-c -lbson-1.0 -lmongoc-1.0"
 
 
 elif test $pkg_failed = untried; then
@@ -3682,7 +3682,7 @@ $as_echo "no" >&6; }
 
                             OPTDIR_LDFLAGS="-L/usr/local/lib -L/opt/local/lib"
 
-                            DEPS_LIBS="-lrabbitmq -lzmq -lczmq  -ljson-c"
+                            DEPS_LIBS="-lrabbitmq -lzmq -lczmq -ljson-c -lbson-1.0 -lmongoc-1.0"
 
 
 else

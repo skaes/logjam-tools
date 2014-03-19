@@ -7,6 +7,8 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <json-c/json.h>
+#include <bson.h>
+#include <mongoc.h>
 
 void assert_x(int rc, const char* error_text) {
   if (rc != 0) {
@@ -769,6 +771,17 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
 {
     stats_updater_state_t state;
     state.controller_socket = pipe;
+
+    const char *uristr = "mongodb://127.0.0.1/";
+    mongoc_client_t *client;
+
+    mongoc_init ();
+    client = mongoc_client_new(uristr);
+    if (!client) {
+        fprintf(stderr, "Failed to parse mongo URI.\n");
+        exit(1);
+    }
+
     while (!zctx_interrupted) {
         zmsg_t *msg = zmsg_recv(pipe);
         if (msg != NULL) {
@@ -781,6 +794,8 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             zhash_destroy(&processors);
         }
     }
+
+    mongoc_client_destroy(client);
 }
 
 void request_writer(void *args, zctx_t *ctx, void *pipe)
