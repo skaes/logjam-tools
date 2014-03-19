@@ -88,7 +88,7 @@ typedef struct {
     void *push_socket;
     msg_stats_t msg_stats;
     json_tokener* tokener;
-    void *processors;
+    zhash_t *processors;
 } parser_state_t;
 
 /* processor state */
@@ -96,10 +96,10 @@ typedef struct {
     char *stream;
     char *date;
     size_t request_count;
-    void *modules;
-    void *totals;
-    void *minutes;
-    void *quants;
+    zhash_t *modules;
+    zhash_t *totals;
+    zhash_t *minutes;
+    zhash_t *quants;
 } processor_t;
 
 /* request info */
@@ -198,7 +198,7 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
 processor_t* processor_new(char *stream, char *date)
 {
     processor_t *p = malloc(sizeof(processor_t));
-    p->stream = stream;
+    p->stream = strdup(stream);
     p->date = date;
     p->request_count = 0;
     p->modules = zhash_new();
@@ -206,6 +206,19 @@ processor_t* processor_new(char *stream, char *date)
     p->minutes = zhash_new();
     p->quants = zhash_new();
     return p;
+}
+
+void processor_destroy(void* processor)
+{
+    //void* because we want to use it as a zhash_free_fn
+    processor_t* p = processor;
+    printf("destroying processor: %s\n", p->stream);
+    free(p->stream);
+    zhash_destroy(&p->modules);
+    zhash_destroy(&p->totals);
+    zhash_destroy(&p->minutes);
+    zhash_destroy(&p->quants);
+    free(p);
 }
 
 processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
@@ -216,8 +229,10 @@ processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_sta
     stream[n] = '\0';
     processor_t *p = zhash_lookup(parser_state->processors, stream);
     if (p == NULL) {
-        p = processor_new(zframe_strdup(stream_frame), NULL/*date*/);
-        zhash_insert(parser_state->processors, p->stream, p);
+        p = processor_new(stream, NULL/*date*/);
+        int rc = zhash_insert(parser_state->processors, stream, p);
+        assert(rc ==0);
+        zhash_freefn(parser_state->processors, stream, processor_destroy);
     }
     return p;
 }
@@ -284,12 +299,13 @@ increments_t* increments_new()
     return increments;
 }
 
-void increments_destroy(increments_t **increments)
+void increments_destroy(void *increments)
 {
-    json_object_put((*increments)->others);
-    free((*increments)->metrics);
-    free(*increments);
-    *increments = NULL;
+    // void* because of zhash_destroy
+    increments_t *incs = increments;
+    json_object_put(incs->others);
+    free(incs->metrics);
+    free(incs);
 }
 
 increments_t* increments_clone(increments_t* increments)
@@ -443,6 +459,13 @@ void processor_dump_state(processor_t *self)
     zhash_foreach(self->minutes, dump_increments, NULL);
 }
 
+int processor_dump_state_from_zhash(const char* stream, void* processor, void* arg)
+{
+    assert(!strcmp(((processor_t*)processor)->stream,stream));
+    processor_dump_state(processor);
+    return 0;
+}
+
 const char* processor_setup_page(processor_t *self, json_object *request)
 {
     json_object *page_obj = NULL;
@@ -487,11 +510,10 @@ const char* processor_setup_module(processor_t *self, const char *page)
     }
     char *module = zhash_lookup(self->modules, module_str);
     if (module == NULL) {
-        module = malloc(strlen(module_str)+1);
-        assert(module);
-        strcpy(module, module_str);
+        module = strdup(module_str);
         int rc = zhash_insert(self->modules, module, module);
         assert(rc == 0);
+        zhash_freefn(self->modules, module, free);
     }
     // printf("page: %s\n", page);
     // printf("module: %s\n", module);
@@ -607,8 +629,9 @@ void processor_add_totals(processor_t *self, const char* namespace, increments_t
         increments_add(stored_increments, increments);
     } else {
         increments_t *duped_increments = increments_clone(increments);
-        int rc = zhash_insert(self->totals, strdup(namespace), duped_increments);
+        int rc = zhash_insert(self->totals, namespace, duped_increments);
         assert(rc == 0);
+        assert(zhash_freefn(self->totals, namespace, increments_destroy));
     }
 }
 
@@ -621,8 +644,9 @@ void processor_add_minutes(processor_t *self, const char* namespace, size_t minu
         increments_add(stored_increments, increments);
     } else {
         increments_t *duped_increments = increments_clone(increments);
-        int rc = zhash_insert(self->minutes, strdup(key), duped_increments);
+        int rc = zhash_insert(self->minutes, key, duped_increments);
         assert(rc == 0);
+        assert(zhash_freefn(self->minutes, key, increments_destroy));
     }
 }
 
@@ -658,7 +682,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     processor_add_minutes(self, request_data.module, request_data.minute, increments);
     processor_add_minutes(self, "all_pages", request_data.minute, increments);
 
-    increments_destroy(&increments);
+    increments_destroy(increments);
     // dump_json_object(request);
     // if (self->request_count % 100 == 0) {
     //     processor_dump_state(self);
@@ -698,19 +722,46 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
     }
 }
 
+zhash_t* processor_hash_new()
+{
+    zhash_t *hash = zhash_new();
+    assert(hash);
+    return hash;
+}
+
 void parser(void *args, zctx_t *ctx, void *pipe)
 {
     parser_state_t state;
     state.controller_socket = pipe;
     state.pull_socket = parser_pull_socket_new(ctx);
     assert( state.tokener = json_tokener_new() );
-    assert( state.processors = zhash_new() );
+    state.processors = processor_hash_new();
+
+    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+    assert(poller);
+
     while (!zctx_interrupted) {
-        zmsg_t *msg = zmsg_recv(state.pull_socket);
-        if (msg != NULL) {
-            parse_msg_and_forward_interesting_requests(msg, &state);
-            zmsg_destroy(&msg);
+        // -1 == block until something is readable
+        void *socket = zpoller_wait(poller, -1);
+        zmsg_t *msg = NULL;
+        if (socket == state.controller_socket) {
+            // tick
+            printf("parser: tick\n");
+            msg = zmsg_recv(state.controller_socket);
+            // zhash_foreach(state.processors, processor_dump_state_from_zhash, NULL);
+            // replace this when we start inserting into mongodb
+            zhash_destroy(&state.processors);
+            state.processors = processor_hash_new();
+        } else if (socket == state.pull_socket) {
+            msg = zmsg_recv(state.pull_socket);
+            if (msg != NULL) {
+                parse_msg_and_forward_interesting_requests(msg, &state);
+            }
+        } else {
+            // interrupted
+            break;
         }
+        zmsg_destroy(&msg);
     }
 }
 
@@ -734,7 +785,12 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
 
 int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
-  return 0;
+    controller_state_t *state = arg;
+    zmsg_t *tick = zmsg_new();
+    assert(tick);
+    zmsg_addstr(tick, "tick");
+    zmsg_send(&tick, state->parser_pipe);
+    return 0;
 }
 
 void add_resources_of_type(const char *type, char **type_map, size_t *type_idx)
@@ -802,6 +858,7 @@ int main(int argc, char const * const *argv)
     int rc;
     const char *config_file = "logjam.conf";
 
+    // process arguments
     if (argc > 2) {
         fprintf(stderr, "usage: %s [config-file]\n", argv[0]);
         exit(0);
