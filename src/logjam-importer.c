@@ -474,6 +474,66 @@ int processor_dump_state_from_zhash(const char* stream, void* processor, void* a
     return 0;
 }
 
+bson_t* increments_to_bson(increments_t* increments)
+{
+    bson_t *incs = bson_new();
+    bson_append_int64(incs, "count", 5, increments->request_count);
+
+    for (size_t i=0; i<last_resource_index; i++) {
+        double val = increments->metrics->val;
+        if (val > 0) {
+            const char *name = int_to_resource[i];
+            bson_append_double(incs, name, strlen(name), val);
+            const char *name_sq = int_to_resource_sq[i];
+            bson_append_double(incs, name_sq, strlen(name_sq), increments->metrics->val_squared);
+        }
+    }
+
+    json_object_object_foreach(increments->others, key, value_obj) {
+        double value = json_object_get_double(value_obj);
+        bson_append_double(incs, key, strlen(key), value);
+    }
+
+    bson_t *document = bson_new();
+    bson_append_document(document, "$inc", 4, incs);
+
+    // size_t n;
+    // char* bs = bson_as_json(document, &n);
+    // printf("document. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
+
+    bson_destroy(incs);
+
+    return document;
+}
+
+int minutes_add_increments(const char* namespace, void* data, void* arg)
+{
+    mongoc_collection_t *collection = arg;
+    increments_t* increments = data;
+    // dump_increments(namespace, increments, NULL);
+
+    bson_t *selector = bson_new();
+    assert( bson_append_utf8(selector, "page", 4, namespace, strlen(namespace)) );
+    assert( bson_append_utf8(selector, "minute", 6, namespace, strlen(namespace)) );
+    // size_t n;
+    // char* bs = bson_as_json(selector, &n);
+    // printf("selector. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
+
+    bson_t *document = increments_to_bson(increments);
+    bson_error_t *error = NULL;
+    mongoc_write_concern_t *write_concern = mongoc_write_concern_new();
+    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, write_concern, error)) {
+        fprintf(stderr, "update failed on totals\n");
+    }
+
+    bson_destroy(selector);
+    bson_destroy(document);
+    mongoc_write_concern_destroy(write_concern);
+    return 0;
+}
+
 int totals_add_increments(const char* namespace, void* data, void* arg)
 {
     mongoc_collection_t *collection = arg;
@@ -482,39 +542,20 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
 
     bson_t *selector = bson_new();
     assert( bson_append_utf8(selector, "page", 4, namespace, strlen(namespace)) );
-    size_t n;
-    char* bs = bson_as_json(selector, &n);
-    printf("selector. size: %zu; value:%s\n", n, bs);
-    bson_free(bs);
+    // size_t n;
+    // char* bs = bson_as_json(selector, &n);
+    // printf("selector. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
 
-    bson_t *incs = bson_new();
-    for (size_t i=0; i<last_resource_index; i++) {
-        double val = increments->metrics->val;
-        if (val > 0) {
-            const char *name = int_to_resource[i];
-            const char *name_sq = int_to_resource_sq[i];
-            printf("name_squared: %s\n", name_sq);
-            bson_append_double(incs, name, strlen(name), val);
-            bson_append_double(incs, name_sq, strlen(name_sq), increments->metrics->val_squared);
-        }
-    }
-
-    bson_t *document = bson_new();
-    bson_append_document(document, "$inc", 4, incs);
-
-    bs = bson_as_json(document, &n);
-    printf("document. size: %zu; value:%s\n", n, bs);
-    bson_free(bs);
-
+    bson_t *document = increments_to_bson(increments);
     bson_error_t *error = NULL;
     mongoc_write_concern_t *write_concern = mongoc_write_concern_new();
     if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, write_concern, error)) {
-        printf("update failed on totals\n");
+        fprintf(stderr, "update failed on totals\n");
     }
 
     bson_destroy(selector);
     bson_destroy(document);
-    bson_destroy(incs);
     mongoc_write_concern_destroy(write_concern);
     return 0;
 }
@@ -533,7 +574,15 @@ int processor_update_mongo_db(const char* stream, void* data, void* arg)
     mongoc_collection_ensure_index(totals_collection, keys, &opt, &error);
 
     zhash_foreach(proc->totals, totals_add_increments, totals_collection);
+    bson_free(keys);
 
+    mongoc_collection_t *minutes_collection = mongoc_client_get_collection(client, stream, "minutes");
+    keys = bson_new();
+    assert(bson_append_int32(keys, "page", -1, 1));
+    assert(bson_append_int32(keys, "minutes", -1, 1));
+    mongoc_collection_ensure_index(minutes_collection, keys, &opt, &error);
+
+    zhash_foreach(proc->minutes, minutes_add_increments, minutes_collection);
     bson_free(keys);
 
     mongoc_collection_destroy(totals_collection);
