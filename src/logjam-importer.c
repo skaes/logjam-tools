@@ -67,10 +67,12 @@ typedef struct {
     size_t dropped;
 } msg_stats_t;
 
+#define NUM_PARSERS 2
+
 /* controller state */
 typedef struct {
     void* subscriber_pipe;
-    void* parser_pipe;
+    void* parser_pipes[NUM_PARSERS];
     void* request_writer_pipe;
     void* stats_updater_pipe;
     msg_stats_t msg_stats;
@@ -216,7 +218,7 @@ void processor_destroy(void* processor)
 {
     //void* because we want to use it as a zhash_free_fn
     processor_t* p = processor;
-    printf("destroying processor: %s. requests: %zu\n", p->stream, p->request_count);
+    // printf("destroying processor: %s. requests: %zu\n", p->stream, p->request_count);
     free(p->stream);
     zhash_destroy(&p->modules);
     zhash_destroy(&p->totals);
@@ -815,12 +817,15 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
 int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
     controller_state_t *state = arg;
-    zmsg_t *tick = zmsg_new();
-    assert(tick);
-    zmsg_addstr(tick, "tick");
-    zmsg_send(&tick, state->parser_pipe);
-    zmsg_t *response = zmsg_recv(state->parser_pipe);
-    zmsg_send(&response, state->stats_updater_pipe);
+    for (size_t i=0; i<NUM_PARSERS; i++) {
+        void* parser_pipe = state->parser_pipes[i];
+        zmsg_t *tick = zmsg_new();
+        assert(tick);
+        zmsg_addstr(tick, "tick");
+        zmsg_send(&tick, parser_pipe);
+        zmsg_t *response = zmsg_recv(parser_pipe);
+        zmsg_send(&response, state->stats_updater_pipe);
+    }
     return 0;
 }
 
@@ -923,9 +928,11 @@ int main(int argc, char const * const *argv)
 
     controller_state_t state;
     // start all worker threads
-    state.subscriber_pipe     = zthread_fork(context, subscriber, &config);
-    state.parser_pipe         = zthread_fork(context, parser, &config);
-    state.stats_updater_pipe  = zthread_fork(context, stats_updater, &config);
+    state.subscriber_pipe = zthread_fork(context, subscriber, &config);
+    for (size_t i=0; i<NUM_PARSERS; i++) {
+        state.parser_pipes[i] = zthread_fork(context, parser, &config);
+    }
+    state.stats_updater_pipe = zthread_fork(context, stats_updater, &config);
     state.request_writer_pipe = zthread_fork(context, request_writer, &config);
 
     // flush increments to database every 1000 ms
