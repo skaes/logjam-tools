@@ -903,6 +903,7 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     controller_state_t *state = arg;
     zhash_t *processors[NUM_PARSERS];
     size_t request_counts[NUM_PARSERS];
+    int64_t start_time_ms = zclock_time();
 
     for (size_t i=0; i<NUM_PARSERS; i++) {
         void* parser_pipe = state->parser_pipes[i];
@@ -918,7 +919,6 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     for (size_t i=1; i<NUM_PARSERS; i++) {
         request_count += request_counts[i];
     }
-    printf("stats collector: %zu messages\n", request_count);
 
     for (size_t i=1; i<NUM_PARSERS; i++) {
         hash_pair_t pair;
@@ -932,6 +932,10 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     zmsg_addmem(stats_msg, &processors[0], sizeof(zhash_t*));
     zmsg_addmem(stats_msg, &request_count, sizeof(size_t));
     zmsg_send(&stats_msg, state->stats_updater_pipe);
+
+    int64_t end_time_ms = zclock_time();
+    printf("stats collector: %zu messages (%zu ms)\n", request_count, (size_t)(end_time_ms - start_time_ms));
+
     return 0;
 }
 
