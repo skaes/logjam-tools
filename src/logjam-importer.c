@@ -86,6 +86,7 @@ typedef struct {
 
 /* parser state */
 typedef struct {
+    size_t request_count;
     void *controller_socket;
     void *pull_socket;
     void *push_socket;
@@ -735,6 +736,7 @@ zhash_t* processor_hash_new()
 void parser(void *args, zctx_t *ctx, void *pipe)
 {
     parser_state_t state;
+    state.request_count = 0;
     state.controller_socket = pipe;
     state.pull_socket = parser_pull_socket_new(ctx);
     assert( state.tokener = json_tokener_new() );
@@ -749,7 +751,8 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("parser: tick\n");
+            printf("parser: tick (%zu messages)\n", state.request_count);
+            state.request_count = 0;
             msg = zmsg_recv(state.controller_socket);
             zmsg_t *answer = zmsg_new();
             zmsg_pushmem(answer, &state.processors, sizeof(zhash_t*));
@@ -758,6 +761,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         } else if (socket == state.pull_socket) {
             msg = zmsg_recv(state.pull_socket);
             if (msg != NULL) {
+                state.request_count++;
                 parse_msg_and_forward_interesting_requests(msg, &state);
             }
         } else {
