@@ -33,6 +33,7 @@ static zconfig_t* config = NULL;
 #define MAX_RESOURCE_COUNT 100
 static zhash_t* resource_to_int = NULL;
 static char *int_to_resource[MAX_RESOURCE_COUNT];
+static char *int_to_resource_sq[MAX_RESOURCE_COUNT];
 static size_t last_resource_index = 0;
 
 static char *time_resources[MAX_RESOURCE_COUNT];
@@ -473,6 +474,72 @@ int processor_dump_state_from_zhash(const char* stream, void* processor, void* a
     return 0;
 }
 
+int totals_add_increments(const char* namespace, void* data, void* arg)
+{
+    mongoc_collection_t *collection = arg;
+    increments_t* increments = data;
+    // dump_increments(namespace, increments, NULL);
+
+    bson_t *selector = bson_new();
+    assert( bson_append_utf8(selector, "page", 4, namespace, strlen(namespace)) );
+    size_t n;
+    char* bs = bson_as_json(selector, &n);
+    printf("selector. size: %zu; value:%s\n", n, bs);
+    bson_free(bs);
+
+    bson_t *incs = bson_new();
+    for (size_t i=0; i<last_resource_index; i++) {
+        double val = increments->metrics->val;
+        if (val > 0) {
+            const char *name = int_to_resource[i];
+            const char *name_sq = int_to_resource_sq[i];
+            printf("name_squared: %s\n", name_sq);
+            bson_append_double(incs, name, strlen(name), val);
+            bson_append_double(incs, name_sq, strlen(name_sq), increments->metrics->val_squared);
+        }
+    }
+
+    bson_t *document = bson_new();
+    bson_append_document(document, "$inc", 4, incs);
+
+    bs = bson_as_json(document, &n);
+    printf("document. size: %zu; value:%s\n", n, bs);
+    bson_free(bs);
+
+    bson_error_t *error = NULL;
+    mongoc_write_concern_t *write_concern = mongoc_write_concern_new();
+    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, write_concern, error)) {
+        printf("update failed on totals\n");
+    }
+
+    bson_destroy(selector);
+    bson_destroy(document);
+    bson_destroy(incs);
+    mongoc_write_concern_destroy(write_concern);
+    return 0;
+}
+
+int processor_update_mongo_db(const char* stream, void* data, void* arg)
+{
+    mongoc_client_t *client = arg;
+    processor_t *proc = data;
+
+    mongoc_collection_t *totals_collection = mongoc_client_get_collection(client, stream, "totals");
+    bson_t *keys = bson_new();
+    assert(bson_append_int32(keys, "page", -1, 1));
+    bson_error_t error;
+    mongoc_index_opt_t opt;
+    mongoc_index_opt_init(&opt);
+    mongoc_collection_ensure_index(totals_collection, keys, &opt, &error);
+
+    zhash_foreach(proc->totals, totals_add_increments, totals_collection);
+
+    bson_free(keys);
+
+    mongoc_collection_destroy(totals_collection);
+    return 0;
+}
+
 const char* processor_setup_page(processor_t *self, json_object *request)
 {
     json_object *page_obj = NULL;
@@ -791,7 +858,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     stats_updater_state_t state;
     state.controller_socket = pipe;
 
-    const char *uristr = "mongodb://127.0.0.1/";
+    const char *uristr = "mongodb://127.0.0.1:27017/";
     mongoc_client_t *client;
 
     mongoc_init ();
@@ -807,8 +874,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             zhash_t *processors;
             size_t request_count;
             extract_parser_state(msg, &processors, &request_count);
-            // zhash_foreach(processors, processor_dump_state_from_zhash, NULL);
-            // replace this when we start inserting into mongodb
+            zhash_foreach(processors, processor_update_mongo_db, client);
             zhash_destroy(&processors);
             zmsg_destroy(&msg);
         }
@@ -951,7 +1017,11 @@ void add_resources_of_type(const char *type, char **type_map, size_t *type_idx)
     do {
         char *resource = zconfig_name(metric);
         zhash_insert(resource_to_int, resource, (void*)last_resource_index);
-        int_to_resource[last_resource_index++] = resource;
+        int_to_resource[last_resource_index] = resource;
+        char resource_sq[256] = {'\0'};
+        strcpy(resource_sq, resource);
+        strcpy(resource_sq+strlen(resource), "_sq");
+        int_to_resource_sq[last_resource_index++] = strdup(resource_sq);
         type_map[(*type_idx)++] = resource;
         metric = zconfig_next(metric);
         assert(last_resource_index < MAX_RESOURCE_COUNT);
