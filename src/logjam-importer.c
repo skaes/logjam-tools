@@ -409,6 +409,7 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
     }
 }
 
+
 int ignore_request(json_object *request)
 {
     //TODO: how to implement this generically
@@ -754,11 +755,12 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         if (socket == state.controller_socket) {
             // tick
             printf("parser: tick (%zu messages)\n", state.request_count);
-            state.request_count = 0;
             msg = zmsg_recv(state.controller_socket);
             zmsg_t *answer = zmsg_new();
-            zmsg_pushmem(answer, &state.processors, sizeof(zhash_t*));
+            zmsg_addmem(answer, &state.processors, sizeof(zhash_t*));
+            zmsg_addmem(answer, &state.request_count, sizeof(size_t));
             zmsg_send(&answer, state.controller_socket);
+            state.request_count = 0;
             state.processors = processor_hash_new();
         } else if (socket == state.pull_socket) {
             msg = zmsg_recv(state.pull_socket);
@@ -772,6 +774,16 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         }
         zmsg_destroy(&msg);
     }
+}
+
+void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *request_count)
+{
+    zframe_t *first = zmsg_first(msg);
+    zframe_t *second = zmsg_next(msg);
+    assert(zframe_size(first) == sizeof(zhash_t*));
+    memcpy(&*processors, zframe_data(first), sizeof(zhash_t*));
+    assert(zframe_size(second) == sizeof(size_t));
+    memcpy(request_count, zframe_data(second), sizeof(size_t));
 }
 
 void stats_updater(void *args, zctx_t *ctx, void *pipe)
@@ -792,13 +804,13 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     while (!zctx_interrupted) {
         zmsg_t *msg = zmsg_recv(pipe);
         if (msg != NULL) {
-            zframe_t *first = zmsg_first(msg);
-            assert(zframe_size(first) == sizeof(zhash_t*));
             zhash_t *processors;
-            memcpy(&processors, zframe_data(first), sizeof(zhash_t*));
+            size_t request_count;
+            extract_parser_state(msg, &processors, &request_count);
             // zhash_foreach(processors, processor_dump_state_from_zhash, NULL);
             // replace this when we start inserting into mongodb
             zhash_destroy(&processors);
+            zmsg_destroy(&msg);
         }
     }
 
@@ -814,18 +826,112 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     }
 }
 
+typedef struct {
+    zhash_t *source;
+    zhash_t *target;
+} hash_pair_t;
+
+
+int add_modules(const char* module, void* data, void* arg)
+{
+    hash_pair_t *pair = arg;
+    char *dest = zhash_lookup(pair->target, module);
+    if (dest == NULL) {
+        zhash_insert(pair->target, module, data);
+        zhash_freefn(pair->source, module, NULL);
+    }
+    return 0;
+}
+
+int add_increments(const char* namespace, void* data, void* arg)
+{
+    hash_pair_t *pair = arg;
+    increments_t *dest_increments = zhash_lookup(pair->target, namespace);
+    if (dest_increments == NULL) {
+        zhash_insert(pair->target, namespace, data);
+        zhash_freefn(pair->source, namespace, NULL);
+    } else {
+        increments_add(dest_increments, (increments_t*)data);
+    }
+    return 0;
+}
+
+void modules_combine(zhash_t* target, zhash_t *source)
+{
+    hash_pair_t hash_pair;
+    hash_pair.source = source;
+    hash_pair.target = target;
+    zhash_foreach(source, add_modules, &hash_pair);
+}
+
+void increments_combine(zhash_t* target, zhash_t *source)
+{
+    hash_pair_t hash_pair;
+    hash_pair.source = source;
+    hash_pair.target = target;
+    zhash_foreach(source, add_increments, &hash_pair);
+}
+
+void processor_combine(processor_t* target, processor_t* source)
+{
+    // printf("combining %s\n", target->stream);
+    assert(!strcmp(target->stream, source->stream));
+    assert(target->date == source->date);
+    target->request_count += source->request_count;
+    modules_combine(target->modules, source->modules);
+    increments_combine(target->totals, source->totals);
+    increments_combine(target->minutes, source->minutes);
+    increments_combine(target->quants, source->quants);
+}
+
+int add_streams(const char* stream, void* data, void* arg)
+{
+    hash_pair_t *pair = arg;
+    // printf("checking %s\n", stream);
+    processor_t *dest = zhash_lookup(pair->target, stream);
+    if (dest == NULL) {
+        zhash_insert(pair->target, stream, data);
+        zhash_freefn(pair->source, stream, NULL);
+    } else {
+        processor_combine(dest, (processor_t*)data);
+    }
+    return 0;
+}
+
 int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
     controller_state_t *state = arg;
+    zhash_t *processors[NUM_PARSERS];
+    size_t request_counts[NUM_PARSERS];
+
     for (size_t i=0; i<NUM_PARSERS; i++) {
         void* parser_pipe = state->parser_pipes[i];
         zmsg_t *tick = zmsg_new();
-        assert(tick);
         zmsg_addstr(tick, "tick");
         zmsg_send(&tick, parser_pipe);
         zmsg_t *response = zmsg_recv(parser_pipe);
-        zmsg_send(&response, state->stats_updater_pipe);
+        extract_parser_state(response, &processors[i], &request_counts[i]);
+        zmsg_destroy(&response);
     }
+
+    size_t request_count = request_counts[0];
+    for (size_t i=1; i<NUM_PARSERS; i++) {
+        request_count += request_counts[i];
+    }
+    printf("stats collector: %zu messages\n", request_count);
+
+    for (size_t i=1; i<NUM_PARSERS; i++) {
+        hash_pair_t pair;
+        pair.source = processors[i];
+        pair.target = processors[0];
+        zhash_foreach(pair.source, add_streams, &pair);
+        zhash_destroy(&processors[i]);
+    }
+
+    zmsg_t *stats_msg = zmsg_new();
+    zmsg_addmem(stats_msg, &processors[0], sizeof(zhash_t*));
+    zmsg_addmem(stats_msg, &request_count, sizeof(size_t));
+    zmsg_send(&stats_msg, state->stats_updater_pipe);
     return 0;
 }
 
