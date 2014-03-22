@@ -51,6 +51,8 @@ static size_t last_memory_resource_index = 0;
 static char *heap_resources[MAX_RESOURCE_COUNT];
 static size_t last_heap_resource_index = 0;
 
+static size_t allocated_objects_index, allocated_bytes_index;
+
 static inline size_t r2i(const char* resource)
 {
     return (size_t)zhash_lookup(resource_to_int, resource);
@@ -658,6 +660,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
 
     bson_t *selector = bson_new();
     assert( bson_append_utf8(selector, "page", 4, namespace, strlen(namespace)) );
+
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
     // printf("selector. size: %zu; value:%s\n", n, bs);
@@ -670,6 +673,65 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     }
 
     bson_destroy(selector);
+    bson_destroy(document);
+    return 0;
+}
+
+int quants_add_quants(const char* namespace, void* data, void* arg)
+{
+    mongoc_collection_t *collection = arg;
+
+    // extract keys from namespace
+    char* p = (char*) namespace;
+    char kind[2];
+    kind[0] = *(p++);
+    kind[1] = '\0';
+    // skip '-''
+    p++;
+    size_t quant = 0;
+    while (isdigit(*p)) {
+        quant *= 10;
+        quant += *(p++) - '0';
+    }
+    // skip -
+    p++;
+
+    size_t resource_index = 0;
+    while (isdigit(*p)) {
+        resource_index *= 10;
+        resource_index += *(p++) - '0';
+    }
+    // skip -
+    p++;
+    const char *resource = i2r(resource_index);
+
+    bson_t *selector = bson_new();
+    bson_append_utf8(selector, "page", 4, p, strlen(p));
+    bson_append_utf8(selector, "kind", 4, kind, 1);
+    bson_append_int32(selector, "quant", 5, quant);
+
+    // size_t n;
+    // char* bs = bson_as_json(selector, &n);
+    // printf("selector. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
+
+    bson_t *incs = bson_new();
+    bson_append_int32(incs, resource, strlen(resource), (size_t)data);
+
+    bson_t *document = bson_new();
+    bson_append_document(document, "$inc", 4, incs);
+
+    // bs = bson_as_json(document, &n);
+    // printf("document. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
+
+    bson_error_t *error = NULL;
+    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
+        fprintf(stderr, "update failed on totals\n");
+    }
+
+    bson_destroy(selector);
+    bson_destroy(incs);
     bson_destroy(document);
     return 0;
 }
@@ -721,8 +783,19 @@ int processor_update_mongo_db(const char* stream, void* data, void* arg)
 
     zhash_foreach(proc->minutes, minutes_add_increments, minutes_collection);
 
+    mongoc_collection_t *quants_collection = mongoc_client_get_collection(client, stream, "quants");
+    keys = bson_new();
+    assert(bson_append_int32(keys, "page", 4, 1));
+    assert(bson_append_int32(keys, "kind", 4, 1));
+    assert(bson_append_int32(keys, "quant", 5, 1));
+    mongoc_collection_ensure_index(quants_collection, keys, &index_opt_background, &error);
+    bson_free(keys);
+
+    zhash_foreach(proc->quants, quants_add_quants, quants_collection);
+
     mongoc_collection_destroy(totals_collection);
     mongoc_collection_destroy(minutes_collection);
+    mongoc_collection_destroy(quants_collection);
     return 0;
 }
 
@@ -910,6 +983,64 @@ void processor_add_minutes(processor_t *self, const char* namespace, size_t minu
     }
 }
 
+int add_quant_to_quants_hash(const char* key, void* data, void *arg)
+{
+    zhash_t* target = arg;
+    void *stored = zhash_lookup(target, key);
+    if (stored) {
+        size_t new_val = ((size_t)stored) + ((size_t)data);
+        zhash_update(target, key, (void*)new_val);
+    } else {
+        zhash_insert(target, key, stored);
+    }
+    return 0;
+}
+
+void quants_combine(zhash_t *target, zhash_t *source)
+{
+    zhash_foreach(source, add_quant_to_quants_hash, target);
+}
+
+void add_quant(const char* namespace, size_t resource_idx, char kind, size_t quant, zhash_t* quants)
+{
+    char key[2000];
+    sprintf(key, "%c-%zu-%zu-%s", kind, quant, resource_idx, namespace);
+    // printf("QUANT-KEY: %s\n", key);
+    void *stored = zhash_lookup(quants, key);
+    if (stored) {
+        size_t new_val = ((size_t)stored) + 1;
+        zhash_update(quants, key, (void*)new_val);
+    } else {
+        zhash_insert(quants, key, (void*)1);
+    }
+}
+
+void processor_add_quants(processor_t *self, const char* namespace, increments_t *increments)
+{
+    for (int i=0; i<last_resource_index; i++){
+        double val = increments->metrics[i].val;
+        if (val > 0) {
+            char kind;
+            double d;
+            if (i <= last_time_resource_index) {
+                kind = 't';
+                d = 100.0;
+            } else if (i == allocated_objects_index) {
+                kind = 'm';
+                d = 10000.0;
+            } else if (i == allocated_bytes_index) {
+                kind = 'm';
+                d = 100000.0;
+            } else {
+                continue;
+            }
+            size_t x = (ceil(floor(val/d))+1) * d;
+            add_quant(namespace, i, kind, x, self->quants);
+            add_quant("all_pages", i, kind, x, self->quants);
+        }
+    }
+}
+
 void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
 {
     if (ignore_request(request)) return;
@@ -941,6 +1072,8 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     processor_add_minutes(self, request_data.page, request_data.minute, increments);
     processor_add_minutes(self, request_data.module, request_data.minute, increments);
     processor_add_minutes(self, "all_pages", request_data.minute, increments);
+
+    processor_add_quants(self, request_data.page, increments);
 
     increments_destroy(increments);
     // dump_json_object(request);
@@ -1140,7 +1273,7 @@ void processor_combine(processor_t* target, processor_t* source)
     modules_combine(target->modules, source->modules);
     increments_combine(target->totals, source->totals);
     increments_combine(target->minutes, source->minutes);
-    increments_combine(target->quants, source->quants);
+    quants_combine(target->quants, source->quants);
 }
 
 int add_streams(const char* stream, void* data, void* arg)
@@ -1255,6 +1388,9 @@ void setup_resource_maps()
     add_resources_of_type("memory", memory_resources, &last_memory_resource_index);
     add_resources_of_type("heap", heap_resources, &last_heap_resource_index);
     last_resource_index--;
+
+    allocated_objects_index = r2i("allocated_memory");
+    allocated_bytes_index = r2i("allocated_bytes");
 
     for (size_t j=0; j<=last_resource_index; j++) {
         const char *r = i2r(j);
