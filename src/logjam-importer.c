@@ -513,9 +513,18 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     increments_t* increments = data;
     // dump_increments(namespace, increments, NULL);
 
+    int minute = 0;
+    char* p = (char*) namespace;
+    while (isdigit(*p)) {
+        minute *= 10;
+        minute += *(p++) - '0';
+    }
+    p++;
+
     bson_t *selector = bson_new();
-    assert( bson_append_utf8(selector, "page", 4, namespace, strlen(namespace)) );
-    assert( bson_append_utf8(selector, "minute", 6, namespace, strlen(namespace)) );
+    assert( bson_append_utf8(selector, "page", 4, p, strlen(p)) );
+    assert( bson_append_int32(selector, "minute", 6, minute ) );
+
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
     // printf("selector. size: %zu; value:%s\n", n, bs);
@@ -920,12 +929,16 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     while (!zctx_interrupted) {
         zmsg_t *msg = zmsg_recv(pipe);
         if (msg != NULL) {
+            int64_t start_time_ms = zclock_time();
             zhash_t *processors;
             size_t request_count;
             extract_parser_state(msg, &processors, &request_count);
+            size_t num_procs = zhash_size(processors);
             zhash_foreach(processors, processor_update_mongo_db, client);
             zhash_destroy(&processors);
             zmsg_destroy(&msg);
+            int64_t end_time_ms = zclock_time();
+            printf("stats updater: %zu updates (%d ms)\n", num_procs, (int)(end_time_ms - start_time_ms));
         }
     }
 
