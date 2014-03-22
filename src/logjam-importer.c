@@ -148,6 +148,18 @@ typedef struct {
 } request_writer_state_t;
 
 
+static mongoc_write_concern_t *wc_no_wait = NULL;
+static mongoc_index_opt_t index_opt_background;
+
+void initialize_mongo_db_globals()
+{
+    mongoc_init();
+    wc_no_wait = mongoc_write_concern_new();
+    mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_UNACKNOWLEDGED);
+    mongoc_index_opt_init(&index_opt_background);
+    index_opt_background.background = true;
+}
+
 void* subscriber_sub_socket_new(zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_SUB);
@@ -550,14 +562,12 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
 
     bson_t *document = increments_to_bson(increments);
     bson_error_t *error = NULL;
-    mongoc_write_concern_t *write_concern = mongoc_write_concern_new();
-    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, write_concern, error)) {
+    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
         fprintf(stderr, "update failed on totals\n");
     }
 
     bson_destroy(selector);
     bson_destroy(document);
-    mongoc_write_concern_destroy(write_concern);
     return 0;
 }
 
@@ -576,14 +586,12 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
 
     bson_t *document = increments_to_bson(increments);
     bson_error_t *error = NULL;
-    mongoc_write_concern_t *write_concern = mongoc_write_concern_new();
-    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, write_concern, error)) {
+    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
         fprintf(stderr, "update failed on totals\n");
     }
 
     bson_destroy(selector);
     bson_destroy(document);
-    mongoc_write_concern_destroy(write_concern);
     return 0;
 }
 
@@ -599,32 +607,28 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     bson_append_document(document, "$addToSet", -1, sub_doc);
 
     bson_error_t *error = NULL;
-    mongoc_write_concern_t *write_concern = mongoc_write_concern_new();
-
-    if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, write_concern, error)) {
+    if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
         fprintf(stderr, "update failed on totals\n");
     }
 
     bson_destroy(selector);
     bson_destroy(document);
     bson_destroy(sub_doc);
-    mongoc_write_concern_destroy(write_concern);
 }
 
 int processor_update_mongo_db(const char* stream, void* data, void* arg)
 {
     mongoc_client_t *client = arg;
     processor_t *proc = data;
+    bson_error_t error;
 
     ensure_known_database(client, proc->stream);
 
     mongoc_collection_t *totals_collection = mongoc_client_get_collection(client, stream, "totals");
     bson_t *keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
-    bson_error_t error;
-    mongoc_index_opt_t opt;
-    mongoc_index_opt_init(&opt);
-    mongoc_collection_ensure_index(totals_collection, keys, &opt, &error);
+
+    mongoc_collection_ensure_index(totals_collection, keys, &index_opt_background, &error);
 
     zhash_foreach(proc->totals, totals_add_increments, totals_collection);
     bson_free(keys);
@@ -633,7 +637,7 @@ int processor_update_mongo_db(const char* stream, void* data, void* arg)
     keys = bson_new();
     assert(bson_append_int32(keys, "page", -1, 1));
     assert(bson_append_int32(keys, "minutes", -1, 1));
-    mongoc_collection_ensure_index(minutes_collection, keys, &opt, &error);
+    mongoc_collection_ensure_index(minutes_collection, keys, &index_opt_background, &error);
 
     zhash_foreach(proc->minutes, minutes_add_increments, minutes_collection);
     bson_free(keys);
@@ -963,10 +967,11 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     stats_updater_state_t state;
     state.controller_socket = pipe;
 
+    initialize_mongo_db_globals();
+
     const char *uristr = "mongodb://127.0.0.1:27017/";
     mongoc_client_t *client;
 
-    mongoc_init ();
     client = mongoc_client_new(uristr);
     if (!client) {
         fprintf(stderr, "Failed to parse mongo URI.\n");
