@@ -371,7 +371,7 @@ void increments_fill_metrics(increments_t *increments, json_object *request)
     }
 }
 
-#define NEW_FLOAT1 (json_object_new_double(1.0))
+#define NEW_INT1 (json_object_new_int(1))
 
 void increments_fill_apdex(increments_t *increments, request_data_t *request_data)
 {
@@ -380,31 +380,29 @@ void increments_fill_apdex(increments_t *increments, request_data_t *request_dat
     json_object *others = increments->others;
 
     if (total_time >= 2000 || response_code >= 500) {
-        json_object_object_add(others, "apdex.frustrated", NEW_FLOAT1);
+        json_object_object_add(others, "apdex.frustrated", NEW_INT1);
     } else if (total_time < 100) {
-        json_object_object_add(others, "apdex.happy", NEW_FLOAT1);
-        json_object_object_add(others, "apdex.satisfied", NEW_FLOAT1);
+        json_object_object_add(others, "apdex.happy", NEW_INT1);
+        json_object_object_add(others, "apdex.satisfied", NEW_INT1);
     } else if (total_time < 500) {
-        json_object_object_add(others, "apdex.satisfied", NEW_FLOAT1);
+        json_object_object_add(others, "apdex.satisfied", NEW_INT1);
     } else if (total_time < 2000) {
-        json_object_object_add(others, "apdex.tolerating", NEW_FLOAT1);
+        json_object_object_add(others, "apdex.tolerating", NEW_INT1);
     }
 }
 
 void increments_fill_response_code(increments_t *increments, request_data_t *request_data)
 {
-    json_object *one = json_object_new_double(1.0);
     char rsp[256];
     snprintf(rsp, 256, "response.%d", request_data->response_code);
-    json_object_object_add(increments->others, rsp, one);
+    json_object_object_add(increments->others, rsp, NEW_INT1);
 }
 
 void increments_fill_severity(increments_t *increments, request_data_t *request_data)
 {
-    json_object *one = json_object_new_double(1.0);
     char sev[256];
     snprintf(sev, 256, "severity.%d", request_data->severity);
-    json_object_object_add(increments->others, sev, one);
+    json_object_object_add(increments->others, sev, NEW_INT1);
 }
 
 void increments_fill_exceptions(increments_t *increments, request_data_t *request_data)
@@ -427,14 +425,31 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
         stored->val_squared += addend->val_squared;
     }
     json_object_object_foreach(increments->others, key, value) {
-        double addend = json_object_get_double(value);
-        json_object *stored_obj;
-        json_object *new_obj;
-        if (json_object_object_get_ex(stored_increments->others, key, &stored_obj)) {
-            double stored = json_object_get_double(stored_obj);
-            new_obj = json_object_new_double(stored + addend);
-        } else {
-            new_obj = json_object_new_double(addend);
+        json_object *stored_obj, *new_obj = NULL;
+        bool perform_addition = json_object_object_get_ex(stored_increments->others, key, &stored_obj);
+        switch (json_object_get_type(value)) {
+        case json_type_double: {
+            double addend = json_object_get_double(value);
+            if (perform_addition) {
+                double stored = json_object_get_double(stored_obj);
+                new_obj = json_object_new_double(stored + addend);
+            } else {
+                new_obj = json_object_new_double(addend);
+            }
+            break;
+        }
+        case json_type_int: {
+            int addend = json_object_get_int(value);
+            if (perform_addition) {
+                int stored = json_object_get_int(stored_obj);
+                new_obj = json_object_new_int(stored + addend);
+            } else {
+                new_obj = json_object_new_int(addend);
+            }
+            break;
+        }
+        default:
+            fprintf(stderr, "unknown increment type\n");
         }
         json_object_object_add(stored_increments->others, key, new_obj);
     }
@@ -504,24 +519,35 @@ int processor_dump_state_from_zhash(const char* stream, void* processor, void* a
     return 0;
 }
 
-bson_t* increments_to_bson(increments_t* increments)
+bson_t* increments_to_bson(const char* namespace, increments_t* increments)
 {
+    // dump_increments(namespace, increments, NULL);
+
     bson_t *incs = bson_new();
-    bson_append_int64(incs, "count", 5, increments->request_count);
+    bson_append_int32(incs, "count", 5, increments->request_count);
 
     for (size_t i=0; i<last_resource_index; i++) {
-        double val = increments->metrics->val;
+        double val = increments->metrics[i].val;
         if (val > 0) {
             const char *name = int_to_resource[i];
             bson_append_double(incs, name, strlen(name), val);
             const char *name_sq = int_to_resource_sq[i];
-            bson_append_double(incs, name_sq, strlen(name_sq), increments->metrics->val_squared);
+            bson_append_double(incs, name_sq, strlen(name_sq), increments->metrics[i].val_squared);
         }
     }
 
     json_object_object_foreach(increments->others, key, value_obj) {
-        double value = json_object_get_double(value_obj);
-        bson_append_double(incs, key, strlen(key), value);
+        size_t n = strlen(key);
+        switch (json_object_get_type(value_obj)) {
+        case json_type_int:
+            bson_append_int32(incs, key, n, json_object_get_int(value_obj));
+            break;
+        case json_type_double:
+            bson_append_double(incs, key, n, json_object_get_double(value_obj));
+            break;
+        default:
+            fprintf(stderr, "unsupported json type in json to bson conversion\n");
+        }
     }
 
     bson_t *document = bson_new();
@@ -541,7 +567,6 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
 {
     mongoc_collection_t *collection = arg;
     increments_t* increments = data;
-    // dump_increments(namespace, increments, NULL);
 
     int minute = 0;
     char* p = (char*) namespace;
@@ -560,7 +585,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     // printf("selector. size: %zu; value:%s\n", n, bs);
     // bson_free(bs);
 
-    bson_t *document = increments_to_bson(increments);
+    bson_t *document = increments_to_bson(namespace, increments);
     bson_error_t *error = NULL;
     if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
         fprintf(stderr, "update failed on totals\n");
@@ -575,7 +600,6 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
 {
     mongoc_collection_t *collection = arg;
     increments_t* increments = data;
-    // dump_increments(namespace, increments, NULL);
 
     bson_t *selector = bson_new();
     assert( bson_append_utf8(selector, "page", 4, namespace, strlen(namespace)) );
@@ -584,7 +608,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     // printf("selector. size: %zu; value:%s\n", n, bs);
     // bson_free(bs);
 
-    bson_t *document = increments_to_bson(increments);
+    bson_t *document = increments_to_bson(namespace, increments);
     bson_error_t *error = NULL;
     if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
         fprintf(stderr, "update failed on totals\n");
@@ -604,7 +628,7 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     bson_t *document = bson_new();
     bson_t *sub_doc = bson_new();
     bson_append_utf8(sub_doc, "value", 5, db_name, -1);
-    bson_append_document(document, "$addToSet", -1, sub_doc);
+    bson_append_document(document, "$addToSet", 9, sub_doc);
 
     bson_error_t *error = NULL;
     if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
@@ -621,28 +645,29 @@ int processor_update_mongo_db(const char* stream, void* data, void* arg)
     mongoc_client_t *client = arg;
     processor_t *proc = data;
     bson_error_t error;
+    bson_t *keys;
 
     ensure_known_database(client, proc->stream);
 
     mongoc_collection_t *totals_collection = mongoc_client_get_collection(client, stream, "totals");
-    bson_t *keys = bson_new();
+    keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
-
     mongoc_collection_ensure_index(totals_collection, keys, &index_opt_background, &error);
+    bson_free(keys);
 
     zhash_foreach(proc->totals, totals_add_increments, totals_collection);
-    bson_free(keys);
 
     mongoc_collection_t *minutes_collection = mongoc_client_get_collection(client, stream, "minutes");
     keys = bson_new();
-    assert(bson_append_int32(keys, "page", -1, 1));
-    assert(bson_append_int32(keys, "minutes", -1, 1));
+    assert(bson_append_int32(keys, "page", 4, 1));
+    assert(bson_append_int32(keys, "minutes", 6, 1));
     mongoc_collection_ensure_index(minutes_collection, keys, &index_opt_background, &error);
-
-    zhash_foreach(proc->minutes, minutes_add_increments, minutes_collection);
     bson_free(keys);
 
+    zhash_foreach(proc->minutes, minutes_add_increments, minutes_collection);
+
     mongoc_collection_destroy(totals_collection);
+    mongoc_collection_destroy(minutes_collection);
     return 0;
 }
 
