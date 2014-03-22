@@ -587,10 +587,36 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     return 0;
 }
 
+void ensure_known_database(mongoc_client_t *client, const char* db_name)
+{
+    mongoc_collection_t *meta_collection = mongoc_client_get_collection(client, "logjam-global", "metadata");
+    bson_t *selector = bson_new();
+    assert(bson_append_utf8(selector, "name", 4, "databases", 9));
+
+    bson_t *document = bson_new();
+    bson_t *sub_doc = bson_new();
+    bson_append_utf8(sub_doc, "value", 5, db_name, -1);
+    bson_append_document(document, "$addToSet", -1, sub_doc);
+
+    bson_error_t *error = NULL;
+    mongoc_write_concern_t *write_concern = mongoc_write_concern_new();
+
+    if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, write_concern, error)) {
+        fprintf(stderr, "update failed on totals\n");
+    }
+
+    bson_destroy(selector);
+    bson_destroy(document);
+    bson_destroy(sub_doc);
+    mongoc_write_concern_destroy(write_concern);
+}
+
 int processor_update_mongo_db(const char* stream, void* data, void* arg)
 {
     mongoc_client_t *client = arg;
     processor_t *proc = data;
+
+    ensure_known_database(client, proc->stream);
 
     mongoc_collection_t *totals_collection = mongoc_client_get_collection(client, stream, "totals");
     bson_t *keys = bson_new();
