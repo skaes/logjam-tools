@@ -405,11 +405,6 @@ void increments_fill_severity(increments_t *increments, request_data_t *request_
     json_object_object_add(increments->others, sev, NEW_INT1);
 }
 
-void increments_fill_exceptions(increments_t *increments, request_data_t *request_data)
-{
-    // TODO: implement
-}
-
 int replace_dots(char *s)
 {
     if (s == NULL) return 0;
@@ -422,6 +417,29 @@ int replace_dots(char *s)
         }
     }
     return count;
+}
+
+void increments_fill_exceptions(increments_t *increments, json_object *request)
+{
+    json_object* exceptions_obj;
+    if (json_object_object_get_ex(request, "exceptions", &exceptions_obj)) {
+        int num_ex = json_object_array_length(exceptions_obj);
+        if (num_ex == 0) {
+            json_object_object_del(request, "exceptions");
+            return;
+        }
+        for (int i=0; i<num_ex; i++) {
+            json_object* ex_obj = json_object_array_get_idx(exceptions_obj, i);
+            const char *ex_str = json_object_get_string(ex_obj);
+            size_t n = strlen(ex_str);
+            char ex_str_dup[n+11];
+            strcpy(ex_str_dup, "exceptions.");
+            strcpy(ex_str_dup+11, ex_str);
+            replace_dots(ex_str_dup+11);
+            // printf("EXCEPTION: %s\n", ex_str_dup);
+            json_object_object_add(increments->others, ex_str_dup, NEW_INT1);
+        }
+    }
 }
 
 void increments_fill_caller_info(increments_t *increments, json_object *request)
@@ -445,7 +463,7 @@ void increments_fill_caller_info(increments_t *increments, json_object *request)
                 caller_name[app_len + 8] = '-';
                 strcpy(caller_name + app_len + 1 + 8, caller_action);
                 replace_dots(caller_name+9);
-                printf("CALLER: %s\n", caller_name);
+                // printf("CALLER: %s\n", caller_name);
                 json_object_object_add(increments->others, caller_name, NEW_INT1);
             }
         }
@@ -913,7 +931,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     increments_fill_apdex(increments, &request_data);
     increments_fill_response_code(increments, &request_data);
     increments_fill_severity(increments, &request_data);
-    increments_fill_exceptions(increments, &request_data);
+    increments_fill_exceptions(increments, request);
     increments_fill_caller_info(increments, request);
 
     processor_add_totals(self, request_data.page, increments);
