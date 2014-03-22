@@ -101,7 +101,6 @@ typedef struct {
 /* processor state */
 typedef struct {
     char *stream;
-    char *date;
     size_t request_count;
     zhash_t *modules;
     zhash_t *totals;
@@ -202,11 +201,10 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
     }
 }
 
-processor_t* processor_new(char *stream, char *date)
+processor_t* processor_new(char *stream)
 {
     processor_t *p = malloc(sizeof(processor_t));
     p->stream = strdup(stream);
-    p->date = date;
     p->request_count = 0;
     p->modules = zhash_new();
     p->totals = zhash_new();
@@ -228,15 +226,35 @@ void processor_destroy(void* processor)
     free(p);
 }
 
+#define STREAM_PREFIX "request-stream-"
+// strlen(STREAM_PREFIX)
+#define STREAM_PREFIX_LEN 15
+// ISO date: 2014-11-11
+
 processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
 {
     size_t n = zframe_size(stream_frame);
-    char stream[n+1];
-    memcpy(stream, zframe_data(stream_frame), n);
-    stream[n] = '\0';
+    char stream[n+100];
+    strcpy(stream, "logjam-");
+    memcpy(stream+7, zframe_data(stream_frame)+15, n-15);
+    stream[n+7-15] = '-';
+    stream[n+7-14] = '\0';
+
+    json_object* started_at_value;
+    if (json_object_object_get_ex(request, "started_at", &started_at_value)) {
+        const char *date_str = json_object_get_string(started_at_value);
+        strncpy(&stream[n+7-14], date_str, 10);
+        stream[n+7-14+10] = '\0';
+    } else {
+        fprintf(stderr, "dropped request without started_at date");
+        return NULL;
+    }
+
+    // printf("stream: %s\n", stream);
+
     processor_t *p = zhash_lookup(parser_state->processors, stream);
     if (p == NULL) {
-        p = processor_new(stream, NULL/*date*/);
+        p = processor_new(stream);
         int rc = zhash_insert(parser_state->processors, stream, p);
         assert(rc ==0);
         zhash_freefn(parser_state->processors, stream, processor_destroy);
@@ -576,7 +594,7 @@ int processor_update_mongo_db(const char* stream, void* data, void* arg)
 
     mongoc_collection_t *totals_collection = mongoc_client_get_collection(client, stream, "totals");
     bson_t *keys = bson_new();
-    assert(bson_append_int32(keys, "page", -1, 1));
+    assert(bson_append_int32(keys, "page", 4, 1));
     bson_error_t error;
     mongoc_index_opt_t opt;
     mongoc_index_opt_init(&opt);
@@ -841,6 +859,9 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
     if (request != NULL) {
         char *topic_str = (char*) zframe_data(topic);
         processor_t *processor = processor_create(stream, parser_state, request);
+
+        if (processor == NULL) return;
+
         if (!strncmp("logs", topic_str, 4))
             processor_add_request(processor, parser_state, request);
         else if (!strncmp("javascript", topic_str, 10))
@@ -1004,7 +1025,6 @@ void processor_combine(processor_t* target, processor_t* source)
 {
     // printf("combining %s\n", target->stream);
     assert(!strcmp(target->stream, source->stream));
-    assert(target->date == source->date);
     target->request_count += source->request_count;
     modules_combine(target->modules, source->modules);
     increments_combine(target->totals, source->totals);
