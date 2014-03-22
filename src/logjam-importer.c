@@ -410,9 +410,46 @@ void increments_fill_exceptions(increments_t *increments, request_data_t *reques
     // TODO: implement
 }
 
-void increments_fill_caller_info(increments_t *increments, request_data_t *request_data)
+int replace_dots(char *s)
 {
-    // TODO: implement
+    if (s == NULL) return 0;
+    int count = 0;
+    char c;
+    while ((c = *(s++)) != '\0') {
+        if (c == '.') {
+            *s = '_';
+            count++;
+        }
+    }
+    return count;
+}
+
+void increments_fill_caller_info(increments_t *increments, json_object *request)
+{
+    json_object *caller_action_obj;
+    if (json_object_object_get_ex(request, "caller_action", &caller_action_obj)) {
+        const char *caller_action = json_object_get_string(caller_action_obj);
+        if (caller_action == NULL || *caller_action == '\0') return;
+        json_object *caller_id_obj;
+        if (json_object_object_get_ex(request, "caller_id", &caller_id_obj)) {
+            const char *caller_id = json_object_get_string(caller_id_obj);
+            if (caller_id == NULL || *caller_id == '\0') return;
+            size_t n = strlen(caller_id);
+            char app[n], env[n], rid[n];
+            if (3 == sscanf(caller_id, "%[^-]-%[^-]-%[^-]", app, env, rid)) {
+                size_t app_len = strlen(app);
+                size_t action_len = strlen(caller_action);
+                char caller_name[app_len + action_len + 2 + 8];
+                strcpy(caller_name, "callers.");
+                strcpy(caller_name + 8, app);
+                caller_name[app_len + 8] = '-';
+                strcpy(caller_name + app_len + 1 + 8, caller_action);
+                replace_dots(caller_name+9);
+                printf("CALLER: %s\n", caller_name);
+                json_object_object_add(increments->others, caller_name, NEW_INT1);
+            }
+        }
+    }
 }
 
 void increments_add(increments_t *stored_increments, increments_t* increments)
@@ -764,7 +801,7 @@ double processor_setup_total_time(processor_t *self, json_object *request)
 
 int processor_setup_severity(processor_t *self, json_object *request)
 {
-    // TODO: autodetect severity form log lines if present
+    // TODO: autodetect severity from log lines if present
     int severity = 5;
     json_object *severity_obj = NULL;
     if (json_object_object_get_ex(request, "severity", &severity_obj)) {
@@ -877,7 +914,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     increments_fill_response_code(increments, &request_data);
     increments_fill_severity(increments, &request_data);
     increments_fill_exceptions(increments, &request_data);
-    increments_fill_caller_info(increments, &request_data);
+    increments_fill_caller_info(increments, request);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
