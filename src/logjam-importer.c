@@ -412,11 +412,12 @@ int replace_dots(char *s)
     if (s == NULL) return 0;
     int count = 0;
     char c;
-    while ((c = *(s++)) != '\0') {
+    while ((c = *s) != '\0') {
         if (c == '.') {
             *s = '_';
             count++;
         }
+        s++;
     }
     return count;
 }
