@@ -702,15 +702,15 @@ const char* processor_setup_module(processor_t *self, const char *page)
     if (mod_ptr != NULL){
         if (mod_ptr != page) {
             int mod_len = mod_ptr - page;
-            memcpy(module_str, page, mod_len);
-            module_str[mod_len] = '\0';
+            memcpy(module_str+2, page, mod_len);
+            module_str[mod_len+2] = '\0';
         }
     } else {
         char *action_ptr = strchr(page, '#');
         if (action_ptr != NULL) {
             int mod_len = action_ptr - page;
-            memcpy(module_str, page, mod_len);
-            module_str[mod_len] = '\0';
+            memcpy(module_str+2, page, mod_len);
+            module_str[mod_len+2] = '\0';
         }
     }
     char *module = zhash_lookup(self->modules, module_str);
