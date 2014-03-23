@@ -1236,6 +1236,7 @@ int add_modules(const char* module, void* data, void* arg)
     char *dest = zhash_lookup(pair->target, module);
     if (dest == NULL) {
         zhash_insert(pair->target, module, data);
+        zhash_freefn(pair->target, module, free);
         zhash_freefn(pair->source, module, NULL);
     }
     return 0;
