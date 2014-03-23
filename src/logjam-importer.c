@@ -1247,6 +1247,7 @@ int add_increments(const char* namespace, void* data, void* arg)
     increments_t *dest_increments = zhash_lookup(pair->target, namespace);
     if (dest_increments == NULL) {
         zhash_insert(pair->target, namespace, data);
+        zhash_freefn(pair->target, namespace, increments_destroy);
         zhash_freefn(pair->source, namespace, NULL);
     } else {
         increments_add(dest_increments, (increments_t*)data);
@@ -1288,6 +1289,7 @@ int add_streams(const char* stream, void* data, void* arg)
     processor_t *dest = zhash_lookup(pair->target, stream);
     if (dest == NULL) {
         zhash_insert(pair->target, stream, data);
+        zhash_freefn(pair->target, stream, processor_destroy);
         zhash_freefn(pair->source, stream, NULL);
     } else {
         processor_combine(dest, (processor_t*)data);
