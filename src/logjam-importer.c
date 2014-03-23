@@ -138,9 +138,17 @@ typedef struct {
 
 #define METRICS_ARRAY_SIZE (sizeof(metric_pair_t) * (last_resource_index + 1))
 
+typedef struct {
+    mongoc_collection_t *totals;
+    mongoc_collection_t *minutes;
+    mongoc_collection_t *quants;
+} stream_collections_t;
+
 /* stats updater state */
 typedef struct {
-    mongoc_client_t* mongo_client;
+    mongoc_client_t *mongo_client;
+    mongoc_collection_t *global_collection;
+    zhash_t *stream_collections;
     void *controller_socket;
     void *push_socket;
     msg_stats_t msg_stats;
@@ -785,45 +793,68 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     mongoc_collection_destroy(meta_collection);
 }
 
-int processor_update_mongo_db(const char* stream, void* data, void* arg)
+stream_collections_t *stream_collections_new(mongoc_client_t* client, const char* stream)
 {
-    mongoc_client_t *client = arg;
-    processor_t *proc = data;
+    stream_collections_t *collections = malloc(sizeof(stream_collections_t));
+    assert(collections);
     bson_error_t error;
     bson_t *keys;
 
-    ensure_known_database(client, proc->stream);
-
-    mongoc_collection_t *totals_collection = mongoc_client_get_collection(client, stream, "totals");
+    collections->totals = mongoc_client_get_collection(client, stream, "totals");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
-    mongoc_collection_ensure_index(totals_collection, keys, &index_opt_background, &error);
+    mongoc_collection_ensure_index(collections->totals, keys, &index_opt_background, &error);
     bson_free(keys);
 
-    zhash_foreach(proc->totals, totals_add_increments, totals_collection);
-
-    mongoc_collection_t *minutes_collection = mongoc_client_get_collection(client, stream, "minutes");
+    collections->minutes = mongoc_client_get_collection(client, stream, "minutes");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minutes", 6, 1));
-    mongoc_collection_ensure_index(minutes_collection, keys, &index_opt_background, &error);
+    mongoc_collection_ensure_index(collections->minutes, keys, &index_opt_background, &error);
     bson_free(keys);
 
-    zhash_foreach(proc->minutes, minutes_add_increments, minutes_collection);
-
-    mongoc_collection_t *quants_collection = mongoc_client_get_collection(client, stream, "quants");
+    collections->quants = mongoc_client_get_collection(client, stream, "quants");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "kind", 4, 1));
     assert(bson_append_int32(keys, "quant", 5, 1));
-    mongoc_collection_ensure_index(quants_collection, keys, &index_opt_background, &error);
+    mongoc_collection_ensure_index(collections->quants, keys, &index_opt_background, &error);
     bson_free(keys);
 
-    zhash_foreach(proc->quants, quants_add_quants, quants_collection);
+    return collections;
+}
 
-    mongoc_collection_destroy(totals_collection);
-    mongoc_collection_destroy(minutes_collection);
-    mongoc_collection_destroy(quants_collection);
+void destroy_stream_collections(stream_collections_t* collections)
+{
+    mongoc_collection_destroy(collections->totals);
+    mongoc_collection_destroy(collections->minutes);
+    mongoc_collection_destroy(collections->quants);
+    free(collections);
+}
+
+stream_collections_t *stats_updater_get_collections(stats_updater_state_t *self, const char* stream)
+{
+    stream_collections_t *collections = zhash_lookup(self->stream_collections, stream);
+    if (collections == NULL) {
+        ensure_known_database(self->mongo_client, stream);
+        collections = stream_collections_new(self->mongo_client, stream);
+        assert(collections);
+        zhash_insert(self->stream_collections, stream, collections);
+        zhash_freefn(self->stream_collections, stream, (zhash_free_fn*)destroy_stream_collections);
+    }
+    return collections;
+}
+
+int processor_update_mongo_db(const char* stream, void* data, void* arg)
+{
+    stats_updater_state_t *state = arg;
+    processor_t *processor = data;
+    stream_collections_t *collections = stats_updater_get_collections(state, processor->stream);
+
+    zhash_foreach(processor->totals, totals_add_increments, collections->totals);
+    zhash_foreach(processor->minutes, minutes_add_increments, collections->minutes);
+    zhash_foreach(processor->quants, quants_add_quants, collections->quants);
+
     return 0;
 }
 
@@ -1215,9 +1246,10 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
 {
     stats_updater_state_t state;
     state.controller_socket = pipe;
-
     state.mongo_client = mongoc_client_new(mongo_uri);
     assert(state.mongo_client);
+    state.stream_collections = zhash_new();
+    size_t ticks = 0;
 
     while (!zctx_interrupted) {
         zmsg_t *msg = zmsg_recv(pipe);
@@ -1228,7 +1260,12 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             extract_parser_state(msg, &processors, &request_count);
             size_t num_procs = zhash_size(processors);
             if (!dryrun) {
-                zhash_foreach(processors, processor_update_mongo_db, state.mongo_client);
+                zhash_foreach(processors, processor_update_mongo_db, &state);
+            }
+            // refresh database information every minute
+            if (ticks++ % 60 == 0) {
+                zhash_destroy(&state.stream_collections);
+                state.stream_collections = zhash_new();
             }
             zhash_destroy(&processors);
             zmsg_destroy(&msg);
