@@ -1274,6 +1274,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
         }
     }
 
+    zhash_destroy(&state.stream_collections);
     mongoc_client_destroy(state.mongo_client);
 }
 
@@ -1408,6 +1409,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
         zmsg_destroy(&msg);
     }
 
+    zhash_destroy(&state.request_collections);
     mongoc_client_destroy(state.mongo_client);
 }
 
