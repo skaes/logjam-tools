@@ -468,7 +468,7 @@ void increments_fill_exceptions(increments_t *increments, json_object *request)
             json_object* ex_obj = json_object_array_get_idx(exceptions_obj, i);
             const char *ex_str = json_object_get_string(ex_obj);
             size_t n = strlen(ex_str);
-            char ex_str_dup[n+11];
+            char ex_str_dup[n+12];
             strcpy(ex_str_dup, "exceptions.");
             strcpy(ex_str_dup+11, ex_str);
             replace_dots(ex_str_dup+11);
