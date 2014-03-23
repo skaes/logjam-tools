@@ -647,7 +647,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
     // size_t n;
     // char* bs = bson_as_json(document, &n);
     // printf("document. size: %zu; value:%s\n", n, bs);
-    // bson_free(bs);
+    // bson_destroy(bs);
 
     bson_destroy(incs);
 
@@ -674,7 +674,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
     // printf("selector. size: %zu; value:%s\n", n, bs);
-    // bson_free(bs);
+    // bson_destroy(bs);
 
     bson_t *document = increments_to_bson(namespace, increments);
     bson_error_t *error = NULL;
@@ -698,7 +698,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
     // printf("selector. size: %zu; value:%s\n", n, bs);
-    // bson_free(bs);
+    // bson_destroy(bs);
 
     bson_t *document = increments_to_bson(namespace, increments);
     bson_error_t *error = NULL;
@@ -747,7 +747,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
     // printf("selector. size: %zu; value:%s\n", n, bs);
-    // bson_free(bs);
+    // bson_destroy(bs);
 
     bson_t *incs = bson_new();
     bson_append_int32(incs, resource, strlen(resource), (size_t)data);
@@ -757,7 +757,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 
     // bs = bson_as_json(document, &n);
     // printf("document. size: %zu; value:%s\n", n, bs);
-    // bson_free(bs);
+    // bson_destroy(bs);
 
     bson_error_t *error = NULL;
     if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
@@ -804,14 +804,14 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     mongoc_collection_ensure_index(collections->totals, keys, &index_opt_background, &error);
-    bson_free(keys);
+    bson_destroy(keys);
 
     collections->minutes = mongoc_client_get_collection(client, stream, "minutes");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minutes", 6, 1));
     mongoc_collection_ensure_index(collections->minutes, keys, &index_opt_background, &error);
-    bson_free(keys);
+    bson_destroy(keys);
 
     collections->quants = mongoc_client_get_collection(client, stream, "quants");
     keys = bson_new();
@@ -819,7 +819,7 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     assert(bson_append_int32(keys, "kind", 4, 1));
     assert(bson_append_int32(keys, "quant", 5, 1));
     mongoc_collection_ensure_index(collections->quants, keys, &index_opt_background, &error);
-    bson_free(keys);
+    bson_destroy(keys);
 
     return collections;
 }
@@ -1296,14 +1296,14 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     index_keys = bson_new();
     bson_append_int32(index_keys, field, strlen(field), 1);
     mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
-    bson_free(index_keys);
+    bson_destroy(index_keys);
 
     // collection.create_index([ ["page", 1], [f, 1] ], :background => true)
     index_keys = bson_new();
     bson_append_int32(index_keys, "page", 4, 1);
     bson_append_int32(index_keys, field, strlen(field), 1);
     mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
-    bson_free(index_keys);
+    bson_destroy(index_keys);
 }
 
 void add_request_collection_indexes(const char* stream, mongoc_collection_t *requests_collection, request_writer_state_t* state)
@@ -1316,7 +1316,7 @@ void add_request_collection_indexes(const char* stream, mongoc_collection_t *req
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
     mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
-    bson_free(index_keys);
+    bson_destroy(index_keys);
 
     // collection.create_index([ ["page", 1], ["metrics.n", 1], ["metrics.v", -1] ], :background => true
     index_keys = bson_new();
@@ -1324,7 +1324,7 @@ void add_request_collection_indexes(const char* stream, mongoc_collection_t *req
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
     mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
-    bson_free(index_keys);
+    bson_destroy(index_keys);
 
     add_request_field_index("response_code", requests_collection);
     add_request_field_index("severity",      requests_collection);
