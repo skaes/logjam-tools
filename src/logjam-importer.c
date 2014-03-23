@@ -125,6 +125,7 @@ typedef struct {
 } request_data_t;
 
 /* increments */
+// TODO: support integer vlaues (for call metrics)
 typedef struct {
     double val;
     double val_squared;
@@ -167,13 +168,19 @@ typedef struct {
 
 
 static mongoc_write_concern_t *wc_no_wait = NULL;
+static mongoc_write_concern_t *wc_wait = NULL;
 static mongoc_index_opt_t index_opt_background;
 
 void initialize_mongo_db_globals()
 {
     mongoc_init();
+
+    wc_wait = mongoc_write_concern_new();
+    mongoc_write_concern_set_w(wc_wait, MONGOC_WRITE_CONCERN_W_DEFAULT);
+
     wc_no_wait = mongoc_write_concern_new();
     mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_UNACKNOWLEDGED);
+
     mongoc_index_opt_init(&index_opt_background);
     index_opt_background.background = true;
 }
@@ -781,8 +788,8 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     bson_append_utf8(sub_doc, "value", 5, db_name, -1);
     bson_append_document(document, "$addToSet", 9, sub_doc);
 
-    bson_error_t *error = NULL;
-    if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
+    bson_error_t error;
+    if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
         fprintf(stderr, "update failed on totals\n");
     }
 
@@ -951,7 +958,7 @@ double processor_setup_total_time(processor_t *self, json_object *request)
 
 int processor_setup_severity(processor_t *self, json_object *request)
 {
-    // TODO: autodetect severity from log lines if present
+    // TODO: autodetect severity from log lines if present (seems missing often in production)
     int severity = 5;
     json_object *severity_obj = NULL;
     if (json_object_object_get_ex(request, "severity", &severity_obj)) {
@@ -1336,6 +1343,7 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
 {
     mongoc_collection_t *collection = zhash_lookup(self->request_collections, stream);
     if (collection == NULL) {
+        // printf("creating requests collection: %s\n", stream);
         collection = mongoc_client_get_collection(self->mongo_client, stream, "requests");
         add_request_collection_indexes(stream, collection, self);
         zhash_insert(self->request_collections, stream, collection);
@@ -1344,9 +1352,130 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
     return collection;
 }
 
+static void json_object_to_bson(json_object *j, bson_t *b);
+
+//TODO: optimize this!
+//TODO: validate utf8!
+//TODO: replace dots in keys!
+static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
+{
+    enum json_type type = json_object_get_type(val);
+    switch (type) {
+    case json_type_boolean:
+        bson_append_bool(b, key, -1, json_object_get_boolean(val));
+        break;
+    case json_type_double:
+        bson_append_double(b, key, -1, json_object_get_double(val));
+        break;
+    case json_type_int:
+        bson_append_int32(b, key, -1, json_object_get_int(val));
+        break;
+    case json_type_object: {
+        bson_t *sub = bson_new();
+        json_object_to_bson(val, sub);
+        bson_append_document(b, key, -1, sub);
+        bson_destroy(sub);
+        break;
+    }
+    case json_type_array: {
+        bson_t *sub = bson_new();
+        int array_len = json_object_array_length(val);
+        for (int pos = 0; pos < array_len; pos++) {
+            char nk[100];
+            sprintf(nk, "%d", pos);
+            json_key_to_bson_key(sub, json_object_array_get_idx(val, pos), nk);
+        }
+        bson_append_array(b, key, -1, sub);
+        bson_destroy(sub);
+        break;
+    }
+    case json_type_string:
+        bson_append_utf8(b, key, -1, json_object_get_string(val), -1);
+        break;
+    case json_type_null:
+        bson_append_null(b, key, -1);
+        break;
+    default:
+        fprintf(stderr, "unexpected json type: %s\n", json_type_to_name(type));
+        break;
+    }
+}
+
+static void json_object_to_bson(json_object *j, bson_t* b)
+{
+  json_object_object_foreach(j, key, val) {
+      json_key_to_bson_key(b, val, key);
+  }
+}
+
+bool json_object_is_zero(json_object* jobj)
+{
+    enum json_type type = json_object_get_type(jobj);
+    if (type == json_type_double) {
+        return 0.0 == json_object_get_double(jobj);
+    }
+    else if (type == json_type_int) {
+        return 0 == json_object_get_int(jobj);
+    }
+    return false;
+}
+
+void convert_metrics_for_indexing(json_object *request)
+{
+    json_object *metrics = json_object_new_array();
+    for (int i=0; i<last_resource_index; i++) {
+        const char* resource = int_to_resource[i];
+        json_object *resource_val;
+        if (json_object_object_get_ex(request, resource, &resource_val)) {
+            json_object_get(resource_val);
+            json_object_object_del(request, resource);
+            if (json_object_is_zero(resource_val)) {
+                json_object_put(resource_val);
+            } else {
+                json_object *metric_pair = json_object_new_object();
+                json_object_object_add(metric_pair, "n", json_object_new_string(resource));
+                json_object_object_add(metric_pair, "v", resource_val);
+                json_object_array_add(metrics, metric_pair);
+            }
+        }
+    }
+    json_object_object_add(request, "metrics", metrics);
+}
+
 void store_request(const char* stream, json_object* request, request_writer_state_t* state)
 {
+    // dump_json_object(request);
+
     mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, stream);
+    json_object *request_id_obj;
+
+    if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
+        const char *request_id = json_object_get_string(request_id_obj);
+        json_object_get(request_id_obj);
+        json_object_object_del(request, "request_id");
+
+        convert_metrics_for_indexing(request);
+
+        bson_t *document = bson_sized_new(2048);
+        json_object_to_bson(request, document);
+        // TODO: protect against non uuids (l != 32)
+        bson_append_binary(document, "_id", 3, BSON_SUBTYPE_UUID_DEPRECATED, (uint8_t*)request_id, strlen(request_id));
+
+        // size_t n;
+        // char* bs = bson_as_json(document, &n);
+        // printf("doument. size: %zu; value:%s\n", n, bs);
+        // bson_destroy(bs);
+
+        bson_error_t error;
+        if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+            printf("insert failed for request document: %s\n", error.message);
+        }
+
+        json_object_put(request_id_obj);
+        bson_destroy(document);
+    } else {
+        fprintf(stderr, "dropped request without request_id\n");
+    }
 }
 
 void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
