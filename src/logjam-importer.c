@@ -1107,6 +1107,15 @@ void processor_add_quants(processor_t *self, const char* namespace, increments_t
     }
 }
 
+//TODO: generalize this
+bool interesting_request(request_data_t *request_data, json_object *request)
+{
+    return
+        request_data->total_time > 100 ||
+        request_data->severity > 1 ||
+        request_data->response_code >= 400;
+}
+
 void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
 {
     if (ignore_request(request)) return;
@@ -1146,7 +1155,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     // if (self->request_count % 100 == 0) {
     //     processor_dump_state(self);
     // }
-    if (request_data.total_time > 10) {
+    if (interesting_request(&request_data, request)) {
         json_object_get(request);
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, self->stream);
