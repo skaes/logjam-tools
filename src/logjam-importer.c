@@ -30,6 +30,8 @@ void log_zmq_error(int rc)
 static zconfig_t* config = NULL;
 char *config_file = "logjam.conf";
 static bool dryrun = false;
+//TODO: get from config
+const char *mongo_uri = "mongodb://127.0.0.1:27017/";
 
 /* resource maps */
 #define MAX_RESOURCE_COUNT 100
@@ -138,6 +140,7 @@ typedef struct {
 
 /* stats updater state */
 typedef struct {
+    mongoc_client_t* mongo_client;
     void *controller_socket;
     void *push_socket;
     msg_stats_t msg_stats;
@@ -145,9 +148,12 @@ typedef struct {
 
 /* request writer state */
 typedef struct {
+    mongoc_client_t* mongo_client;
+    zhash_t *request_collections;
     void *controller_socket;
     void *pull_socket;
     void *push_socket;
+    size_t request_count;
     msg_stats_t msg_stats;
 } request_writer_state_t;
 
@@ -287,6 +293,23 @@ void* parser_pull_socket_new(zctx_t *context)
     // TODO: this is a hack. better let controller coordinate this
     for (int i=0; i<10; i++) {
         rc = zsocket_connect(socket, "inproc://subscriber");
+        if (rc == 0) break;
+        zclock_sleep(100);
+    }
+    log_zmq_error(rc);
+    assert(rc == 0);
+    return socket;
+}
+
+void* parser_push_socket_new(zctx_t *context)
+{
+    int rc;
+    void *socket = zsocket_new(context, ZMQ_PUSH);
+    assert(socket);
+    // connect socket, taking thread startup time of request_writer into account
+    // TODO: this is a hack. better let controller coordinate this
+    for (int i=0; i<10; i++) {
+        rc = zsocket_connect(socket, "inproc://request_writer");
         if (rc == 0) break;
         zclock_sleep(100);
     }
@@ -758,6 +781,8 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     bson_destroy(selector);
     bson_destroy(document);
     bson_destroy(sub_doc);
+
+    mongoc_collection_destroy(meta_collection);
 }
 
 int processor_update_mongo_db(const char* stream, void* data, void* arg)
@@ -1083,6 +1108,13 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     // if (self->request_count % 100 == 0) {
     //     processor_dump_state(self);
     // }
+    if (request_data.total_time > 10) {
+        json_object_get(request);
+        zmsg_t *msg = zmsg_new();
+        zmsg_addstr(msg, self->stream);
+        zmsg_addmem(msg, &request, sizeof(json_object*));
+        zmsg_send(&msg, pstate->push_socket);
+    }
 }
 
 void processor_add_event(processor_t *self, parser_state_t *pstate, json_object *request)
@@ -1134,6 +1166,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
     state.request_count = 0;
     state.controller_socket = pipe;
     state.pull_socket = parser_pull_socket_new(ctx);
+    state.push_socket = parser_push_socket_new(ctx);
     assert( state.tokener = json_tokener_new() );
     state.processors = processor_hash_new();
 
@@ -1183,16 +1216,8 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     stats_updater_state_t state;
     state.controller_socket = pipe;
 
-    initialize_mongo_db_globals();
-
-    const char *uristr = "mongodb://127.0.0.1:27017/";
-    mongoc_client_t *client;
-
-    client = mongoc_client_new(uristr);
-    if (!client) {
-        fprintf(stderr, "Failed to parse mongo URI.\n");
-        exit(1);
-    }
+    state.mongo_client = mongoc_client_new(mongo_uri);
+    assert(state.mongo_client);
 
     while (!zctx_interrupted) {
         zmsg_t *msg = zmsg_recv(pipe);
@@ -1203,7 +1228,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             extract_parser_state(msg, &processors, &request_count);
             size_t num_procs = zhash_size(processors);
             if (!dryrun) {
-                zhash_foreach(processors, processor_update_mongo_db, client);
+                zhash_foreach(processors, processor_update_mongo_db, state.mongo_client);
             }
             zhash_destroy(&processors);
             zmsg_destroy(&msg);
@@ -1212,16 +1237,141 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
         }
     }
 
-    mongoc_client_destroy(client);
+    mongoc_client_destroy(state.mongo_client);
+}
+
+void* request_writer_pull_socket_new(zctx_t *context)
+{
+    void *socket = zsocket_new(context, ZMQ_PULL);
+    assert(socket);
+    int rc = zsocket_bind(socket, "inproc://request_writer");
+    assert(rc == 0);
+    return socket;
+}
+
+void add_request_field_index(const char* field, mongoc_collection_t *requests_collection)
+{
+    bson_error_t error;
+    bson_t *index_keys;
+
+    // collection.create_index([ [f, 1] ], :background => true, :sparse => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, field, strlen(field), 1);
+    mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
+    bson_free(index_keys);
+
+    // collection.create_index([ ["page", 1], [f, 1] ], :background => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "page", 4, 1);
+    bson_append_int32(index_keys, field, strlen(field), 1);
+    mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
+    bson_free(index_keys);
+}
+
+void add_request_collection_indexes(const char* stream, mongoc_collection_t *requests_collection, request_writer_state_t* state)
+{
+    bson_error_t error;
+    bson_t *index_keys;
+
+    // collection.create_index([ ["metrics.n", 1], ["metrics.v", -1] ], :background => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "metrics.n", 9, 1);
+    bson_append_int32(index_keys, "metrics.v", 9, -1);
+    mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
+    bson_free(index_keys);
+
+    // collection.create_index([ ["page", 1], ["metrics.n", 1], ["metrics.v", -1] ], :background => true
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "page", 4, 1);
+    bson_append_int32(index_keys, "metrics.n", 9, 1);
+    bson_append_int32(index_keys, "metrics.v", 9, -1);
+    mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
+    bson_free(index_keys);
+
+    add_request_field_index("response_code", requests_collection);
+    add_request_field_index("severity",      requests_collection);
+    add_request_field_index("minute",        requests_collection);
+    add_request_field_index("exceptions",    requests_collection);
+}
+
+mongoc_collection_t* request_writer_get_request_collection(request_writer_state_t* self, const char* stream)
+{
+    mongoc_collection_t *collection = zhash_lookup(self->request_collections, stream);
+    if (collection == NULL) {
+        collection = mongoc_client_get_collection(self->mongo_client, stream, "requests");
+        add_request_collection_indexes(stream, collection, self);
+        zhash_insert(self->request_collections, stream, collection);
+        zhash_freefn(self->request_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
+    }
+    return collection;
+}
+
+void store_request(const char* stream, json_object* request, request_writer_state_t* state)
+{
+    mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, stream);
+}
+
+void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
+{
+    zframe_t *first = zmsg_first(msg);
+    zframe_t *second = zmsg_next(msg);
+    size_t stream_len = zframe_size(first);
+    char stream[stream_len+1];
+    memcpy(stream, zframe_data(first), stream_len);
+    stream[stream_len] = '\0';
+    // printf("request_writer: stream: %s\n", stream);
+    json_object *request;
+    memcpy(&request, zframe_data(second), sizeof(json_object*));
+    // dump_json_object(request);
+    store_request(stream, request, state);
+    json_object_put(request);
 }
 
 void request_writer(void *args, zctx_t *ctx, void *pipe)
 {
     request_writer_state_t state;
+    state.request_count = 0;
     state.controller_socket = pipe;
+    state.pull_socket = request_writer_pull_socket_new(ctx);
+    state.mongo_client = mongoc_client_new(mongo_uri);
+    assert(state.mongo_client);
+    state.request_collections = zhash_new();
+    size_t ticks = 0;
+
+    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+    assert(poller);
+
     while (!zctx_interrupted) {
-        sleep(1);
+        // -1 == block until something is readable
+        void *socket = zpoller_wait(poller, -1);
+        zmsg_t *msg = NULL;
+        if (socket == state.controller_socket) {
+            // tick
+            printf("request_writer: tick (%zu messages)\n", state.request_count);
+            // free collection pointers every minute
+            msg = zmsg_recv(state.controller_socket);
+            if (ticks++ % 60 == 0) {
+                printf("request_writer: freeing request collections\n");
+                zhash_destroy(&state.request_collections);
+                state.request_collections = zhash_new();
+            }
+            state.request_count = 0;
+        } else if (socket == state.pull_socket) {
+            msg = zmsg_recv(state.pull_socket);
+            if (msg != NULL) {
+                state.request_count++;
+                if (!dryrun) {
+                    handle_request_msg(msg, &state);
+                }
+            }
+        } else {
+            // interrupted
+            break;
+        }
+        zmsg_destroy(&msg);
     }
+
+    mongoc_client_destroy(state.mongo_client);
 }
 
 typedef struct {
@@ -1304,6 +1454,10 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     zhash_t *processors[NUM_PARSERS];
     size_t request_counts[NUM_PARSERS];
     int64_t start_time_ms = zclock_time();
+
+    zmsg_t *tick = zmsg_new();
+    zmsg_addstr(tick, "tick");
+    zmsg_send(&tick, state->request_writer_pipe);
 
     for (size_t i=0; i<NUM_PARSERS; i++) {
         void* parser_pipe = state->parser_pipes[i];
@@ -1455,6 +1609,9 @@ int main(int argc, char * const *argv)
     setvbuf(stdout,NULL,_IOLBF,0);
     setvbuf(stderr,NULL,_IOLBF,0);
 
+    // initialize mongodb client
+    initialize_mongo_db_globals();
+
     // establish global zeromq context
     zctx_t *context = zctx_new();
     assert(context);
@@ -1470,11 +1627,11 @@ int main(int argc, char * const *argv)
     controller_state_t state;
     // start all worker threads
     state.subscriber_pipe = zthread_fork(context, subscriber, &config);
+    state.stats_updater_pipe = zthread_fork(context, stats_updater, &config);
+    state.request_writer_pipe = zthread_fork(context, request_writer, &config);
     for (size_t i=0; i<NUM_PARSERS; i++) {
         state.parser_pipes[i] = zthread_fork(context, parser, &config);
     }
-    state.stats_updater_pipe = zthread_fork(context, stats_updater, &config);
-    state.request_writer_pipe = zthread_fork(context, request_writer, &config);
 
     // flush increments to database every 1000 ms
     rc = zloop_timer(loop, 1000, 0, collect_stats_and_forward, &state);
