@@ -28,6 +28,8 @@ void log_zmq_error(int rc)
 
 /* global config */
 static zconfig_t* config = NULL;
+char *config_file = "logjam.conf";
+static bool dryrun = false;
 
 /* resource maps */
 #define MAX_RESOURCE_COUNT 100
@@ -1200,7 +1202,9 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             size_t request_count;
             extract_parser_state(msg, &processors, &request_count);
             size_t num_procs = zhash_size(processors);
-            zhash_foreach(processors, processor_update_mongo_db, client);
+            if (!dryrun) {
+                zhash_foreach(processors, processor_update_mongo_db, client);
+            }
             zhash_destroy(&processors);
             zmsg_destroy(&msg);
             int64_t end_time_ms = zclock_time();
@@ -1399,22 +1403,46 @@ void setup_resource_maps()
     }
 }
 
-int main(int argc, char const * const *argv)
+void print_usage(char * const *argv)
+{
+    fprintf(stderr, "usage: %s [-n] [-c config-file]\n", argv[0]);
+}
+
+void process_arguments(int argc, char * const *argv)
+{
+    char c;
+    opterr = 0;
+    while ((c = getopt(argc, argv, "nc:")) != -1) {
+        switch (c) {
+        case 'n':
+            dryrun = true;;
+            break;
+        case 'c':
+            config_file = optarg;
+            break;
+        case '?':
+            if (optopt == 'c')
+                fprintf (stderr, "option -%c requires an argument.\n", optopt);
+            else if (isprint (optopt))
+                fprintf (stderr, "unknown option `-%c'.\n", optopt);
+            else
+                fprintf (stderr, "unknown option character `\\x%x'.\n", optopt);
+            print_usage(argv);
+            exit(1);
+        default:
+            exit(1);
+        }
+    }
+}
+
+int main(int argc, char * const *argv)
 {
     int rc;
-    const char *config_file = "logjam.conf";
+    process_arguments(argc, argv);
 
-    // process arguments
-    if (argc > 2) {
-        fprintf(stderr, "usage: %s [config-file]\n", argv[0]);
-        exit(0);
-    }
-    if (argc == 2) {
-        config_file = argv[1];
-    }
     if (!zsys_file_exists(config_file)) {
         fprintf(stderr, "missing config file: %s\n", config_file);
-        exit(0);
+        exit(1);
     }
 
     // load config
