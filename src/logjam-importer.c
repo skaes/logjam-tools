@@ -33,7 +33,7 @@ static bool dryrun = false;
 //TODO: get from config
 const char *mongo_uri = "mongodb://127.0.0.1:27017/";
 
-char UTF8_DOT[4] = {0xE2, 0x80, 0xA2, '\0' };
+char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
 
 /* resource maps */
 #define MAX_RESOURCE_COUNT 100
