@@ -334,9 +334,9 @@ void* parser_push_socket_new(zctx_t *context)
     return socket;
 }
 
-void dump_json_object(json_object *jobj) {
+void dump_json_object(FILE *f, json_object *jobj) {
     const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PLAIN);
-    printf("%s\n", json_str);
+    fprintf(f, "%s\n", json_str);
     // don't try to free the json string. it will crash.
 }
 
@@ -353,7 +353,7 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
         // const char *json_str_orig = zframe_strdup(body);
         // printf("%s\n", json_str_orig);
         // free(json_str_orig);
-        // dump_json_object(jobj);
+        // dump_json_object(stdout, jobj);
     }
     if (tokener->char_offset < json_data_len) // XXX shouldn't access internal fields
     {
@@ -595,7 +595,7 @@ int dump_increments(const char *key, void *total, void *arg)
     increments_t* increments = total;
     printf("requests: %zu\n", increments->request_count);
     dump_metrics(increments->metrics);
-    dump_json_object(increments->others);
+    dump_json_object(stdout, increments->others);
     return 0;
 }
 
@@ -1048,6 +1048,19 @@ void processor_setup_allocated_memory(processor_t *self, json_object *request)
     }
 }
 
+json_object* processor_setup_exceptions(processor_t *self, json_object *request)
+{
+    json_object* exceptions;
+    if (json_object_object_get_ex(request, "exceptions", &exceptions)) {
+        int num_ex = json_object_array_length(exceptions);
+        if (num_ex == 0) {
+            json_object_object_del(request, "exceptions");
+            return NULL;
+        }
+    }
+    return exceptions;
+}
+
 void processor_add_totals(processor_t *self, const char* namespace, increments_t *increments)
 {
     increments_t *stored_increments = zhash_lookup(self->totals, namespace);
@@ -1140,7 +1153,8 @@ bool interesting_request(request_data_t *request_data, json_object *request)
     return
         request_data->total_time > 100 ||
         request_data->severity > 1 ||
-        request_data->response_code >= 400;
+        request_data->response_code >= 400 ||
+        request_data->exceptions != NULL;
 }
 
 void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
@@ -1148,7 +1162,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     if (ignore_request(request)) return;
     self->request_count++;
 
-    // dump_json_object(request);
+    // dump_json_object(stdout, request);
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
@@ -1179,7 +1193,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     processor_add_quants(self, request_data.page, increments);
 
     increments_destroy(increments);
-    // dump_json_object(request);
+    // dump_json_object(stdout, request);
     // if (self->request_count % 100 == 0) {
     //     processor_dump_state(self);
     // }
@@ -1393,24 +1407,28 @@ static void json_object_to_bson(json_object *j, bson_t *b);
 
 //TODO: optimize this!
 //TODO: validate utf8!
-//TODO: replace dots in keys!
 static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
 {
+    size_t n = strlen(key);
+    char safe_key[n+1];
+    strcpy(safe_key, key);
+    replace_dots(safe_key);
+
     enum json_type type = json_object_get_type(val);
     switch (type) {
     case json_type_boolean:
-        bson_append_bool(b, key, -1, json_object_get_boolean(val));
+        bson_append_bool(b, safe_key, n, json_object_get_boolean(val));
         break;
     case json_type_double:
-        bson_append_double(b, key, -1, json_object_get_double(val));
+        bson_append_double(b, safe_key, n, json_object_get_double(val));
         break;
     case json_type_int:
-        bson_append_int32(b, key, -1, json_object_get_int(val));
+        bson_append_int32(b, safe_key, n, json_object_get_int(val));
         break;
     case json_type_object: {
         bson_t *sub = bson_new();
         json_object_to_bson(val, sub);
-        bson_append_document(b, key, -1, sub);
+        bson_append_document(b, safe_key, n, sub);
         bson_destroy(sub);
         break;
     }
@@ -1422,15 +1440,15 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
             sprintf(nk, "%d", pos);
             json_key_to_bson_key(sub, json_object_array_get_idx(val, pos), nk);
         }
-        bson_append_array(b, key, -1, sub);
+        bson_append_array(b, safe_key, n, sub);
         bson_destroy(sub);
         break;
     }
     case json_type_string:
-        bson_append_utf8(b, key, -1, json_object_get_string(val), -1);
+        bson_append_utf8(b, safe_key, n, json_object_get_string(val), -1);
         break;
     case json_type_null:
-        bson_append_null(b, key, -1);
+        bson_append_null(b, safe_key, n);
         break;
     default:
         fprintf(stderr, "unexpected json type: %s\n", json_type_to_name(type));
@@ -1481,38 +1499,40 @@ void convert_metrics_for_indexing(json_object *request)
 
 void store_request(const char* stream, json_object* request, request_writer_state_t* state)
 {
-    // dump_json_object(request);
+    // dump_json_object(stdout, request);
+    convert_metrics_for_indexing(request);
 
     mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, stream);
-    json_object *request_id_obj;
+    bson_t *document = bson_sized_new(2048);
 
+    json_object *request_id_obj;
     if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
         const char *request_id = json_object_get_string(request_id_obj);
         json_object_get(request_id_obj);
         json_object_object_del(request, "request_id");
-
-        convert_metrics_for_indexing(request);
-
-        bson_t *document = bson_sized_new(2048);
-        json_object_to_bson(request, document);
-        // TODO: protect against non uuids (l != 32)
+        // TODO: protect against non uuids (l != 32) ?
         bson_append_binary(document, "_id", 3, BSON_SUBTYPE_UUID_DEPRECATED, (uint8_t*)request_id, strlen(request_id));
-
-        // size_t n;
-        // char* bs = bson_as_json(document, &n);
-        // printf("doument. size: %zu; value:%s\n", n, bs);
-        // bson_destroy(bs);
-
-        bson_error_t error;
-        if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            printf("insert failed for request document: %s\n", error.message);
-        }
-
         json_object_put(request_id_obj);
-        bson_destroy(document);
     } else {
-        fprintf(stderr, "dropped request without request_id\n");
+        // generate an oid
+        bson_oid_t oid;
+        bson_oid_init(&oid, NULL);
+        bson_append_oid(document, "_id", 3, &oid);
+        // printf("generated oid for document:\n");
     }
+    json_object_to_bson(request, document);
+
+    // size_t n;
+    // char* bs = bson_as_json(document, &n);
+    // printf("doument. size: %zu; value:%s\n", n, bs);
+    // bson_destroy(bs);
+
+    bson_error_t error;
+    if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+        fprintf(stderr, "insert failed for request document: %s\n", error.message);
+        dump_json_object(stderr, request);
+    }
+    bson_destroy(document);
 }
 
 void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
@@ -1526,7 +1546,7 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     // printf("request_writer: stream: %s\n", stream);
     json_object *request;
     memcpy(&request, zframe_data(second), sizeof(json_object*));
-    // dump_json_object(request);
+    // dump_json_object(stdout, request);
     store_request(stream, request, state);
     json_object_put(request);
 }
