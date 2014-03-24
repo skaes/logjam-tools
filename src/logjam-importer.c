@@ -1006,7 +1006,6 @@ int extract_severity_from_lines_object(json_object* lines)
 
 int processor_setup_severity(processor_t *self, json_object *request)
 {
-    // TODO: autodetect severity from log lines if present (seems missing often in production)
     int severity = 5;
     json_object *severity_obj;
     if (json_object_object_get_ex(request, "severity", &severity_obj)) {
