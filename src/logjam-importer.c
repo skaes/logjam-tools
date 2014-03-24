@@ -92,6 +92,7 @@ typedef struct {
     void *controller_socket;
     void *sub_socket;
     void *push_socket;
+    void *pull_socket;
     msg_stats_t msg_stats;
 } subscriber_state_t;
 
@@ -217,6 +218,25 @@ void* subscriber_sub_socket_new(zctx_t *context)
     return socket;
 }
 
+#define DIRECT_BIND_PORT 9605
+
+void* subscriber_pull_socket_new(zctx_t *context)
+{
+    void *socket = zsocket_new(context, ZMQ_PULL);
+    assert(socket);
+    zsocket_set_rcvhwm(socket, 1000);
+    zsocket_set_linger(socket, 0);
+    zsocket_set_reconnect_ivl(socket, 100); // 100 ms
+    zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
+
+    // connect socket to endpoints
+    // TODO: read bind_ip and port from config
+    int rc = zsocket_bind(socket, "tcp://%s:%d", "*", DIRECT_BIND_PORT);
+    assert(rc == DIRECT_BIND_PORT);
+
+    return socket;
+}
+
 void* subscriber_push_socket_new(zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_PUSH);
@@ -226,19 +246,52 @@ void* subscriber_push_socket_new(zctx_t *context)
     return socket;
 }
 
+int read_request_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
+{
+    subscriber_state_t *state = callback_data;
+    zmsg_t *msg = zmsg_recv(item->socket);
+    if (msg != NULL) {
+        zmsg_send(&msg, state->push_socket);
+    }
+    return 0;
+}
+
 void subscriber(void *args, zctx_t *ctx, void *pipe)
 {
+    int rc;
     subscriber_state_t state;
     state.controller_socket = pipe;
     state.sub_socket = subscriber_sub_socket_new(ctx);
+    state.pull_socket = subscriber_pull_socket_new(ctx);
     zsocket_set_subscribe(state.sub_socket, "");
     state.push_socket = subscriber_push_socket_new(ctx);
-    while (!zctx_interrupted) {
-        zmsg_t *msg = zmsg_recv(state.sub_socket);
-        if (msg != NULL) {
-            zmsg_send(&msg, state.push_socket);
-        }
-    }
+
+    // set up event loop
+    zloop_t *loop = zloop_new();
+    assert(loop);
+    zloop_set_verbose(loop, 0);
+
+     // setup handler for the sub socket
+    zmq_pollitem_t sub_item;
+    sub_item.socket = state.sub_socket;
+    sub_item.events = ZMQ_POLLIN;
+    rc = zloop_poller(loop, &sub_item, read_request_and_forward, &state);
+    assert(rc == 0);
+
+    // setup handler for the pull socket
+    zmq_pollitem_t pull_item;
+    pull_item.socket = state.pull_socket;
+    pull_item.events = ZMQ_POLLIN;
+    rc = zloop_poller(loop, &pull_item, read_request_and_forward, &state);
+    assert(rc == 0);
+
+    // run the loop
+    rc = zloop_start(loop);
+    // printf("zloop return: %d", rc);
+
+    // shutdown
+    zloop_destroy(&loop);
+    assert(loop == NULL);
 }
 
 processor_t* processor_new(char *stream)
