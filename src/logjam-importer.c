@@ -992,12 +992,11 @@ int processor_setup_severity(processor_t *self, json_object *request)
                 severity = extracted_severity;
             }
         }
-        dump_json_object(request);
-        printf("severity: %d\n\n", severity);
         severity_obj = json_object_new_int(severity);
         json_object_object_add(request, "severity", severity_obj);
     }
     return severity;
+    // printf("severity: %d\n\n", severity);
 }
 
 int processor_setup_minute(processor_t *self, json_object *request)
