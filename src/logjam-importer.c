@@ -33,6 +33,8 @@ static bool dryrun = false;
 //TODO: get from config
 const char *mongo_uri = "mongodb://127.0.0.1:27017/";
 
+char UTF8_DOT[4] = {0xE2, 0x80, 0xA2, '\0' };
+
 /* resource maps */
 #define MAX_RESOURCE_COUNT 100
 static zhash_t* resource_to_int = NULL;
@@ -455,12 +457,35 @@ int replace_dots(char *s)
     char c;
     while ((c = *s) != '\0') {
         if (c == '.') {
-            *s = '!';
+            *s = '_';
             count++;
         }
         s++;
     }
     return count;
+}
+
+int copy_replace_dots(char* buffer, const char *s)
+{
+    int len = 0;
+    if (s != NULL) {
+        char c;
+        while ((c = *s) != '\0') {
+            if (c == '.') {
+                char *p = UTF8_DOT;
+                *buffer++ = *p++;
+                *buffer++ = *p++;
+                *buffer++ = *p;
+                len += 3;
+            } else {
+                *buffer++ = c;
+                len++;
+            }
+            s++;
+        }
+    }
+    *buffer = '\0';
+    return len;
 }
 
 void increments_fill_exceptions(increments_t *increments, json_object *exceptions)
@@ -478,8 +503,12 @@ void increments_fill_exceptions(increments_t *increments, json_object *exception
         char ex_str_dup[n+12];
         strcpy(ex_str_dup, "exceptions.");
         strcpy(ex_str_dup+11, ex_str);
-        replace_dots(ex_str_dup+11);
+        int replaced_count = replace_dots(ex_str_dup+11);
         // printf("EXCEPTION: %s\n", ex_str_dup);
+        if (replaced_count > 0) {
+            json_object* new_ex = json_object_new_string(ex_str_dup+11);
+            json_object_array_put_idx(exceptions, i, new_ex);
+        }
         json_object_object_add(increments->others, ex_str_dup, NEW_INT1);
     }
 }
@@ -499,12 +528,11 @@ void increments_fill_caller_info(increments_t *increments, json_object *request)
             if (3 == sscanf(caller_id, "%[^-]-%[^-]-%[^-]", app, env, rid)) {
                 size_t app_len = strlen(app);
                 size_t action_len = strlen(caller_action);
-                char caller_name[app_len + action_len + 2 + 8];
+                char caller_name[3*(app_len + action_len) + 2 + 8];
                 strcpy(caller_name, "callers.");
-                strcpy(caller_name + 8, app);
-                caller_name[app_len + 8] = '-';
-                strcpy(caller_name + app_len + 1 + 8, caller_action);
-                replace_dots(caller_name+9);
+                int real_app_len = copy_replace_dots(caller_name + 8, app);
+                caller_name[real_app_len + 8] = '-';
+                copy_replace_dots(caller_name + 8 + real_app_len + 1, caller_action);
                 // printf("CALLER: %s\n", caller_name);
                 json_object_object_add(increments->others, caller_name, NEW_INT1);
             }
@@ -1410,25 +1438,25 @@ static void json_object_to_bson(json_object *j, bson_t *b);
 static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
 {
     size_t n = strlen(key);
-    char safe_key[n+1];
-    strcpy(safe_key, key);
-    replace_dots(safe_key);
+    char safe_key[3*n+1];
+    int len = copy_replace_dots(safe_key, key);
+    // printf("safe_key: %s\n", safe_key);
 
     enum json_type type = json_object_get_type(val);
     switch (type) {
     case json_type_boolean:
-        bson_append_bool(b, safe_key, n, json_object_get_boolean(val));
+        bson_append_bool(b, safe_key, len, json_object_get_boolean(val));
         break;
     case json_type_double:
-        bson_append_double(b, safe_key, n, json_object_get_double(val));
+        bson_append_double(b, safe_key, len, json_object_get_double(val));
         break;
     case json_type_int:
-        bson_append_int32(b, safe_key, n, json_object_get_int(val));
+        bson_append_int32(b, safe_key, len, json_object_get_int(val));
         break;
     case json_type_object: {
         bson_t *sub = bson_new();
         json_object_to_bson(val, sub);
-        bson_append_document(b, safe_key, n, sub);
+        bson_append_document(b, safe_key, len, sub);
         bson_destroy(sub);
         break;
     }
@@ -1440,15 +1468,15 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
             sprintf(nk, "%d", pos);
             json_key_to_bson_key(sub, json_object_array_get_idx(val, pos), nk);
         }
-        bson_append_array(b, safe_key, n, sub);
+        bson_append_array(b, safe_key, len, sub);
         bson_destroy(sub);
         break;
     }
     case json_type_string:
-        bson_append_utf8(b, safe_key, n, json_object_get_string(val), -1);
+        bson_append_utf8(b, safe_key, len, json_object_get_string(val), -1);
         break;
     case json_type_null:
-        bson_append_null(b, safe_key, n);
+        bson_append_null(b, safe_key, len);
         break;
     default:
         fprintf(stderr, "unexpected json type: %s\n", json_type_to_name(type));
