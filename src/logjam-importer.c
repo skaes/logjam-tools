@@ -1784,11 +1784,11 @@ void process_arguments(int argc, char * const *argv)
             break;
         case '?':
             if (optopt == 'c')
-                fprintf (stderr, "option -%c requires an argument.\n", optopt);
+                fprintf(stderr, "option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
-                fprintf (stderr, "unknown option `-%c'.\n", optopt);
+                fprintf(stderr, "unknown option `-%c'.\n", optopt);
             else
-                fprintf (stderr, "unknown option character `\\x%x'.\n", optopt);
+                fprintf(stderr, "unknown option character `\\x%x'.\n", optopt);
             print_usage(argv);
             exit(1);
         default:
