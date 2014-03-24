@@ -122,6 +122,7 @@ typedef struct {
     int response_code;
     int severity;
     int minute;
+    json_object* exceptions;
 } request_data_t;
 
 /* increments */
@@ -462,26 +463,24 @@ int replace_dots(char *s)
     return count;
 }
 
-void increments_fill_exceptions(increments_t *increments, json_object *request)
+void increments_fill_exceptions(increments_t *increments, json_object *exceptions)
 {
-    json_object* exceptions_obj;
-    if (json_object_object_get_ex(request, "exceptions", &exceptions_obj)) {
-        int num_ex = json_object_array_length(exceptions_obj);
-        if (num_ex == 0) {
-            json_object_object_del(request, "exceptions");
-            return;
-        }
-        for (int i=0; i<num_ex; i++) {
-            json_object* ex_obj = json_object_array_get_idx(exceptions_obj, i);
-            const char *ex_str = json_object_get_string(ex_obj);
-            size_t n = strlen(ex_str);
-            char ex_str_dup[n+12];
-            strcpy(ex_str_dup, "exceptions.");
-            strcpy(ex_str_dup+11, ex_str);
-            replace_dots(ex_str_dup+11);
-            // printf("EXCEPTION: %s\n", ex_str_dup);
-            json_object_object_add(increments->others, ex_str_dup, NEW_INT1);
-        }
+    if (exceptions == NULL)
+        return;
+    int n = json_object_array_length(exceptions);
+    if (n == 0)
+        return;
+
+    for (int i=0; i<n; i++) {
+        json_object* ex_obj = json_object_array_get_idx(exceptions, i);
+        const char *ex_str = json_object_get_string(ex_obj);
+        size_t n = strlen(ex_str);
+        char ex_str_dup[n+12];
+        strcpy(ex_str_dup, "exceptions.");
+        strcpy(ex_str_dup+11, ex_str);
+        replace_dots(ex_str_dup+11);
+        // printf("EXCEPTION: %s\n", ex_str_dup);
+        json_object_object_add(increments->others, ex_str_dup, NEW_INT1);
     }
 }
 
@@ -1157,6 +1156,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     request_data.severity = processor_setup_severity(self, request);
     request_data.minute = processor_setup_minute(self, request);
     request_data.total_time = processor_setup_total_time(self, request);
+    request_data.exceptions = processor_setup_exceptions(self, request);
     processor_setup_other_time(self, request, request_data.total_time);
     processor_setup_allocated_memory(self, request);
 
@@ -1165,8 +1165,8 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     increments_fill_apdex(increments, &request_data);
     increments_fill_response_code(increments, &request_data);
     increments_fill_severity(increments, &request_data);
-    increments_fill_exceptions(increments, request);
     increments_fill_caller_info(increments, request);
+    increments_fill_exceptions(increments, request_data.exceptions);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
