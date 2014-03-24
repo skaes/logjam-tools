@@ -624,7 +624,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
     bson_t *incs = bson_new();
     bson_append_int32(incs, "count", 5, increments->request_count);
 
-    for (size_t i=0; i<last_resource_index; i++) {
+    for (size_t i=0; i<=last_resource_index; i++) {
         double val = increments->metrics[i].val;
         if (val > 0) {
             const char *name = int_to_resource[i];
@@ -1111,7 +1111,7 @@ void add_quant(const char* namespace, size_t resource_idx, char kind, size_t qua
 
 void processor_add_quants(processor_t *self, const char* namespace, increments_t *increments)
 {
-    for (int i=0; i<last_resource_index; i++){
+    for (int i=0; i<=last_resource_index; i++){
         double val = increments->metrics[i].val;
         if (val > 0) {
             char kind;
@@ -1460,7 +1460,7 @@ bool json_object_is_zero(json_object* jobj)
 void convert_metrics_for_indexing(json_object *request)
 {
     json_object *metrics = json_object_new_array();
-    for (int i=0; i<last_resource_index; i++) {
+    for (int i=0; i<=last_resource_index; i++) {
         const char* resource = int_to_resource[i];
         json_object *resource_val;
         if (json_object_object_get_ex(request, resource, &resource_val)) {
