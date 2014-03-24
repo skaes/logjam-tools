@@ -455,7 +455,7 @@ int replace_dots(char *s)
     char c;
     while ((c = *s) != '\0') {
         if (c == '.') {
-            *s = '_';
+            *s = '!';
             count++;
         }
         s++;
