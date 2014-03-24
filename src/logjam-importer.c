@@ -956,18 +956,47 @@ double processor_setup_total_time(processor_t *self, json_object *request)
     return total_time;
 }
 
+int extract_severity_from_lines_object(json_object* lines)
+{
+    int log_level = -1;
+    if (lines != NULL && json_object_get_type(lines) == json_type_array) {
+        int array_len = json_object_array_length(lines);
+        for (int i=0; i<array_len; i++) {
+            json_object *line = json_object_array_get_idx(lines, i);
+            if (line && json_object_get_type(line) == json_type_array) {
+                json_object *level = json_object_array_get_idx(line, 0);
+                if (level) {
+                    int new_level = json_object_get_int(level);
+                    if (new_level > log_level) {
+                        log_level = new_level;
+                    }
+                }
+            }
+        }
+    }
+    return log_level;
+}
+
 int processor_setup_severity(processor_t *self, json_object *request)
 {
     // TODO: autodetect severity from log lines if present (seems missing often in production)
     int severity = 5;
-    json_object *severity_obj = NULL;
+    json_object *severity_obj;
     if (json_object_object_get_ex(request, "severity", &severity_obj)) {
         severity = json_object_get_int(severity_obj);
     } else {
+        json_object *lines_obj;
+        if (json_object_object_get_ex(request, "lines", &lines_obj)) {
+            int extracted_severity = extract_severity_from_lines_object(lines_obj);
+            if (extracted_severity != -1 && extracted_severity < severity) {
+                severity = extracted_severity;
+            }
+        }
+        dump_json_object(request);
+        printf("severity: %d\n\n", severity);
         severity_obj = json_object_new_int(severity);
         json_object_object_add(request, "severity", severity_obj);
     }
-    // printf("severity: %d\n", severity);
     return severity;
 }
 
