@@ -31,7 +31,7 @@ static zconfig_t* config = NULL;
 char *config_file = "logjam.conf";
 static bool dryrun = false;
 //TODO: get from config
-const char *mongo_uri = "mongodb://127.0.0.1:27017/";
+char *mongo_uri = "mongodb://127.0.0.1:27017/";
 
 char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
 
@@ -187,6 +187,15 @@ void initialize_mongo_db_globals()
 
     mongoc_index_opt_init(&index_opt_background);
     index_opt_background.background = true;
+
+    zconfig_t* db = zconfig_locate(config, "backend/database/default");
+    if (db) {
+        char *uri = zconfig_value(db);
+        if (uri != NULL) {
+            mongo_uri = uri;
+            printf("database: %s", mongo_uri);
+        }
+    }
 }
 
 void* subscriber_sub_socket_new(zctx_t *context)
