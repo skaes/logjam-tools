@@ -227,7 +227,8 @@ void* subscriber_sub_socket_new(zctx_t *context)
     return socket;
 }
 
-#define DIRECT_BIND_PORT 9605
+static char * direct_bind_ip = "*";
+static int direct_bind_port = 9605;
 
 void* subscriber_pull_socket_new(zctx_t *context)
 {
@@ -235,13 +236,14 @@ void* subscriber_pull_socket_new(zctx_t *context)
     assert(socket);
     zsocket_set_rcvhwm(socket, 1000);
     zsocket_set_linger(socket, 0);
+    // TODO: this seems to be superfluous, as we only bind
     zsocket_set_reconnect_ivl(socket, 100); // 100 ms
     zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
     // connect socket to endpoints
     // TODO: read bind_ip and port from config
-    int rc = zsocket_bind(socket, "tcp://%s:%d", "*", DIRECT_BIND_PORT);
-    assert(rc == DIRECT_BIND_PORT);
+    int rc = zsocket_bind(socket, "tcp://%s:%d", direct_bind_ip, direct_bind_port);
+    assert(rc == direct_bind_port);
 
     return socket;
 }
