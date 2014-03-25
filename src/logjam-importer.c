@@ -227,7 +227,7 @@ void* subscriber_sub_socket_new(zctx_t *context)
     return socket;
 }
 
-static char * direct_bind_ip = "*";
+static char *direct_bind_ip = "*";
 static int direct_bind_port = 9605;
 
 void* subscriber_pull_socket_new(zctx_t *context)
