@@ -1798,6 +1798,7 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         zhash_destroy(&processors[i]);
     }
 
+    // forward to stats_updater
     zmsg_t *stats_msg = zmsg_new();
     zmsg_addmem(stats_msg, &processors[0], sizeof(zhash_t*));
     zmsg_addmem(stats_msg, &request_count, sizeof(size_t));
