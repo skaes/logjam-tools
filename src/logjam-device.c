@@ -6,6 +6,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <getopt.h>
 #include <amqp_tcp_socket.h>
 #include <amqp.h>
 #include <amqp_framing.h>
