@@ -101,18 +101,23 @@ void assert_zmq_rc(int rc)
 static zconfig_t* config = NULL;
 char *config_file = "logjam.conf";
 
-static char* rabbit_host = "localhost";
+/* rabbit options */
+static char* rabbit_host = NULL;
 static int rabbit_port = 5672;
 static int pull_port = 9605;
 static int pub_port = 9606;
 
-static unsigned long received_messages_count = 0;
+static size_t received_messages_count = 0;
+static size_t received_messages_bytes = 0;
 // hash of already declared exchanges
 static zhash_t *exchanges = NULL;
 
 #if defined(__APPLE__) && defined(SO_NOSIGPIPE)
 #define FIX_SIG_PIPE
 #endif
+
+#define FRAME_MAX_DEFAULT 131072
+#define OUR_FRAME_MAX (8 * FRAME_MAX_DEFAULT)
 
 amqp_connection_state_t setup_amqp_connection()
 {
@@ -129,7 +134,7 @@ amqp_connection_state_t setup_amqp_connection()
     int status = amqp_socket_open(socket, rabbit_host, rabbit_port);
     assert_x(status, "Opening RabbitMQ socket");
 
-    die_on_amqp_error(amqp_login(connection, "/", 0, 131072, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest"),
+    die_on_amqp_error(amqp_login(connection, "/", 0, OUR_FRAME_MAX, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest"),
                       "Logging in to RabbitMQ");
     amqp_channel_open(connection, 1);
     die_on_amqp_error(amqp_get_rpc_reply(connection), "Opening AMQP channel");
@@ -173,14 +178,15 @@ int publish_on_amqp_transport(amqp_connection_state_t connection, zmq_msg_t *mes
     exchange_name.len   = zmq_msg_size(exchange);
     exchange_name.bytes = zmq_msg_data(exchange);
 
-    char *exchange_string = malloc(exchange_name.len + 1);
-    memcpy(exchange_string, exchange_name.bytes, exchange_name.len);
-    exchange_string[exchange_name.len] = 0;
+    size_t n = exchange_name.len;
+    char exchange_string[n + 1];
+    memcpy(exchange_string, exchange_name.bytes, n);
+    exchange_string[n] = '\0';
 
-    int found = zhash_insert(exchanges, exchange_string, NULL);
-    if (-1 == found) {
-        free(exchange_string);
-    } else {
+    char *stored_exchange = zhash_lookup(exchanges, exchange_string);
+    if (stored_exchange == NULL) {
+        stored_exchange = strdup(exchange_string);
+        assert( zhash_insert(exchanges, stored_exchange, stored_exchange) );
         // declare exchange, as we haven't seen it before
         amqp_boolean_t passive = 0;
         amqp_boolean_t durable = 1;
@@ -226,9 +232,13 @@ void shutdown_amqp_connection(amqp_connection_state_t connection, int amqp_rc)
 
 int timer_event(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
-    static unsigned long last_received_count = 0;
-    printf("processed %lu messages.\n", received_messages_count-last_received_count);
+    static size_t last_received_count = 0;
+    static size_t last_received_bytes = 0;
+    size_t message_count = received_messages_count - last_received_count;
+    size_t message_bytes = received_messages_bytes - last_received_bytes;
+    printf("processed %zu messages (%zu bytes).\n", message_count, message_bytes);
     last_received_count = received_messages_count;
+    last_received_bytes = received_messages_bytes;
     return 0;
 }
 
@@ -267,6 +277,7 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
         goto cleanup;
     }
     received_messages_count++;
+    received_messages_bytes += zmq_msg_size(&message_parts[2]);
 
     if (connection != NULL) {
         state->amqp_rc = publish_on_amqp_transport(connection, &message_parts[0]);
@@ -426,11 +437,6 @@ int main(int argc, char * const *argv)
     int rc=0;
     process_arguments(argc, argv);
 
-    if (!zsys_file_exists(config_file)) {
-        fprintf(stderr, "missing config file: %s\n", config_file);
-        exit(1);
-    }
-
     setvbuf(stdout,NULL,_IOLBF,0);
     setvbuf(stderr,NULL,_IOLBF,0);
 
@@ -441,7 +447,9 @@ int main(int argc, char * const *argv)
            pull_port, pub_port, rabbit_host);
 
     // load config
-    config = zconfig_load((char*)config_file);
+    if (zsys_file_exists(config_file)) {
+        config = zconfig_load((char*)config_file);
+    }
 
     // create context
     zctx_t *context = zctx_new();
@@ -450,6 +458,7 @@ int main(int argc, char * const *argv)
     // configure the context
     zctx_set_linger(context, 100);
     zctx_set_rcvhwm(context, 1000);
+    zctx_set_pipehwm(context, 1000);
     // zctx_set_iothreads(context, 2);
 
     // create socket to receive messages on
@@ -457,8 +466,8 @@ int main(int argc, char * const *argv)
     assert_x(receiver==NULL, "zmq socket creation failed");
 
     //  configure the socket
-    zsocket_set_rcvhwm(receiver, 100);
-    zsocket_set_linger(receiver, 1000);
+    zsocket_set_rcvhwm(receiver, 1000);
+    zsocket_set_linger(receiver, 100);
 
     rc = zsocket_bind(receiver, "tcp://%s:%d", "*", pull_port);
     assert_x(rc!=pull_port, "zmq socket bind failed");
@@ -482,15 +491,23 @@ int main(int argc, char * const *argv)
     */
 
     // setup the rabbitmq listener thread
-    void *rabbitmq_listener_pipe = zthread_fork(context, rabbitmq_listener, NULL);
-    assert_x(rabbitmq_listener_pipe==NULL, "could not fork rabbitmq listener thread");
-    printf("created rabbitmq listener thread\n");
+    amqp_connection_state_t connection = NULL;
+    void *rabbitmq_listener_pipe = NULL;
 
-    // configure amqp publisher connection
-    amqp_connection_state_t connection = setup_amqp_connection();
-
-    // so far, no exchanges are known
-    exchanges = zhash_new();
+    if (rabbit_host != NULL) {
+        if (config == NULL) {
+            fprintf(stderr, "cannot start rabbitmq listener thread because no config file given\n");
+            goto cleanup;
+        } else {
+            rabbitmq_listener_pipe = zthread_fork(context, rabbitmq_listener, NULL);
+            assert_x(rabbitmq_listener_pipe==NULL, "could not fork rabbitmq listener thread");
+            printf("created rabbitmq listener thread\n");
+            // create amqp publisher connection
+            connection = setup_amqp_connection();
+            // so far, no exchanges are known
+            exchanges = zhash_new();
+        }
+    }
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -511,14 +528,17 @@ int main(int argc, char * const *argv)
     assert(rc == 0);
 
     // setup handler for the rabbit listener pipe
-    zmq_pollitem_t listener_item;
-    publisher_state_t listener_state = {publisher, NULL, 0};
-    listener_item.socket = rabbitmq_listener_pipe;
-    listener_item.events = ZMQ_POLLIN;
-    rc = zloop_poller(loop, &listener_item, read_zmq_message_and_forward, &listener_state);
-    assert(rc == 0);
+    if (rabbit_host != NULL) {
+        zmq_pollitem_t listener_item;
+        publisher_state_t listener_state = {publisher, NULL, 0};
+        listener_item.socket = rabbitmq_listener_pipe;
+        listener_item.events = ZMQ_POLLIN;
+        rc = zloop_poller(loop, &listener_item, read_zmq_message_and_forward, &listener_state);
+        assert(rc == 0);
+    }
 
     rc = zloop_start(loop);
+    assert(rc == 0);
     // printf("zloop return: %d", rc);
 
     zloop_destroy(&loop);
@@ -526,11 +546,14 @@ int main(int argc, char * const *argv)
 
     printf("received %lu messages", received_messages_count);
 
-    // close zmq socket and context
-    zsocket_destroy(context, receiver);
+ cleanup:
+    // close context (this will automatically close all sockets)
     zctx_destroy(&context);
 
-    shutdown_amqp_connection(connection, publisher_state.amqp_rc);
+    if (connection) {
+        shutdown_amqp_connection(connection, publisher_state.amqp_rc);
+        rc = publisher_state.amqp_rc < 0;
+    }
 
-    return (publisher_state.amqp_rc < 0);
+    return rc;
 }
