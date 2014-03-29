@@ -198,6 +198,9 @@ void initialize_mongo_db_globals()
     }
 }
 
+// hash of all streams we want to subscribe to
+static zhash_t *configured_streams = NULL;
+
 void* subscriber_sub_socket_new(zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_SUB);
@@ -262,6 +265,7 @@ int read_request_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(item->socket);
     if (msg != NULL) {
+        // zmsg_dump(msg);
         zmsg_send(&msg, state->push_socket);
     }
     return 0;
@@ -274,8 +278,21 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
     state.controller_socket = pipe;
     state.sub_socket = subscriber_sub_socket_new(ctx);
     state.pull_socket = subscriber_pull_socket_new(ctx);
-    zsocket_set_subscribe(state.sub_socket, "");
     state.push_socket = subscriber_push_socket_new(ctx);
+
+    if (configured_streams == NULL) {
+        // subscribe to all messages
+        zsocket_set_subscribe(state.sub_socket, "");
+    } else {
+        // setup subscriptions for only a subset
+        zlist_t *subscriptions = zhash_keys(configured_streams);
+        char *stream = NULL;
+        while ( (stream = zlist_next(subscriptions)) != NULL)  {
+            printf("subscribing to stream: %s\n", stream);
+            zsocket_set_subscribe(state.sub_socket, stream);
+        }
+        zlist_destroy(&subscriptions);
+    }
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -1877,6 +1894,29 @@ void setup_resource_maps()
     }
 }
 
+const char *one = "1";
+char *subscription_pattern = "";
+
+void setup_subscriptions()
+{
+    if (!strcmp("", subscription_pattern))
+        return;
+
+    configured_streams = zhash_new();
+    zconfig_t *all_streams = zconfig_locate(config, "backend/streams");
+    assert(all_streams);
+    zconfig_t *stream = zconfig_child(all_streams);
+    assert(stream);
+    do {
+        const char *name = zconfig_name(stream);
+        if (strstr(name, subscription_pattern) != NULL) {
+            int rc = zhash_insert(configured_streams, name, (void*)one);
+            assert(rc == 0);
+        }
+        stream = zconfig_next(stream);
+    } while (stream);
+}
+
 void print_usage(char * const *argv)
 {
     fprintf(stderr, "usage: %s [-n] [-c config-file]\n", argv[0]);
@@ -1886,13 +1926,16 @@ void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "nc:")) != -1) {
+    while ((c = getopt(argc, argv, "nc:p:")) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;;
             break;
         case 'c':
             config_file = optarg;
+            break;
+        case 'p':
+            subscription_pattern = optarg;
             break;
         case '?':
             if (optopt == 'c')
@@ -1922,6 +1965,7 @@ int main(int argc, char * const *argv)
     // load config
     config = zconfig_load((char*)config_file);
     setup_resource_maps();
+    setup_subscriptions();
 
     setvbuf(stdout,NULL,_IOLBF,0);
     setvbuf(stderr,NULL,_IOLBF,0);
