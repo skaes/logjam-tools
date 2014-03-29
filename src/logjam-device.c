@@ -1,3 +1,4 @@
+#define _GNU_SOURCE
 #include <zmq.h>
 #include <czmq.h>
 #include <stdio.h>
@@ -544,7 +545,7 @@ int main(int argc, char * const *argv)
     zloop_destroy(&loop);
     assert(loop == NULL);
 
-    printf("received %lu messages", received_messages_count);
+    printf("received %zu messages", received_messages_count);
 
  cleanup:
     // close context (this will automatically close all sockets)
