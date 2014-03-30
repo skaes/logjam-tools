@@ -1557,6 +1557,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, self->stream);
         zmsg_addstr(msg, "r");
+        zmsg_addstr(msg, request_data.module);
         zmsg_addmem(msg, &request, sizeof(json_object*));
         zmsg_send(&msg, pstate->push_socket);
     }
@@ -1628,6 +1629,7 @@ void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_
     zmsg_t *msg = zmsg_new();
     zmsg_addstr(msg, self->stream);
     zmsg_addstr(msg, "j");
+    zmsg_addstr(msg, module);
     zmsg_addmem(msg, &request, sizeof(json_object*));
     zmsg_send(&msg, pstate->push_socket);
 }
@@ -1639,6 +1641,7 @@ void processor_add_event(processor_t *self, parser_state_t *pstate, json_object 
     zmsg_t *msg = zmsg_new();
     zmsg_addstr(msg, self->stream);
     zmsg_addstr(msg, "e");
+    zmsg_addstr(msg, "");
     zmsg_addmem(msg, &request, sizeof(json_object*));
     zmsg_send(&msg, pstate->push_socket);
 }
@@ -2092,7 +2095,25 @@ void store_event(const char* stream, json_object* request, request_writer_state_
     bson_destroy(document);
 }
 
-void request_writer_publish_error(const char* stream, json_object* request, request_writer_state_t* state, json_object* request_id)
+void publish_error_for_module(const char* stream, const char* module, const char* json_str, void* live_stream_socket)
+{
+    size_t n = strlen(stream);
+    char app[n+1], env[n+1];
+    sscanf(stream, "logjam-%[^-]-%[^-]", app, env);
+
+    // skip :: at the beginning of module
+    while (*module == ':') module++;
+    size_t m = strlen(module);
+    char key[n + m + 3];
+    sprintf(key, "%s-%s,%s", app, env, module);
+    // TODO: change this crap in the live stream publisher
+    // tolower is unsafe and not really necessary
+    for (char *p = key; *p; ++p) *p = tolower(*p);
+
+    live_stream_publish(live_stream_socket, key, json_str);
+}
+
+void request_writer_publish_error(const char* stream, const char* module, json_object* request, request_writer_state_t* state, json_object* request_id)
 {
     if (request_id == NULL) return;
 
@@ -2121,24 +2142,8 @@ void request_writer_publish_error(const char* stream, json_object* request, requ
             json_object_array_add(arror, error_info);
 
             const char *json_str = json_object_to_json_string_ext(arror, JSON_C_TO_STRING_PLAIN);
-
-            // TODO: get module from request (or send along)
-            const char *module = "all_pages";
-
-            size_t n = strlen(stream);
-            char app[n+1], env[n+1];
-            sscanf(stream, "logjam-%[^-]-%[^-]", app, env);
-
-            // skip :: at the beginning of module
-            while (*module == ':') module++;
-            size_t m = strlen(module);
-            char key[n + m + 3];
-            sprintf(key, "%s-%s,%s", app, env, module);
-            // TODO: change this crap in the live stream publisher
-            // tolower is unsafe and not really necessary
-            for (char *p = key; *p; ++p) *p = tolower(*p);
-
-            live_stream_publish(state->live_stream_socket, key, json_str);
+            publish_error_for_module(stream, "all_pages", json_str, state->live_stream_socket);
+            publish_error_for_module(stream, module, json_str, state->live_stream_socket);
 
             json_object_put(error_info);
             json_object_put(arror);
@@ -2151,16 +2156,22 @@ void request_writer_publish_error(const char* stream, json_object* request, requ
 void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
 {
     zframe_t *first = zmsg_first(msg);
-    zframe_t *type = zmsg_next(msg);
-    zframe_t *body = zmsg_next(msg);
+    zframe_t *type  = zmsg_next(msg);
+    zframe_t *mod   = zmsg_next(msg);
+    zframe_t *body  = zmsg_next(msg);
+
     size_t stream_len = zframe_size(first);
     char stream[stream_len+1];
-
     memcpy(stream, zframe_data(first), stream_len);
     stream[stream_len] = '\0';
     // printf("request_writer: stream: %s\n", stream);
 
-    json_object *request,*request_id;
+    size_t mod_len = zframe_size(mod);
+    char module[mod_len+1];
+    memcpy(module, zframe_data(mod), mod_len);
+    module[mod_len] = '\0';
+
+    json_object *request, *request_id;
     memcpy(&request, zframe_data(body), sizeof(json_object*));
     // dump_json_object(stdout, request);
 
@@ -2168,7 +2179,7 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     switch (request_type) {
     case 'r':
         request_id = store_request(stream, request, state);
-        request_writer_publish_error(stream, request, state, request_id);
+        request_writer_publish_error(stream, module, request, state, request_id);
         break;
     case 'j':
         store_js_exception(stream, request, state);
