@@ -35,6 +35,8 @@ char *mongo_uri = "mongodb://127.0.0.1:27017/";
 
 static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
 static char UTF8_CURRENCY[3] = {0xC2, 0xA4, '\0'};
+static char *URI_ESCAPED_DOT = "%2E";
+static char *URI_ESCAPED_DOLLAR = "%24";
 
 /* resource maps */
 #define MAX_RESOURCE_COUNT 100
@@ -164,6 +166,7 @@ typedef struct {
 typedef struct {
     mongoc_client_t* mongo_client;
     zhash_t *request_collections;
+    zhash_t *jse_collections;
     void *controller_socket;
     void *pull_socket;
     void *push_socket;
@@ -575,6 +578,36 @@ int copy_replace_dots_and_dollars(char* buffer, const char *s)
     return len;
 }
 
+int uri_replace_dots_and_dollars(char* buffer, const char *s)
+{
+    int len = 0;
+    if (s != NULL) {
+        char c;
+        while ((c = *s) != '\0') {
+            if (c == '.') {
+                char *p = URI_ESCAPED_DOT;
+                *buffer++ = *p++;
+                *buffer++ = *p++;
+                *buffer++ = *p;
+                len += 3;
+            } else if (c == '$') {
+                char *p = URI_ESCAPED_DOLLAR;
+                *buffer++ = *p++;
+                *buffer++ = *p++;
+                *buffer++ = *p;
+                len += 3;
+            } else {
+                *buffer++ = c;
+                len++;
+            }
+            s++;
+        }
+    }
+    *buffer = '\0';
+    return len;
+}
+
+
 static char *win1252_to_utf8[128] = {
     /* 0x80 */	  "\u20AC"   ,   // Euro Sign
     /* 0x81 */	  "\uFFFD"   ,   //
@@ -747,6 +780,17 @@ void increments_fill_exceptions(increments_t *increments, json_object *exception
         }
         json_object_object_add(increments->others, ex_str_dup, NEW_INT1);
     }
+}
+
+void increments_fill_js_exception(increments_t *increments, const char *js_exception)
+{
+    size_t n = strlen(js_exception);
+    int l = 14;
+    char xbuffer[l+3*n+1];
+    strcpy(xbuffer, "js_exceptions.");
+    uri_replace_dots_and_dollars(xbuffer+l, js_exception);
+    // printf("JS EXCEPTION: %s\n", xbuffer);
+    json_object_object_add(increments->others, xbuffer, NEW_INT1);
 }
 
 void increments_fill_caller_info(increments_t *increments, json_object *request)
@@ -1464,17 +1508,78 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
         json_object_get(request);
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, self->stream);
+        zmsg_addstr(msg, "r");
         zmsg_addmem(msg, &request, sizeof(json_object*));
         zmsg_send(&msg, pstate->push_socket);
     }
 }
 
-void processor_add_event(processor_t *self, parser_state_t *pstate, json_object *request)
+char* extract_page_for_jse(json_object *request)
 {
-    // TODO: not yet implemented
+    json_object *page_obj = NULL;
+    if (json_object_object_get_ex(request, "logjam_action", &page_obj)) {
+        page_obj = json_object_new_string(json_object_get_string(page_obj));
+    } else {
+        page_obj = json_object_new_string("Unknown#unknown_method");
+    }
+
+    const char *page_str = json_object_get_string(page_obj);
+
+    if (!strchr(page_str, '#'))
+        page_str = append_to_json_string(&page_obj, page_str, "#unknown_method");
+    else if (page_str[strlen(page_str)-1] == '#')
+        page_str = append_to_json_string(&page_obj, page_str, "unknown_method");
+
+    char *page = strdup(page_str);
+    json_object_put(page_obj);
+    return page;
+}
+
+char* exctract_key_from_jse_description(json_object *request)
+{
+    json_object *description_obj = NULL;
+    const char *description;
+    if (json_object_object_get_ex(request, "description", &description_obj)) {
+        description = json_object_get_string(description_obj);
+    } else {
+        description = "unknown_exception";
+    }
+    char *result = strdup(description);
+    return result;
 }
 
 void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_object *request)
+{
+    char *page = extract_page_for_jse(request);
+    char *js_exception = exctract_key_from_jse_description(request);
+
+    int minute = processor_setup_minute(self, request);
+    const char *module = processor_setup_module(self, page);
+
+    increments_t* increments = increments_new();
+    increments_fill_js_exception(increments, js_exception);
+
+    processor_add_totals(self, page, increments);
+    processor_add_totals(self, module, increments);
+    processor_add_totals(self, "all_pages", increments);
+
+    processor_add_minutes(self, page, minute, increments);
+    processor_add_minutes(self, module, minute, increments);
+    processor_add_minutes(self, "all_pages", minute, increments);
+
+    increments_destroy(increments);
+    free(page);
+    free(js_exception);
+
+    json_object_get(request);
+    zmsg_t *msg = zmsg_new();
+    zmsg_addstr(msg, self->stream);
+    zmsg_addstr(msg, "j");
+    zmsg_addmem(msg, &request, sizeof(json_object*));
+    zmsg_send(&msg, pstate->push_socket);
+}
+
+void processor_add_event(processor_t *self, parser_state_t *pstate, json_object *request)
 {
     // TODO: not yet implemented
 }
@@ -1653,6 +1758,24 @@ void add_request_collection_indexes(const char* stream, mongoc_collection_t *req
     add_request_field_index("exceptions",    requests_collection);
 }
 
+void add_jse_collection_indexes(const char* stream, mongoc_collection_t *jse_collection, request_writer_state_t* state)
+{
+    bson_error_t error;
+    bson_t *index_keys;
+
+    // collection.create_index([ ["logjam_request_id", 1] ], :background => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "logjam_request_id", 17, 1);
+    mongoc_collection_ensure_index(jse_collection, index_keys, &index_opt_background, &error);
+    bson_destroy(index_keys);
+
+    // collection.create_index([ ["description", 1] ], :background => true
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "description", 11, 1);
+    mongoc_collection_ensure_index(jse_collection, index_keys, &index_opt_background, &error);
+    bson_destroy(index_keys);
+}
+
 mongoc_collection_t* request_writer_get_request_collection(request_writer_state_t* self, const char* stream)
 {
     mongoc_collection_t *collection = zhash_lookup(self->request_collections, stream);
@@ -1662,6 +1785,19 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
         add_request_collection_indexes(stream, collection, self);
         zhash_insert(self->request_collections, stream, collection);
         zhash_freefn(self->request_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
+    }
+    return collection;
+}
+
+mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* self, const char* stream)
+{
+    mongoc_collection_t *collection = zhash_lookup(self->jse_collections, stream);
+    if (collection == NULL) {
+        // printf("creating jse collection: %s\n", stream);
+        collection = mongoc_client_get_collection(self->mongo_client, stream, "js_exceptions");
+        add_jse_collection_indexes(stream, collection, self);
+        zhash_insert(self->jse_collections, stream, collection);
+        zhash_freefn(self->jse_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
     }
     return collection;
 }
@@ -1820,19 +1956,54 @@ void store_request(const char* stream, json_object* request, request_writer_stat
     bson_destroy(document);
 }
 
+void store_js_exception(const char* stream, json_object* request, request_writer_state_t* state)
+{
+    mongoc_collection_t *jse_collection = request_writer_get_jse_collection(state, stream);
+    bson_t *document = bson_sized_new(1024);
+    json_object_to_bson(request, document);
+
+    bson_error_t error;
+    if (!mongoc_collection_insert(jse_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+        fprintf(stderr, "insert failed for exception document: %s\n", error.message);
+        dump_json_object(stderr, request);
+    }
+    bson_destroy(document);
+}
+
+void store_event(const char* stream, json_object* request, request_writer_state_t* state)
+{
+    //TODO: implement
+}
+
 void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
 {
     zframe_t *first = zmsg_first(msg);
-    zframe_t *second = zmsg_next(msg);
+    zframe_t *type = zmsg_next(msg);
+    zframe_t *body = zmsg_next(msg);
     size_t stream_len = zframe_size(first);
     char stream[stream_len+1];
+
     memcpy(stream, zframe_data(first), stream_len);
     stream[stream_len] = '\0';
     // printf("request_writer: stream: %s\n", stream);
+
     json_object *request;
-    memcpy(&request, zframe_data(second), sizeof(json_object*));
+    memcpy(&request, zframe_data(body), sizeof(json_object*));
     // dump_json_object(stdout, request);
-    store_request(stream, request, state);
+
+    char request_type = *((char*)zframe_data(type));
+    switch (request_type) {
+    case 'r':
+        store_request(stream, request, state);
+        break;
+    case 'j':
+        dump_json_object(stdout, request);
+        store_js_exception(stream, request, state);
+        break;
+    case 'e':
+        store_event(stream, request, state);
+        break;
+    }
     json_object_put(request);
 }
 
@@ -1845,6 +2016,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     state.mongo_client = mongoc_client_new(mongo_uri);
     assert(state.mongo_client);
     state.request_collections = zhash_new();
+    state.jse_collections = zhash_new();
     size_t ticks = 0;
 
     zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
@@ -1862,7 +2034,9 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             if (ticks++ % 60 == 0) {
                 printf("request_writer: freeing request collections\n");
                 zhash_destroy(&state.request_collections);
+                zhash_destroy(&state.jse_collections);
                 state.request_collections = zhash_new();
+                state.jse_collections = zhash_new();
             }
             state.request_count = 0;
         } else if (socket == state.pull_socket) {
@@ -1881,6 +2055,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     }
 
     zhash_destroy(&state.request_collections);
+    zhash_destroy(&state.jse_collections);
     mongoc_client_destroy(state.mongo_client);
 }
 
