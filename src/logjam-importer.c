@@ -33,7 +33,8 @@ static bool dryrun = false;
 //TODO: get from config
 char *mongo_uri = "mongodb://127.0.0.1:27017/";
 
-char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
+static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
+static char UTF8_CURRENCY[3] = {0xC2, 0xA4, '\0'};
 
 /* resource maps */
 #define MAX_RESOURCE_COUNT 100
@@ -531,13 +532,13 @@ void increments_fill_severity(increments_t *increments, request_data_t *request_
     json_object_object_add(increments->others, sev, NEW_INT1);
 }
 
-int replace_dots(char *s)
+int replace_dots_and_dollars(char *s)
 {
     if (s == NULL) return 0;
     int count = 0;
     char c;
     while ((c = *s) != '\0') {
-        if (c == '.') {
+        if (c == '.' || c == '$') {
             *s = '_';
             count++;
         }
@@ -546,7 +547,7 @@ int replace_dots(char *s)
     return count;
 }
 
-int copy_replace_dots(char* buffer, const char *s)
+int copy_replace_dots_and_dollars(char* buffer, const char *s)
 {
     int len = 0;
     if (s != NULL) {
@@ -558,6 +559,11 @@ int copy_replace_dots(char* buffer, const char *s)
                 *buffer++ = *p++;
                 *buffer++ = *p;
                 len += 3;
+            } else if (c == '$') {
+                char *p = UTF8_CURRENCY;
+                *buffer++ = *p++;
+                *buffer++ = *p;
+                len += 2;
             } else {
                 *buffer++ = c;
                 len++;
@@ -567,6 +573,155 @@ int copy_replace_dots(char* buffer, const char *s)
     }
     *buffer = '\0';
     return len;
+}
+
+static char *win1252_to_utf8[128] = {
+    /* 0x80 */	  "\u20AC"   ,   // Euro Sign
+    /* 0x81 */	  "\uFFFD"   ,   //
+    /* 0x82 */	  "\u201A"   ,   // Single Low-9 Quotation Mark
+    /* 0x83 */	  "\u0192"   ,   // Latin Small Letter F With Hook
+    /* 0x84 */	  "\u201E"   ,   // Double Low-9 Quotation Mark
+    /* 0x85 */	  "\u2026"   ,   // Horizontal Ellipsis
+    /* 0x86 */	  "\u2020"   ,   // Dagger
+    /* 0x87 */	  "\u2021"   ,   // Double Dagger
+    /* 0x88 */	  "\u02C6"   ,   // Modifier Letter Circumflex Accent
+    /* 0x89 */	  "\u2030"   ,   // Per Mille Sign
+    /* 0x8A */	  "\u0160"   ,   // Latin Capital Letter S With Caron
+    /* 0x8B */	  "\u2039"   ,   // Single Left-pointing Angle Quotation Mark
+    /* 0x8C */	  "\u0152"   ,   // Latin Capital Ligature Oe
+    /* 0x8D */	  "\uFFFD"   ,   //
+    /* 0x8E */	  "\u017D"   ,   // Latin Capital Letter Z With Caron
+    /* 0x8F */	  "\uFFFD"   ,   //
+    /* 0x90 */	  "\uFFFD"   ,   //
+    /* 0x91 */	  "\u2018"   ,   // Left Single Quotation Mark
+    /* 0x92 */	  "\u2019"   ,   // Right Single Quotation Mark
+    /* 0x93 */	  "\u201C"   ,   // Left Double Quotation Mark
+    /* 0x94 */	  "\u201D"   ,   // Right Double Quotation Mark
+    /* 0x95 */	  "\u2022"   ,   // Bullet
+    /* 0x96 */	  "\u2013"   ,   // En Dash
+    /* 0x97 */	  "\u2014"   ,   // Em Dash
+    /* 0x98 */	  "\u02DC"   ,   // Small Tilde
+    /* 0x99 */	  "\u2122"   ,   // Trade Mark Sign
+    /* 0x9A */	  "\u0161"   ,   // Latin Small Letter S With Caron
+    /* 0x9B */	  "\u203A"   ,   // Single Right-pointing Angle Quotation Mark
+    /* 0x9C */	  "\u0153"   ,   // Latin Small Ligature Oe
+    /* 0x9D */	  "\uFFFD"   ,   //
+    /* 0x9E */	  "\u017E"   ,   // Latin Small Letter Z With Caron
+    /* 0x9F */	  "\u0178"   ,   // Latin Capital Letter Y With Diaeresis
+    /* 0xA0 */	  "\u00A0"   ,   // No-break Space
+    /* 0xA1 */	  "\u00A1"   ,   // Inverted Exclamation Mark
+    /* 0xA2 */	  "\u00A2"   ,   // Cent Sign
+    /* 0xA3 */	  "\u00A3"   ,   // Pound Sign
+    /* 0xA4 */	  "\u00A4"   ,   // Currency Sign
+    /* 0xA5 */	  "\u00A5"   ,   // Yen Sign
+    /* 0xA6 */	  "\u00A6"   ,   // Broken Bar
+    /* 0xA7 */	  "\u00A7"   ,   // Section Sign
+    /* 0xA8 */	  "\u00A8"   ,   // Diaeresis
+    /* 0xA9 */	  "\u00A9"   ,   // Copyright Sign
+    /* 0xAA */	  "\u00AA"   ,   // Feminine Ordinal Indicator
+    /* 0xAB */	  "\u00AB"   ,   // Left-pointing Double Angle Quotation Mark
+    /* 0xAC */	  "\u00AC"   ,   // Not Sign
+    /* 0xAD */	  "\u00AD"   ,   // Soft Hyphen
+    /* 0xAE */	  "\u00AE"   ,   // Registered Sign
+    /* 0xAF */	  "\u00AF"   ,   // Macron
+    /* 0xB0 */	  "\u00B0"   ,   // Degree Sign
+    /* 0xB1 */	  "\u00B1"   ,   // Plus-minus Sign
+    /* 0xB2 */	  "\u00B2"   ,   // Superscript Two
+    /* 0xB3 */	  "\u00B3"   ,   // Superscript Three
+    /* 0xB4 */	  "\u00B4"   ,   // Acute Accent
+    /* 0xB5 */	  "\u00B5"   ,   // Micro Sign
+    /* 0xB6 */	  "\u00B6"   ,   // Pilcrow Sign
+    /* 0xB7 */	  "\u00B7"   ,   // Middle Dot
+    /* 0xB8 */	  "\u00B8"   ,   // Cedilla
+    /* 0xB9 */	  "\u00B9"   ,   // Superscript One
+    /* 0xBA */	  "\u00BA"   ,   // Masculine Ordinal Indicator
+    /* 0xBB */	  "\u00BB"   ,   // Right-pointing Double Angle Quotation Mark
+    /* 0xBC */	  "\u00BC"   ,   // Vulgar Fraction One Quarter
+    /* 0xBD */	  "\u00BD"   ,   // Vulgar Fraction One Half
+    /* 0xBE */	  "\u00BE"   ,   // Vulgar Fraction Three Quarters
+    /* 0xBF */	  "\u00BF"   ,   // Inverted Question Mark
+    /* 0xC0 */	  "\u00C0"   ,   // Latin Capital Letter A With Grave
+    /* 0xC1 */	  "\u00C1"   ,   // Latin Capital Letter A With Acute
+    /* 0xC2 */	  "\u00C2"   ,   // Latin Capital Letter A With Circumflex
+    /* 0xC3 */	  "\u00C3"   ,   // Latin Capital Letter A With Tilde
+    /* 0xC4 */	  "\u00C4"   ,   // Latin Capital Letter A With Diaeresis
+    /* 0xC5 */	  "\u00C5"   ,   // Latin Capital Letter A With Ring Above
+    /* 0xC6 */	  "\u00C6"   ,   // Latin Capital Letter Ae
+    /* 0xC7 */	  "\u00C7"   ,   // Latin Capital Letter C With Cedilla
+    /* 0xC8 */	  "\u00C8"   ,   // Latin Capital Letter E With Grave
+    /* 0xC9 */	  "\u00C9"   ,   // Latin Capital Letter E With Acute
+    /* 0xCA */	  "\u00CA"   ,   // Latin Capital Letter E With Circumflex
+    /* 0xCB */	  "\u00CB"   ,   // Latin Capital Letter E With Diaeresis
+    /* 0xCC */	  "\u00CC"   ,   // Latin Capital Letter I With Grave
+    /* 0xCD */	  "\u00CD"   ,   // Latin Capital Letter I With Acute
+    /* 0xCE */	  "\u00CE"   ,   // Latin Capital Letter I With Circumflex
+    /* 0xCF */	  "\u00CF"   ,   // Latin Capital Letter I With Diaeresis
+    /* 0xD0 */	  "\u00D0"   ,   // Latin Capital Letter Eth
+    /* 0xD1 */	  "\u00D1"   ,   // Latin Capital Letter N With Tilde
+    /* 0xD2 */	  "\u00D2"   ,   // Latin Capital Letter O With Grave
+    /* 0xD3 */	  "\u00D3"   ,   // Latin Capital Letter O With Acute
+    /* 0xD4 */	  "\u00D4"   ,   // Latin Capital Letter O With Circumflex
+    /* 0xD5 */	  "\u00D5"   ,   // Latin Capital Letter O With Tilde
+    /* 0xD6 */	  "\u00D6"   ,   // Latin Capital Letter O With Diaeresis
+    /* 0xD7 */	  "\u00D7"   ,   // Multiplication Sign
+    /* 0xD8 */	  "\u00D8"   ,   // Latin Capital Letter O With Stroke
+    /* 0xD9 */	  "\u00D9"   ,   // Latin Capital Letter U With Grave
+    /* 0xDA */	  "\u00DA"   ,   // Latin Capital Letter U With Acute
+    /* 0xDB */	  "\u00DB"   ,   // Latin Capital Letter U With Circumflex
+    /* 0xDC */	  "\u00DC"   ,   // Latin Capital Letter U With Diaeresis
+    /* 0xDD */	  "\u00DD"   ,   // Latin Capital Letter Y With Acute
+    /* 0xDE */	  "\u00DE"   ,   // Latin Capital Letter Thorn
+    /* 0xDF */	  "\u00DF"   ,   // Latin Small Letter Sharp S
+    /* 0xE0 */	  "\u00E0"   ,   // Latin Small Letter A With Grave
+    /* 0xE1 */	  "\u00E1"   ,   // Latin Small Letter A With Acute
+    /* 0xE2 */	  "\u00E2"   ,   // Latin Small Letter A With Circumflex
+    /* 0xE3 */	  "\u00E3"   ,   // Latin Small Letter A With Tilde
+    /* 0xE4 */	  "\u00E4"   ,   // Latin Small Letter A With Diaeresis
+    /* 0xE5 */	  "\u00E5"   ,   // Latin Small Letter A With Ring Above
+    /* 0xE6 */	  "\u00E6"   ,   // Latin Small Letter Ae
+    /* 0xE7 */	  "\u00E7"   ,   // Latin Small Letter C With Cedilla
+    /* 0xE8 */	  "\u00E8"   ,   // Latin Small Letter E With Grave
+    /* 0xE9 */	  "\u00E9"   ,   // Latin Small Letter E With Acute
+    /* 0xEA */	  "\u00EA"   ,   // Latin Small Letter E With Circumflex
+    /* 0xEB */	  "\u00EB"   ,   // Latin Small Letter E With Diaeresis
+    /* 0xEC */	  "\u00EC"   ,   // Latin Small Letter I With Grave
+    /* 0xED */	  "\u00ED"   ,   // Latin Small Letter I With Acute
+    /* 0xEE */	  "\u00EE"   ,   // Latin Small Letter I With Circumflex
+    /* 0xEF */	  "\u00EF"   ,   // Latin Small Letter I With Diaeresis
+    /* 0xF0 */	  "\u00F0"   ,   // Latin Small Letter Eth
+    /* 0xF1 */	  "\u00F1"   ,   // Latin Small Letter N With Tilde
+    /* 0xF2 */	  "\u00F2"   ,   // Latin Small Letter O With Grave
+    /* 0xF3 */	  "\u00F3"   ,   // Latin Small Letter O With Acute
+    /* 0xF4 */	  "\u00F4"   ,   // Latin Small Letter O With Circumflex
+    /* 0xF5 */	  "\u00F5"   ,   // Latin Small Letter O With Tilde
+    /* 0xF6 */	  "\u00F6"   ,   // Latin Small Letter O With Diaeresis
+    /* 0xF7 */	  "\u00F7"   ,   // Division Sign
+    /* 0xF8 */	  "\u00F8"   ,   // Latin Small Letter O With Stroke
+    /* 0xF9 */	  "\u00F9"   ,   // Latin Small Letter U With Grave
+    /* 0xFA */	  "\u00FA"   ,   // Latin Small Letter U With Acute
+    /* 0xFB */	  "\u00FB"   ,   // Latin Small Letter U With Circumflex
+    /* 0xFC */	  "\u00FC"   ,   // Latin Small Letter U With Diaeresis
+    /* 0xFD */	  "\u00FD"   ,   // Latin Small Letter Y With Acute
+    /* 0xFE */	  "\u00FE"   ,   // Latin Small Letter Thorn
+    /* 0xFF */	  "\u00FF"   ,   // Latin Small Letter Y With Diaeresis
+};
+
+int convert_to_win1252(const char *str, size_t n, char *utf8)
+{
+    int j = 0;
+    for (int i=0; i < n; i++) {
+        uint8_t c = str[i];
+        if ((c & 0x80) == 0) { // ascii 7bit
+            utf8[j++] = c;
+        } else { // high bit set
+            char *t = win1252_to_utf8[c & 0x7F];
+            while ( (c = *t++) ) {
+                utf8[j++] = c;
+            }
+        }
+    }
+    utf8[j] = '\0';
+    return j-1;
 }
 
 void increments_fill_exceptions(increments_t *increments, json_object *exceptions)
@@ -584,7 +739,7 @@ void increments_fill_exceptions(increments_t *increments, json_object *exception
         char ex_str_dup[n+12];
         strcpy(ex_str_dup, "exceptions.");
         strcpy(ex_str_dup+11, ex_str);
-        int replaced_count = replace_dots(ex_str_dup+11);
+        int replaced_count = replace_dots_and_dollars(ex_str_dup+11);
         // printf("EXCEPTION: %s\n", ex_str_dup);
         if (replaced_count > 0) {
             json_object* new_ex = json_object_new_string(ex_str_dup+11);
@@ -609,11 +764,11 @@ void increments_fill_caller_info(increments_t *increments, json_object *request)
             if (3 == sscanf(caller_id, "%[^-]-%[^-]-%[^-]", app, env, rid)) {
                 size_t app_len = strlen(app);
                 size_t action_len = strlen(caller_action);
-                char caller_name[3*(app_len + action_len) + 2 + 8];
+                char caller_name[4*(app_len + action_len) + 2 + 8];
                 strcpy(caller_name, "callers.");
-                int real_app_len = copy_replace_dots(caller_name + 8, app);
+                int real_app_len = copy_replace_dots_and_dollars(caller_name + 8, app);
                 caller_name[real_app_len + 8] = '-';
-                copy_replace_dots(caller_name + 8 + real_app_len + 1, caller_action);
+                copy_replace_dots_and_dollars(caller_name + 8 + real_app_len + 1, caller_action);
                 // printf("CALLER: %s\n", caller_name);
                 json_object_object_add(increments->others, caller_name, NEW_INT1);
             }
@@ -1511,15 +1666,28 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
     return collection;
 }
 
+int bson_append_win1252(bson_t *b, const char *key, size_t key_len, const char* val, size_t val_len)
+{
+    char utf8[4*val_len+1];
+    int new_len = convert_to_win1252(val, val_len, utf8);
+    return bson_append_utf8(b, key, key_len, utf8, new_len);
+}
+
+
 static void json_object_to_bson(json_object *j, bson_t *b);
 
 //TODO: optimize this!
-//TODO: validate utf8!
 static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
 {
     size_t n = strlen(key);
-    char safe_key[3*n+1];
-    int len = copy_replace_dots(safe_key, key);
+    char safe_key[4*n+1];
+    int len = copy_replace_dots_and_dollars(safe_key, key);
+
+    if (!bson_utf8_validate(safe_key, len, false)) {
+        char tmp[4*len+1];
+        len = convert_to_win1252(safe_key, len, tmp);
+        strcpy(safe_key, tmp);
+    }
     // printf("safe_key: %s\n", safe_key);
 
     enum json_type type = json_object_get_type(val);
@@ -1552,9 +1720,18 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
         bson_destroy(sub);
         break;
     }
-    case json_type_string:
-        bson_append_utf8(b, safe_key, len, json_object_get_string(val), -1);
+    case json_type_string: {
+        const char *str = json_object_get_string(val);
+        size_t n = strlen(str);
+        if (bson_utf8_validate(str, n, false /* disallow embedded null characters */)) {
+            bson_append_utf8(b, safe_key, len, str, n);
+        } else {
+            printf("invalid utf8 in string value: %s\n", str);
+            // bson_append_binary(b, safe_key, len, BSON_SUBTYPE_BINARY, (uint8_t*)str, n);
+            bson_append_win1252(b, safe_key, len, str, n);
+        }
         break;
+    }
     case json_type_null:
         bson_append_null(b, safe_key, len);
         break;
