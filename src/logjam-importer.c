@@ -30,8 +30,11 @@ void log_zmq_error(int rc)
 static zconfig_t* config = NULL;
 char *config_file = "logjam.conf";
 static bool dryrun = false;
-//TODO: get from config
 char *mongo_uri = "mongodb://127.0.0.1:27017/";
+
+// TODO: read from config and make it configurable per stream and namespace
+static int total_time_import_threshold = 100;
+static char* ignored_request_prefix = "/_system/warmup";
 
 static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
 static char UTF8_CURRENCY[3] = {0xC2, 0xA4, '\0'};
@@ -861,13 +864,6 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
     }
 }
 
-
-int ignore_request(json_object *request)
-{
-    //TODO: how to implement this generically
-    return 0;
-}
-
 const char* append_to_json_string(json_object **jobj, const char* old_str, const char* add_str)
 {
     int old_len = strlen(old_str);
@@ -1455,14 +1451,29 @@ void processor_add_quants(processor_t *self, const char* namespace, increments_t
     }
 }
 
-//TODO: generalize this
 bool interesting_request(request_data_t *request_data, json_object *request)
 {
     return
-        request_data->total_time > 100 ||
+        request_data->total_time > total_time_import_threshold ||
         request_data->severity > 1 ||
         request_data->response_code >= 400 ||
         request_data->exceptions != NULL;
+}
+
+int ignore_request(json_object *request)
+{
+    int rc = 0;
+    json_object *req_info;
+    if (json_object_object_get_ex(request, "request_info", &req_info)) {
+        json_object *url_obj;
+        if (json_object_object_get_ex(req_info, "url", &url_obj)) {
+            const char *url = json_object_get_string(url_obj);
+            if (strstr(url, ignored_request_prefix) == url) {
+                rc = 1;
+            }
+        }
+    }
+    return rc;
 }
 
 void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
@@ -1616,7 +1627,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         else if (!strncmp("events", topic_str, 6))
             processor_add_event(processor, parser_state, request);
         else {
-            // silently ignore unknown request data
+            // silently ignore unknown request types
         }
         json_object_put(request);
     }
