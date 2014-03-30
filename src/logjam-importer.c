@@ -175,6 +175,7 @@ typedef struct {
     void *controller_socket;
     void *pull_socket;
     void *push_socket;
+    void *live_stream_socket;
     size_t request_count;
     msg_stats_t msg_stats;
 } request_writer_state_t;
@@ -204,6 +205,28 @@ void initialize_mongo_db_globals()
             mongo_uri = uri;
             printf("database: %s", mongo_uri);
         }
+    }
+}
+
+void* live_stream_socket_new(zctx_t *context)
+{
+    void *live_stream_socket = zsocket_new(context, ZMQ_PUSH);
+    assert(live_stream_socket);
+    int rc = zsocket_connect(live_stream_socket, "tcp://localhost:9607");
+    assert(rc == 0);
+    return live_stream_socket;
+}
+
+void live_stream_publish(void *live_stream_socket, const char* key, const char* json_str)
+{
+    int rc = 0;
+    zframe_t *msg_key = zframe_new(key, strlen(key));
+    zframe_t *msg_body = zframe_new(json_str, strlen(json_str));
+    rc = zframe_send(&msg_key, live_stream_socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
+    // printf("MSG frame 1 to live stream: rc=%d\n", rc);
+    if (rc == 0) {
+        rc = zframe_send(&msg_body, live_stream_socket, ZFRAME_DONTWAIT);
+        // printf("MSG frame 2 to live stream: rc=%d\n", rc);
     }
 }
 
@@ -1634,7 +1657,7 @@ int processor_publish_totals(const char* stream, void *processor, void *live_str
         // skip :: at the beginning of module
         while (*module == ':') module++;
         size_t m = strlen(module);
-        char key[n + m + 2];
+        char key[n + m + 3];
         sprintf(key, "%s-%s,%s", app, env, module);
         // TODO: change this crap in the live stream publisher
         // tolower is unsafe and not really necessary
@@ -1647,15 +1670,8 @@ int processor_publish_totals(const char* stream, void *processor, void *live_str
         increments_add_metrics_to_json(incs, json);
         const char* json_str = json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN);
 
-        int rc = 0;
-        zframe_t *msg_key = zframe_new(key, strlen(key));
-        zframe_t *msg_body = zframe_new(json_str, strlen(json_str));
-        rc = zframe_send(&msg_key, live_stream_socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
-        // printf("MSG frame 1 to live stream: rc=%d\n", rc);
-        if (rc == 0) {
-            rc = zframe_send(&msg_body, live_stream_socket, ZFRAME_DONTWAIT);
-            // printf("MSG frame 2 to live stream: rc=%d\n", rc);
-        }
+        live_stream_publish(live_stream_socket, key, json_str);
+
         json_object_put(json);
         module = zlist_next(modules);
     }
@@ -2009,7 +2025,7 @@ void convert_metrics_for_indexing(json_object *request)
     json_object_object_add(request, "metrics", metrics);
 }
 
-void store_request(const char* stream, json_object* request, request_writer_state_t* state)
+json_object* store_request(const char* stream, json_object* request, request_writer_state_t* state)
 {
     // dump_json_object(stdout, request);
     convert_metrics_for_indexing(request);
@@ -2024,7 +2040,6 @@ void store_request(const char* stream, json_object* request, request_writer_stat
         json_object_object_del(request, "request_id");
         // TODO: protect against non uuids (l != 32) ?
         bson_append_binary(document, "_id", 3, BSON_SUBTYPE_UUID_DEPRECATED, (uint8_t*)request_id, strlen(request_id));
-        json_object_put(request_id_obj);
     } else {
         // generate an oid
         bson_oid_t oid;
@@ -2045,6 +2060,8 @@ void store_request(const char* stream, json_object* request, request_writer_stat
         dump_json_object(stderr, request);
     }
     bson_destroy(document);
+
+    return request_id_obj;
 }
 
 void store_js_exception(const char* stream, json_object* request, request_writer_state_t* state)
@@ -2075,6 +2092,62 @@ void store_event(const char* stream, json_object* request, request_writer_state_
     bson_destroy(document);
 }
 
+void request_writer_publish_error(const char* stream, json_object* request, request_writer_state_t* state, json_object* request_id)
+{
+    if (request_id == NULL) return;
+
+    json_object *severity_obj;
+    if (json_object_object_get_ex(request, "severity", &severity_obj)) {
+        int severity = json_object_get_int(severity_obj);
+        if (severity > 1) {
+            json_object *error_info = json_object_new_object();
+            json_object_object_add(error_info, "request_id", request_id);
+            json_object_object_add(error_info, "severity", severity_obj);
+
+            json_object *action = json_object_object_get(request, "page");
+            json_object_object_add(error_info, "action", action);
+
+            json_object *rsp = json_object_object_get(request, "response_code");
+            json_object_object_add(error_info, "response_code", rsp);
+
+            json_object *started_at = json_object_object_get(request, "started_at");
+            json_object_object_add(error_info, "time", started_at);
+
+            // TODO: extract description from request object
+            json_object *description = json_object_new_string("6666666666 öööööööö 66666666666666");
+            json_object_object_add(error_info, "description", description);
+
+            json_object *arror = json_object_new_array();
+            json_object_array_add(arror, error_info);
+
+            const char *json_str = json_object_to_json_string_ext(arror, JSON_C_TO_STRING_PLAIN);
+
+            // TODO: get module from request (or send along)
+            const char *module = "all_pages";
+
+            size_t n = strlen(stream);
+            char app[n+1], env[n+1];
+            sscanf(stream, "logjam-%[^-]-%[^-]", app, env);
+
+            // skip :: at the beginning of module
+            while (*module == ':') module++;
+            size_t m = strlen(module);
+            char key[n + m + 3];
+            sprintf(key, "%s-%s,%s", app, env, module);
+            // TODO: change this crap in the live stream publisher
+            // tolower is unsafe and not really necessary
+            for (char *p = key; *p; ++p) *p = tolower(*p);
+
+            live_stream_publish(state->live_stream_socket, key, json_str);
+
+            json_object_put(error_info);
+            json_object_put(arror);
+        }
+    }
+
+    json_object_put(request_id);
+}
+
 void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
 {
     zframe_t *first = zmsg_first(msg);
@@ -2087,14 +2160,15 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     stream[stream_len] = '\0';
     // printf("request_writer: stream: %s\n", stream);
 
-    json_object *request;
+    json_object *request,*request_id;
     memcpy(&request, zframe_data(body), sizeof(json_object*));
     // dump_json_object(stdout, request);
 
     char request_type = *((char*)zframe_data(type));
     switch (request_type) {
     case 'r':
-        store_request(stream, request, state);
+        request_id = store_request(stream, request, state);
+        request_writer_publish_error(stream, request, state, request_id);
         break;
     case 'j':
         store_js_exception(stream, request, state);
@@ -2117,6 +2191,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     state.request_collections = zhash_new();
     state.jse_collections = zhash_new();
     state.events_collections = zhash_new();
+    state.live_stream_socket = live_stream_socket_new(ctx);
     size_t ticks = 0;
 
     zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
@@ -2452,10 +2527,7 @@ int main(int argc, char * const *argv)
         state.parser_pipes[i] = zthread_fork(context, parser, &config);
     }
     // connect to live stream
-    state.live_stream_socket = zsocket_new(context, ZMQ_PUSH);
-    assert(state.live_stream_socket);
-    rc = zsocket_connect(state.live_stream_socket, "tcp://localhost:9607");
-    assert(rc == 0);
+    state.live_stream_socket = live_stream_socket_new(context);
 
     // flush increments to database every 1000 ms
     rc = zloop_timer(loop, 1000, 0, collect_stats_and_forward, &state);
