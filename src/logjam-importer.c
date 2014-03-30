@@ -789,7 +789,7 @@ void increments_fill_js_exception(increments_t *increments, const char *js_excep
     char xbuffer[l+3*n+1];
     strcpy(xbuffer, "js_exceptions.");
     uri_replace_dots_and_dollars(xbuffer+l, js_exception);
-    // printf("JS EXCEPTION: %s\n", xbuffer);
+    // rintf("JS EXCEPTION: %s\n", xbuffer);
     json_object_object_add(increments->others, xbuffer, NEW_INT1);
 }
 
@@ -1997,7 +1997,6 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
         store_request(stream, request, state);
         break;
     case 'j':
-        dump_json_object(stdout, request);
         store_js_exception(stream, request, state);
         break;
     case 'e':
