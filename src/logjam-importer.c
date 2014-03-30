@@ -86,10 +86,11 @@ typedef struct {
 
 /* controller state */
 typedef struct {
-    void* subscriber_pipe;
-    void* parser_pipes[NUM_PARSERS];
-    void* request_writer_pipe;
-    void* stats_updater_pipe;
+    void *subscriber_pipe;
+    void *parser_pipes[NUM_PARSERS];
+    void *request_writer_pipe;
+    void *stats_updater_pipe;
+    void *live_stream_socket;
     msg_stats_t msg_stats;
 } controller_state_t;
 
@@ -501,6 +502,18 @@ void increments_fill_metrics(increments_t *increments, json_object *request)
             metric_pair_t *p = &increments->metrics[i];
             p->val = v;
             p->val_squared = v*v;
+        }
+    }
+}
+
+void increments_add_metrics_to_json(increments_t *increments, json_object *jobj)
+{
+    const int n = last_resource_index;
+    for (size_t i=0; i <= n; i++) {
+        metric_pair_t *p = &increments->metrics[i];
+        double v = p->val;
+        if (v > 0) {
+            json_object_object_add(jobj, int_to_resource[i], json_object_new_double(v));
         }
     }
 }
@@ -1607,6 +1620,49 @@ void processor_add_event(processor_t *self, parser_state_t *pstate, json_object 
     zmsg_send(&msg, pstate->push_socket);
 }
 
+int processor_publish_totals(const char* stream, void *processor, void *live_stream_socket)
+{
+    processor_t *self = processor;
+    size_t n = strlen(stream);
+    char app[n+1], env[n+1];
+    sscanf(stream, "logjam-%[^-]-%[^-]", app, env);
+    zlist_t *modules = zhash_keys(self->modules);
+    zlist_push(modules, "all_pages");
+    const char* module = zlist_first(modules);
+    while (module != NULL) {
+        const char *namespace = module;
+        // skip :: at the beginning of module
+        while (*module == ':') module++;
+        size_t m = strlen(module);
+        char key[n + m + 2];
+        sprintf(key, "%s-%s,%s", app, env, module);
+        // TODO: change this crap in the live stream publisher
+        // tolower is unsafe and not really necessary
+        for (char *p = key; *p; ++p) *p = tolower(*p);
+
+        // printf("publishing totals for stream: %s, module: %s, key: %s\n", stream, module, key);
+        increments_t *incs = zhash_lookup(self->totals, namespace);
+        json_object *json = json_object_new_object();
+        json_object_object_add(json, "count", json_object_new_int(incs->request_count));
+        increments_add_metrics_to_json(incs, json);
+        const char* json_str = json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN);
+
+        int rc = 0;
+        zframe_t *msg_key = zframe_new(key, strlen(key));
+        zframe_t *msg_body = zframe_new(json_str, strlen(json_str));
+        rc = zframe_send(&msg_key, live_stream_socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
+        // printf("MSG frame 1 to live stream: rc=%d\n", rc);
+        if (rc == 0) {
+            rc = zframe_send(&msg_body, live_stream_socket, ZFRAME_DONTWAIT);
+            // printf("MSG frame 2 to live stream: rc=%d\n", rc);
+        }
+        json_object_put(json);
+        module = zlist_next(modules);
+    }
+    zlist_destroy(&modules);
+    return 0;
+}
+
 void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
 {
     // zmsg_dump(msg);
@@ -2214,6 +2270,9 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         zhash_destroy(&processors[i]);
     }
 
+    // publish on live stream (need to do this while we still own the processors)
+    zhash_foreach(processors[0], processor_publish_totals, state->live_stream_socket);
+
     // forward to stats_updater
     zmsg_t *stats_msg = zmsg_new();
     zmsg_addmem(stats_msg, &processors[0], sizeof(zhash_t*));
@@ -2392,6 +2451,11 @@ int main(int argc, char * const *argv)
     for (size_t i=0; i<NUM_PARSERS; i++) {
         state.parser_pipes[i] = zthread_fork(context, parser, &config);
     }
+    // connect to live stream
+    state.live_stream_socket = zsocket_new(context, ZMQ_PUSH);
+    assert(state.live_stream_socket);
+    rc = zsocket_connect(state.live_stream_socket, "tcp://localhost:9607");
+    assert(rc == 0);
 
     // flush increments to database every 1000 ms
     rc = zloop_timer(loop, 1000, 0, collect_stats_and_forward, &state);
