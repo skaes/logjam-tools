@@ -1559,13 +1559,18 @@ void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_
     increments_t* increments = increments_new();
     increments_fill_js_exception(increments, js_exception);
 
-    processor_add_totals(self, page, increments);
-    processor_add_totals(self, module, increments);
     processor_add_totals(self, "all_pages", increments);
-
-    processor_add_minutes(self, page, minute, increments);
-    processor_add_minutes(self, module, minute, increments);
     processor_add_minutes(self, "all_pages", minute, increments);
+
+    if (strstr(page, "#unknown_method") == NULL) {
+        processor_add_totals(self, page, increments);
+        processor_add_minutes(self, page, minute, increments);
+    }
+
+    if (strcmp(module, "Unknown") != 0) {
+        processor_add_totals(self, module, increments);
+        processor_add_minutes(self, module, minute, increments);
+    }
 
     increments_destroy(increments);
     free(page);
