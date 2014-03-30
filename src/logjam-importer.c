@@ -167,6 +167,7 @@ typedef struct {
     mongoc_client_t* mongo_client;
     zhash_t *request_collections;
     zhash_t *jse_collections;
+    zhash_t *events_collections;
     void *controller_socket;
     void *pull_socket;
     void *push_socket;
@@ -1586,7 +1587,13 @@ void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_
 
 void processor_add_event(processor_t *self, parser_state_t *pstate, json_object *request)
 {
-    // TODO: not yet implemented
+    processor_setup_minute(self, request);
+    json_object_get(request);
+    zmsg_t *msg = zmsg_new();
+    zmsg_addstr(msg, self->stream);
+    zmsg_addstr(msg, "e");
+    zmsg_addmem(msg, &request, sizeof(json_object*));
+    zmsg_send(&msg, pstate->push_socket);
 }
 
 void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
@@ -1807,6 +1814,18 @@ mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* s
     return collection;
 }
 
+mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t* self, const char* stream)
+{
+    mongoc_collection_t *collection = zhash_lookup(self->events_collections, stream);
+    if (collection == NULL) {
+        // printf("creating events collection: %s\n", stream);
+        collection = mongoc_client_get_collection(self->mongo_client, stream, "events");
+        zhash_insert(self->events_collections, stream, collection);
+        zhash_freefn(self->events_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
+    }
+    return collection;
+}
+
 int bson_append_win1252(bson_t *b, const char *key, size_t key_len, const char* val, size_t val_len)
 {
     char utf8[4*val_len+1];
@@ -1977,7 +1996,16 @@ void store_js_exception(const char* stream, json_object* request, request_writer
 
 void store_event(const char* stream, json_object* request, request_writer_state_t* state)
 {
-    //TODO: implement
+    mongoc_collection_t *events_collection = request_writer_get_events_collection(state, stream);
+    bson_t *document = bson_sized_new(1024);
+    json_object_to_bson(request, document);
+
+    bson_error_t error;
+    if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+        fprintf(stderr, "insert failed for event document: %s\n", error.message);
+        dump_json_object(stderr, request);
+    }
+    bson_destroy(document);
 }
 
 void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
@@ -2021,6 +2049,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     assert(state.mongo_client);
     state.request_collections = zhash_new();
     state.jse_collections = zhash_new();
+    state.events_collections = zhash_new();
     size_t ticks = 0;
 
     zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
@@ -2039,8 +2068,10 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
                 printf("request_writer: freeing request collections\n");
                 zhash_destroy(&state.request_collections);
                 zhash_destroy(&state.jse_collections);
+                zhash_destroy(&state.events_collections);
                 state.request_collections = zhash_new();
                 state.jse_collections = zhash_new();
+                state.events_collections = zhash_new();
             }
             state.request_count = 0;
         } else if (socket == state.pull_socket) {
@@ -2060,6 +2091,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
 
     zhash_destroy(&state.request_collections);
     zhash_destroy(&state.jse_collections);
+    zhash_destroy(&state.events_collections);
     mongoc_client_destroy(state.mongo_client);
 }
 
