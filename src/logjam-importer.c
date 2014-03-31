@@ -88,7 +88,7 @@ typedef struct {
     size_t dropped;
 } msg_stats_t;
 
-#define NUM_PARSERS 5
+#define NUM_PARSERS 4
 
 /* controller state */
 typedef struct {
