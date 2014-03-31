@@ -905,6 +905,7 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
         }
         default:
             fprintf(stderr, "unknown increment type: %s, for key: %s\n", json_type_to_name(type), key);
+            dump_json_object(stderr, increments->others);
         }
         if (new_obj) {
             json_object_object_add(stored_increments->others, key, new_obj);
@@ -1051,6 +1052,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
 {
     mongoc_collection_t *collection = arg;
     increments_t* increments = data;
+    assert(increments);
 
     bson_t *selector = bson_new();
     assert( bson_append_utf8(selector, "page", 4, namespace, strlen(namespace)) );
