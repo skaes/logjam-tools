@@ -2400,10 +2400,6 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     size_t request_counts[NUM_PARSERS];
     int64_t start_time_ms = zclock_time();
 
-    zmsg_t *tick = zmsg_new();
-    zmsg_addstr(tick, "tick");
-    zmsg_send(&tick, state->request_writer_pipe);
-
     for (size_t i=0; i<NUM_PARSERS; i++) {
         void* parser_pipe = state->parser_pipes[i];
         zmsg_t *tick = zmsg_new();
@@ -2435,6 +2431,11 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     zmsg_addmem(stats_msg, &processors[0], sizeof(zhash_t*));
     zmsg_addmem(stats_msg, &request_count, sizeof(size_t));
     zmsg_send(&stats_msg, state->stats_updater_pipe);
+
+    // tell request writer to tick
+    zmsg_t *tick = zmsg_new();
+    zmsg_addstr(tick, "tick");
+    zmsg_send(&tick, state->request_writer_pipe);
 
     int64_t end_time_ms = zclock_time();
     printf("stats collector: %zu messages (%zu ms)\n", request_count, (size_t)(end_time_ms - start_time_ms));
