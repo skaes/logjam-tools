@@ -1038,11 +1038,12 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     // bson_destroy(bs);
 
     bson_t *document = increments_to_bson(namespace, increments);
-    bson_error_t *error = NULL;
-    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
-        fprintf(stderr, "update failed on totals\n");
+    if (!dryrun) {
+        bson_error_t *error = NULL;
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
+            fprintf(stderr, "update failed on totals\n");
+        }
     }
-
     bson_destroy(selector);
     bson_destroy(document);
     return 0;
@@ -1063,9 +1064,11 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     // bson_destroy(bs);
 
     bson_t *document = increments_to_bson(namespace, increments);
-    bson_error_t *error = NULL;
-    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
-        fprintf(stderr, "update failed on totals\n");
+    if (!dryrun) {
+        bson_error_t *error = NULL;
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
+            fprintf(stderr, "update failed on totals\n");
+        }
     }
 
     bson_destroy(selector);
@@ -1121,11 +1124,12 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     // printf("document. size: %zu; value:%s\n", n, bs);
     // bson_destroy(bs);
 
-    bson_error_t *error = NULL;
-    if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
-        fprintf(stderr, "update failed on totals\n");
+    if (!dryrun) {
+        bson_error_t *error = NULL;
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
+            fprintf(stderr, "update failed on totals\n");
+        }
     }
-
     bson_destroy(selector);
     bson_destroy(incs);
     bson_destroy(document);
@@ -1143,9 +1147,11 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     bson_append_utf8(sub_doc, "value", 5, db_name, -1);
     bson_append_document(document, "$addToSet", 9, sub_doc);
 
-    bson_error_t error;
-    if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-        fprintf(stderr, "update failed on totals\n");
+    if (!dryrun) {
+        bson_error_t error;
+        if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
+            fprintf(stderr, "update failed on totals\n");
+        }
     }
 
     bson_destroy(selector);
@@ -1159,8 +1165,11 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
 {
     stream_collections_t *collections = malloc(sizeof(stream_collections_t));
     assert(collections);
+    memset(collections, 0, sizeof(stream_collections_t));
     bson_error_t error;
     bson_t *keys;
+
+    if (dryrun) return collections;
 
     collections->totals = mongoc_client_get_collection(client, stream, "totals");
     keys = bson_new();
@@ -1188,9 +1197,9 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
 
 void destroy_stream_collections(stream_collections_t* collections)
 {
-    mongoc_collection_destroy(collections->totals);
-    mongoc_collection_destroy(collections->minutes);
-    mongoc_collection_destroy(collections->quants);
+    if (collections->totals)  mongoc_collection_destroy(collections->totals);
+    if (collections->minutes) mongoc_collection_destroy(collections->minutes);
+    if (collections->quants)  mongoc_collection_destroy(collections->quants);
     free(collections);
 }
 
@@ -1804,9 +1813,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             size_t request_count;
             extract_parser_state(msg, &processors, &request_count);
             size_t num_procs = zhash_size(processors);
-            if (!dryrun) {
-                zhash_foreach(processors, processor_update_mongo_db, &state);
-            }
+            zhash_foreach(processors, processor_update_mongo_db, &state);
             // refresh database information every minute
             if (ticks++ % 60 == 0) {
                 zhash_destroy(&state.stream_collections);
@@ -1897,6 +1904,7 @@ void add_jse_collection_indexes(const char* stream, mongoc_collection_t *jse_col
 
 mongoc_collection_t* request_writer_get_request_collection(request_writer_state_t* self, const char* stream)
 {
+    if (dryrun) return NULL;
     mongoc_collection_t *collection = zhash_lookup(self->request_collections, stream);
     if (collection == NULL) {
         // printf("creating requests collection: %s\n", stream);
@@ -1910,6 +1918,7 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
 
 mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* self, const char* stream)
 {
+    if (dryrun) return NULL;
     mongoc_collection_t *collection = zhash_lookup(self->jse_collections, stream);
     if (collection == NULL) {
         // printf("creating jse collection: %s\n", stream);
@@ -1923,6 +1932,7 @@ mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* s
 
 mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t* self, const char* stream)
 {
+    if (dryrun) return NULL;
     mongoc_collection_t *collection = zhash_lookup(self->events_collections, stream);
     if (collection == NULL) {
         // printf("creating events collection: %s\n", stream);
@@ -2078,10 +2088,12 @@ json_object* store_request(const char* stream, json_object* request, request_wri
     // printf("doument. size: %zu; value:%s\n", n, bs);
     // bson_destroy(bs);
 
-    bson_error_t error;
-    if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-        fprintf(stderr, "insert failed for request document: %s\n", error.message);
-        dump_json_object(stderr, request);
+    if (!dryrun) {
+        bson_error_t error;
+        if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+            fprintf(stderr, "insert failed for request document: %s\n", error.message);
+            dump_json_object(stderr, request);
+        }
     }
     bson_destroy(document);
 
@@ -2094,10 +2106,12 @@ void store_js_exception(const char* stream, json_object* request, request_writer
     bson_t *document = bson_sized_new(1024);
     json_object_to_bson(request, document);
 
-    bson_error_t error;
-    if (!mongoc_collection_insert(jse_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-        fprintf(stderr, "insert failed for exception document: %s\n", error.message);
-        dump_json_object(stderr, request);
+    if (!dryrun) {
+        bson_error_t error;
+        if (!mongoc_collection_insert(jse_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+            fprintf(stderr, "insert failed for exception document: %s\n", error.message);
+            dump_json_object(stderr, request);
+        }
     }
     bson_destroy(document);
 }
@@ -2108,10 +2122,12 @@ void store_event(const char* stream, json_object* request, request_writer_state_
     bson_t *document = bson_sized_new(1024);
     json_object_to_bson(request, document);
 
-    bson_error_t error;
-    if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-        fprintf(stderr, "insert failed for event document: %s\n", error.message);
-        dump_json_object(stderr, request);
+    if (!dryrun) {
+        bson_error_t error;
+        if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+            fprintf(stderr, "insert failed for event document: %s\n", error.message);
+            dump_json_object(stderr, request);
+        }
     }
     bson_destroy(document);
 }
