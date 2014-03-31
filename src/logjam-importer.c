@@ -1657,6 +1657,8 @@ void processor_add_event(processor_t *self, parser_state_t *pstate, json_object 
 int processor_publish_totals(const char* stream, void *processor, void *live_stream_socket)
 {
     processor_t *self = processor;
+    if (zhash_size(self->modules) == 0) return;
+
     size_t n = strlen(stream);
     char app[n+1], env[n+1];
     sscanf(stream, "logjam-%[^-]-%[^-]", app, env);
