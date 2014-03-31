@@ -1039,9 +1039,9 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
 
     bson_t *document = increments_to_bson(namespace, increments);
     if (!dryrun) {
-        bson_error_t *error = NULL;
-        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
-            fprintf(stderr, "update failed on totals\n");
+        bson_error_t error;
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
+            fprintf(stderr, "update failed on totals: %s\n", error.message);
         }
     }
     bson_destroy(selector);
@@ -1150,7 +1150,7 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed on totals\n");
+            fprintf(stderr, "update failed on totals: %s\n", error.message);
         }
     }
 
@@ -1174,14 +1174,18 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     collections->totals = mongoc_client_get_collection(client, stream, "totals");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
-    mongoc_collection_ensure_index(collections->totals, keys, &index_opt_background, &error);
+    if (!mongoc_collection_ensure_index(collections->totals, keys, &index_opt_background, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
     bson_destroy(keys);
 
     collections->minutes = mongoc_client_get_collection(client, stream, "minutes");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minutes", 6, 1));
-    mongoc_collection_ensure_index(collections->minutes, keys, &index_opt_background, &error);
+    if (!mongoc_collection_ensure_index(collections->minutes, keys, &index_opt_background, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
     bson_destroy(keys);
 
     collections->quants = mongoc_client_get_collection(client, stream, "quants");
@@ -1189,7 +1193,9 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "kind", 4, 1));
     assert(bson_append_int32(keys, "quant", 5, 1));
-    mongoc_collection_ensure_index(collections->quants, keys, &index_opt_background, &error);
+    if (!mongoc_collection_ensure_index(collections->quants, keys, &index_opt_background, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
     bson_destroy(keys);
 
     return collections;
@@ -1847,14 +1853,18 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     // collection.create_index([ [f, 1] ], :background => true, :sparse => true)
     index_keys = bson_new();
     bson_append_int32(index_keys, field, strlen(field), 1);
-    mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
+    if (!mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
     bson_destroy(index_keys);
 
     // collection.create_index([ ["page", 1], [f, 1] ], :background => true)
     index_keys = bson_new();
     bson_append_int32(index_keys, "page", 4, 1);
     bson_append_int32(index_keys, field, strlen(field), 1);
-    mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
+    if (!mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
     bson_destroy(index_keys);
 }
 
@@ -1867,7 +1877,9 @@ void add_request_collection_indexes(const char* stream, mongoc_collection_t *req
     index_keys = bson_new();
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
-    mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
+    if (!mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
     bson_destroy(index_keys);
 
     // collection.create_index([ ["page", 1], ["metrics.n", 1], ["metrics.v", -1] ], :background => true
@@ -1875,7 +1887,9 @@ void add_request_collection_indexes(const char* stream, mongoc_collection_t *req
     bson_append_int32(index_keys, "page", 4, 1);
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
-    mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error);
+    if (!mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
     bson_destroy(index_keys);
 
     add_request_field_index("response_code", requests_collection);
@@ -1892,13 +1906,17 @@ void add_jse_collection_indexes(const char* stream, mongoc_collection_t *jse_col
     // collection.create_index([ ["logjam_request_id", 1] ], :background => true)
     index_keys = bson_new();
     bson_append_int32(index_keys, "logjam_request_id", 17, 1);
-    mongoc_collection_ensure_index(jse_collection, index_keys, &index_opt_background, &error);
+    if (!mongoc_collection_ensure_index(jse_collection, index_keys, &index_opt_background, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
     bson_destroy(index_keys);
 
     // collection.create_index([ ["description", 1] ], :background => true
     index_keys = bson_new();
     bson_append_int32(index_keys, "description", 11, 1);
-    mongoc_collection_ensure_index(jse_collection, index_keys, &index_opt_background, &error);
+    if (!mongoc_collection_ensure_index(jse_collection, index_keys, &index_opt_background, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
     bson_destroy(index_keys);
 }
 
