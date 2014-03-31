@@ -2184,16 +2184,22 @@ void request_writer_publish_error(const char* stream, const char* module, json_o
         int severity = json_object_get_int(severity_obj);
         if (severity > 1) {
             json_object *error_info = json_object_new_object();
+            json_object_get(request_id);
             json_object_object_add(error_info, "request_id", request_id);
+
+            json_object_get(severity_obj);
             json_object_object_add(error_info, "severity", severity_obj);
 
             json_object *action = json_object_object_get(request, "page");
+            json_object_get(action);
             json_object_object_add(error_info, "action", action);
 
             json_object *rsp = json_object_object_get(request, "response_code");
+            json_object_get(rsp);
             json_object_object_add(error_info, "response_code", rsp);
 
             json_object *started_at = json_object_object_get(request, "started_at");
+            json_object_get(started_at);
             json_object_object_add(error_info, "time", started_at);
 
             json_object *description = extract_error_description(request, severity);
@@ -2203,11 +2209,11 @@ void request_writer_publish_error(const char* stream, const char* module, json_o
             json_object_array_add(arror, error_info);
 
             const char *json_str = json_object_to_json_string_ext(arror, JSON_C_TO_STRING_PLAIN);
+
             publish_error_for_module(stream, "all_pages", json_str, state->live_stream_socket);
             publish_error_for_module(stream, module, json_str, state->live_stream_socket);
 
-            json_object_put(error_info);
-            json_object_put(arror); // TODO: ref counting correct here?
+            json_object_put(arror);
         }
     }
 
@@ -2233,6 +2239,7 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     module[mod_len] = '\0';
 
     json_object *request, *request_id;
+    assert(zframe_size(body) == sizeof(json_object*));
     memcpy(&request, zframe_data(body), sizeof(json_object*));
     // dump_json_object(stdout, request);
 
