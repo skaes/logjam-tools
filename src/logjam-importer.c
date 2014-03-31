@@ -988,7 +988,8 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
 
     json_object_object_foreach(increments->others, key, value_obj) {
         size_t n = strlen(key);
-        switch (json_object_get_type(value_obj)) {
+        enum json_type type = json_object_get_type(value_obj);
+        switch (type) {
         case json_type_int:
             bson_append_int32(incs, key, n, json_object_get_int(value_obj));
             break;
@@ -996,7 +997,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
             bson_append_double(incs, key, n, json_object_get_double(value_obj));
             break;
         default:
-            fprintf(stderr, "unsupported json type in json to bson conversion\n");
+            fprintf(stderr, "unsupported json type in json to bson conversion: %s, key: %s\n", json_type_to_name(type), key);
         }
     }
 
