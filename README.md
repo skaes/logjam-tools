@@ -18,6 +18,9 @@ See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
 * librabbitmq
 * libzmq
 * libczmq
+* libbson
+* libmongoc
+* json-c
 
 # Installation
 
@@ -28,6 +31,10 @@ On OS X:
 ```
 sudo port install zmq, czmq, rabbitmq-c
 ```
+
+* Download and install json-c version 0.11 from https://s3.amazonaws.com/json-c_releases/releases/index.html
+* Clone https://github.com/mongodb/libbson and follow build/install instructions
+* Clone https://github.com/mongodb/mongo-c-driver and follow build/install instrictions
 
 Then
 
@@ -88,3 +95,7 @@ make test
 ```
 
 in two separate shells.
+
+## License
+
+GPL v3. See LICENSE.txt.
