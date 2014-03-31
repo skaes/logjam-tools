@@ -88,7 +88,7 @@ typedef struct {
     size_t dropped;
 } msg_stats_t;
 
-#define NUM_PARSERS 2
+#define NUM_PARSERS 5
 
 /* controller state */
 typedef struct {
@@ -2205,18 +2205,20 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     memcpy(&request, zframe_data(body), sizeof(json_object*));
     // dump_json_object(stdout, request);
 
-    char request_type = *((char*)zframe_data(type));
-    switch (request_type) {
-    case 'r':
-        request_id = store_request(stream, request, state);
-        request_writer_publish_error(stream, module, request, state, request_id);
-        break;
-    case 'j':
-        store_js_exception(stream, request, state);
-        break;
-    case 'e':
-        store_event(stream, request, state);
-        break;
+    if (!dryrun) {
+        char request_type = *((char*)zframe_data(type));
+        switch (request_type) {
+        case 'r':
+            request_id = store_request(stream, request, state);
+            request_writer_publish_error(stream, module, request, state, request_id);
+            break;
+        case 'j':
+            store_js_exception(stream, request, state);
+            break;
+        case 'e':
+            store_event(stream, request, state);
+            break;
+        }
     }
     json_object_put(request);
 }
@@ -2261,9 +2263,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             msg = zmsg_recv(state.pull_socket);
             if (msg != NULL) {
                 state.request_count++;
-                if (!dryrun) {
-                    handle_request_msg(msg, &state);
-                }
+                handle_request_msg(msg, &state);
             }
         } else {
             // interrupted
