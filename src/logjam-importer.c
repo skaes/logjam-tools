@@ -878,9 +878,11 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
         stored->val_squared += addend->val_squared;
     }
     json_object_object_foreach(increments->others, key, value) {
-        json_object *stored_obj, *new_obj = NULL;
+        json_object *stored_obj = NULL;
+        json_object *new_obj = NULL;
         bool perform_addition = json_object_object_get_ex(stored_increments->others, key, &stored_obj);
-        switch (json_object_get_type(value)) {
+        enum json_type type = json_object_get_type(value);
+        switch (type) {
         case json_type_double: {
             double addend = json_object_get_double(value);
             if (perform_addition) {
@@ -902,9 +904,11 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
             break;
         }
         default:
-            fprintf(stderr, "unknown increment type\n");
+            fprintf(stderr, "unknown increment type: %s, for key: %s\n", json_type_to_name(type), key);
         }
-        json_object_object_add(stored_increments->others, key, new_obj);
+        if (new_obj) {
+            json_object_object_add(stored_increments->others, key, new_obj);
+        }
     }
 }
 
