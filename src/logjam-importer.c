@@ -1674,14 +1674,18 @@ int processor_publish_totals(const char* stream, void *processor, void *live_str
 
         // printf("publishing totals for stream: %s, module: %s, key: %s\n", stream, module, key);
         increments_t *incs = zhash_lookup(self->totals, namespace);
-        json_object *json = json_object_new_object();
-        json_object_object_add(json, "count", json_object_new_int(incs->request_count));
-        increments_add_metrics_to_json(incs, json);
-        const char* json_str = json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN);
+        if (incs) {
+            json_object *json = json_object_new_object();
+            json_object_object_add(json, "count", json_object_new_int(incs->request_count));
+            increments_add_metrics_to_json(incs, json);
+            const char* json_str = json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN);
 
-        live_stream_publish(live_stream_socket, key, json_str);
+            live_stream_publish(live_stream_socket, key, json_str);
 
-        json_object_put(json);
+            json_object_put(json);
+        } else {
+            fprintf(stderr, "missing increments for stream: %s, module: %s, key: %s\n", stream, module, key);
+        }
         module = zlist_next(modules);
     }
     zlist_destroy(&modules);
