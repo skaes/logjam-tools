@@ -2191,14 +2191,17 @@ void request_writer_publish_error(const char* stream, const char* module, json_o
             json_object_object_add(error_info, "severity", severity_obj);
 
             json_object *action = json_object_object_get(request, "page");
+            assert(action);
             json_object_get(action);
             json_object_object_add(error_info, "action", action);
 
             json_object *rsp = json_object_object_get(request, "response_code");
+            assert(rsp);
             json_object_get(rsp);
             json_object_object_add(error_info, "response_code", rsp);
 
             json_object *started_at = json_object_object_get(request, "started_at");
+            assert(started_at);
             json_object_get(started_at);
             json_object_object_add(error_info, "time", started_at);
 
@@ -2284,7 +2287,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("request_writer: tick (%zu messages)\n", state.request_count);
+            printf("request_writer: tick (%zu requests)\n", state.request_count);
             // free collection pointers every minute
             msg = zmsg_recv(state.controller_socket);
             if (ticks++ % 60 == 0) {
