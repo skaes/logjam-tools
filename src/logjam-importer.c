@@ -11,9 +11,15 @@
 #include <bson.h>
 #include <mongoc.h>
 
+// TODO:
+// way more json input validation
+// more assertions, return code checking
+// multiple database backends (for scaling storage)
+// multiple connections to each database (to increase parallelism in mongodb)
+
 void assert_x(int rc, const char* error_text) {
   if (rc != 0) {
-      printf("Failed assertion: %s\n", error_text);
+      fprintf(stderr, "Failed assertion: %s\n", error_text);
       exit(1);
   }
 }
@@ -22,7 +28,7 @@ static inline
 void log_zmq_error(int rc)
 {
   if (rc != 0) {
-      printf("rc: %d, errno: %d (%s)\n", rc, errno, zmq_strerror(errno));
+      fprintf(stderr, "rc: %d, errno: %d (%s)\n", rc, errno, zmq_strerror(errno));
   }
 }
 
@@ -203,7 +209,7 @@ void initialize_mongo_db_globals()
         char *uri = zconfig_value(db);
         if (uri != NULL) {
             mongo_uri = uri;
-            printf("database: %s", mongo_uri);
+            printf("database: %s\n", mongo_uri);
         }
     }
 }
@@ -399,7 +405,7 @@ processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_sta
         strncpy(&stream[n+7-14], date_str, 10);
         stream[n+7-14+10] = '\0';
     } else {
-        fprintf(stderr, "dropped request without started_at date");
+        fprintf(stderr, "dropped request without started_at date\n");
         return NULL;
     }
 
@@ -2113,6 +2119,31 @@ void publish_error_for_module(const char* stream, const char* module, const char
     live_stream_publish(live_stream_socket, key, json_str);
 }
 
+json_object* extract_error_description(json_object* request, int severity)
+{
+    json_object *lines = json_object_object_get(request, "lines");
+    json_object* error_line = NULL;
+    if (lines) {
+        int len = json_object_array_length(lines);
+        for (int i=0; i<len; i++) {
+            json_object* line = json_object_array_get_idx(lines, i);
+            if (line) {
+                json_object* sev_obj = json_object_array_get_idx(line, 0);
+                if (sev_obj != NULL && json_object_get_int(sev_obj) > 1) {
+                    error_line = json_object_array_get_idx(line, 2);
+                }
+            }
+        }
+    }
+    const char *description;
+    if (error_line) {
+        description = json_object_get_string(error_line);
+    } else {
+        description = "------ unknown ------";
+    }
+    return json_object_new_string(description);
+}
+
 void request_writer_publish_error(const char* stream, const char* module, json_object* request, request_writer_state_t* state, json_object* request_id)
 {
     if (request_id == NULL) return;
@@ -2134,8 +2165,7 @@ void request_writer_publish_error(const char* stream, const char* module, json_o
             json_object *started_at = json_object_object_get(request, "started_at");
             json_object_object_add(error_info, "time", started_at);
 
-            // TODO: extract description from request object
-            json_object *description = json_object_new_string("6666666666 öööööööö 66666666666666");
+            json_object *description = extract_error_description(request, severity);
             json_object_object_add(error_info, "description", description);
 
             json_object *arror = json_object_new_array();
@@ -2146,7 +2176,7 @@ void request_writer_publish_error(const char* stream, const char* module, json_o
             publish_error_for_module(stream, module, json_str, state->live_stream_socket);
 
             json_object_put(error_info);
-            json_object_put(arror);
+            json_object_put(arror); // TODO: ref counting correct here?
         }
     }
 
