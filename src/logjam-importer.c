@@ -233,6 +233,8 @@ void live_stream_publish(void *live_stream_socket, const char* key, const char* 
     if (rc == 0) {
         rc = zframe_send(&msg_body, live_stream_socket, ZFRAME_DONTWAIT);
         // printf("MSG frame 2 to live stream: rc=%d\n", rc);
+    } else {
+        zframe_destroy(&msg_body);
     }
 }
 
