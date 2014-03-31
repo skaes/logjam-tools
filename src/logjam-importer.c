@@ -39,7 +39,7 @@ static bool dryrun = false;
 char *mongo_uri = "mongodb://127.0.0.1:27017/";
 
 // TODO: read from config and make it configurable per stream and namespace
-static int total_time_import_threshold = 100;
+static int total_time_import_threshold = 500;
 static char* ignored_request_prefix = "/_system/warmup";
 
 static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
