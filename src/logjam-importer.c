@@ -1065,8 +1065,8 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
 
     bson_t *document = increments_to_bson(namespace, increments);
     if (!dryrun) {
-        bson_error_t *error = NULL;
-        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
+        bson_error_t error;
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             fprintf(stderr, "update failed on totals\n");
         }
     }
@@ -1821,7 +1821,7 @@ int mongo_client_ping(mongoc_client_t *client)
         // fprintf(stdout, "%s\n", str);
         // bson_free(str);
     } else if (mongoc_cursor_error(cursor, &error)) {
-        fprintf(stderr, "Ping failure: %s\n", error.message);
+        fprintf(stderr, "ping failure: %s\n", error.message);
     }
     bson_destroy(&ping);
     mongoc_cursor_destroy(cursor);
