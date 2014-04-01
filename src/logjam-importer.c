@@ -1294,13 +1294,10 @@ int processor_setup_response_code(processor_t *self, json_object *request)
     json_object *code_obj = NULL;
     int response_code = 500;
     if (json_object_object_get_ex(request, "code", &code_obj)) {
-        json_object_get(code_obj);
-        json_object_object_del(request, "code");
         response_code = json_object_get_int(code_obj);
-    } else {
-        code_obj = json_object_new_int(response_code);
+        json_object_object_del(request, "code");
     }
-    json_object_object_add(request, "response_code", code_obj);
+    json_object_object_add(request, "response_code", json_object_new_int(response_code));
     // printf("response_code: %d\n", response_code);
     return response_code;
 }
