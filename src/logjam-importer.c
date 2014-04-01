@@ -1174,7 +1174,7 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     collections->totals = mongoc_client_get_collection(client, stream, "totals");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
-    if (!mongoc_collection_ensure_index(collections->totals, keys, &index_opt_background, &error)) {
+    if (!mongoc_collection_create_index(collections->totals, keys, &index_opt_background, &error)) {
         fprintf(stderr, "index creation failed: %s\n", error.message);
     }
     bson_destroy(keys);
@@ -1183,7 +1183,7 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minutes", 6, 1));
-    if (!mongoc_collection_ensure_index(collections->minutes, keys, &index_opt_background, &error)) {
+    if (!mongoc_collection_create_index(collections->minutes, keys, &index_opt_background, &error)) {
         fprintf(stderr, "index creation failed: %s\n", error.message);
     }
     bson_destroy(keys);
@@ -1193,7 +1193,7 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "kind", 4, 1));
     assert(bson_append_int32(keys, "quant", 5, 1));
-    if (!mongoc_collection_ensure_index(collections->quants, keys, &index_opt_background, &error)) {
+    if (!mongoc_collection_create_index(collections->quants, keys, &index_opt_background, &error)) {
         fprintf(stderr, "index creation failed: %s\n", error.message);
     }
     bson_destroy(keys);
@@ -1802,6 +1802,33 @@ void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *request_cou
     memcpy(request_count, zframe_data(second), sizeof(size_t));
 }
 
+int mongo_client_ping(mongoc_client_t *client)
+{
+    int available = 1;
+    bson_t ping;
+    bson_init(&ping);
+    bson_append_int32(&ping, "ping", 4, 1);
+
+    //TODO: remember db instance per thread
+    mongoc_database_t *database = mongoc_client_get_database(client, "logjam-global");
+    mongoc_cursor_t *cursor = mongoc_database_command(database, 0, 0, 1, 0, &ping, NULL, NULL);
+
+    const bson_t *reply;
+    bson_error_t error;
+    if (mongoc_cursor_next(cursor, &reply)) {
+        available = 0;
+        // char *str = bson_as_json(reply, NULL);
+        // fprintf(stdout, "%s\n", str);
+        // bson_free(str);
+    } else if (mongoc_cursor_error(cursor, &error)) {
+        fprintf(stderr, "Ping failure: %s\n", error.message);
+    }
+    bson_destroy(&ping);
+    mongoc_cursor_destroy(cursor);
+    mongoc_database_destroy(database);
+    return available;
+}
+
 void stats_updater(void *args, zctx_t *ctx, void *pipe)
 {
     stats_updater_state_t state;
@@ -1815,13 +1842,18 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = zmsg_recv(pipe);
         if (msg != NULL) {
             int64_t start_time_ms = zclock_time();
+            // ping the server every 5 seconds
+            if (ticks++ % 5 == 0) {
+                mongo_client_ping(state.mongo_client);
+            }
             zhash_t *processors;
             size_t request_count;
             extract_parser_state(msg, &processors, &request_count);
             size_t num_procs = zhash_size(processors);
             zhash_foreach(processors, processor_update_mongo_db, &state);
+
             // refresh database information every minute
-            if (ticks++ % 60 == 0) {
+            if (ticks % 60 == 0) {
                 zhash_destroy(&state.stream_collections);
                 state.stream_collections = zhash_new();
             }
@@ -1853,7 +1885,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     // collection.create_index([ [f, 1] ], :background => true, :sparse => true)
     index_keys = bson_new();
     bson_append_int32(index_keys, field, strlen(field), 1);
-    if (!mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error)) {
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_background, &error)) {
         fprintf(stderr, "index creation failed: %s\n", error.message);
     }
     bson_destroy(index_keys);
@@ -1862,7 +1894,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     index_keys = bson_new();
     bson_append_int32(index_keys, "page", 4, 1);
     bson_append_int32(index_keys, field, strlen(field), 1);
-    if (!mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error)) {
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_background, &error)) {
         fprintf(stderr, "index creation failed: %s\n", error.message);
     }
     bson_destroy(index_keys);
@@ -1877,7 +1909,7 @@ void add_request_collection_indexes(const char* stream, mongoc_collection_t *req
     index_keys = bson_new();
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
-    if (!mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error)) {
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_background, &error)) {
         fprintf(stderr, "index creation failed: %s\n", error.message);
     }
     bson_destroy(index_keys);
@@ -1887,7 +1919,7 @@ void add_request_collection_indexes(const char* stream, mongoc_collection_t *req
     bson_append_int32(index_keys, "page", 4, 1);
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
-    if (!mongoc_collection_ensure_index(requests_collection, index_keys, &index_opt_background, &error)) {
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_background, &error)) {
         fprintf(stderr, "index creation failed: %s\n", error.message);
     }
     bson_destroy(index_keys);
@@ -1906,7 +1938,7 @@ void add_jse_collection_indexes(const char* stream, mongoc_collection_t *jse_col
     // collection.create_index([ ["logjam_request_id", 1] ], :background => true)
     index_keys = bson_new();
     bson_append_int32(index_keys, "logjam_request_id", 17, 1);
-    if (!mongoc_collection_ensure_index(jse_collection, index_keys, &index_opt_background, &error)) {
+    if (!mongoc_collection_create_index(jse_collection, index_keys, &index_opt_background, &error)) {
         fprintf(stderr, "index creation failed: %s\n", error.message);
     }
     bson_destroy(index_keys);
@@ -1914,7 +1946,7 @@ void add_jse_collection_indexes(const char* stream, mongoc_collection_t *jse_col
     // collection.create_index([ ["description", 1] ], :background => true
     index_keys = bson_new();
     bson_append_int32(index_keys, "description", 11, 1);
-    if (!mongoc_collection_ensure_index(jse_collection, index_keys, &index_opt_background, &error)) {
+    if (!mongoc_collection_create_index(jse_collection, index_keys, &index_opt_background, &error)) {
         fprintf(stderr, "index creation failed: %s\n", error.message);
     }
     bson_destroy(index_keys);
@@ -2306,9 +2338,13 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
         if (socket == state.controller_socket) {
             // tick
             printf("request_writer: tick (%zu requests)\n", state.request_count);
+            if (ticks++ % 5 == 0) {
+                // ping mongodb to reestablish connection if it got lost
+                mongo_client_ping(state.mongo_client);
+            }
             // free collection pointers every minute
             msg = zmsg_recv(state.controller_socket);
-            if (ticks++ % 60 == 0) {
+            if (ticks % 60 == 0) {
                 printf("request_writer: freeing request collections\n");
                 zhash_destroy(&state.request_collections);
                 zhash_destroy(&state.jse_collections);
