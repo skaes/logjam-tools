@@ -89,13 +89,16 @@ typedef struct {
 } msg_stats_t;
 
 #define NUM_PARSERS 4
+#define NUM_UPDATERS 4
+#define NUM_WRITERS 4
 
 /* controller state */
 typedef struct {
     void *subscriber_pipe;
     void *parser_pipes[NUM_PARSERS];
-    void *request_writer_pipe;
-    void *stats_updater_pipe;
+    void *writer_pipes[NUM_WRITERS];
+    void *updater_pipes[NUM_UPDATERS];
+    void *updates_socket;
     void *live_stream_socket;
     msg_stats_t msg_stats;
 } controller_state_t;
@@ -168,6 +171,7 @@ typedef struct {
     mongoc_collection_t *global_collection;
     zhash_t *stream_collections;
     void *controller_socket;
+    void *pull_socket;
     void *push_socket;
     msg_stats_t msg_stats;
 } stats_updater_state_t;
@@ -211,6 +215,21 @@ void initialize_mongo_db_globals()
             mongo_uri = uri;
             printf("database: %s\n", mongo_uri);
         }
+    }
+}
+
+void connect_multiple(void* socket, const char* name, int which)
+{
+    for (int i=0; i<which; i++) {
+        // TODO: HACK!
+        int rc;
+        for (int j=0; i<10; i++) {
+            rc = zsocket_connect(socket, "inproc://%s-%d", name, j);
+            if (rc == 0) break;
+            zclock_sleep(100);
+        }
+        log_zmq_error(rc);
+        assert(rc == 0);
     }
 }
 
@@ -428,7 +447,7 @@ void* parser_pull_socket_new(zctx_t *context)
     int rc;
     void *socket = zsocket_new(context, ZMQ_PULL);
     assert(socket);
-    // connect socket, taking thread startup time of subscriber into account
+    // connect socket, taking thread startup time into account
     // TODO: this is a hack. better let controller coordinate this
     for (int i=0; i<10; i++) {
         rc = zsocket_connect(socket, "inproc://subscriber");
@@ -442,18 +461,9 @@ void* parser_pull_socket_new(zctx_t *context)
 
 void* parser_push_socket_new(zctx_t *context)
 {
-    int rc;
     void *socket = zsocket_new(context, ZMQ_PUSH);
     assert(socket);
-    // connect socket, taking thread startup time of request_writer into account
-    // TODO: this is a hack. better let controller coordinate this
-    for (int i=0; i<10; i++) {
-        rc = zsocket_connect(socket, "inproc://request_writer");
-        if (rc == 0) break;
-        zclock_sleep(100);
-    }
-    log_zmq_error(rc);
-    assert(rc == 0);
+    connect_multiple(socket, "request-writer", NUM_WRITERS);
     return socket;
 }
 
@@ -1750,6 +1760,7 @@ zhash_t* processor_hash_new()
 
 void parser(void *args, zctx_t *ctx, void *pipe)
 {
+    size_t id = (size_t)args;
     parser_state_t state;
     state.request_count = 0;
     state.controller_socket = pipe;
@@ -1767,7 +1778,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("parser: tick (%zu messages)\n", state.request_count);
+            printf("parser [%zu]: tick (%zu messages)\n", id, state.request_count);
             msg = zmsg_recv(state.controller_socket);
             zmsg_t *answer = zmsg_new();
             zmsg_addmem(answer, &state.processors, sizeof(zhash_t*));
@@ -1795,6 +1806,16 @@ void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *request_cou
     zframe_t *second = zmsg_next(msg);
     assert(zframe_size(first) == sizeof(zhash_t*));
     memcpy(&*processors, zframe_data(first), sizeof(zhash_t*));
+    assert(zframe_size(second) == sizeof(size_t));
+    memcpy(request_count, zframe_data(second), sizeof(size_t));
+}
+
+void extract_processor_state(zmsg_t* msg, processor_t **processor, size_t *request_count)
+{
+    zframe_t *first = zmsg_first(msg);
+    zframe_t *second = zmsg_next(msg);
+    assert(zframe_size(first) == sizeof(zhash_t*));
+    memcpy(&*processor, zframe_data(first), sizeof(processor_t*));
     assert(zframe_size(second) == sizeof(size_t));
     memcpy(request_count, zframe_data(second), sizeof(size_t));
 }
@@ -1828,36 +1849,40 @@ int mongo_client_ping(mongoc_client_t *client)
 
 void stats_updater(void *args, zctx_t *ctx, void *pipe)
 {
+    size_t id = (size_t)args;
     stats_updater_state_t state;
     state.controller_socket = pipe;
+    state.pull_socket = zsocket_new(ctx, ZMQ_PULL);
+    assert(state.pull_socket);
+    int rc = zsocket_connect(state.pull_socket, "inproc://stats-updates");
+    assert(rc==0);
     state.mongo_client = mongoc_client_new(mongo_uri);
     assert(state.mongo_client);
     state.stream_collections = zhash_new();
     size_t ticks = 0;
 
     while (!zctx_interrupted) {
-        zmsg_t *msg = zmsg_recv(pipe);
+        zmsg_t *msg = zmsg_recv(state.pull_socket);
         if (msg != NULL) {
             int64_t start_time_ms = zclock_time();
             // ping the server every 5 seconds
             if (ticks++ % 5 == 0) {
                 mongo_client_ping(state.mongo_client);
             }
-            zhash_t *processors;
+            processor_t *processor;
             size_t request_count;
-            extract_parser_state(msg, &processors, &request_count);
-            size_t num_procs = zhash_size(processors);
-            zhash_foreach(processors, processor_update_mongo_db, &state);
+            extract_processor_state(msg, &processor, &request_count);
+            processor_update_mongo_db(processor->stream, processor, &state);
 
             // refresh database information every minute
-            if (ticks % 60 == 0) {
+            if (ticks % 60 == id) {
                 zhash_destroy(&state.stream_collections);
                 state.stream_collections = zhash_new();
             }
-            zhash_destroy(&processors);
+            processor_destroy(processor);
             zmsg_destroy(&msg);
             int64_t end_time_ms = zclock_time();
-            printf("stats updater: %zu updates (%d ms)\n", num_procs, (int)(end_time_ms - start_time_ms));
+            printf("updater[%zu]: (%d ms)\n", id, (int)(end_time_ms - start_time_ms));
         }
     }
 
@@ -1865,11 +1890,11 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     mongoc_client_destroy(state.mongo_client);
 }
 
-void* request_writer_pull_socket_new(zctx_t *context)
+void* request_writer_pull_socket_new(zctx_t *context, int i)
 {
     void *socket = zsocket_new(context, ZMQ_PULL);
     assert(socket);
-    int rc = zsocket_bind(socket, "inproc://request_writer");
+    int rc = zsocket_bind(socket, "inproc://request-writer-%d", i);
     assert(rc == 0);
     return socket;
 }
@@ -2313,10 +2338,11 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
 
 void request_writer(void *args, zctx_t *ctx, void *pipe)
 {
+    size_t id = (size_t)args;
     request_writer_state_t state;
     state.request_count = 0;
     state.controller_socket = pipe;
-    state.pull_socket = request_writer_pull_socket_new(ctx);
+    state.pull_socket = request_writer_pull_socket_new(ctx, id);
     state.mongo_client = mongoc_client_new(mongo_uri);
     assert(state.mongo_client);
     state.request_collections = zhash_new();
@@ -2334,15 +2360,15 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("request_writer: tick (%zu requests)\n", state.request_count);
+            printf("writer [%zu]: tick (%zu requests)\n", id, state.request_count);
             if (ticks++ % 5 == 0) {
                 // ping mongodb to reestablish connection if it got lost
                 mongo_client_ping(state.mongo_client);
             }
             // free collection pointers every minute
             msg = zmsg_recv(state.controller_socket);
-            if (ticks % 60 == 0) {
-                printf("request_writer: freeing request collections\n");
+            if (ticks % 60 == id) {
+                printf("writer [%zu]: freeing request collections\n", id);
                 zhash_destroy(&state.request_collections);
                 zhash_destroy(&state.jse_collections);
                 zhash_destroy(&state.events_collections);
@@ -2477,19 +2503,31 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // publish on live stream (need to do this while we still own the processors)
     zhash_foreach(processors[0], processor_publish_totals, state->live_stream_socket);
 
-    // forward to stats_updater
-    zmsg_t *stats_msg = zmsg_new();
-    zmsg_addmem(stats_msg, &processors[0], sizeof(zhash_t*));
-    zmsg_addmem(stats_msg, &request_count, sizeof(size_t));
-    zmsg_send(&stats_msg, state->stats_updater_pipe);
+    // forward to stats_updaters
+    zlist_t *streams = zhash_keys(processors[0]);
+    const char* stream = zlist_first(streams);
+    while (stream != NULL) {
+        processor_t *proc = zhash_lookup(processors[0], stream);
+        // printf("forwarding %s\n", stream);
+        zhash_freefn(processors[0], stream, NULL);
+        zmsg_t *stats_msg = zmsg_new();
+        zmsg_addmem(stats_msg, &proc, sizeof(processor_t*));
+        zmsg_addmem(stats_msg, &proc->request_count, sizeof(size_t)); // ????
+        zmsg_send(&stats_msg, state->updates_socket);
+        stream = zlist_next(streams);
+    }
+    zlist_destroy(&streams);
+    zhash_destroy(&processors[0]);
 
-    // tell request writer to tick
-    zmsg_t *tick = zmsg_new();
-    zmsg_addstr(tick, "tick");
-    zmsg_send(&tick, state->request_writer_pipe);
+    // tell request writers to tick
+    for (int i=0; i<NUM_WRITERS; i++) {
+        zmsg_t *tick = zmsg_new();
+        zmsg_addstr(tick, "tick");
+        zmsg_send(&tick, state->writer_pipes[i]);
+    }
 
     int64_t end_time_ms = zclock_time();
-    printf("stats collector: %zu messages (%zu ms)\n", request_count, (size_t)(end_time_ms - start_time_ms));
+    printf("controller: %zu messages (%zu ms)\n", request_count, (size_t)(end_time_ms - start_time_ms));
 
     return 0;
 }
@@ -2586,7 +2624,7 @@ void setup_subscriptions()
 
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-n] [-c config-file]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-n] [-p stream-pattern] [-c config-file]\n", argv[0]);
 }
 
 void process_arguments(int argc, char * const *argv)
@@ -2653,15 +2691,26 @@ int main(int argc, char * const *argv)
     zloop_set_verbose(loop, 0);
 
     controller_state_t state;
-    // start all worker threads
-    state.subscriber_pipe = zthread_fork(context, subscriber, &config);
-    state.stats_updater_pipe = zthread_fork(context, stats_updater, &config);
-    state.request_writer_pipe = zthread_fork(context, request_writer, &config);
-    for (size_t i=0; i<NUM_PARSERS; i++) {
-        state.parser_pipes[i] = zthread_fork(context, parser, &config);
-    }
+
+    // create socket for stats updates
+    state.updates_socket = zsocket_new(context, ZMQ_PUSH);
+    rc = zsocket_bind(state.updates_socket, "inproc://stats-updates");
+    assert(rc == 0);
+
     // connect to live stream
     state.live_stream_socket = live_stream_socket_new(context);
+
+    // start all worker threads
+    state.subscriber_pipe = zthread_fork(context, subscriber, &config);
+    for (size_t i=0; i<NUM_WRITERS; i++) {
+        state.writer_pipes[i] = zthread_fork(context, request_writer, (void*)i);
+    }
+    for (size_t i=0; i<NUM_UPDATERS; i++) {
+        state.updater_pipes[i] = zthread_fork(context, stats_updater, (void*)i);
+    }
+    for (size_t i=0; i<NUM_PARSERS; i++) {
+        state.parser_pipes[i] = zthread_fork(context, parser, (void*)i);
+    }
 
     // flush increments to database every 1000 ms
     rc = zloop_timer(loop, 1000, 0, collect_stats_and_forward, &state);
