@@ -89,8 +89,8 @@ typedef struct {
 } msg_stats_t;
 
 #define NUM_PARSERS 4
-#define NUM_UPDATERS 4
-#define NUM_WRITERS 4
+#define NUM_UPDATERS 10
+#define NUM_WRITERS 10
 
 /* controller state */
 typedef struct {
@@ -203,10 +203,14 @@ void initialize_mongo_db_globals()
     mongoc_write_concern_set_w(wc_wait, MONGOC_WRITE_CONCERN_W_DEFAULT);
 
     wc_no_wait = mongoc_write_concern_new();
-    mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_UNACKNOWLEDGED);
+    // TODO: this leads to illegal opcodes on the server
+    // mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_UNACKNOWLEDGED);
+    mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_DEFAULT);
 
     mongoc_index_opt_init(&index_opt_background);
-    index_opt_background.background = true;
+    // TODO: this leads to illegal opcodes on the server
+    // index_opt_background.background = true;
+    index_opt_background.background = false;
 
     zconfig_t* db = zconfig_locate(config, "backend/database/default");
     if (db) {
@@ -1874,8 +1878,8 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             extract_processor_state(msg, &processor, &request_count);
             processor_update_mongo_db(processor->stream, processor, &state);
 
-            // refresh database information every minute
-            if (ticks % 60 == id) {
+            // refresh database information every hour
+            if (ticks % 3600 == id) {
                 zhash_destroy(&state.stream_collections);
                 state.stream_collections = zhash_new();
             }
@@ -2365,9 +2369,9 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
                 // ping mongodb to reestablish connection if it got lost
                 mongo_client_ping(state.mongo_client);
             }
-            // free collection pointers every minute
+            // free collection pointers every hour
             msg = zmsg_recv(state.controller_socket);
-            if (ticks % 60 == id) {
+            if (ticks % 3600 == id) {
                 printf("writer [%zu]: freeing request collections\n", id);
                 zhash_destroy(&state.request_collections);
                 zhash_destroy(&state.jse_collections);
