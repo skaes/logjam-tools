@@ -40,10 +40,17 @@ char *mongo_uri = "mongodb://127.0.0.1:27017/";
 char *subscription_pattern = "";
 
 typedef struct {
+    const char* name;
+    int value;
+} module_threshold_t;
+
+typedef struct {
     const char *key;
     const char *app;
     const char *env;
     int import_threshold;
+    int module_threshold_count;
+    module_threshold_t *module_thresholds;
     const char *ignored_request_prefix;
 } stream_info_t;
 
@@ -1566,11 +1573,26 @@ bool interesting_request(request_data_t *request_data, json_object *request, str
 {
     // TODO: heap_growth
     int time_threshold = info ? info->import_threshold : global_total_time_import_threshold;
-    return
-        request_data->total_time > time_threshold ||
-        request_data->severity > 1 ||
-        request_data->response_code >= 400 ||
-        request_data->exceptions != NULL;
+    if (request_data->total_time > time_threshold)
+        return true;
+    if (request_data->severity > 1)
+        return true;
+    if (request_data->response_code >= 400)
+        return true;
+    if (request_data->exceptions != NULL)
+        return true;
+    if (info == NULL)
+        return false;
+    for (int i=0; i<info->module_threshold_count; i++) {
+        if (!strcmp(request_data->module+2, info->module_thresholds[i].name)) {
+            if (request_data->total_time > info->module_thresholds[i].value) {
+                // printf("INTERESTING: %s: %f\n", request_data->module+2, request_data->total_time);
+                return true;
+            } else
+                return false;
+        }
+    }
+    return false;
 }
 
 int ignore_request(json_object *request, stream_info_t* info)
@@ -2634,34 +2656,86 @@ void setup_resource_maps()
     allocated_objects_index = r2i("allocated_memory");
     allocated_bytes_index = r2i("allocated_bytes");
 
-    for (size_t j=0; j<=last_resource_index; j++) {
-        const char *r = i2r(j);
-        printf("%s = %zu\n", r, r2i(r));
-    }
+    // for (size_t j=0; j<=last_resource_index; j++) {
+    //     const char *r = i2r(j);
+    //     printf("%s = %zu\n", r, r2i(r));
+    // }
 }
 
 
-zconfig_t* get_stream_setting(stream_info_t *info, const char* name)
+zlist_t* get_stream_settings(stream_info_t *info, const char* name)
 {
     zconfig_t *setting;
     char key[528] = {'0'};
 
+    zlist_t *settings = zlist_new();
     sprintf(key, "backend/streams/%s/%s", info->key, name);
     setting = zconfig_locate(config, key);
-    if (setting) return setting;
+    if (setting)
+        zlist_push(settings, setting);
 
     sprintf(key, "backend/defaults/environments/%s/%s", info->env, name);
     setting = zconfig_locate(config, key);
-    if (setting) return setting;
+    if (setting)
+        zlist_push(settings, setting);
 
     sprintf(key, "backend/defaults/applications/%s/%s", info->app, name);
     setting = zconfig_locate(config, key);
-    if (setting) return setting;
+    if (setting)
+        zlist_push(settings, setting);
 
     sprintf(key, "backend/defaults/%s", name);
     setting = zconfig_locate(config, key);
-    return setting;
+    if (setting)
+        zlist_push(settings, setting);
 
+    return settings;
+}
+
+void add_threshold_settings(stream_info_t* info)
+{
+    info->import_threshold = global_total_time_import_threshold;
+    zlist_t *settings = get_stream_settings(info, "import_threshold");
+    zconfig_t *setting = zlist_first(settings);
+    zhash_t *module_settings = zhash_new();
+    while (setting) {
+        info->import_threshold = atoi(zconfig_value(setting));
+        zconfig_t *module_setting = zconfig_child(setting);
+        while (module_setting) {
+            char *module_name = zconfig_name(module_setting);
+            size_t threshold_value = atoi(zconfig_value(module_setting));
+            zhash_update(module_settings, module_name, (void*)threshold_value);
+            module_setting = zconfig_next(module_setting);
+        }
+        setting = zlist_next(settings);
+    }
+    zlist_destroy(&settings);
+    int n = zhash_size(module_settings);
+    info->module_threshold_count = n;
+    info->module_thresholds = malloc(n * sizeof(module_threshold_t));
+    zlist_t *modules = zhash_keys(module_settings);
+    int i = 0;
+    const char *module = zlist_first(modules);
+    while (module) {
+        info->module_thresholds[i].name = strdup(module);
+        info->module_thresholds[i].value = (int)zhash_lookup(module_settings, module);
+        i++;
+        module = zlist_next(modules);
+    }
+    zlist_destroy(&modules);
+    zhash_destroy(&module_settings);
+}
+
+void add_ignored_request_settings(stream_info_t* info)
+{
+    info->ignored_request_prefix = global_ignored_request_prefix;
+    zlist_t* settings = get_stream_settings(info, "ignored_request_uri");
+    zconfig_t *setting = zlist_first(settings);
+    while (setting) {
+        info->ignored_request_prefix = zconfig_value(setting);
+        setting = zlist_next(settings);
+    }
+    zlist_destroy(&settings);
 }
 
 stream_info_t* stream_info_new(zconfig_t *stream_config)
@@ -2675,18 +2749,8 @@ stream_info_t* stream_info_new(zconfig_t *stream_config)
     assert(strlen(app) > 0);
     info->env = strdup(env);
     assert(strlen(env) > 0);
-    zconfig_t *threshold_setting = get_stream_setting(info, "import_threshold");
-    if (threshold_setting) {
-        info->import_threshold = atoi(zconfig_value(threshold_setting));
-    } else {
-        info->import_threshold = global_total_time_import_threshold;
-    }
-    zconfig_t *prefix_setting = get_stream_setting(info, "ignored_request_uri");
-    if (prefix_setting) {
-        info->ignored_request_prefix = zconfig_value(prefix_setting);
-    } else {
-        info->ignored_request_prefix = global_ignored_request_prefix;
-    }
+    add_threshold_settings(info);
+    add_ignored_request_settings(info);
     return info;
 }
 
@@ -2695,8 +2759,11 @@ void dump_stream_info(stream_info_t *stream)
     printf("key: %s\n", stream->key);
     printf("app: %s\n", stream->app);
     printf("env: %s\n", stream->env);
-    printf("import_threshold: %d\n", stream->import_threshold);
     printf("ignored_request_uri: %s\n", stream->ignored_request_prefix);
+    printf("import_threshold: %d\n", stream->import_threshold);
+    for (int i = 0; i<stream->module_threshold_count; i++) {
+        printf("module_threshold: %s = %d\n", stream->module_thresholds[i].name, stream->module_thresholds[i].value);
+    }
 }
 
 void setup_stream_config()
@@ -2706,14 +2773,14 @@ void setup_stream_config()
     zconfig_t *import_threshold_config = zconfig_locate(config, "backend/defaults/import_threshold");
     if (import_threshold_config) {
         int t = atoi(zconfig_value(import_threshold_config));
-        printf("setting global import threshold: %d\n", t);
+        // printf("setting global import threshold: %d\n", t);
         global_total_time_import_threshold = t;
     }
 
     zconfig_t *ignored_requests_config = zconfig_locate(config, "backend/defaults/ignored_request_uri");
     if (ignored_requests_config) {
         const char *prefix = zconfig_value(ignored_requests_config);
-        printf("setting global ignored_requests uri: %s\n", prefix);
+        // printf("setting global ignored_requests uri: %s\n", prefix);
         global_ignored_request_prefix = prefix;
     }
 
@@ -2728,7 +2795,7 @@ void setup_stream_config()
     do {
         stream_info_t *stream_info = stream_info_new(stream);
         const char *key = stream_info->key;
-        dump_stream_info(stream_info);
+        // dump_stream_info(stream_info);
         zhash_insert(configured_streams, key, stream_info);
         if (have_subscription_pattern && strstr(key, subscription_pattern) != NULL) {
             int rc = zhash_insert(stream_subscriptions, key, stream_info);
