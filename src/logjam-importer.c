@@ -37,11 +37,21 @@ static zconfig_t* config = NULL;
 char *config_file = "logjam.conf";
 static bool dryrun = false;
 char *mongo_uri = "mongodb://127.0.0.1:27017/";
+char *subscription_pattern = "";
 
-// TODO: read from config and make it configurable per stream and namespace
-static int total_time_import_threshold = 500;
-static char* ignored_request_prefix = "/_system/warmup";
+typedef struct {
+    const char *key;
+    const char *app;
+    const char *env;
+    int import_threshold;
+    const char *ignored_request_prefix;
+} stream_info_t;
 
+// TODO: make it configurable per stream and namespace
+static int global_total_time_import_threshold = 0;
+static const char* global_ignored_request_prefix = NULL;
+
+// utf8 conversion
 static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
 static char UTF8_CURRENCY[3] = {0xC2, 0xA4, '\0'};
 static char *URI_ESCAPED_DOT = "%2E";
@@ -126,6 +136,7 @@ typedef struct {
 /* processor state */
 typedef struct {
     char *stream;
+    stream_info_t* stream_info;
     size_t request_count;
     zhash_t *modules;
     zhash_t *totals;
@@ -266,8 +277,10 @@ void live_stream_publish(void *live_stream_socket, const char* key, const char* 
     }
 }
 
-// hash of all streams we want to subscribe to
+// all configured streams
 static zhash_t *configured_streams = NULL;
+// all streams we want to subscribe to
+static zhash_t *stream_subscriptions = NULL;
 
 void* subscriber_sub_socket_new(zctx_t *context)
 {
@@ -348,12 +361,12 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
     state.pull_socket = subscriber_pull_socket_new(ctx);
     state.push_socket = subscriber_push_socket_new(ctx);
 
-    if (configured_streams == NULL) {
+    if (stream_subscriptions == NULL) {
         // subscribe to all messages
         zsocket_set_subscribe(state.sub_socket, "");
     } else {
         // setup subscriptions for only a subset
-        zlist_t *subscriptions = zhash_keys(configured_streams);
+        zlist_t *subscriptions = zhash_keys(stream_subscriptions);
         char *stream = NULL;
         while ( (stream = zlist_next(subscriptions)) != NULL)  {
             printf("subscribing to stream: %s\n", stream);
@@ -390,6 +403,13 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
     assert(loop == NULL);
 }
 
+#define DB_PREFIX "logjam-"
+#define DB_PREFIX_LEN 7
+#define STREAM_PREFIX "request-stream-"
+// strlen(STREAM_PREFIX)
+#define STREAM_PREFIX_LEN 15
+// ISO date: 2014-11-11
+
 processor_t* processor_new(char *stream)
 {
     processor_t *p = malloc(sizeof(processor_t));
@@ -399,6 +419,20 @@ processor_t* processor_new(char *stream)
     p->totals = zhash_new();
     p->minutes = zhash_new();
     p->quants = zhash_new();
+
+    // setup stream info
+    size_t n = strlen(stream) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
+    char stream_name[n+1];
+    strcpy(stream_name, STREAM_PREFIX);
+    strcpy(stream_name + STREAM_PREFIX_LEN, stream + DB_PREFIX_LEN);
+    stream_name[n-11] = '\0';
+
+    p->stream_info = zhash_lookup(configured_streams, stream_name);
+    if (p->stream_info == NULL) {
+        fprintf(stderr, "did not find stream info: %s\n", stream_name);
+    } else {
+        // printf("found stream info: %s\n", stream_name);
+    }
     return p;
 }
 
@@ -414,11 +448,6 @@ void processor_destroy(void* processor)
     zhash_destroy(&p->quants);
     free(p);
 }
-
-#define STREAM_PREFIX "request-stream-"
-// strlen(STREAM_PREFIX)
-#define STREAM_PREFIX_LEN 15
-// ISO date: 2014-11-11
 
 processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
 {
@@ -1533,16 +1562,18 @@ void processor_add_quants(processor_t *self, const char* namespace, increments_t
     }
 }
 
-bool interesting_request(request_data_t *request_data, json_object *request)
+bool interesting_request(request_data_t *request_data, json_object *request, stream_info_t* info)
 {
+    // TODO: heap_growth
+    int time_threshold = info ? info->import_threshold : global_total_time_import_threshold;
     return
-        request_data->total_time > total_time_import_threshold ||
+        request_data->total_time > time_threshold ||
         request_data->severity > 1 ||
         request_data->response_code >= 400 ||
         request_data->exceptions != NULL;
 }
 
-int ignore_request(json_object *request)
+int ignore_request(json_object *request, stream_info_t* info)
 {
     int rc = 0;
     json_object *req_info;
@@ -1550,7 +1581,8 @@ int ignore_request(json_object *request)
         json_object *url_obj;
         if (json_object_object_get_ex(req_info, "url", &url_obj)) {
             const char *url = json_object_get_string(url_obj);
-            if (strstr(url, ignored_request_prefix) == url) {
+            const char *prefix = info ? info->ignored_request_prefix : global_ignored_request_prefix;
+            if (prefix != NULL && strstr(url, prefix) == url) {
                 rc = 1;
             }
         }
@@ -1560,7 +1592,7 @@ int ignore_request(json_object *request)
 
 void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
 {
-    if (ignore_request(request)) return;
+    if (ignore_request(request, self->stream_info)) return;
     self->request_count++;
 
     // dump_json_object(stdout, request);
@@ -1598,7 +1630,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     // if (self->request_count % 100 == 0) {
     //     processor_dump_state(self);
     // }
-    if (interesting_request(&request_data, request)) {
+    if (interesting_request(&request_data, request, self->stream_info)) {
         json_object_get(request);
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, self->stream);
@@ -2608,23 +2640,98 @@ void setup_resource_maps()
     }
 }
 
-const char *one = "1";
-char *subscription_pattern = "";
 
-void setup_subscriptions()
+zconfig_t* get_stream_setting(stream_info_t *info, const char* name)
 {
-    if (!strcmp("", subscription_pattern))
-        return;
+    zconfig_t *setting;
+    char key[528] = {'0'};
+
+    sprintf(key, "backend/streams/%s/%s", info->key, name);
+    setting = zconfig_locate(config, key);
+    if (setting) return setting;
+
+    sprintf(key, "backend/defaults/environments/%s/%s", info->env, name);
+    setting = zconfig_locate(config, key);
+    if (setting) return setting;
+
+    sprintf(key, "backend/defaults/applications/%s/%s", info->app, name);
+    setting = zconfig_locate(config, key);
+    if (setting) return setting;
+
+    sprintf(key, "backend/defaults/%s", name);
+    setting = zconfig_locate(config, key);
+    return setting;
+
+}
+
+stream_info_t* stream_info_new(zconfig_t *stream_config)
+{
+    stream_info_t *info = malloc(sizeof(stream_info_t));
+    info->key = zconfig_name(stream_config);
+    char app[256] = {'\0'};
+    char env[256] = {'\0'};;
+    sscanf(info->key, "request-stream-%[^-]-%[^-]", app, env);
+    info->app = strdup(app);
+    assert(strlen(app) > 0);
+    info->env = strdup(env);
+    assert(strlen(env) > 0);
+    zconfig_t *threshold_setting = get_stream_setting(info, "import_threshold");
+    if (threshold_setting) {
+        info->import_threshold = atoi(zconfig_value(threshold_setting));
+    } else {
+        info->import_threshold = global_total_time_import_threshold;
+    }
+    zconfig_t *prefix_setting = get_stream_setting(info, "ignored_request_uri");
+    if (prefix_setting) {
+        info->ignored_request_prefix = zconfig_value(prefix_setting);
+    } else {
+        info->ignored_request_prefix = global_ignored_request_prefix;
+    }
+    return info;
+}
+
+void dump_stream_info(stream_info_t *stream)
+{
+    printf("key: %s\n", stream->key);
+    printf("app: %s\n", stream->app);
+    printf("env: %s\n", stream->env);
+    printf("import_threshold: %d\n", stream->import_threshold);
+    printf("ignored_request_uri: %s\n", stream->ignored_request_prefix);
+}
+
+void setup_stream_config()
+{
+    bool have_subscription_pattern = strcmp("", subscription_pattern);
+
+    zconfig_t *import_threshold_config = zconfig_locate(config, "backend/defaults/import_threshold");
+    if (import_threshold_config) {
+        int t = atoi(zconfig_value(import_threshold_config));
+        printf("setting global import threshold: %d\n", t);
+        global_total_time_import_threshold = t;
+    }
+
+    zconfig_t *ignored_requests_config = zconfig_locate(config, "backend/defaults/ignored_request_uri");
+    if (ignored_requests_config) {
+        const char *prefix = zconfig_value(ignored_requests_config);
+        printf("setting global ignored_requests uri: %s\n", prefix);
+        global_ignored_request_prefix = prefix;
+    }
 
     configured_streams = zhash_new();
+    stream_subscriptions = zhash_new();
+
     zconfig_t *all_streams = zconfig_locate(config, "backend/streams");
     assert(all_streams);
     zconfig_t *stream = zconfig_child(all_streams);
     assert(stream);
+
     do {
-        const char *name = zconfig_name(stream);
-        if (strstr(name, subscription_pattern) != NULL) {
-            int rc = zhash_insert(configured_streams, name, (void*)one);
+        stream_info_t *stream_info = stream_info_new(stream);
+        const char *key = stream_info->key;
+        dump_stream_info(stream_info);
+        zhash_insert(configured_streams, key, stream_info);
+        if (have_subscription_pattern && strstr(key, subscription_pattern) != NULL) {
+            int rc = zhash_insert(stream_subscriptions, key, stream_info);
             assert(rc == 0);
         }
         stream = zconfig_next(stream);
@@ -2678,8 +2785,9 @@ int main(int argc, char * const *argv)
 
     // load config
     config = zconfig_load((char*)config_file);
+    // zconfig_print(config);
     setup_resource_maps();
-    setup_subscriptions();
+    setup_stream_config();
 
     setvbuf(stdout,NULL,_IOLBF,0);
     setvbuf(stderr,NULL,_IOLBF,0);
