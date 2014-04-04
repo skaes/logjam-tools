@@ -14,15 +14,6 @@
 // TODO:
 // way more json input validation
 // more assertions, return code checking
-// multiple database backends (for scaling storage)
-// multiple connections to each database (to increase parallelism in mongodb)
-
-void assert_x(int rc, const char* error_text) {
-  if (rc != 0) {
-      fprintf(stderr, "Failed assertion: %s\n", error_text);
-      exit(1);
-  }
-}
 
 static inline
 void log_zmq_error(int rc)
@@ -34,10 +25,14 @@ void log_zmq_error(int rc)
 
 /* global config */
 static zconfig_t* config = NULL;
-char *config_file = "logjam.conf";
+static char *config_file = "logjam.conf";
 static bool dryrun = false;
-char *mongo_uri = "mongodb://127.0.0.1:27017/";
-char *subscription_pattern = "";
+static char *subscription_pattern = "";
+
+#define MAX_DATABASES 100
+#define DEFAULT_MONGO_URI "mongodb://127.0.0.1:27017/"
+static size_t num_databases = 0;
+static const char *databases[MAX_DATABASES];
 
 typedef struct {
     const char* name;
@@ -48,6 +43,7 @@ typedef struct {
     const char *key;
     const char *app;
     const char *env;
+    int db;
     int import_threshold;
     int module_threshold_count;
     module_threshold_t *module_thresholds;
@@ -185,7 +181,7 @@ typedef struct {
 
 /* stats updater state */
 typedef struct {
-    mongoc_client_t *mongo_client;
+    mongoc_client_t *mongo_clients[MAX_DATABASES];
     mongoc_collection_t *global_collection;
     zhash_t *stream_collections;
     void *controller_socket;
@@ -196,7 +192,7 @@ typedef struct {
 
 /* request writer state */
 typedef struct {
-    mongoc_client_t* mongo_client;
+    mongoc_client_t* mongo_clients[MAX_DATABASES];
     zhash_t *request_collections;
     zhash_t *jse_collections;
     zhash_t *events_collections;
@@ -235,13 +231,24 @@ void initialize_mongo_db_globals()
     index_opt_sparse.sparse = true;
     index_opt_sparse.background = false;
 
-    zconfig_t* db = zconfig_locate(config, "backend/database/default");
-    if (db) {
-        char *uri = zconfig_value(db);
-        if (uri != NULL) {
-            mongo_uri = uri;
-            printf("database: %s\n", mongo_uri);
+    zconfig_t* dbs = zconfig_locate(config, "backend/databases");
+    if (dbs) {
+        zconfig_t *db = zconfig_child(dbs);
+        while (db) {
+            assert(num_databases < MAX_DATABASES);
+            char *uri = zconfig_value(db);
+            if (uri != NULL) {
+                databases[num_databases] = strdup(uri);
+                printf("database[%zu]: %s\n", num_databases, uri);
+                num_databases++;
+            }
+            db = zconfig_next(db);
         }
+    }
+    if (num_databases == 0) {
+        databases[num_databases] = DEFAULT_MONGO_URI;
+        printf("database[%zu]: %s\n", num_databases, DEFAULT_MONGO_URI);
+        num_databases++;
     }
 }
 
@@ -419,27 +426,29 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
 
 processor_t* processor_new(char *stream)
 {
-    processor_t *p = malloc(sizeof(processor_t));
-    p->stream = strdup(stream);
-    p->request_count = 0;
-    p->modules = zhash_new();
-    p->totals = zhash_new();
-    p->minutes = zhash_new();
-    p->quants = zhash_new();
-
-    // setup stream info
+    // check whether it's a known stream and return NULL if not
     size_t n = strlen(stream) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
     char stream_name[n+1];
     strcpy(stream_name, STREAM_PREFIX);
     strcpy(stream_name + STREAM_PREFIX_LEN, stream + DB_PREFIX_LEN);
     stream_name[n-11] = '\0';
 
-    p->stream_info = zhash_lookup(configured_streams, stream_name);
-    if (p->stream_info == NULL) {
+    stream_info_t *stream_info = zhash_lookup(configured_streams, stream_name);
+    if (stream_info == NULL) {
         fprintf(stderr, "did not find stream info: %s\n", stream_name);
+        return NULL;
     } else {
-        // printf("found stream info: %s\n", stream_name);
+        // printf("found stream info for stream %s: %s\n", stream, stream_name);
     }
+
+    processor_t *p = malloc(sizeof(processor_t));
+    p->stream = strdup(stream);
+    p->stream_info = stream_info;
+    p->request_count = 0;
+    p->modules = zhash_new();
+    p->totals = zhash_new();
+    p->minutes = zhash_new();
+    p->quants = zhash_new();
     return p;
 }
 
@@ -480,9 +489,11 @@ processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_sta
     processor_t *p = zhash_lookup(parser_state->processors, stream);
     if (p == NULL) {
         p = processor_new(stream);
-        int rc = zhash_insert(parser_state->processors, stream, p);
-        assert(rc ==0);
-        zhash_freefn(parser_state->processors, stream, processor_destroy);
+        if (p) {
+            int rc = zhash_insert(parser_state->processors, stream, p);
+            assert(rc ==0);
+            zhash_freefn(parser_state->processors, stream, processor_destroy);
+        }
     }
     return p;
 }
@@ -1264,12 +1275,13 @@ void destroy_stream_collections(stream_collections_t* collections)
     free(collections);
 }
 
-stream_collections_t *stats_updater_get_collections(stats_updater_state_t *self, const char* stream)
+stream_collections_t *stats_updater_get_collections(stats_updater_state_t *self, const char* stream, stream_info_t *stream_info)
 {
     stream_collections_t *collections = zhash_lookup(self->stream_collections, stream);
     if (collections == NULL) {
-        ensure_known_database(self->mongo_client, stream);
-        collections = stream_collections_new(self->mongo_client, stream);
+        mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
+        ensure_known_database(mongo_client, stream);
+        collections = stream_collections_new(mongo_client, stream);
         assert(collections);
         zhash_insert(self->stream_collections, stream, collections);
         zhash_freefn(self->stream_collections, stream, (zhash_free_fn*)destroy_stream_collections);
@@ -1281,7 +1293,7 @@ int processor_update_mongo_db(const char* stream, void* data, void* arg)
 {
     stats_updater_state_t *state = arg;
     processor_t *processor = data;
-    stream_collections_t *collections = stats_updater_get_collections(state, processor->stream);
+    stream_collections_t *collections = stats_updater_get_collections(state, stream, processor->stream_info);
 
     zhash_foreach(processor->totals, totals_add_increments, collections->totals);
     zhash_foreach(processor->minutes, minutes_add_increments, collections->minutes);
@@ -1919,8 +1931,10 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     assert(state.pull_socket);
     int rc = zsocket_connect(state.pull_socket, "inproc://stats-updates");
     assert(rc==0);
-    state.mongo_client = mongoc_client_new(mongo_uri);
-    assert(state.mongo_client);
+    for (int i = 0; i<num_databases; i++) {
+        state.mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state.mongo_clients[i]);
+    }
     state.stream_collections = zhash_new();
     size_t ticks = 0;
 
@@ -1930,7 +1944,9 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             int64_t start_time_ms = zclock_time();
             // ping the server every 5 seconds
             if (ticks++ % 5 == 0) {
-                mongo_client_ping(state.mongo_client);
+                for (int i=0; i<num_databases; i++) {
+                    mongo_client_ping(state.mongo_clients[i]);
+                }
             }
             processor_t *processor;
             size_t request_count;
@@ -1950,7 +1966,9 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     }
 
     zhash_destroy(&state.stream_collections);
-    mongoc_client_destroy(state.mongo_client);
+    for (int i = 0; i<num_databases; i++) {
+        mongoc_client_destroy(state.mongo_clients[i]);
+    }
 }
 
 void* request_writer_pull_socket_new(zctx_t *context, int i)
@@ -2037,13 +2055,14 @@ void add_jse_collection_indexes(const char* stream, mongoc_collection_t *jse_col
     bson_destroy(index_keys);
 }
 
-mongoc_collection_t* request_writer_get_request_collection(request_writer_state_t* self, const char* stream)
+mongoc_collection_t* request_writer_get_request_collection(request_writer_state_t* self, const char* stream, stream_info_t *stream_info)
 {
     if (dryrun) return NULL;
     mongoc_collection_t *collection = zhash_lookup(self->request_collections, stream);
     if (collection == NULL) {
         // printf("creating requests collection: %s\n", stream);
-        collection = mongoc_client_get_collection(self->mongo_client, stream, "requests");
+        mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
+        collection = mongoc_client_get_collection(mongo_client, stream, "requests");
         add_request_collection_indexes(stream, collection, self);
         zhash_insert(self->request_collections, stream, collection);
         zhash_freefn(self->request_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
@@ -2051,13 +2070,14 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
     return collection;
 }
 
-mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* self, const char* stream)
+mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* self, const char* stream, stream_info_t *stream_info)
 {
     if (dryrun) return NULL;
     mongoc_collection_t *collection = zhash_lookup(self->jse_collections, stream);
     if (collection == NULL) {
         // printf("creating jse collection: %s\n", stream);
-        collection = mongoc_client_get_collection(self->mongo_client, stream, "js_exceptions");
+        mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
+        collection = mongoc_client_get_collection(mongo_client, stream, "js_exceptions");
         add_jse_collection_indexes(stream, collection, self);
         zhash_insert(self->jse_collections, stream, collection);
         zhash_freefn(self->jse_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
@@ -2065,13 +2085,14 @@ mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* s
     return collection;
 }
 
-mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t* self, const char* stream)
+mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t* self, const char* stream, stream_info_t *stream_info)
 {
     if (dryrun) return NULL;
     mongoc_collection_t *collection = zhash_lookup(self->events_collections, stream);
     if (collection == NULL) {
         // printf("creating events collection: %s\n", stream);
-        collection = mongoc_client_get_collection(self->mongo_client, stream, "events");
+        mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
+        collection = mongoc_client_get_collection(mongo_client, stream, "events");
         zhash_insert(self->events_collections, stream, collection);
         zhash_freefn(self->events_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
     }
@@ -2194,12 +2215,12 @@ void convert_metrics_for_indexing(json_object *request)
     json_object_object_add(request, "metrics", metrics);
 }
 
-json_object* store_request(const char* stream, json_object* request, request_writer_state_t* state)
+json_object* store_request(const char* stream, stream_info_t* stream_info, json_object* request, request_writer_state_t* state)
 {
     // dump_json_object(stdout, request);
     convert_metrics_for_indexing(request);
 
-    mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, stream);
+    mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, stream, stream_info);
     bson_t *document = bson_sized_new(2048);
 
     json_object *request_id_obj;
@@ -2235,9 +2256,9 @@ json_object* store_request(const char* stream, json_object* request, request_wri
     return request_id_obj;
 }
 
-void store_js_exception(const char* stream, json_object* request, request_writer_state_t* state)
+void store_js_exception(const char* stream, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
 {
-    mongoc_collection_t *jse_collection = request_writer_get_jse_collection(state, stream);
+    mongoc_collection_t *jse_collection = request_writer_get_jse_collection(state, stream, stream_info);
     bson_t *document = bson_sized_new(1024);
     json_object_to_bson(request, document);
 
@@ -2251,9 +2272,9 @@ void store_js_exception(const char* stream, json_object* request, request_writer
     bson_destroy(document);
 }
 
-void store_event(const char* stream, json_object* request, request_writer_state_t* state)
+void store_event(const char* stream, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
 {
-    mongoc_collection_t *events_collection = request_writer_get_events_collection(state, stream);
+    mongoc_collection_t *events_collection = request_writer_get_events_collection(state, stream, stream_info);
     bson_t *document = bson_sized_new(1024);
     json_object_to_bson(request, document);
 
@@ -2371,6 +2392,13 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     stream[stream_len] = '\0';
     // printf("request_writer: stream: %s\n", stream);
 
+    size_t n = strlen(stream) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
+    char stream_name[n+1];
+    strcpy(stream_name, STREAM_PREFIX);
+    strcpy(stream_name + STREAM_PREFIX_LEN, stream + DB_PREFIX_LEN);
+    stream_name[n-11] = '\0';
+    // printf("request_writer: stream name: %s\n", stream_name);
+
     size_t mod_len = zframe_size(mod);
     char module[mod_len+1];
     memcpy(module, zframe_data(mod), mod_len);
@@ -2382,18 +2410,23 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     // dump_json_object(stdout, request);
 
     if (!dryrun) {
-        char request_type = *((char*)zframe_data(type));
-        switch (request_type) {
-        case 'r':
-            request_id = store_request(stream, request, state);
-            request_writer_publish_error(stream, module, request, state, request_id);
-            break;
-        case 'j':
-            store_js_exception(stream, request, state);
-            break;
-        case 'e':
-            store_event(stream, request, state);
-            break;
+        stream_info_t *stream_info = zhash_lookup(configured_streams, stream_name);
+        if (stream_info != NULL) {
+            char request_type = *((char*)zframe_data(type));
+            switch (request_type) {
+            case 'r':
+                request_id = store_request(stream, stream_info, request, state);
+                request_writer_publish_error(stream, module, request, state, request_id);
+                break;
+            case 'j':
+                store_js_exception(stream, stream_info, request, state);
+                break;
+            case 'e':
+                store_event(stream, stream_info, request, state);
+                break;
+            }
+        } else {
+            fprintf(stderr, "dropped request for unknown stream: '%s'\n", stream_name);
         }
     }
     json_object_put(request);
@@ -2406,8 +2439,10 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     state.request_count = 0;
     state.controller_socket = pipe;
     state.pull_socket = request_writer_pull_socket_new(ctx, id);
-    state.mongo_client = mongoc_client_new(mongo_uri);
-    assert(state.mongo_client);
+    for (int i=0; i<num_databases; i++) {
+        state.mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state.mongo_clients[i]);
+    }
     state.request_collections = zhash_new();
     state.jse_collections = zhash_new();
     state.events_collections = zhash_new();
@@ -2426,7 +2461,9 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             printf("writer [%zu]: tick (%zu requests)\n", id, state.request_count);
             if (ticks++ % 5 == 0) {
                 // ping mongodb to reestablish connection if it got lost
-                mongo_client_ping(state.mongo_client);
+                for (int i=0; i<num_databases; i++) {
+                    mongo_client_ping(state.mongo_clients[i]);
+                }
             }
             // free collection pointers every hour
             msg = zmsg_recv(state.controller_socket);
@@ -2456,7 +2493,9 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     zhash_destroy(&state.request_collections);
     zhash_destroy(&state.jse_collections);
     zhash_destroy(&state.events_collections);
-    mongoc_client_destroy(state.mongo_client);
+    for (int i=0; i<num_databases; i++) {
+        mongoc_client_destroy(state.mongo_clients[i]);
+    }
 }
 
 typedef struct {
@@ -2742,15 +2781,34 @@ stream_info_t* stream_info_new(zconfig_t *stream_config)
 {
     stream_info_t *info = malloc(sizeof(stream_info_t));
     info->key = zconfig_name(stream_config);
+
     char app[256] = {'\0'};
     char env[256] = {'\0'};;
     sscanf(info->key, "request-stream-%[^-]-%[^-]", app, env);
+
     info->app = strdup(app);
     assert(strlen(app) > 0);
     info->env = strdup(env);
     assert(strlen(env) > 0);
+
+    zconfig_t *db_setting = zconfig_locate(stream_config, "db");
+    if (db_setting) {
+        const char* dbval = zconfig_value(db_setting);
+        int db_num = atoi(dbval);
+        printf("db: %d\n (numdbs: %zu)", db_num, num_databases);
+        if (db_num < num_databases) {
+            info->db = db_num;
+        } else {
+            assert(false);
+            info->db = 0;
+        }
+    } else {
+        info->db = 0;
+    }
     add_threshold_settings(info);
     add_ignored_request_settings(info);
+
+
     return info;
 }
 
@@ -2853,14 +2911,12 @@ int main(int argc, char * const *argv)
     // load config
     config = zconfig_load((char*)config_file);
     // zconfig_print(config);
+    initialize_mongo_db_globals();
     setup_resource_maps();
     setup_stream_config();
 
     setvbuf(stdout,NULL,_IOLBF,0);
     setvbuf(stderr,NULL,_IOLBF,0);
-
-    // initialize mongodb client
-    initialize_mongo_db_globals();
 
     // establish global zeromq context
     zctx_t *context = zctx_new();
