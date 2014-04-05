@@ -274,7 +274,7 @@ void connect_multiple(void* socket, const char* name, int which)
         // TODO: HACK!
         int rc;
         for (int j=0; j<10; j++) {
-            rc = zsocket_connect(socket, "inproc://%s-%d", name, j);
+            rc = zsocket_connect(socket, "inproc://%s-%d", name, i);
             if (rc == 0) break;
             zclock_sleep(100);
         }
