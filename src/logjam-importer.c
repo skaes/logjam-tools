@@ -11,6 +11,8 @@
 #include <bson.h>
 #include <mongoc.h>
 
+#define DEBUG 0
+
 // TODO:
 // way more json input validation
 // more assertions, return code checking
@@ -104,9 +106,19 @@ typedef struct {
     size_t dropped;
 } msg_stats_t;
 
+#if DEBUG == 1
+#define ONLY_ONE_THREAD_EACH
+#endif
+
+#ifdef ONLY_ONE_THREAD_EACH
+#define NUM_PARSERS 1
+#define NUM_UPDATERS 1
+#define NUM_WRITERS 1
+#else
 #define NUM_PARSERS 4
 #define NUM_UPDATERS 10
 #define NUM_WRITERS 10
+#endif
 
 /* controller state */
 typedef struct {
