@@ -202,6 +202,7 @@ typedef struct {
     void *controller_socket;
     void *pull_socket;
     void *push_socket;
+    size_t updates_count;
     msg_stats_t msg_stats;
 } stats_updater_state_t;
 
@@ -1891,6 +1892,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         }
         zmsg_destroy(&msg);
     }
+    printf("parser [%zu]: terminated\n", id);
 }
 
 void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *request_count)
@@ -1944,6 +1946,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
 {
     size_t id = (size_t)args;
     stats_updater_state_t state;
+    state.updates_count = 0;
     state.controller_socket = pipe;
     state.pull_socket = zsocket_new(ctx, ZMQ_PULL);
     assert(state.pull_socket);
@@ -1956,37 +1959,54 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     state.stats_collections = zhash_new();
     size_t ticks = 0;
 
+    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+    assert(poller);
+
     while (!zctx_interrupted) {
-        zmsg_t *msg = zmsg_recv(state.pull_socket);
-        if (msg != NULL) {
-            int64_t start_time_ms = zclock_time();
+        // printf("updater[%zu]: polling\n", id);
+        // -1 == block until something is readable
+        void *socket = zpoller_wait(poller, -1);
+        zmsg_t *msg = NULL;
+        if (socket == state.controller_socket) {
+            msg = zmsg_recv(state.controller_socket);
+            printf("updater[%zu]: tick (%zu updates)\n", id, state.updates_count);
             // ping the server every 5 seconds
             if (ticks++ % 5 == 0) {
                 for (int i=0; i<num_databases; i++) {
                     mongo_client_ping(state.mongo_clients[i]);
                 }
             }
-            processor_t *processor;
-            size_t request_count;
-            extract_processor_state(msg, &processor, &request_count);
-            processor_update_mongo_db(processor->db_name, processor, &state);
-
             // refresh database information every hour
-            if (ticks % 3600 == id) {
+            if (ticks % 3600 == 3599 - id) {
                 zhash_destroy(&state.stats_collections);
                 state.stats_collections = zhash_new();
             }
+            state.updates_count = 0;
+        } else if (socket == state.pull_socket) {
+            msg = zmsg_recv(state.pull_socket);
+            state.updates_count++;
+            int64_t start_time_ms = zclock_time();
+            processor_t *processor;
+            size_t request_count;
+            extract_processor_state(msg, &processor, &request_count);
+
+            processor_update_mongo_db(processor->db_name, processor, &state);
             processor_destroy(processor);
-            zmsg_destroy(&msg);
+
             int64_t end_time_ms = zclock_time();
             printf("updater[%zu]: (%d ms)\n", id, (int)(end_time_ms - start_time_ms));
+        } else {
+            printf("updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
+            break;
         }
+        zmsg_destroy(&msg);
     }
 
     zhash_destroy(&state.stats_collections);
     for (int i = 0; i<num_databases; i++) {
         mongoc_client_destroy(state.mongo_clients[i]);
     }
+    printf("updater[%zu]: terminated\n", id);
 }
 
 void* request_writer_pull_socket_new(zctx_t *context, int i)
@@ -2346,7 +2366,8 @@ json_object* extract_error_description(json_object* request, int severity)
     return json_object_new_string(description);
 }
 
-void request_writer_publish_error(stream_info_t* stream_info, const char* module, json_object* request, request_writer_state_t* state, json_object* request_id)
+void request_writer_publish_error(stream_info_t* stream_info, const char* module, json_object* request,
+                                  request_writer_state_t* state, json_object* request_id)
 {
     if (request_id == NULL) return;
 
@@ -2466,6 +2487,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     assert(poller);
 
     while (!zctx_interrupted) {
+        // printf("writer [%zu]: polling\n", id);
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;
@@ -2480,7 +2502,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             }
             // free collection pointers every hour
             msg = zmsg_recv(state.controller_socket);
-            if (ticks % 3600 == id) {
+            if (ticks % 3600 == 3599 - id) {
                 printf("writer [%zu]: freeing request collections\n", id);
                 zhash_destroy(&state.request_collections);
                 zhash_destroy(&state.jse_collections);
@@ -2498,6 +2520,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             }
         } else {
             // interrupted
+            printf("writer [%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
             break;
         }
         zmsg_destroy(&msg);
@@ -2509,6 +2532,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state.mongo_clients[i]);
     }
+    printf("writer [%zu]: terminated\n", id);
 }
 
 typedef struct {
@@ -2617,6 +2641,13 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
     // publish on live stream (need to do this while we still own the processors)
     zhash_foreach(processors[0], processor_publish_totals, state->live_stream_socket);
+
+    // tell stats updaters to tick
+    for (int i=0; i<NUM_UPDATERS; i++) {
+        zmsg_t *tick = zmsg_new();
+        zmsg_addstr(tick, "tick");
+        zmsg_send(&tick, state->updater_pipes[i]);
+    }
 
     // forward to stats_updaters
     zlist_t *db_names = zhash_keys(processors[0]);
@@ -2798,7 +2829,8 @@ stream_info_t* stream_info_new(zconfig_t *stream_config)
 
     char app[256] = {'\0'};
     char env[256] = {'\0'};;
-    sscanf(info->key, "request-stream-%[^-]-%[^-]", app, env);
+    int n = sscanf(info->key, "request-stream-%[^-]-%[^-]", app, env);
+    assert(n == 2);
 
     info->app = strdup(app);
     info->app_len = strlen(app);
