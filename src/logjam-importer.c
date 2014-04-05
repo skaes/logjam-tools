@@ -43,6 +43,9 @@ typedef struct {
     const char *key;
     const char *app;
     const char *env;
+    size_t key_len;
+    size_t app_len;
+    size_t env_len;
     int db;
     int import_threshold;
     int module_threshold_count;
@@ -1671,6 +1674,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
         zmsg_addstr(msg, "r");
         zmsg_addstr(msg, request_data.module);
         zmsg_addmem(msg, &request, sizeof(json_object*));
+        zmsg_addmem(msg, &self->stream_info, sizeof(stream_info_t*));
         zmsg_send(&msg, pstate->push_socket);
     }
 }
@@ -1743,6 +1747,7 @@ void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_
     zmsg_addstr(msg, "j");
     zmsg_addstr(msg, module);
     zmsg_addmem(msg, &request, sizeof(json_object*));
+    zmsg_addmem(msg, &self->stream_info, sizeof(stream_info_t*));
     zmsg_send(&msg, pstate->push_socket);
 }
 
@@ -1755,6 +1760,7 @@ void processor_add_event(processor_t *self, parser_state_t *pstate, json_object 
     zmsg_addstr(msg, "e");
     zmsg_addstr(msg, "");
     zmsg_addmem(msg, &request, sizeof(json_object*));
+    zmsg_addmem(msg, &self->stream_info, sizeof(stream_info_t*));
     zmsg_send(&msg, pstate->push_socket);
 }
 
@@ -1763,9 +1769,9 @@ int processor_publish_totals(const char* db_name, void *processor, void *live_st
     processor_t *self = processor;
     if (zhash_size(self->modules) == 0) return 0;
 
-    size_t n = strlen(db_name);
-    char app[n+1], env[n+1];
-    sscanf(db_name, "logjam-%[^-]-%[^-]", app, env);
+    stream_info_t *stream_info = self->stream_info;
+    size_t n = stream_info->app_len + 1 + stream_info->env_len;
+
     zlist_t *modules = zhash_keys(self->modules);
     zlist_push(modules, "all_pages");
     const char* module = zlist_first(modules);
@@ -1775,7 +1781,7 @@ int processor_publish_totals(const char* db_name, void *processor, void *live_st
         while (*module == ':') module++;
         size_t m = strlen(module);
         char key[n + m + 3];
-        sprintf(key, "%s-%s,%s", app, env, module);
+        sprintf(key, "%s-%s,%s", stream_info->app, stream_info->env, module);
         // TODO: change this crap in the live stream publisher
         // tolower is unsafe and not really necessary
         for (char *p = key; *p; ++p) *p = tolower(*p);
@@ -2288,17 +2294,14 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
     bson_destroy(document);
 }
 
-void publish_error_for_module(const char* db_name, const char* module, const char* json_str, void* live_stream_socket)
+void publish_error_for_module(stream_info_t *stream_info, const char* module, const char* json_str, void* live_stream_socket)
 {
-    size_t n = strlen(db_name);
-    char app[n+1], env[n+1];
-    sscanf(db_name, "logjam-%[^-]-%[^-]", app, env);
-
+    size_t n = stream_info->app_len + 1 + stream_info->env_len;
     // skip :: at the beginning of module
     while (*module == ':') module++;
     size_t m = strlen(module);
     char key[n + m + 3];
-    sprintf(key, "%s-%s,%s", app, env, module);
+    sprintf(key, "%s-%s,%s", stream_info->app, stream_info->env, module);
     // TODO: change this crap in the live stream publisher
     // tolower is unsafe and not really necessary
     for (char *p = key; *p; ++p) *p = tolower(*p);
@@ -2331,7 +2334,7 @@ json_object* extract_error_description(json_object* request, int severity)
     return json_object_new_string(description);
 }
 
-void request_writer_publish_error(const char* db_name, const char* module, json_object* request, request_writer_state_t* state, json_object* request_id)
+void request_writer_publish_error(stream_info_t* stream_info, const char* module, json_object* request, request_writer_state_t* state, json_object* request_id)
 {
     if (request_id == NULL) return;
 
@@ -2369,8 +2372,8 @@ void request_writer_publish_error(const char* db_name, const char* module, json_
 
             const char *json_str = json_object_to_json_string_ext(arror, JSON_C_TO_STRING_PLAIN);
 
-            publish_error_for_module(db_name, "all_pages", json_str, state->live_stream_socket);
-            publish_error_for_module(db_name, module, json_str, state->live_stream_socket);
+            publish_error_for_module(stream_info, "all_pages", json_str, state->live_stream_socket);
+            publish_error_for_module(stream_info, module, json_str, state->live_stream_socket);
 
             json_object_put(arror);
         }
@@ -2381,52 +2384,50 @@ void request_writer_publish_error(const char* db_name, const char* module, json_
 
 void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
 {
-    zframe_t *first = zmsg_first(msg);
-    zframe_t *type  = zmsg_next(msg);
-    zframe_t *mod   = zmsg_next(msg);
-    zframe_t *body  = zmsg_next(msg);
+    zframe_t *db_frame = zmsg_first(msg);
+    zframe_t *type_frame = zmsg_next(msg);
+    zframe_t *mod_frame = zmsg_next(msg);
+    zframe_t *body_frame = zmsg_next(msg);
+    zframe_t *stream_frame = zmsg_next(msg);
 
-    size_t db_name_len = zframe_size(first);
+    size_t db_name_len = zframe_size(db_frame);
     char db_name[db_name_len+1];
-    memcpy(db_name, zframe_data(first), db_name_len);
+    memcpy(db_name, zframe_data(db_frame), db_name_len);
     db_name[db_name_len] = '\0';
     // printf("request_writer: db name: %s\n", db_name);
 
-    size_t n = strlen(db_name) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
-    char stream_name[n+1];
-    strcpy(stream_name, STREAM_PREFIX);
-    strcpy(stream_name + STREAM_PREFIX_LEN, db_name + DB_PREFIX_LEN);
-    stream_name[n-11] = '\0';
-    // printf("request_writer: stream name: %s\n", stream_name);
+    stream_info_t *stream_info;
+    assert(zframe_size(stream_frame) == sizeof(stream_info_t*));
+    memcpy(&stream_info, zframe_data(stream_frame), sizeof(stream_info_t*));
+    // printf("request_writer: stream name: %s\n", stream_info->key);
 
-    size_t mod_len = zframe_size(mod);
+    size_t mod_len = zframe_size(mod_frame);
     char module[mod_len+1];
-    memcpy(module, zframe_data(mod), mod_len);
+    memcpy(module, zframe_data(mod_frame), mod_len);
     module[mod_len] = '\0';
 
     json_object *request, *request_id;
-    assert(zframe_size(body) == sizeof(json_object*));
-    memcpy(&request, zframe_data(body), sizeof(json_object*));
+    assert(zframe_size(body_frame) == sizeof(json_object*));
+    memcpy(&request, zframe_data(body_frame), sizeof(json_object*));
     // dump_json_object(stdout, request);
 
+    assert(zframe_size(type_frame) == 1);
+    char task_type = *((char*)zframe_data(type_frame));
+
     if (!dryrun) {
-        stream_info_t *stream_info = zhash_lookup(configured_streams, stream_name);
-        if (stream_info != NULL) {
-            char request_type = *((char*)zframe_data(type));
-            switch (request_type) {
-            case 'r':
-                request_id = store_request(db_name, stream_info, request, state);
-                request_writer_publish_error(db_name, module, request, state, request_id);
-                break;
-            case 'j':
-                store_js_exception(db_name, stream_info, request, state);
-                break;
-            case 'e':
-                store_event(db_name, stream_info, request, state);
-                break;
-            }
-        } else {
-            fprintf(stderr, "dropped request for unknown stream: '%s'\n", stream_name);
+        switch (task_type) {
+        case 'r':
+            request_id = store_request(db_name, stream_info, request, state);
+            request_writer_publish_error(stream_info, module, request, state, request_id);
+            break;
+        case 'j':
+            store_js_exception(db_name, stream_info, request, state);
+            break;
+        case 'e':
+            store_event(db_name, stream_info, request, state);
+            break;
+        default:
+            printf("unknown task type for request_writer: %c\n", task_type);
         }
     }
     json_object_put(request);
@@ -2781,15 +2782,19 @@ stream_info_t* stream_info_new(zconfig_t *stream_config)
 {
     stream_info_t *info = malloc(sizeof(stream_info_t));
     info->key = zconfig_name(stream_config);
+    info->key_len = strlen(info->key);
 
     char app[256] = {'\0'};
     char env[256] = {'\0'};;
     sscanf(info->key, "request-stream-%[^-]-%[^-]", app, env);
 
     info->app = strdup(app);
-    assert(strlen(app) > 0);
+    info->app_len = strlen(app);
+    assert(info->app_len > 0);
+
     info->env = strdup(env);
-    assert(strlen(env) > 0);
+    info->env_len = strlen(env);
+    assert(info->env_len > 0);
 
     zconfig_t *db_setting = zconfig_locate(stream_config, "db");
     if (db_setting) {
