@@ -123,6 +123,7 @@ typedef struct {
 /* controller state */
 typedef struct {
     void *subscriber_pipe;
+    void *indexer_pipe;
     void *parser_pipes[NUM_PARSERS];
     void *writer_pipes[NUM_WRITERS];
     void *updater_pipes[NUM_UPDATERS];
@@ -146,6 +147,7 @@ typedef struct {
     void *controller_socket;
     void *pull_socket;
     void *push_socket;
+    void *indexer_socket;
     msg_stats_t msg_stats;
     json_tokener* tokener;
     zhash_t *processors;
@@ -193,6 +195,15 @@ typedef struct {
     mongoc_collection_t *minutes;
     mongoc_collection_t *quants;
 } stats_collections_t;
+
+/* indexer state */
+typedef struct {
+    mongoc_client_t *mongo_clients[MAX_DATABASES];
+    mongoc_collection_t *global_collection;
+    void *controller_socket;
+    void *pull_socket;
+    zhash_t *databases;
+} indexer_state_t;
 
 /* stats updater state */
 typedef struct {
@@ -509,6 +520,11 @@ processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_sta
             int rc = zhash_insert(parser_state->processors, db_name, p);
             assert(rc ==0);
             zhash_freefn(parser_state->processors, db_name, processor_destroy);
+            zmsg_t *msg = zmsg_new();
+            assert(msg);
+            zmsg_addstr(msg, db_name);
+            zmsg_addmem(msg, &p->stream_info, sizeof(stream_info_t*));
+            zmsg_send(&msg, parser_state->indexer_socket);
         }
     }
     return p;
@@ -536,6 +552,15 @@ void* parser_push_socket_new(zctx_t *context)
     void *socket = zsocket_new(context, ZMQ_PUSH);
     assert(socket);
     connect_multiple(socket, "request-writer", NUM_WRITERS);
+    return socket;
+}
+
+void* parser_indexer_socket_new(zctx_t *context)
+{
+    void *socket = zsocket_new(context, ZMQ_PUSH);
+    assert(socket);
+    int rc = zsocket_connect(socket, "inproc://indexer");
+    assert (rc == 0);
     return socket;
 }
 
@@ -1248,37 +1273,12 @@ stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* 
     stats_collections_t *collections = malloc(sizeof(stats_collections_t));
     assert(collections);
     memset(collections, 0, sizeof(stats_collections_t));
-    bson_error_t error;
-    bson_t *keys;
 
     if (dryrun) return collections;
 
     collections->totals = mongoc_client_get_collection(client, db_name, "totals");
-    keys = bson_new();
-    assert(bson_append_int32(keys, "page", 4, 1));
-    if (!mongoc_collection_create_index(collections->totals, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
-    }
-    bson_destroy(keys);
-
     collections->minutes = mongoc_client_get_collection(client, db_name, "minutes");
-    keys = bson_new();
-    assert(bson_append_int32(keys, "page", 4, 1));
-    assert(bson_append_int32(keys, "minutes", 6, 1));
-    if (!mongoc_collection_create_index(collections->minutes, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
-    }
-    bson_destroy(keys);
-
     collections->quants = mongoc_client_get_collection(client, db_name, "quants");
-    keys = bson_new();
-    assert(bson_append_int32(keys, "page", 4, 1));
-    assert(bson_append_int32(keys, "kind", 4, 1));
-    assert(bson_append_int32(keys, "quant", 5, 1));
-    if (!mongoc_collection_create_index(collections->quants, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
-    }
-    bson_destroy(keys);
 
     return collections;
 }
@@ -1296,7 +1296,7 @@ stats_collections_t *stats_updater_get_collections(stats_updater_state_t *self, 
     stats_collections_t *collections = zhash_lookup(self->stats_collections, db_name);
     if (collections == NULL) {
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
-        ensure_known_database(mongo_client, db_name);
+        // ensure_known_database(mongo_client, db_name);
         collections = stats_collections_new(mongo_client, db_name);
         assert(collections);
         zhash_insert(self->stats_collections, db_name, collections);
@@ -1860,6 +1860,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
     state.controller_socket = pipe;
     state.pull_socket = parser_pull_socket_new(ctx);
     state.push_socket = parser_push_socket_new(ctx);
+    state.indexer_socket = parser_indexer_socket_new(ctx);
     assert( state.tokener = json_tokener_new() );
     state.processors = processor_hash_new();
 
@@ -2041,7 +2042,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     bson_destroy(index_keys);
 }
 
-void add_request_collection_indexes(const char* db_name, mongoc_collection_t *requests_collection, request_writer_state_t* state)
+void add_request_collection_indexes(const char* db_name, mongoc_collection_t *requests_collection)
 {
     bson_error_t error;
     bson_t *index_keys;
@@ -2071,7 +2072,7 @@ void add_request_collection_indexes(const char* db_name, mongoc_collection_t *re
     add_request_field_index("exceptions",    requests_collection);
 }
 
-void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_collection, request_writer_state_t* state)
+void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_collection)
 {
     bson_error_t error;
     bson_t *index_keys;
@@ -2101,7 +2102,7 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
         // printf("creating requests collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
         collection = mongoc_client_get_collection(mongo_client, db_name, "requests");
-        add_request_collection_indexes(db_name, collection, self);
+        // add_request_collection_indexes(db_name, collection);
         zhash_insert(self->request_collections, db_name, collection);
         zhash_freefn(self->request_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
     }
@@ -2116,7 +2117,7 @@ mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* s
         // printf("creating jse collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
         collection = mongoc_client_get_collection(mongo_client, db_name, "js_exceptions");
-        add_jse_collection_indexes(db_name, collection, self);
+        // add_jse_collection_indexes(db_name, collection);
         zhash_insert(self->jse_collections, db_name, collection);
         zhash_freefn(self->jse_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
     }
@@ -2534,6 +2535,148 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     }
     printf("writer [%zu]: terminated\n", id);
 }
+
+void *indexer_pull_socket_new(zctx_t *ctx)
+{
+    void *socket = zsocket_new(ctx, ZMQ_PULL);
+    assert(socket);
+    int rc = zsocket_bind(socket, "inproc://indexer");
+    assert(rc == 0);
+    return socket;
+}
+
+void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_info_t *stream_info)
+{
+    mongoc_client_t *client = state->mongo_clients[stream_info->db];
+    mongoc_collection_t *collection;
+    bson_error_t error;
+    bson_t *keys;
+
+    if (dryrun) return;
+
+    ensure_known_database(client, db_name);
+    printf("creating indexes for %s\n", db_name);
+
+    collection = mongoc_client_get_collection(client, db_name, "totals");
+    keys = bson_new();
+    assert(bson_append_int32(keys, "page", 4, 1));
+    if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
+    bson_destroy(keys);
+    mongoc_collection_destroy(collection);
+
+    collection = mongoc_client_get_collection(client, db_name, "minutes");
+    keys = bson_new();
+    assert(bson_append_int32(keys, "page", 4, 1));
+    assert(bson_append_int32(keys, "minutes", 6, 1));
+    if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
+    bson_destroy(keys);
+    mongoc_collection_destroy(collection);
+
+    collection = mongoc_client_get_collection(client, db_name, "quants");
+    keys = bson_new();
+    assert(bson_append_int32(keys, "page", 4, 1));
+    assert(bson_append_int32(keys, "kind", 4, 1));
+    assert(bson_append_int32(keys, "quant", 5, 1));
+    if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
+        fprintf(stderr, "index creation failed: %s\n", error.message);
+    }
+    bson_destroy(keys);
+    mongoc_collection_destroy(collection);
+
+    collection = mongoc_client_get_collection(client, db_name, "requests");
+    add_request_collection_indexes(db_name, collection);
+    mongoc_collection_destroy(collection);
+
+    collection = mongoc_client_get_collection(client, db_name, "js_exceptions");
+    add_jse_collection_indexes(db_name, collection);
+    mongoc_collection_destroy(collection);
+}
+
+void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
+{
+    zframe_t *db_frame = zmsg_first(msg);
+    zframe_t *stream_frame = zmsg_next(msg);
+
+    size_t n = zframe_size(db_frame);
+    char db_name[n+1];
+    memcpy(db_name, zframe_data(db_frame), n);
+    db_name[n] = '\0';
+
+    stream_info_t *stream_info;
+    assert(zframe_size(stream_frame) == sizeof(stream_info_t*));
+    memcpy(&stream_info, zframe_data(stream_frame), sizeof(stream_info_t*));
+
+    // printf("indexer request for %s\n", db_name);
+    const char *known_db = zhash_lookup(state->databases, db_name);
+    if (known_db == NULL) {
+        zhash_insert(state->databases, db_name, strdup(db_name));
+        zhash_freefn(state->databases, db_name, free);
+        indexer_create_indexes(state, db_name, stream_info);
+    }
+}
+
+void indexer(void *args, zctx_t *ctx, void *pipe)
+{
+    indexer_state_t state;
+    size_t id = 0;
+    state.controller_socket = pipe;
+    state.pull_socket = indexer_pull_socket_new(ctx);
+    for (int i=0; i<num_databases; i++) {
+        state.mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state.mongo_clients[i]);
+    }
+    state.databases = zhash_new();
+    size_t ticks = 0;
+
+    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+    assert(poller);
+
+    while (!zctx_interrupted) {
+        // printf("indexer[%zu]: polling\n", id);
+        // -1 == block until something is readable
+        void *socket = zpoller_wait(poller, -1);
+        zmsg_t *msg = NULL;
+        if (socket == state.controller_socket) {
+            // tick
+            printf("indexer[%zu]: tick\n", id);
+            if (ticks++ % 5 == 0) {
+                // ping mongodb to reestablish connection if it got lost
+                for (int i=0; i<num_databases; i++) {
+                    mongo_client_ping(state.mongo_clients[i]);
+                }
+            }
+            // free collection pointers every hour
+            msg = zmsg_recv(state.controller_socket);
+            if (ticks % 3600 == 3599 - id) {
+                printf("indexer[%zu]: freeing database info\n", id);
+                zhash_destroy(&state.databases);
+                state.databases = zhash_new();
+            }
+        } else if (socket == state.pull_socket) {
+            msg = zmsg_recv(state.pull_socket);
+            if (msg != NULL) {
+                handle_indexer_request(msg, &state);
+            }
+        } else {
+            // interrupted
+            printf("indexer[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
+            break;
+        }
+        zmsg_destroy(&msg);
+    }
+
+    zhash_destroy(&state.databases);
+    for (int i=0; i<num_databases; i++) {
+        mongoc_client_destroy(state.mongo_clients[i]);
+    }
+    printf("indexer[%zu]: terminated\n", id);
+}
+
+
 
 typedef struct {
     zhash_t *source;
@@ -2974,6 +3117,9 @@ int main(int argc, char * const *argv)
     zloop_set_verbose(loop, 0);
 
     controller_state_t state;
+
+    // start the indexer
+    state.indexer_pipe = zthread_fork(context, indexer, NULL);
 
     // create socket for stats updates
     state.updates_socket = zsocket_new(context, ZMQ_PUSH);
