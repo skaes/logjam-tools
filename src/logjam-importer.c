@@ -391,7 +391,7 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
     state.pull_socket = subscriber_pull_socket_new(ctx);
     state.push_socket = subscriber_push_socket_new(ctx);
 
-    if (stream_subscriptions == NULL) {
+    if (zhash_size(stream_subscriptions) == 0) {
         // subscribe to all messages
         zsocket_set_subscribe(state.sub_socket, "");
     } else {
