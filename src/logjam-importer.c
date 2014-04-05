@@ -2808,23 +2808,17 @@ stream_info_t* stream_info_new(zconfig_t *stream_config)
     info->env_len = strlen(env);
     assert(info->env_len > 0);
 
+    info->db = 0;
     zconfig_t *db_setting = zconfig_locate(stream_config, "db");
     if (db_setting) {
         const char* dbval = zconfig_value(db_setting);
         int db_num = atoi(dbval);
         printf("db: %d\n (numdbs: %zu)", db_num, num_databases);
-        if (db_num < num_databases) {
-            info->db = db_num;
-        } else {
-            assert(false);
-            info->db = 0;
-        }
-    } else {
-        info->db = 0;
+        assert(db_num < num_databases);
+        info->db = db_num;
     }
     add_threshold_settings(info);
     add_ignored_request_settings(info);
-
 
     return info;
 }
