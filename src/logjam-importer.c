@@ -38,7 +38,7 @@ static const char *databases[MAX_DATABASES];
 
 typedef struct {
     const char* name;
-    int value;
+    size_t value;
 } module_threshold_t;
 
 typedef struct {
@@ -2801,7 +2801,7 @@ void add_threshold_settings(stream_info_t* info)
     const char *module = zlist_first(modules);
     while (module) {
         info->module_thresholds[i].name = strdup(module);
-        info->module_thresholds[i].value = (int)zhash_lookup(module_settings, module);
+        info->module_thresholds[i].value = (size_t)zhash_lookup(module_settings, module);
         i++;
         module = zlist_next(modules);
     }
@@ -2863,7 +2863,7 @@ void dump_stream_info(stream_info_t *stream)
     printf("ignored_request_uri: %s\n", stream->ignored_request_prefix);
     printf("import_threshold: %d\n", stream->import_threshold);
     for (int i = 0; i<stream->module_threshold_count; i++) {
-        printf("module_threshold: %s = %d\n", stream->module_thresholds[i].name, stream->module_thresholds[i].value);
+        printf("module_threshold: %s = %zu\n", stream->module_thresholds[i].name, stream->module_thresholds[i].value);
     }
 }
 
