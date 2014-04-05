@@ -138,7 +138,7 @@ typedef struct {
 
 /* processor state */
 typedef struct {
-    char *stream;
+    char *db_name;
     stream_info_t* stream_info;
     size_t request_count;
     zhash_t *modules;
@@ -177,13 +177,13 @@ typedef struct {
     mongoc_collection_t *totals;
     mongoc_collection_t *minutes;
     mongoc_collection_t *quants;
-} stream_collections_t;
+} stats_collections_t;
 
 /* stats updater state */
 typedef struct {
     mongoc_client_t *mongo_clients[MAX_DATABASES];
     mongoc_collection_t *global_collection;
-    zhash_t *stream_collections;
+    zhash_t *stats_collections;
     void *controller_socket;
     void *pull_socket;
     void *push_socket;
@@ -424,13 +424,13 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
 #define STREAM_PREFIX_LEN 15
 // ISO date: 2014-11-11
 
-processor_t* processor_new(char *stream)
+processor_t* processor_new(char *db_name)
 {
     // check whether it's a known stream and return NULL if not
-    size_t n = strlen(stream) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
+    size_t n = strlen(db_name) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
     char stream_name[n+1];
     strcpy(stream_name, STREAM_PREFIX);
-    strcpy(stream_name + STREAM_PREFIX_LEN, stream + DB_PREFIX_LEN);
+    strcpy(stream_name + STREAM_PREFIX_LEN, db_name + DB_PREFIX_LEN);
     stream_name[n-11] = '\0';
 
     stream_info_t *stream_info = zhash_lookup(configured_streams, stream_name);
@@ -442,7 +442,7 @@ processor_t* processor_new(char *stream)
     }
 
     processor_t *p = malloc(sizeof(processor_t));
-    p->stream = strdup(stream);
+    p->db_name = strdup(db_name);
     p->stream_info = stream_info;
     p->request_count = 0;
     p->modules = zhash_new();
@@ -457,7 +457,7 @@ void processor_destroy(void* processor)
     //void* because we want to use it as a zhash_free_fn
     processor_t* p = processor;
     // printf("destroying processor: %s. requests: %zu\n", p->stream, p->request_count);
-    free(p->stream);
+    free(p->db_name);
     zhash_destroy(&p->modules);
     zhash_destroy(&p->totals);
     zhash_destroy(&p->minutes);
@@ -468,31 +468,31 @@ void processor_destroy(void* processor)
 processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
 {
     size_t n = zframe_size(stream_frame);
-    char stream[n+100];
-    strcpy(stream, "logjam-");
-    memcpy(stream+7, zframe_data(stream_frame)+15, n-15);
-    stream[n+7-15] = '-';
-    stream[n+7-14] = '\0';
+    char db_name[n+100];
+    strcpy(db_name, "logjam-");
+    memcpy(db_name+7, zframe_data(stream_frame)+15, n-15);
+    db_name[n+7-15] = '-';
+    db_name[n+7-14] = '\0';
 
     json_object* started_at_value;
     if (json_object_object_get_ex(request, "started_at", &started_at_value)) {
         const char *date_str = json_object_get_string(started_at_value);
-        strncpy(&stream[n+7-14], date_str, 10);
-        stream[n+7-14+10] = '\0';
+        strncpy(&db_name[n+7-14], date_str, 10);
+        db_name[n+7-14+10] = '\0';
     } else {
         fprintf(stderr, "dropped request without started_at date\n");
         return NULL;
     }
 
-    // printf("stream: %s\n", stream);
+    // printf("db_name: %s\n", db_name);
 
-    processor_t *p = zhash_lookup(parser_state->processors, stream);
+    processor_t *p = zhash_lookup(parser_state->processors, db_name);
     if (p == NULL) {
-        p = processor_new(stream);
+        p = processor_new(db_name);
         if (p) {
-            int rc = zhash_insert(parser_state->processors, stream, p);
+            int rc = zhash_insert(parser_state->processors, db_name, p);
             assert(rc ==0);
-            zhash_freefn(parser_state->processors, stream, processor_destroy);
+            zhash_freefn(parser_state->processors, db_name, processor_destroy);
         }
     }
     return p;
@@ -1022,16 +1022,16 @@ int dump_increments(const char *key, void *total, void *arg)
 void processor_dump_state(processor_t *self)
 {
     puts("================================================");
-    printf("stream: %s\n", self->stream);
+    printf("db_name: %s\n", self->db_name);
     printf("processed requests: %zu\n", self->request_count);
     zhash_foreach(self->modules, dump_module_name, NULL);
     zhash_foreach(self->totals, dump_increments, NULL);
     zhash_foreach(self->minutes, dump_increments, NULL);
 }
 
-int processor_dump_state_from_zhash(const char* stream, void* processor, void* arg)
+int processor_dump_state_from_zhash(const char* db_name, void* processor, void* arg)
 {
-    assert(!strcmp(((processor_t*)processor)->stream,stream));
+    assert(!strcmp(((processor_t*)processor)->db_name, db_name));
     processor_dump_state(processor);
     return 0;
 }
@@ -1227,17 +1227,17 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     mongoc_collection_destroy(meta_collection);
 }
 
-stream_collections_t *stream_collections_new(mongoc_client_t* client, const char* stream)
+stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* db_name)
 {
-    stream_collections_t *collections = malloc(sizeof(stream_collections_t));
+    stats_collections_t *collections = malloc(sizeof(stats_collections_t));
     assert(collections);
-    memset(collections, 0, sizeof(stream_collections_t));
+    memset(collections, 0, sizeof(stats_collections_t));
     bson_error_t error;
     bson_t *keys;
 
     if (dryrun) return collections;
 
-    collections->totals = mongoc_client_get_collection(client, stream, "totals");
+    collections->totals = mongoc_client_get_collection(client, db_name, "totals");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     if (!mongoc_collection_create_index(collections->totals, keys, &index_opt_default, &error)) {
@@ -1245,7 +1245,7 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     }
     bson_destroy(keys);
 
-    collections->minutes = mongoc_client_get_collection(client, stream, "minutes");
+    collections->minutes = mongoc_client_get_collection(client, db_name, "minutes");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minutes", 6, 1));
@@ -1254,7 +1254,7 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     }
     bson_destroy(keys);
 
-    collections->quants = mongoc_client_get_collection(client, stream, "quants");
+    collections->quants = mongoc_client_get_collection(client, db_name, "quants");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "kind", 4, 1));
@@ -1267,7 +1267,7 @@ stream_collections_t *stream_collections_new(mongoc_client_t* client, const char
     return collections;
 }
 
-void destroy_stream_collections(stream_collections_t* collections)
+void destroy_stats_collections(stats_collections_t* collections)
 {
     if (collections->totals)  mongoc_collection_destroy(collections->totals);
     if (collections->minutes) mongoc_collection_destroy(collections->minutes);
@@ -1275,25 +1275,25 @@ void destroy_stream_collections(stream_collections_t* collections)
     free(collections);
 }
 
-stream_collections_t *stats_updater_get_collections(stats_updater_state_t *self, const char* stream, stream_info_t *stream_info)
+stats_collections_t *stats_updater_get_collections(stats_updater_state_t *self, const char* db_name, stream_info_t *stream_info)
 {
-    stream_collections_t *collections = zhash_lookup(self->stream_collections, stream);
+    stats_collections_t *collections = zhash_lookup(self->stats_collections, db_name);
     if (collections == NULL) {
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
-        ensure_known_database(mongo_client, stream);
-        collections = stream_collections_new(mongo_client, stream);
+        ensure_known_database(mongo_client, db_name);
+        collections = stats_collections_new(mongo_client, db_name);
         assert(collections);
-        zhash_insert(self->stream_collections, stream, collections);
-        zhash_freefn(self->stream_collections, stream, (zhash_free_fn*)destroy_stream_collections);
+        zhash_insert(self->stats_collections, db_name, collections);
+        zhash_freefn(self->stats_collections, db_name, (zhash_free_fn*)destroy_stats_collections);
     }
     return collections;
 }
 
-int processor_update_mongo_db(const char* stream, void* data, void* arg)
+int processor_update_mongo_db(const char* db_name, void* data, void* arg)
 {
     stats_updater_state_t *state = arg;
     processor_t *processor = data;
-    stream_collections_t *collections = stats_updater_get_collections(state, stream, processor->stream_info);
+    stats_collections_t *collections = stats_updater_get_collections(state, db_name, processor->stream_info);
 
     zhash_foreach(processor->totals, totals_add_increments, collections->totals);
     zhash_foreach(processor->minutes, minutes_add_increments, collections->minutes);
@@ -1536,7 +1536,7 @@ int add_quant_to_quants_hash(const char* key, void* data, void *arg)
     return 0;
 }
 
-void quants_combine(zhash_t *target, zhash_t *source)
+void combine_quants(zhash_t *target, zhash_t *source)
 {
     zhash_foreach(source, add_quant_to_quants_hash, target);
 }
@@ -1667,7 +1667,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     if (interesting_request(&request_data, request, self->stream_info)) {
         json_object_get(request);
         zmsg_t *msg = zmsg_new();
-        zmsg_addstr(msg, self->stream);
+        zmsg_addstr(msg, self->db_name);
         zmsg_addstr(msg, "r");
         zmsg_addstr(msg, request_data.module);
         zmsg_addmem(msg, &request, sizeof(json_object*));
@@ -1739,7 +1739,7 @@ void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_
 
     json_object_get(request);
     zmsg_t *msg = zmsg_new();
-    zmsg_addstr(msg, self->stream);
+    zmsg_addstr(msg, self->db_name);
     zmsg_addstr(msg, "j");
     zmsg_addstr(msg, module);
     zmsg_addmem(msg, &request, sizeof(json_object*));
@@ -1751,21 +1751,21 @@ void processor_add_event(processor_t *self, parser_state_t *pstate, json_object 
     processor_setup_minute(self, request);
     json_object_get(request);
     zmsg_t *msg = zmsg_new();
-    zmsg_addstr(msg, self->stream);
+    zmsg_addstr(msg, self->db_name);
     zmsg_addstr(msg, "e");
     zmsg_addstr(msg, "");
     zmsg_addmem(msg, &request, sizeof(json_object*));
     zmsg_send(&msg, pstate->push_socket);
 }
 
-int processor_publish_totals(const char* stream, void *processor, void *live_stream_socket)
+int processor_publish_totals(const char* db_name, void *processor, void *live_stream_socket)
 {
     processor_t *self = processor;
     if (zhash_size(self->modules) == 0) return 0;
 
-    size_t n = strlen(stream);
+    size_t n = strlen(db_name);
     char app[n+1], env[n+1];
-    sscanf(stream, "logjam-%[^-]-%[^-]", app, env);
+    sscanf(db_name, "logjam-%[^-]-%[^-]", app, env);
     zlist_t *modules = zhash_keys(self->modules);
     zlist_push(modules, "all_pages");
     const char* module = zlist_first(modules);
@@ -1780,7 +1780,7 @@ int processor_publish_totals(const char* stream, void *processor, void *live_str
         // tolower is unsafe and not really necessary
         for (char *p = key; *p; ++p) *p = tolower(*p);
 
-        // printf("publishing totals for stream: %s, module: %s, key: %s\n", stream, module, key);
+        // printf("publishing totals for db: %s, module: %s, key: %s\n", db_name, module, key);
         increments_t *incs = zhash_lookup(self->totals, namespace);
         if (incs) {
             json_object *json = json_object_new_object();
@@ -1792,7 +1792,7 @@ int processor_publish_totals(const char* stream, void *processor, void *live_str
 
             json_object_put(json);
         } else {
-            fprintf(stderr, "missing increments for stream: %s, module: %s, key: %s\n", stream, module, key);
+            fprintf(stderr, "missing increments for db: %s, module: %s, key: %s\n", db_name, module, key);
         }
         module = zlist_next(modules);
     }
@@ -1935,7 +1935,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
         state.mongo_clients[i] = mongoc_client_new(databases[i]);
         assert(state.mongo_clients[i]);
     }
-    state.stream_collections = zhash_new();
+    state.stats_collections = zhash_new();
     size_t ticks = 0;
 
     while (!zctx_interrupted) {
@@ -1951,12 +1951,12 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             processor_t *processor;
             size_t request_count;
             extract_processor_state(msg, &processor, &request_count);
-            processor_update_mongo_db(processor->stream, processor, &state);
+            processor_update_mongo_db(processor->db_name, processor, &state);
 
             // refresh database information every hour
             if (ticks % 3600 == id) {
-                zhash_destroy(&state.stream_collections);
-                state.stream_collections = zhash_new();
+                zhash_destroy(&state.stats_collections);
+                state.stats_collections = zhash_new();
             }
             processor_destroy(processor);
             zmsg_destroy(&msg);
@@ -1965,7 +1965,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
         }
     }
 
-    zhash_destroy(&state.stream_collections);
+    zhash_destroy(&state.stats_collections);
     for (int i = 0; i<num_databases; i++) {
         mongoc_client_destroy(state.mongo_clients[i]);
     }
@@ -2003,7 +2003,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     bson_destroy(index_keys);
 }
 
-void add_request_collection_indexes(const char* stream, mongoc_collection_t *requests_collection, request_writer_state_t* state)
+void add_request_collection_indexes(const char* db_name, mongoc_collection_t *requests_collection, request_writer_state_t* state)
 {
     bson_error_t error;
     bson_t *index_keys;
@@ -2033,7 +2033,7 @@ void add_request_collection_indexes(const char* stream, mongoc_collection_t *req
     add_request_field_index("exceptions",    requests_collection);
 }
 
-void add_jse_collection_indexes(const char* stream, mongoc_collection_t *jse_collection, request_writer_state_t* state)
+void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_collection, request_writer_state_t* state)
 {
     bson_error_t error;
     bson_t *index_keys;
@@ -2055,46 +2055,46 @@ void add_jse_collection_indexes(const char* stream, mongoc_collection_t *jse_col
     bson_destroy(index_keys);
 }
 
-mongoc_collection_t* request_writer_get_request_collection(request_writer_state_t* self, const char* stream, stream_info_t *stream_info)
+mongoc_collection_t* request_writer_get_request_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
 {
     if (dryrun) return NULL;
-    mongoc_collection_t *collection = zhash_lookup(self->request_collections, stream);
+    mongoc_collection_t *collection = zhash_lookup(self->request_collections, db_name);
     if (collection == NULL) {
-        // printf("creating requests collection: %s\n", stream);
+        // printf("creating requests collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
-        collection = mongoc_client_get_collection(mongo_client, stream, "requests");
-        add_request_collection_indexes(stream, collection, self);
-        zhash_insert(self->request_collections, stream, collection);
-        zhash_freefn(self->request_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
+        collection = mongoc_client_get_collection(mongo_client, db_name, "requests");
+        add_request_collection_indexes(db_name, collection, self);
+        zhash_insert(self->request_collections, db_name, collection);
+        zhash_freefn(self->request_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
     }
     return collection;
 }
 
-mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* self, const char* stream, stream_info_t *stream_info)
+mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
 {
     if (dryrun) return NULL;
-    mongoc_collection_t *collection = zhash_lookup(self->jse_collections, stream);
+    mongoc_collection_t *collection = zhash_lookup(self->jse_collections, db_name);
     if (collection == NULL) {
-        // printf("creating jse collection: %s\n", stream);
+        // printf("creating jse collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
-        collection = mongoc_client_get_collection(mongo_client, stream, "js_exceptions");
-        add_jse_collection_indexes(stream, collection, self);
-        zhash_insert(self->jse_collections, stream, collection);
-        zhash_freefn(self->jse_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
+        collection = mongoc_client_get_collection(mongo_client, db_name, "js_exceptions");
+        add_jse_collection_indexes(db_name, collection, self);
+        zhash_insert(self->jse_collections, db_name, collection);
+        zhash_freefn(self->jse_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
     }
     return collection;
 }
 
-mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t* self, const char* stream, stream_info_t *stream_info)
+mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
 {
     if (dryrun) return NULL;
-    mongoc_collection_t *collection = zhash_lookup(self->events_collections, stream);
+    mongoc_collection_t *collection = zhash_lookup(self->events_collections, db_name);
     if (collection == NULL) {
-        // printf("creating events collection: %s\n", stream);
+        // printf("creating events collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
-        collection = mongoc_client_get_collection(mongo_client, stream, "events");
-        zhash_insert(self->events_collections, stream, collection);
-        zhash_freefn(self->events_collections, stream, (zhash_free_fn*)mongoc_collection_destroy);
+        collection = mongoc_client_get_collection(mongo_client, db_name, "events");
+        zhash_insert(self->events_collections, db_name, collection);
+        zhash_freefn(self->events_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
     }
     return collection;
 }
@@ -2215,12 +2215,12 @@ void convert_metrics_for_indexing(json_object *request)
     json_object_object_add(request, "metrics", metrics);
 }
 
-json_object* store_request(const char* stream, stream_info_t* stream_info, json_object* request, request_writer_state_t* state)
+json_object* store_request(const char* db_name, stream_info_t* stream_info, json_object* request, request_writer_state_t* state)
 {
     // dump_json_object(stdout, request);
     convert_metrics_for_indexing(request);
 
-    mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, stream, stream_info);
+    mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, db_name, stream_info);
     bson_t *document = bson_sized_new(2048);
 
     json_object *request_id_obj;
@@ -2256,9 +2256,9 @@ json_object* store_request(const char* stream, stream_info_t* stream_info, json_
     return request_id_obj;
 }
 
-void store_js_exception(const char* stream, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
+void store_js_exception(const char* db_name, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
 {
-    mongoc_collection_t *jse_collection = request_writer_get_jse_collection(state, stream, stream_info);
+    mongoc_collection_t *jse_collection = request_writer_get_jse_collection(state, db_name, stream_info);
     bson_t *document = bson_sized_new(1024);
     json_object_to_bson(request, document);
 
@@ -2272,9 +2272,9 @@ void store_js_exception(const char* stream, stream_info_t *stream_info, json_obj
     bson_destroy(document);
 }
 
-void store_event(const char* stream, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
+void store_event(const char* db_name, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
 {
-    mongoc_collection_t *events_collection = request_writer_get_events_collection(state, stream, stream_info);
+    mongoc_collection_t *events_collection = request_writer_get_events_collection(state, db_name, stream_info);
     bson_t *document = bson_sized_new(1024);
     json_object_to_bson(request, document);
 
@@ -2288,11 +2288,11 @@ void store_event(const char* stream, stream_info_t *stream_info, json_object* re
     bson_destroy(document);
 }
 
-void publish_error_for_module(const char* stream, const char* module, const char* json_str, void* live_stream_socket)
+void publish_error_for_module(const char* db_name, const char* module, const char* json_str, void* live_stream_socket)
 {
-    size_t n = strlen(stream);
+    size_t n = strlen(db_name);
     char app[n+1], env[n+1];
-    sscanf(stream, "logjam-%[^-]-%[^-]", app, env);
+    sscanf(db_name, "logjam-%[^-]-%[^-]", app, env);
 
     // skip :: at the beginning of module
     while (*module == ':') module++;
@@ -2331,7 +2331,7 @@ json_object* extract_error_description(json_object* request, int severity)
     return json_object_new_string(description);
 }
 
-void request_writer_publish_error(const char* stream, const char* module, json_object* request, request_writer_state_t* state, json_object* request_id)
+void request_writer_publish_error(const char* db_name, const char* module, json_object* request, request_writer_state_t* state, json_object* request_id)
 {
     if (request_id == NULL) return;
 
@@ -2369,8 +2369,8 @@ void request_writer_publish_error(const char* stream, const char* module, json_o
 
             const char *json_str = json_object_to_json_string_ext(arror, JSON_C_TO_STRING_PLAIN);
 
-            publish_error_for_module(stream, "all_pages", json_str, state->live_stream_socket);
-            publish_error_for_module(stream, module, json_str, state->live_stream_socket);
+            publish_error_for_module(db_name, "all_pages", json_str, state->live_stream_socket);
+            publish_error_for_module(db_name, module, json_str, state->live_stream_socket);
 
             json_object_put(arror);
         }
@@ -2386,16 +2386,16 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     zframe_t *mod   = zmsg_next(msg);
     zframe_t *body  = zmsg_next(msg);
 
-    size_t stream_len = zframe_size(first);
-    char stream[stream_len+1];
-    memcpy(stream, zframe_data(first), stream_len);
-    stream[stream_len] = '\0';
-    // printf("request_writer: stream: %s\n", stream);
+    size_t db_name_len = zframe_size(first);
+    char db_name[db_name_len+1];
+    memcpy(db_name, zframe_data(first), db_name_len);
+    db_name[db_name_len] = '\0';
+    // printf("request_writer: db name: %s\n", db_name);
 
-    size_t n = strlen(stream) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
+    size_t n = strlen(db_name) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
     char stream_name[n+1];
     strcpy(stream_name, STREAM_PREFIX);
-    strcpy(stream_name + STREAM_PREFIX_LEN, stream + DB_PREFIX_LEN);
+    strcpy(stream_name + STREAM_PREFIX_LEN, db_name + DB_PREFIX_LEN);
     stream_name[n-11] = '\0';
     // printf("request_writer: stream name: %s\n", stream_name);
 
@@ -2415,14 +2415,14 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
             char request_type = *((char*)zframe_data(type));
             switch (request_type) {
             case 'r':
-                request_id = store_request(stream, stream_info, request, state);
-                request_writer_publish_error(stream, module, request, state, request_id);
+                request_id = store_request(db_name, stream_info, request, state);
+                request_writer_publish_error(db_name, module, request, state, request_id);
                 break;
             case 'j':
-                store_js_exception(stream, stream_info, request, state);
+                store_js_exception(db_name, stream_info, request, state);
                 break;
             case 'e':
-                store_event(stream, stream_info, request, state);
+                store_event(db_name, stream_info, request, state);
                 break;
             }
         } else {
@@ -2530,7 +2530,7 @@ int add_increments(const char* namespace, void* data, void* arg)
     return 0;
 }
 
-void modules_combine(zhash_t* target, zhash_t *source)
+void combine_modules(zhash_t* target, zhash_t *source)
 {
     hash_pair_t hash_pair;
     hash_pair.source = source;
@@ -2538,7 +2538,7 @@ void modules_combine(zhash_t* target, zhash_t *source)
     zhash_foreach(source, add_modules, &hash_pair);
 }
 
-void increments_combine(zhash_t* target, zhash_t *source)
+void combine_increments(zhash_t* target, zhash_t *source)
 {
     hash_pair_t hash_pair;
     hash_pair.source = source;
@@ -2546,28 +2546,28 @@ void increments_combine(zhash_t* target, zhash_t *source)
     zhash_foreach(source, add_increments, &hash_pair);
 }
 
-void processor_combine(processor_t* target, processor_t* source)
+void combine_processors(processor_t* target, processor_t* source)
 {
-    // printf("combining %s\n", target->stream);
-    assert(!strcmp(target->stream, source->stream));
+    // printf("combining %s\n", target->db_name);
+    assert(!strcmp(target->db_name, source->db_name));
     target->request_count += source->request_count;
-    modules_combine(target->modules, source->modules);
-    increments_combine(target->totals, source->totals);
-    increments_combine(target->minutes, source->minutes);
-    quants_combine(target->quants, source->quants);
+    combine_modules(target->modules, source->modules);
+    combine_increments(target->totals, source->totals);
+    combine_increments(target->minutes, source->minutes);
+    combine_quants(target->quants, source->quants);
 }
 
-int add_streams(const char* stream, void* data, void* arg)
+int merge_processors(const char* db_name, void* data, void* arg)
 {
     hash_pair_t *pair = arg;
-    // printf("checking %s\n", stream);
-    processor_t *dest = zhash_lookup(pair->target, stream);
+    // printf("checking %s\n", db_name);
+    processor_t *dest = zhash_lookup(pair->target, db_name);
     if (dest == NULL) {
-        zhash_insert(pair->target, stream, data);
-        zhash_freefn(pair->target, stream, processor_destroy);
-        zhash_freefn(pair->source, stream, NULL);
+        zhash_insert(pair->target, db_name, data);
+        zhash_freefn(pair->target, db_name, processor_destroy);
+        zhash_freefn(pair->source, db_name, NULL);
     } else {
-        processor_combine(dest, (processor_t*)data);
+        combine_processors(dest, (processor_t*)data);
     }
     return 0;
 }
@@ -2598,7 +2598,7 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         hash_pair_t pair;
         pair.source = processors[i];
         pair.target = processors[0];
-        zhash_foreach(pair.source, add_streams, &pair);
+        zhash_foreach(pair.source, merge_processors, &pair);
         zhash_destroy(&processors[i]);
     }
 
@@ -2606,19 +2606,19 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     zhash_foreach(processors[0], processor_publish_totals, state->live_stream_socket);
 
     // forward to stats_updaters
-    zlist_t *streams = zhash_keys(processors[0]);
-    const char* stream = zlist_first(streams);
-    while (stream != NULL) {
-        processor_t *proc = zhash_lookup(processors[0], stream);
-        // printf("forwarding %s\n", stream);
-        zhash_freefn(processors[0], stream, NULL);
+    zlist_t *db_names = zhash_keys(processors[0]);
+    const char* db_name = zlist_first(db_names);
+    while (db_name != NULL) {
+        processor_t *proc = zhash_lookup(processors[0], db_name);
+        // printf("forwarding %s\n", db_name);
+        zhash_freefn(processors[0], db_name, NULL);
         zmsg_t *stats_msg = zmsg_new();
         zmsg_addmem(stats_msg, &proc, sizeof(processor_t*));
         zmsg_addmem(stats_msg, &proc->request_count, sizeof(size_t)); // ????
         zmsg_send(&stats_msg, state->updates_socket);
-        stream = zlist_next(streams);
+        db_name = zlist_next(db_names);
     }
-    zlist_destroy(&streams);
+    zlist_destroy(&db_names);
     zhash_destroy(&processors[0]);
 
     // tell request writers to tick
