@@ -231,6 +231,11 @@ typedef struct {
     msg_stats_t msg_stats;
 } request_writer_state_t;
 
+/* collection updater callback struct */
+typedef struct {
+    const char *db_name;
+    mongoc_collection_t *collection;
+} collection_update_callback_t;
 
 static mongoc_write_concern_t *wc_no_wait = NULL;
 static mongoc_write_concern_t *wc_wait = NULL;
@@ -1137,7 +1142,9 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
 
 int minutes_add_increments(const char* namespace, void* data, void* arg)
 {
-    mongoc_collection_t *collection = arg;
+    collection_update_callback_t *cb = arg;
+    mongoc_collection_t *collection = cb->collection;
+    const char *db_name = cb->db_name;
     increments_t* increments = data;
 
     int minute = 0;
@@ -1161,7 +1168,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed on minutes: %s\n", error.message);
+            fprintf(stderr, "update failed for %s on minutes: %s\n", db_name, error.message);
         }
     }
     bson_destroy(selector);
@@ -1171,7 +1178,9 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
 
 int totals_add_increments(const char* namespace, void* data, void* arg)
 {
-    mongoc_collection_t *collection = arg;
+    collection_update_callback_t *cb = arg;
+    mongoc_collection_t *collection = cb->collection;
+    const char *db_name = cb->db_name;
     increments_t* increments = data;
     assert(increments);
 
@@ -1187,7 +1196,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed on totals: %s\n", error.message);
+            fprintf(stderr, "update failed for %s on totals: %s\n", db_name, error.message);
         }
     }
 
@@ -1198,7 +1207,9 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
 
 int quants_add_quants(const char* namespace, void* data, void* arg)
 {
-    mongoc_collection_t *collection = arg;
+    collection_update_callback_t *cb = arg;
+    mongoc_collection_t *collection = cb->collection;
+    const char *db_name = cb->db_name;
 
     // extract keys from namespace
     char* p = (char*) namespace;
@@ -1247,7 +1258,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed on quants: %s\n", error.message);
+            fprintf(stderr, "update failed for %s on quants: %s\n", db_name, error.message);
         }
     }
     bson_destroy(selector);
@@ -1324,9 +1335,17 @@ int processor_update_mongo_db(const char* db_name, void* data, void* arg)
     processor_t *processor = data;
     stats_collections_t *collections = stats_updater_get_collections(state, db_name, processor->stream_info);
 
-    zhash_foreach(processor->totals, totals_add_increments, collections->totals);
-    zhash_foreach(processor->minutes, minutes_add_increments, collections->minutes);
-    zhash_foreach(processor->quants, quants_add_quants, collections->quants);
+    collection_update_callback_t cb;
+    cb.db_name = db_name;
+
+    cb.collection = collections->totals;
+    zhash_foreach(processor->totals, totals_add_increments, &cb);
+
+    cb.collection = collections->minutes;
+    zhash_foreach(processor->minutes, minutes_add_increments, &cb);
+
+    cb.collection = collections->quants;
+    zhash_foreach(processor->quants, quants_add_quants, &cb);
 
     return 0;
 }
