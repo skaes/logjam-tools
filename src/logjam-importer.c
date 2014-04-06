@@ -1172,7 +1172,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying update operation\n");
+                fprintf(stderr, "retrying minutes update operation on %s\n", db_name);
                 goto retry;
             } else {
                 fprintf(stderr, "update failed for %s on minutes: (%d) %s\n", db_name, error.code, error.message);
@@ -1207,7 +1207,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying update operation\n");
+                fprintf(stderr, "retrying totals update operation on %s\n", db_name);
                 goto retry;
             } else {
                 fprintf(stderr, "update failed for %s on totals: (%d) %s\n", db_name, error.code, error.message);
@@ -1276,7 +1276,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying update operation\n");
+                fprintf(stderr, "retrying quants update operation on %s\n", db_name);
                 goto retry;
             } else {
                 fprintf(stderr, "update failed for %s on quants: (%d) %s\n", db_name, error.code, error.message);
@@ -2345,7 +2345,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     retry:
         if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying insert operation\n");
+                fprintf(stderr, "retrying request insert operation on %s\n", db_name);
                 goto retry;
             } else {
                 fprintf(stderr, "insert failed for request document on %s: (%d) %s\n", db_name, error.code, error.message);
@@ -2370,7 +2370,7 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
     retry:
         if (!mongoc_collection_insert(jse_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying insert operation\n");
+                fprintf(stderr, "retrying exception insert operation on %s\n", db_name);
                 goto retry;
             } else {
                 fprintf(stderr, "insert failed for exception document on %s: (%d) %s\n", db_name, error.code, error.message);
@@ -2393,7 +2393,7 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
     retry:
         if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying insert operation\n");
+                fprintf(stderr, "retrying event insert operation on %s\n", db_name);
                 goto retry;
             } else {
                 fprintf(stderr, "insert failed for event document on %s: (%d) %s\n", db_name, error.code, error.message);
