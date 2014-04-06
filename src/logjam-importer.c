@@ -237,10 +237,11 @@ static mongoc_write_concern_t *wc_wait = NULL;
 static mongoc_index_opt_t index_opt_default;
 static mongoc_index_opt_t index_opt_sparse;
 
-#define USE_UNACKNOWLEDGED_WRITES 1
-#define USE_BACKGROUND_INDEX_BUILDS 1
 #define PING_INTERVAL 5
 #define COLLECTION_REFRESH_INTERVAL 3600
+#define USE_PINGS false
+#define USE_UNACKNOWLEDGED_WRITES 0
+#define USE_BACKGROUND_INDEX_BUILDS 1
 
 void initialize_mongo_db_globals()
 {
@@ -1931,6 +1932,7 @@ void extract_processor_state(zmsg_t* msg, processor_t **processor, size_t *reque
 int mongo_client_ping(mongoc_client_t *client)
 {
     int available = 1;
+#if USE_PINGS == 1
     bson_t ping;
     bson_init(&ping);
     bson_append_int32(&ping, "ping", 4, 1);
@@ -1952,6 +1954,7 @@ int mongo_client_ping(mongoc_client_t *client)
     bson_destroy(&ping);
     mongoc_cursor_destroy(cursor);
     mongoc_database_destroy(database);
+#endif
     return available;
 }
 
