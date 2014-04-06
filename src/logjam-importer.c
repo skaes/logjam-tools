@@ -237,6 +237,11 @@ static mongoc_write_concern_t *wc_wait = NULL;
 static mongoc_index_opt_t index_opt_default;
 static mongoc_index_opt_t index_opt_sparse;
 
+#define USE_UNACKNOWLEDGED_WRITES 1
+#define USE_BACKGROUND_INDEX_BUILDS 1
+#define PING_INTERVAL 5
+#define COLLECTION_REFRESH_INTERVAL 3600
+
 void initialize_mongo_db_globals()
 {
     mongoc_init();
@@ -245,18 +250,25 @@ void initialize_mongo_db_globals()
     mongoc_write_concern_set_w(wc_wait, MONGOC_WRITE_CONCERN_W_DEFAULT);
 
     wc_no_wait = mongoc_write_concern_new();
-    // TODO: this leads to illegal opcodes on the server
-    // mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_UNACKNOWLEDGED);
-    mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_DEFAULT);
+    if (USE_UNACKNOWLEDGED_WRITES)
+        // TODO: this leads to illegal opcodes on the server
+       mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_UNACKNOWLEDGED);
+    else
+        mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_DEFAULT);
 
     mongoc_index_opt_init(&index_opt_default);
-    // TODO: this leads to illegal opcodes on the server
-    // index_opt_background.background = true;
-    index_opt_default.background = false;
+    if (USE_BACKGROUND_INDEX_BUILDS)
+        // TODO: this leads to illegal opcodes on the server
+        index_opt_default.background = true;
+    else
+        index_opt_default.background = false;
 
     mongoc_index_opt_init(&index_opt_sparse);
     index_opt_sparse.sparse = true;
-    index_opt_sparse.background = false;
+    if (USE_BACKGROUND_INDEX_BUILDS)
+        index_opt_sparse.background = true;
+    else
+        index_opt_sparse.background = false;
 
     zconfig_t* dbs = zconfig_locate(config, "backend/databases");
     if (dbs) {
@@ -1971,14 +1983,14 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
         if (socket == state.controller_socket) {
             msg = zmsg_recv(state.controller_socket);
             printf("updater[%zu]: tick (%zu updates)\n", id, state.updates_count);
-            // ping the server every 5 seconds
-            if (ticks++ % 5 == 0) {
+            // ping the server
+            if (ticks++ % PING_INTERVAL == 0) {
                 for (int i=0; i<num_databases; i++) {
                     mongo_client_ping(state.mongo_clients[i]);
                 }
             }
-            // refresh database information every hour
-            if (ticks % 3600 == 3599 - id) {
+            // refresh database information
+            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {
                 zhash_destroy(&state.stats_collections);
                 state.stats_collections = zhash_new();
             }
@@ -2495,7 +2507,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
         if (socket == state.controller_socket) {
             // tick
             printf("writer [%zu]: tick (%zu requests)\n", id, state.request_count);
-            if (ticks++ % 5 == 0) {
+            if (ticks++ % PING_INTERVAL == 0) {
                 // ping mongodb to reestablish connection if it got lost
                 for (int i=0; i<num_databases; i++) {
                     mongo_client_ping(state.mongo_clients[i]);
@@ -2503,7 +2515,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             }
             // free collection pointers every hour
             msg = zmsg_recv(state.controller_socket);
-            if (ticks % 3600 == 3599 - id) {
+            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {
                 printf("writer [%zu]: freeing request collections\n", id);
                 zhash_destroy(&state.request_collections);
                 zhash_destroy(&state.jse_collections);
@@ -2643,7 +2655,7 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
         if (socket == state.controller_socket) {
             // tick
             printf("indexer[%zu]: tick\n", id);
-            if (ticks++ % 5 == 0) {
+            if (ticks++ % PING_INTERVAL == 0) {
                 // ping mongodb to reestablish connection if it got lost
                 for (int i=0; i<num_databases; i++) {
                     mongo_client_ping(state.mongo_clients[i]);
@@ -2651,7 +2663,7 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
             }
             // free collection pointers every hour
             msg = zmsg_recv(state.controller_socket);
-            if (ticks % 3600 == 3599 - id) {
+            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {
                 printf("indexer[%zu]: freeing database info\n", id);
                 zhash_destroy(&state.databases);
                 state.databases = zhash_new();
