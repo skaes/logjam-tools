@@ -31,6 +31,23 @@ static char *config_file = "logjam.conf";
 static bool dryrun = false;
 static char *subscription_pattern = "";
 
+static char iso_date_today[11];
+static char iso_date_tomorrow[11];
+
+void update_date_info()
+{
+    time_t today = time (NULL);
+    struct tm* ltt = localtime(&today);
+    sprintf(iso_date_today,  "%04d-%02d-%02d", 1900 + ltt->tm_year, 1 + ltt->tm_mon, ltt->tm_mday);
+
+    time_t tomorrow = today + 24 * 60 * 60;
+    struct tm* ltm = localtime(&tomorrow);
+    sprintf(iso_date_tomorrow,  "%04d-%02d-%02d", 1900 + ltm->tm_year, 1 + ltm->tm_mon, ltm->tm_mday);
+
+    // printf("today's    ISO date is %s\n", iso_date_today);
+    // printf("tomorrow's ISO date is %s\n", iso_date_tomorrow);
+}
+
 #define MAX_DATABASES 100
 #define DEFAULT_MONGO_URI "mongodb://127.0.0.1:27017/"
 static size_t num_databases = 0;
@@ -2697,6 +2714,22 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
     }
 }
 
+void indexer_create_all_indexes(indexer_state_t *self)
+{
+    zlist_t *streams = zhash_keys(configured_streams);
+    char *stream = zlist_first(streams);
+    while (stream) {
+        stream_info_t *info = zhash_lookup(configured_streams, stream);
+        assert(info);
+        char db_today[1000];
+        sprintf(db_today, "logjam-%s-%s-%s", info->app, info->env, iso_date_today);
+        printf("creating indexes for %s\n", db_today);
+        indexer_create_indexes(self, db_today, info);
+        stream = zlist_next(streams);
+    }
+    zlist_destroy(&streams);
+}
+
 void indexer(void *args, zctx_t *ctx, void *pipe)
 {
     indexer_state_t state;
@@ -2709,6 +2742,12 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
     }
     state.databases = zhash_new();
     size_t ticks = 0;
+    {
+        indexer_create_all_indexes(&state);
+        zmsg_t *msg = zmsg_new();
+        zmsg_addstr(msg, "started");
+        zmsg_send(&msg, state.controller_socket);
+    }
 
     zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
     assert(poller);
@@ -2836,6 +2875,8 @@ int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     zhash_t *processors[NUM_PARSERS];
     size_t request_counts[NUM_PARSERS];
     int64_t start_time_ms = zclock_time();
+
+    update_date_info();
 
     for (size_t i=0; i<NUM_PARSERS; i++) {
         void* parser_pipe = state->parser_pipes[i];
@@ -3172,6 +3213,8 @@ int main(int argc, char * const *argv)
         exit(1);
     }
 
+    update_date_info();
+
     // load config
     config = zconfig_load((char*)config_file);
     // zconfig_print(config);
@@ -3198,6 +3241,11 @@ int main(int argc, char * const *argv)
 
     // start the indexer
     state.indexer_pipe = zthread_fork(context, indexer, NULL);
+    {
+        // wait for initial db index creation
+        zmsg_t * msg = zmsg_recv(state.indexer_pipe);
+        zmsg_destroy(&msg);
+    }
 
     // create socket for stats updates
     state.updates_socket = zsocket_new(context, ZMQ_PUSH);
