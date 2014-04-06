@@ -1161,7 +1161,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed on totals: %s\n", error.message);
+            fprintf(stderr, "update failed on minutes: %s\n", error.message);
         }
     }
     bson_destroy(selector);
@@ -1187,7 +1187,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed on totals\n");
+            fprintf(stderr, "update failed on totals: %s\n", error.message);
         }
     }
 
@@ -1245,9 +1245,9 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     // bson_destroy(bs);
 
     if (!dryrun) {
-        bson_error_t *error = NULL;
-        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, error)) {
-            fprintf(stderr, "update failed on totals\n");
+        bson_error_t error;
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
+            fprintf(stderr, "update failed on quants: %s\n", error.message);
         }
     }
     bson_destroy(selector);
@@ -1270,7 +1270,7 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed on totals: %s\n", error.message);
+            fprintf(stderr, "update failed on logjam-global: %s\n", error.message);
         }
     }
 
