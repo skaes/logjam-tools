@@ -2649,7 +2649,11 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
 
     if (dryrun) return;
 
-    ensure_known_database(client, db_name);
+    // if it is a db of today, then make it known
+    if (strstr(db_name, iso_date_today)) {
+        printf("ensuring known database: %s\n", db_name);
+        ensure_known_database(client, db_name);
+    }
     printf("creating indexes for %s\n", db_name);
 
     collection = mongoc_client_get_collection(client, db_name, "totals");
@@ -2711,6 +2715,10 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
         zhash_insert(state->databases, db_name, strdup(db_name));
         zhash_freefn(state->databases, db_name, free);
         indexer_create_indexes(state, db_name, stream_info);
+        char db_tomorrow[n+1];
+        strcpy(db_tomorrow, db_name);
+        strcpy(db_tomorrow+n-11, iso_date_tomorrow);
+        printf("index for tomorrow %s\n", db_tomorrow);
     }
 }
 
@@ -2721,10 +2729,17 @@ void indexer_create_all_indexes(indexer_state_t *self)
     while (stream) {
         stream_info_t *info = zhash_lookup(configured_streams, stream);
         assert(info);
+
         char db_today[1000];
         sprintf(db_today, "logjam-%s-%s-%s", info->app, info->env, iso_date_today);
-        printf("creating indexes for %s\n", db_today);
+        // printf("creating indexes for %s\n", db_today);
         indexer_create_indexes(self, db_today, info);
+
+        char db_tomorrow[1000];
+        sprintf(db_tomorrow, "logjam-%s-%s-%s", info->app, info->env, iso_date_tomorrow);
+        // printf("creating indexes for %s\n", db_tomorrow);
+        indexer_create_indexes(self, db_tomorrow, info);
+
         stream = zlist_next(streams);
     }
     zlist_destroy(&streams);
@@ -3107,7 +3122,7 @@ stream_info_t* stream_info_new(zconfig_t *stream_config)
     if (db_setting) {
         const char* dbval = zconfig_value(db_setting);
         int db_num = atoi(dbval);
-        printf("db: %d\n (numdbs: %zu)", db_num, num_databases);
+        // printf("db for %s-%s: %d (numdbs: %zu)\n", info->app, info->env, db_num, num_databases);
         assert(db_num < num_databases);
         info->db = db_num;
     }
