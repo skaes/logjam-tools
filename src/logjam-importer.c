@@ -2065,11 +2065,14 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             size_t request_count;
             extract_processor_state(msg, &processor, &request_count);
 
+            char db_name[1000];
+            strcpy(db_name, processor->db_name);
+
             processor_update_mongo_db(processor->db_name, processor, &state);
             processor_destroy(processor);
 
             int64_t end_time_ms = zclock_time();
-            printf("updater[%zu]: %s (%d ms)\n", id, processor->db_name, (int)(end_time_ms - start_time_ms));
+            printf("updater[%zu]: %s (%d ms)\n", id, db_name, (int)(end_time_ms - start_time_ms));
         } else {
             printf("updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
             break;
