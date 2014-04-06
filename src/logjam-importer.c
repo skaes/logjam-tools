@@ -248,6 +248,7 @@ static mongoc_index_opt_t index_opt_sparse;
 #define USE_UNACKNOWLEDGED_WRITES 0
 #define USE_BACKGROUND_INDEX_BUILDS 1
 #define TOKU_TX_LOCK_FAILED 16759
+#define TOKU_TX_RETRIES 2
 
 void initialize_mongo_db_globals()
 {
@@ -1168,7 +1169,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     bson_t *document = increments_to_bson(namespace, increments);
     if (!dryrun) {
         bson_error_t error;
-        int tries = 2;
+        int tries = TOKU_TX_RETRIES;
     retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
@@ -1203,7 +1204,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     bson_t *document = increments_to_bson(namespace, increments);
     if (!dryrun) {
         bson_error_t error;
-        int tries = 2;
+        int tries = TOKU_TX_RETRIES;
     retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
@@ -1272,7 +1273,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 
     if (!dryrun) {
         bson_error_t error;
-        int tries = 2;
+        int tries = TOKU_TX_RETRIES;
     retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
@@ -2341,7 +2342,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
 
     if (!dryrun) {
         bson_error_t error;
-        int tries = 2;
+        int tries = TOKU_TX_RETRIES;
     retry:
         if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
@@ -2366,7 +2367,7 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
 
     if (!dryrun) {
         bson_error_t error;
-        int tries = 2;
+        int tries = TOKU_TX_RETRIES;
     retry:
         if (!mongoc_collection_insert(jse_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
@@ -2389,7 +2390,7 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
 
     if (!dryrun) {
         bson_error_t error;
-        int tries = 2;
+        int tries = TOKU_TX_RETRIES;
     retry:
         if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
