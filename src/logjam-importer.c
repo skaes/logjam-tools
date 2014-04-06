@@ -1168,7 +1168,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed for %s on minutes: %s\n", db_name, error.message);
+            fprintf(stderr, "update failed for %s on minutes: (%d) %s\n", db_name, error.code, error.message);
         }
     }
     bson_destroy(selector);
@@ -1196,7 +1196,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed for %s on totals: %s\n", db_name, error.message);
+            fprintf(stderr, "update failed for %s on totals: (%d) %s\n", db_name, error.code, error.message);
         }
     }
 
@@ -1258,7 +1258,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed for %s on quants: %s\n", db_name, error.message);
+            fprintf(stderr, "update failed for %s on quants: (%d) %s\n", db_name, error.code, error.message);
         }
     }
     bson_destroy(selector);
@@ -1281,7 +1281,7 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed on logjam-global: %s\n", error.message);
+            fprintf(stderr, "update failed on logjam-global: (%d) %s\n", error.code, error.message);
         }
     }
 
@@ -1968,7 +1968,7 @@ int mongo_client_ping(mongoc_client_t *client)
         // fprintf(stdout, "%s\n", str);
         // bson_free(str);
     } else if (mongoc_cursor_error(cursor, &error)) {
-        fprintf(stderr, "ping failure: %s\n", error.message);
+        fprintf(stderr, "ping failure: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(&ping);
     mongoc_cursor_destroy(cursor);
@@ -2062,7 +2062,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     index_keys = bson_new();
     bson_append_int32(index_keys, field, strlen(field), 1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_sparse, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
+        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 
@@ -2071,7 +2071,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     bson_append_int32(index_keys, "page", 4, 1);
     bson_append_int32(index_keys, field, strlen(field), 1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
+        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 }
@@ -2086,7 +2086,7 @@ void add_request_collection_indexes(const char* db_name, mongoc_collection_t *re
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
+        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 
@@ -2096,7 +2096,7 @@ void add_request_collection_indexes(const char* db_name, mongoc_collection_t *re
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
+        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 
@@ -2115,7 +2115,7 @@ void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_co
     index_keys = bson_new();
     bson_append_int32(index_keys, "logjam_request_id", 17, 1);
     if (!mongoc_collection_create_index(jse_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
+        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 
@@ -2123,7 +2123,7 @@ void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_co
     index_keys = bson_new();
     bson_append_int32(index_keys, "description", 11, 1);
     if (!mongoc_collection_create_index(jse_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
+        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 }
@@ -2320,7 +2320,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            fprintf(stderr, "insert failed for request document: %s\n", error.message);
+            fprintf(stderr, "request insert failed for %s: (%d) %s\n", db_name, error.code, error.message);
             dump_json_object(stderr, request);
         }
     }
@@ -2338,7 +2338,7 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_insert(jse_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            fprintf(stderr, "insert failed for exception document: %s\n", error.message);
+            fprintf(stderr, "insert failed for exception document: (%d) %s\n", error.code, error.message);
             dump_json_object(stderr, request);
         }
     }
@@ -2354,7 +2354,7 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            fprintf(stderr, "insert failed for event document: %s\n", error.message);
+            fprintf(stderr, "insert failed for event document: (%d) %s\n", error.code, error.message);
             dump_json_object(stderr, request);
         }
     }
@@ -2595,7 +2595,7 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
+        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
@@ -2605,7 +2605,7 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minutes", 6, 1));
     if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
+        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
@@ -2616,7 +2616,7 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     assert(bson_append_int32(keys, "kind", 4, 1));
     assert(bson_append_int32(keys, "quant", 5, 1));
     if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: %s\n", error.message);
+        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
