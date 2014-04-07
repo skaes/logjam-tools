@@ -72,8 +72,8 @@ typedef struct {
     const char *ignored_request_prefix;
 } stream_info_t;
 
-// TODO: make it configurable per stream and namespace
 static int global_total_time_import_threshold = 0;
+// TODO: make prefix configurable per stream and namespace
 static const char* global_ignored_request_prefix = NULL;
 
 // utf8 conversion
@@ -146,7 +146,6 @@ typedef struct {
     void *updater_pipes[NUM_UPDATERS];
     void *updates_socket;
     void *live_stream_socket;
-    msg_stats_t msg_stats;
 } controller_state_t;
 
 /* subscriber state */
@@ -155,7 +154,6 @@ typedef struct {
     void *sub_socket;
     void *push_socket;
     void *pull_socket;
-    msg_stats_t msg_stats;
 } subscriber_state_t;
 
 /* parser state */
@@ -165,7 +163,6 @@ typedef struct {
     void *pull_socket;
     void *push_socket;
     void *indexer_socket;
-    msg_stats_t msg_stats;
     json_tokener* tokener;
     zhash_t *processors;
 } parser_state_t;
@@ -231,7 +228,6 @@ typedef struct {
     void *pull_socket;
     void *push_socket;
     size_t updates_count;
-    msg_stats_t msg_stats;
 } stats_updater_state_t;
 
 /* request writer state */
@@ -245,7 +241,6 @@ typedef struct {
     void *push_socket;
     void *live_stream_socket;
     size_t request_count;
-    msg_stats_t msg_stats;
 } request_writer_state_t;
 
 /* collection updater callback struct */
@@ -259,13 +254,19 @@ static mongoc_write_concern_t *wc_wait = NULL;
 static mongoc_index_opt_t index_opt_default;
 static mongoc_index_opt_t index_opt_sparse;
 
-#define PING_INTERVAL 5
-#define COLLECTION_REFRESH_INTERVAL 3600
-#define USE_PINGS false
 #define USE_UNACKNOWLEDGED_WRITES 0
 #define USE_BACKGROUND_INDEX_BUILDS 1
 #define TOKU_TX_LOCK_FAILED 16759
 #define TOKU_TX_RETRIES 2
+
+#if USE_UNACKNOWLEDGED_WRITES == 1
+#define USE_PINGS true
+#else
+#define USE_PINGS false
+#endif
+
+#define PING_INTERVAL 5
+#define COLLECTION_REFRESH_INTERVAL 3600
 
 void initialize_mongo_db_globals()
 {
@@ -283,7 +284,6 @@ void initialize_mongo_db_globals()
 
     mongoc_index_opt_init(&index_opt_default);
     if (USE_BACKGROUND_INDEX_BUILDS)
-        // TODO: this leads to illegal opcodes on the server
         index_opt_default.background = true;
     else
         index_opt_default.background = false;
@@ -324,7 +324,7 @@ void connect_multiple(void* socket, const char* name, int which)
         for (int j=0; j<10; j++) {
             rc = zsocket_connect(socket, "inproc://%s-%d", name, i);
             if (rc == 0) break;
-            zclock_sleep(100);
+            zclock_sleep(100); // ms
         }
         log_zmq_error(rc);
         assert(rc == 0);
@@ -557,6 +557,7 @@ processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_sta
             int rc = zhash_insert(parser_state->processors, db_name, p);
             assert(rc ==0);
             zhash_freefn(parser_state->processors, db_name, processor_destroy);
+            // send msg to indexer to create db indexes
             zmsg_t *msg = zmsg_new();
             assert(msg);
             zmsg_addstr(msg, db_name);
@@ -1996,7 +1997,6 @@ int mongo_client_ping(mongoc_client_t *client)
     bson_init(&ping);
     bson_append_int32(&ping, "ping", 4, 1);
 
-    //TODO: remember db instance per thread
     mongoc_database_t *database = mongoc_client_get_database(client, "logjam-global");
     mongoc_cursor_t *cursor = mongoc_database_command(database, 0, 0, 1, 0, &ping, NULL, NULL);
 
