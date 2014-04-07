@@ -2723,6 +2723,9 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
         strcpy(db_tomorrow+n-11, iso_date_tomorrow);
         // printf("index for tomorrow %s\n", db_tomorrow);
         indexer_create_indexes(state, db_tomorrow, stream_info);
+        // HACK: sleep a bit to reduce load on server
+        // this relies on zmq buffering enough requests to work
+        zclock_sleep(1000); // 1s
     }
 }
 
@@ -2730,7 +2733,7 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date)
 {
     zlist_t *streams = zhash_keys(configured_streams);
     char *stream = zlist_first(streams);
-    while (stream) {
+    while (stream && !zctx_interrupted) {
         stream_info_t *info = zhash_lookup(configured_streams, stream);
         assert(info);
 
@@ -2761,7 +2764,6 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, "started");
         zmsg_send(&msg, state.controller_socket);
-        indexer_create_all_indexes(&state, iso_date_tomorrow);
     }
 
     zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
@@ -3260,6 +3262,8 @@ int main(int argc, char * const *argv)
         // wait for initial db index creation
         zmsg_t * msg = zmsg_recv(state.indexer_pipe);
         zmsg_destroy(&msg);
+
+        if (zctx_interrupted) goto exit;
     }
 
     // create socket for stats updates
@@ -3286,14 +3290,17 @@ int main(int argc, char * const *argv)
     rc = zloop_timer(loop, 1000, 0, collect_stats_and_forward, &state);
     assert(rc == 0);
 
-    // run the loop
-    rc = zloop_start(loop);
-    printf("shutting down: %d\n", rc);
+    if (!zctx_interrupted) {
+        // run the loop
+        rc = zloop_start(loop);
+        printf("shutting down: %d\n", rc);
+    }
 
     // shutdown
     zloop_destroy(&loop);
     assert(loop == NULL);
 
+ exit:
     zctx_destroy(&context);
 
     return 0;
