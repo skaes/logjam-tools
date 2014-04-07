@@ -2721,11 +2721,12 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
         char db_tomorrow[n+1];
         strcpy(db_tomorrow, db_name);
         strcpy(db_tomorrow+n-11, iso_date_tomorrow);
-        printf("index for tomorrow %s\n", db_tomorrow);
+        // printf("index for tomorrow %s\n", db_tomorrow);
+        indexer_create_indexes(state, db_tomorrow, stream_info);
     }
 }
 
-void indexer_create_all_indexes(indexer_state_t *self)
+void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date)
 {
     zlist_t *streams = zhash_keys(configured_streams);
     char *stream = zlist_first(streams);
@@ -2733,15 +2734,10 @@ void indexer_create_all_indexes(indexer_state_t *self)
         stream_info_t *info = zhash_lookup(configured_streams, stream);
         assert(info);
 
-        char db_today[1000];
-        sprintf(db_today, "logjam-%s-%s-%s", info->app, info->env, iso_date_today);
-        // printf("creating indexes for %s\n", db_today);
-        indexer_create_indexes(self, db_today, info);
-
-        char db_tomorrow[1000];
-        sprintf(db_tomorrow, "logjam-%s-%s-%s", info->app, info->env, iso_date_tomorrow);
-        // printf("creating indexes for %s\n", db_tomorrow);
-        indexer_create_indexes(self, db_tomorrow, info);
+        char db_name[1000];
+        sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
+        // printf("creating indexes for %s\n", db_name);
+        indexer_create_indexes(self, db_name, info);
 
         stream = zlist_next(streams);
     }
@@ -2761,10 +2757,11 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
     state.databases = zhash_new();
     size_t ticks = 0;
     {
-        indexer_create_all_indexes(&state);
+        indexer_create_all_indexes(&state, iso_date_today);
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, "started");
         zmsg_send(&msg, state.controller_socket);
+        indexer_create_all_indexes(&state, iso_date_tomorrow);
     }
 
     zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
