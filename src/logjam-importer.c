@@ -2886,7 +2886,7 @@ int merge_processors(const char* db_name, void* data, void* arg)
     return 0;
 }
 
-int collect_stats_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *arg)
+int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 {
     controller_state_t *state = arg;
     zhash_t *processors[NUM_PARSERS];
