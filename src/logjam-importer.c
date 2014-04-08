@@ -2077,7 +2077,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             processor_destroy(processor);
 
             int64_t end_time_ms = zclock_time();
-            printf("updater[%zu]: %s (%d ms)\n", id, db_name, (int)(end_time_ms - start_time_ms));
+            printf("updater[%zu]: (%3d ms) %s\n", id, (int)(end_time_ms - start_time_ms), db_name);
         } else {
             printf("updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
             break;
