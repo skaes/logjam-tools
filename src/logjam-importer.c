@@ -11,7 +11,12 @@
 #include <bson.h>
 #include <mongoc.h>
 
+#ifdef DEBUG
+#undef DEBUG
+#define DEBUG 1
+#else
 #define DEBUG 0
+#endif
 
 // TODO:
 // way more json input validation
