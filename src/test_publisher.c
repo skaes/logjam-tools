@@ -87,7 +87,7 @@ int main(int argc, char const * const *argv)
 
   // push data every 10 ms
   rc = zloop_timer(loop, 1, 0, timer_event, pusher);
-  assert(rc == 0);
+  assert(rc != -1);
 
   zmq_pollitem_t item;
   item.socket = puller;

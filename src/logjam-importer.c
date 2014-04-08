@@ -3288,7 +3288,7 @@ int main(int argc, char * const *argv)
 
     // flush increments to database every 1000 ms
     rc = zloop_timer(loop, 1000, 0, collect_stats_and_forward, &state);
-    assert(rc == 0);
+    assert(rc != -1);
 
     if (!zctx_interrupted) {
         // run the loop

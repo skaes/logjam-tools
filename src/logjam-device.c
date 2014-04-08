@@ -518,7 +518,7 @@ int main(int argc, char * const *argv)
     // calculate statistics every 1000 ms
     int timer_id = 1;
     rc = zloop_timer(loop, 1000, 0, timer_event, &timer_id);
-    assert(rc == 0);
+    assert(rc != -1);
 
     // setup handler for the receiver socket
     zmq_pollitem_t item;
