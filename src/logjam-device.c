@@ -231,7 +231,7 @@ void shutdown_amqp_connection(amqp_connection_state_t connection, int amqp_rc)
 }
 
 
-int timer_event(zloop_t *loop, zmq_pollitem_t *item, void *arg)
+int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
     static size_t last_received_count = 0;
     static size_t last_received_bytes = 0;
@@ -527,6 +527,7 @@ int main(int argc, char * const *argv)
     publisher_state_t publisher_state = {publisher, connection, 0};
     rc = zloop_poller(loop, &item, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
+    zloop_set_tolerant(loop, &item);
 
     // setup handler for the rabbit listener pipe
     if (rabbit_host != NULL) {
@@ -536,6 +537,7 @@ int main(int argc, char * const *argv)
         listener_item.events = ZMQ_POLLIN;
         rc = zloop_poller(loop, &listener_item, read_zmq_message_and_forward, &listener_state);
         assert(rc == 0);
+        zloop_set_tolerant(loop, &listener_item);
     }
 
     rc = zloop_start(loop);

@@ -98,7 +98,7 @@ int main(int argc, char const * const *argv)
       break;
     zmsg_t *message = zmsg_new();
     zmsg_addstr(message, exchanges[i%2]);
-    zmsg_addstr(message, "logjam.zmq.test.%d.%d", i%2, i);
+    zmsg_addstrf(message, "logjam.zmq.test.%d.%d", i%2, i);
     zmsg_addmem(message, data, MESSAGE_BODY_SIZE);
     // zmsg_dump(message);
     rc = zmsg_send_dont_wait(&message, sockets[i%socket_count]);

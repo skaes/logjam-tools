@@ -169,7 +169,7 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
   return 0;
 }
 
-int timer_event(zloop_t *loop, zmq_pollitem_t *item, void *arg)
+int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
   static unsigned long last_received_count = 0;
   printf("processed %lu messages.\n", received_messages_count-last_received_count);
@@ -207,7 +207,7 @@ sub_socket_info_t* sub_socket_info_new(zconfig_t *endpoint, zctx_t *context, zlo
     assert(current);
     do {
         char *binding = zconfig_value(current);
-        int rc = zsocket_connect(sub_socket, binding);
+        int rc = zsocket_connect(sub_socket, "%s", binding);
         assert(rc == 0);
         current = zconfig_next(current);
     } while (current);
@@ -217,6 +217,7 @@ sub_socket_info_t* sub_socket_info_new(zconfig_t *endpoint, zctx_t *context, zlo
     info->item.events = ZMQ_POLLIN;
     rc = zloop_poller(loop, &info->item, read_zmq_message_and_forward, &info);
     assert(rc == 0);
+    zloop_set_tolerant(loop, &info->item);
 
     return info;
 }
