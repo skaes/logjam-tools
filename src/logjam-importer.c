@@ -163,6 +163,7 @@ typedef struct {
 
 /* parser state */
 typedef struct {
+    size_t id;
     size_t request_count;
     void *controller_socket;
     void *pull_socket;
@@ -217,6 +218,7 @@ typedef struct {
 
 /* indexer state */
 typedef struct {
+    size_t id;
     mongoc_client_t *mongo_clients[MAX_DATABASES];
     mongoc_collection_t *global_collection;
     void *controller_socket;
@@ -226,6 +228,7 @@ typedef struct {
 
 /* stats updater state */
 typedef struct {
+    size_t id;
     mongoc_client_t *mongo_clients[MAX_DATABASES];
     mongoc_collection_t *global_collection;
     zhash_t *stats_collections;
@@ -237,6 +240,7 @@ typedef struct {
 
 /* request writer state */
 typedef struct {
+    size_t id;
     mongoc_client_t* mongo_clients[MAX_DATABASES];
     zhash_t *request_collections;
     zhash_t *jse_collections;
@@ -450,10 +454,11 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
     } else {
         // setup subscriptions for only a subset
         zlist_t *subscriptions = zhash_keys(stream_subscriptions);
-        char *stream = NULL;
-        while ( (stream = zlist_next(subscriptions)) != NULL)  {
-            printf("subscribing to stream: %s\n", stream);
+        char *stream = zlist_first(subscriptions);
+        while (stream != NULL)  {
+            printf("controller: subscribing to stream: %s\n", stream);
             zsocket_set_subscribe(state.sub_socket, stream);
+            stream = zlist_next(subscriptions);
         }
         zlist_destroy(&subscriptions);
     }
@@ -1932,8 +1937,8 @@ zhash_t* processor_hash_new()
 
 void parser(void *args, zctx_t *ctx, void *pipe)
 {
-    size_t id = (size_t)args;
     parser_state_t state;
+    state.id = (size_t)args;
     state.request_count = 0;
     state.controller_socket = pipe;
     state.pull_socket = parser_pull_socket_new(ctx);
@@ -1951,7 +1956,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("parser [%zu]: tick (%zu messages)\n", id, state.request_count);
+            printf("parser [%zu]: tick (%zu messages)\n", state.id, state.request_count);
             msg = zmsg_recv(state.controller_socket);
             zmsg_t *answer = zmsg_new();
             zmsg_addmem(answer, &state.processors, sizeof(zhash_t*));
@@ -1971,7 +1976,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         }
         zmsg_destroy(&msg);
     }
-    printf("parser [%zu]: terminated\n", id);
+    printf("parser [%zu]: terminated\n", state.id);
 }
 
 void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *request_count)
@@ -2572,11 +2577,11 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
 
 void request_writer(void *args, zctx_t *ctx, void *pipe)
 {
-    size_t id = (size_t)args;
     request_writer_state_t state;
+    state.id = (size_t)args;
     state.request_count = 0;
     state.controller_socket = pipe;
-    state.pull_socket = request_writer_pull_socket_new(ctx, id);
+    state.pull_socket = request_writer_pull_socket_new(ctx, state.id);
     for (int i=0; i<num_databases; i++) {
         state.mongo_clients[i] = mongoc_client_new(databases[i]);
         assert(state.mongo_clients[i]);
@@ -2591,13 +2596,13 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     assert(poller);
 
     while (!zctx_interrupted) {
-        // printf("writer [%zu]: polling\n", id);
+        // printf("writer [%zu]: polling\n", state.id);
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("writer [%zu]: tick (%zu requests)\n", id, state.request_count);
+            printf("writer [%zu]: tick (%zu requests)\n", state.id, state.request_count);
             if (ticks++ % PING_INTERVAL == 0) {
                 // ping mongodb to reestablish connection if it got lost
                 for (int i=0; i<num_databases; i++) {
@@ -2606,8 +2611,8 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             }
             // free collection pointers every hour
             msg = zmsg_recv(state.controller_socket);
-            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {
-                printf("writer [%zu]: freeing request collections\n", id);
+            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - state.id - 1) {
+                printf("writer [%zu]: freeing request collections\n", state.id);
                 zhash_destroy(&state.request_collections);
                 zhash_destroy(&state.jse_collections);
                 zhash_destroy(&state.events_collections);
@@ -2624,7 +2629,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             }
         } else {
             // interrupted
-            printf("writer [%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
+            printf("writer [%zu]: no socket input. interrupted = %d\n", state.id, zctx_interrupted);
             break;
         }
         zmsg_destroy(&msg);
@@ -2636,7 +2641,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state.mongo_clients[i]);
     }
-    printf("writer [%zu]: terminated\n", id);
+    printf("writer [%zu]: terminated\n", state.id);
 }
 
 void *indexer_pull_socket_new(zctx_t *ctx)
@@ -2654,21 +2659,22 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     mongoc_collection_t *collection;
     bson_error_t error;
     bson_t *keys;
+    size_t id = state->id;
 
     if (dryrun) return;
 
     // if it is a db of today, then make it known
     if (strstr(db_name, iso_date_today)) {
-        printf("ensuring known database: %s\n", db_name);
+        printf("indexer[%zu]: ensuring known database: %s\n", id, db_name);
         ensure_known_database(client, db_name);
     }
-    printf("creating indexes for %s\n", db_name);
+    printf("indexer[%zu]: creating indexes for %s\n", id, db_name);
 
     collection = mongoc_client_get_collection(client, db_name, "totals");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
@@ -2678,7 +2684,7 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minutes", 6, 1));
     if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
@@ -2689,7 +2695,7 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     assert(bson_append_int32(keys, "kind", 4, 1));
     assert(bson_append_int32(keys, "quant", 5, 1));
     if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
@@ -2717,7 +2723,7 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
     assert(zframe_size(stream_frame) == sizeof(stream_info_t*));
     memcpy(&stream_info, zframe_data(stream_frame), sizeof(stream_info_t*));
 
-    // printf("indexer request for %s\n", db_name);
+    printf("indexer[%zu]: indexer request for %s\n", state->id, db_name);
     const char *known_db = zhash_lookup(state->databases, db_name);
     if (known_db == NULL) {
         zhash_insert(state->databases, db_name, strdup(db_name));
@@ -2725,8 +2731,8 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
         indexer_create_indexes(state, db_name, stream_info);
         char db_tomorrow[n+1];
         strcpy(db_tomorrow, db_name);
-        // printf("index for tomorrow %s\n", db_tomorrow);
         strcpy(db_tomorrow+n-10, iso_date_tomorrow);
+        printf("indexer[%zu]: index for tomorrow %s\n", state->id, db_tomorrow);
         indexer_create_indexes(state, db_tomorrow, stream_info);
         // HACK: sleep a bit to reduce load on server
         // this relies on zmq buffering enough requests to work
