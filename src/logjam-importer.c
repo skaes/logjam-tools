@@ -2723,7 +2723,6 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
     assert(zframe_size(stream_frame) == sizeof(stream_info_t*));
     memcpy(&stream_info, zframe_data(stream_frame), sizeof(stream_info_t*));
 
-    printf("indexer[%zu]: indexer request for %s\n", state->id, db_name);
     const char *known_db = zhash_lookup(state->databases, db_name);
     if (known_db == NULL) {
         zhash_insert(state->databases, db_name, strdup(db_name));
@@ -2737,6 +2736,8 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
         // HACK: sleep a bit to reduce load on server
         // this relies on zmq buffering enough requests to work
         zclock_sleep(1000); // 1s
+    } else {
+        printf("indexer[%zu]: indexes already created: %s\n", state->id, db_name);
     }
 }
 
