@@ -2796,6 +2796,7 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
                 state.databases = zhash_new();
             }
         } else if (socket == state.pull_socket) {
+            update_date_info(); // needs to done in this thread
             msg = zmsg_recv(state.pull_socket);
             if (msg != NULL) {
                 handle_indexer_request(msg, &state);
@@ -2897,8 +2898,6 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     zhash_t *processors[NUM_PARSERS];
     size_t request_counts[NUM_PARSERS];
     int64_t start_time_ms = zclock_time();
-
-    update_date_info();
 
     for (size_t i=0; i<NUM_PARSERS; i++) {
         void* parser_pipe = state->parser_pipes[i];
