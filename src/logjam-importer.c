@@ -2725,8 +2725,8 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
         indexer_create_indexes(state, db_name, stream_info);
         char db_tomorrow[n+1];
         strcpy(db_tomorrow, db_name);
-        strcpy(db_tomorrow+n-11, iso_date_tomorrow);
         // printf("index for tomorrow %s\n", db_tomorrow);
+        strcpy(db_tomorrow+n-10, iso_date_tomorrow);
         indexer_create_indexes(state, db_tomorrow, stream_info);
         // HACK: sleep a bit to reduce load on server
         // this relies on zmq buffering enough requests to work
