@@ -36,12 +36,16 @@ static char *config_file = "logjam.conf";
 static bool dryrun = false;
 static char *subscription_pattern = "";
 
-static char iso_date_today[11];
-static char iso_date_tomorrow[11];
+#define ISO_DATE_STR_LEN 11
+static char iso_date_today[ISO_DATE_STR_LEN] = {'0'};
+static char iso_date_tomorrow[ISO_DATE_STR_LEN] = {'0'};
 
-void update_date_info()
+bool update_date_info()
 {
-    time_t today = time (NULL);
+    char old_date[ISO_DATE_STR_LEN];
+    strcpy(old_date, iso_date_today);
+
+    time_t today = time(NULL);
     struct tm* ltt = localtime(&today);
     sprintf(iso_date_today,  "%04d-%02d-%02d", 1900 + ltt->tm_year, 1 + ltt->tm_mon, ltt->tm_mday);
 
@@ -51,6 +55,8 @@ void update_date_info()
 
     // printf("today's    ISO date is %s\n", iso_date_today);
     // printf("tomorrow's ISO date is %s\n", iso_date_tomorrow);
+    bool changed = strcmp(old_date, iso_date_today);
+    return changed;
 }
 
 #define MAX_DATABASES 100
@@ -2728,17 +2734,12 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
         zhash_insert(state->databases, db_name, strdup(db_name));
         zhash_freefn(state->databases, db_name, free);
         indexer_create_indexes(state, db_name, stream_info);
-        char db_tomorrow[n+1];
-        strcpy(db_tomorrow, db_name);
-        strcpy(db_tomorrow+n-10, iso_date_tomorrow);
-        printf("indexer[%zu]: index for tomorrow %s\n", state->id, db_tomorrow);
-        indexer_create_indexes(state, db_tomorrow, stream_info);
     } else {
         // printf("indexer[%zu]: indexes already created: %s\n", state->id, db_name);
     }
 }
 
-void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date)
+void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int delay)
 {
     zlist_t *streams = zhash_keys(configured_streams);
     char *stream = zlist_first(streams);
@@ -2749,18 +2750,41 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date)
         if (!have_subscriptions || zhash_lookup(stream_subscriptions, stream)) {
             char db_name[1000];
             sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
-            printf("indexer[%zu]: creating indexes for %s\n", self->id, db_name);
             indexer_create_indexes(self, db_name, info);
+            if (delay) {
+                zclock_sleep(1000 * delay);
+            }
         }
         stream = zlist_next(streams);
     }
     zlist_destroy(&streams);
 }
 
+void* create_indexes_for_tomorrow(void* args)
+{
+    indexer_state_t state;
+    memset(&state, 0, sizeof(state));
+    state.id = (size_t)args;
+
+    for (int i=0; i<num_databases; i++) {
+        state.mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state.mongo_clients[i]);
+    }
+    state.databases = zhash_new();
+
+    indexer_create_all_indexes(&state, iso_date_tomorrow, 10);
+
+    zhash_destroy(&state.databases);
+    for (int i=0; i<num_databases; i++) {
+        mongoc_client_destroy(state.mongo_clients[i]);
+    }
+    return NULL;
+}
+
 void indexer(void *args, zctx_t *ctx, void *pipe)
 {
     indexer_state_t state;
-    state.id = 0;
+    memset(&state, 0, sizeof(state));
     state.controller_socket = pipe;
     state.pull_socket = indexer_pull_socket_new(ctx);
     for (int i=0; i<num_databases; i++) {
@@ -2769,11 +2793,14 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
     }
     state.databases = zhash_new();
     size_t ticks = 0;
-    {
-        indexer_create_all_indexes(&state, iso_date_today);
+    size_t bg_indexer_runs = 0;
+    { // setup indexes (for today and tomorrow)
+        update_date_info();
+        indexer_create_all_indexes(&state, iso_date_today, 0);
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, "started");
         zmsg_send(&msg, state.controller_socket);
+        zthread_new(create_indexes_for_tomorrow, (void*)(++bg_indexer_runs));
     }
 
     zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
@@ -2801,7 +2828,10 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
                 state.databases = zhash_new();
             }
         } else if (socket == state.pull_socket) {
-            update_date_info(); // needs to done in this thread
+            if (update_date_info()) {
+                printf("indexer[%zu]: date change. creating indexes for tomorrow\n", state.id);
+                zthread_new(create_indexes_for_tomorrow, (void*)(++bg_indexer_runs));
+            }
             msg = zmsg_recv(state.pull_socket);
             if (msg != NULL) {
                 handle_indexer_request(msg, &state);
