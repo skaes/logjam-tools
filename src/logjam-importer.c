@@ -2738,15 +2738,16 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date)
 {
     zlist_t *streams = zhash_keys(configured_streams);
     char *stream = zlist_first(streams);
+    bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
     while (stream && !zctx_interrupted) {
         stream_info_t *info = zhash_lookup(configured_streams, stream);
         assert(info);
-
-        char db_name[1000];
-        sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
-        // printf("creating indexes for %s\n", db_name);
-        indexer_create_indexes(self, db_name, info);
-
+        if (!have_subscriptions || zhash_lookup(stream_subscriptions, stream)) {
+            char db_name[1000];
+            sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
+            printf("indexer[%zu]: creating indexes for %s\n", self->id, db_name);
+            indexer_create_indexes(self, db_name, info);
+        }
         stream = zlist_next(streams);
     }
     zlist_destroy(&streams);
