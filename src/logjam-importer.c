@@ -198,6 +198,7 @@ typedef struct {
     int response_code;
     int severity;
     int minute;
+    int heap_growth;
     json_object* exceptions;
 } request_data_t;
 
@@ -1587,6 +1588,17 @@ void processor_setup_allocated_memory(processor_t *self, json_object *request)
     }
 }
 
+int processor_setup_heap_growth(processor_t *self, json_object *request)
+{
+    json_object *heap_growth_obj = NULL;
+    int heap_growth = 0;
+    if (json_object_object_get_ex(request, "heap_growth", &heap_growth_obj)) {
+        heap_growth = json_object_get_int(heap_growth_obj);
+    }
+    // printf("heap_growth: %d\n", heap_growth);
+    return heap_growth;
+}
+
 json_object* processor_setup_exceptions(processor_t *self, json_object *request)
 {
     json_object* exceptions;
@@ -1688,7 +1700,6 @@ void processor_add_quants(processor_t *self, const char* namespace, increments_t
 
 bool interesting_request(request_data_t *request_data, json_object *request, stream_info_t* info)
 {
-    // TODO: heap_growth
     int time_threshold = info ? info->import_threshold : global_total_time_import_threshold;
     if (request_data->total_time > time_threshold)
         return true;
@@ -1697,6 +1708,8 @@ bool interesting_request(request_data_t *request_data, json_object *request, str
     if (request_data->response_code >= 400)
         return true;
     if (request_data->exceptions != NULL)
+        return true;
+    if (request_data->heap_growth > 0)
         return true;
     if (info == NULL)
         return false;
@@ -1745,6 +1758,7 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
     request_data.exceptions = processor_setup_exceptions(self, request);
     processor_setup_other_time(self, request, request_data.total_time);
     processor_setup_allocated_memory(self, request);
+    request_data.heap_growth = processor_setup_heap_growth(self, request);
 
     increments_t* increments = increments_new();
     increments_fill_metrics(increments, request);
