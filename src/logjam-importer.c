@@ -401,6 +401,7 @@ void* subscriber_sub_socket_new(zctx_t *context)
         do {
             char *spec = zconfig_value(binding);
             int rc = zsocket_connect(socket, "%s", spec);
+            log_zmq_error(rc);
             assert(rc == 0);
             binding = zconfig_next(binding);
         } while (binding);
