@@ -1338,8 +1338,15 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
 
     if (!dryrun) {
         bson_error_t error;
+        int tries = TOKU_TX_RETRIES+3; // try harder than for normal updates
+    retry:
         if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            fprintf(stderr, "update failed on logjam-global: (%d) %s\n", error.code, error.message);
+            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
+                fprintf(stderr, "retrying update on logjam-global: %s\n", db_name);
+                goto retry;
+            } else {
+                fprintf(stderr, "update failed on logjam-global: (%d) %s\n", error.code, error.message);
+            }
         }
     }
 
