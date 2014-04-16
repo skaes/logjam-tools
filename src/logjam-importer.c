@@ -46,12 +46,17 @@ bool update_date_info()
     strcpy(old_date, iso_date_today);
 
     time_t today = time(NULL);
-    struct tm* ltt = localtime(&today);
-    sprintf(iso_date_today,  "%04d-%02d-%02d", 1900 + ltt->tm_year, 1 + ltt->tm_mon, ltt->tm_mday);
+    struct tm lt;
+    assert( localtime_r(&today, &lt) );
+    // calling mktime fills in potentially missing TZ and DST info
+    assert( mktime(&lt) != -1 );
+    sprintf(iso_date_today,  "%04d-%02d-%02d", 1900 + lt.tm_year, 1 + lt.tm_mon, lt.tm_mday);
 
-    time_t tomorrow = today + 24 * 60 * 60;
-    struct tm* ltm = localtime(&tomorrow);
-    sprintf(iso_date_tomorrow,  "%04d-%02d-%02d", 1900 + ltm->tm_year, 1 + ltm->tm_mon, ltm->tm_mday);
+    // calculate toomorrows date
+    lt.tm_mday += 1;
+    assert( mktime(&lt) != -1 );
+
+    sprintf(iso_date_tomorrow,  "%04d-%02d-%02d", 1900 + lt.tm_year, 1 + lt.tm_mon, lt.tm_mday);
 
     // printf("today's    ISO date is %s\n", iso_date_today);
     // printf("tomorrow's ISO date is %s\n", iso_date_tomorrow);
