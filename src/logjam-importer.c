@@ -2787,11 +2787,17 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
     zlist_destroy(&streams);
 }
 
-void* create_indexes_for_tomorrow(void* args)
+typedef struct {
+    size_t id;
+    char iso_date[ISO_DATE_STR_LEN];
+} bg_indexer_args_t;
+
+void* create_indexes_for_date(void* args)
 {
     indexer_state_t state;
     memset(&state, 0, sizeof(state));
-    state.id = (size_t)args;
+    bg_indexer_args_t *indexer_args = args;
+    state.id = indexer_args->id;;
 
     for (int i=0; i<num_databases; i++) {
         state.mongo_clients[i] = mongoc_client_new(databases[i]);
@@ -2799,13 +2805,24 @@ void* create_indexes_for_tomorrow(void* args)
     }
     state.databases = zhash_new();
 
-    indexer_create_all_indexes(&state, iso_date_tomorrow, 10);
+    indexer_create_all_indexes(&state, indexer_args->iso_date, 10);
 
     zhash_destroy(&state.databases);
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state.mongo_clients[i]);
     }
+
+    free(indexer_args);
     return NULL;
+}
+
+void spawn_bg_indexer_for_date(size_t id, const char* iso_date)
+{
+    bg_indexer_args_t *indexer_args = malloc(sizeof(bg_indexer_args_t));
+    assert(indexer_args != NULL);
+    indexer_args->id = id;
+    strcpy(indexer_args->iso_date, iso_date);
+    zthread_new(create_indexes_for_date, indexer_args);
 }
 
 void indexer(void *args, zctx_t *ctx, void *pipe)
@@ -2827,7 +2844,7 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, "started");
         zmsg_send(&msg, state.controller_socket);
-        zthread_new(create_indexes_for_tomorrow, (void*)(++bg_indexer_runs));
+        spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
     }
 
     zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
@@ -2841,24 +2858,28 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
         if (socket == state.controller_socket) {
             // tick
             printf("indexer[%zu]: tick\n", state.id);
+            msg = zmsg_recv(state.controller_socket);
+
+            // if date has changed, start a bg thread to create databases for the next day
+            if (update_date_info()) {
+                printf("indexer[%zu]: date change. creating indexes for tomorrow\n", state.id);
+                spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
+            }
+
             if (ticks++ % PING_INTERVAL == 0) {
                 // ping mongodb to reestablish connection if it got lost
                 for (int i=0; i<num_databases; i++) {
                     mongo_client_ping(state.mongo_clients[i]);
                 }
             }
+
             // free collection pointers every hour
-            msg = zmsg_recv(state.controller_socket);
             if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - state.id - 1) {
                 printf("indexer[%zu]: freeing database info\n", state.id);
                 zhash_destroy(&state.databases);
                 state.databases = zhash_new();
             }
         } else if (socket == state.pull_socket) {
-            if (update_date_info()) {
-                printf("indexer[%zu]: date change. creating indexes for tomorrow\n", state.id);
-                zthread_new(create_indexes_for_tomorrow, (void*)(++bg_indexer_runs));
-            }
             msg = zmsg_recv(state.pull_socket);
             if (msg != NULL) {
                 handle_indexer_request(msg, &state);
@@ -2986,6 +3007,13 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     // publish on live stream (need to do this while we still own the processors)
     zhash_foreach(processors[0], processor_publish_totals, state->live_stream_socket);
+
+    // tell indexer to tick
+    {
+        zmsg_t *tick = zmsg_new();
+        zmsg_addstr(tick, "tick");
+        zmsg_send(&tick, state->indexer_pipe);
+    }
 
     // tell stats updaters to tick
     for (int i=0; i<NUM_UPDATERS; i++) {
