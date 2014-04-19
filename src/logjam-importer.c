@@ -3104,7 +3104,7 @@ void setup_resource_maps()
 
     resource_to_int = zhash_new();
     add_resources_of_type("time", time_resources, &last_time_resource_index);
-    add_resources_of_type("calls", call_resources, &last_call_resource_index);
+    add_resources_of_type("call", call_resources, &last_call_resource_index);
     add_resources_of_type("memory", memory_resources, &last_memory_resource_index);
     add_resources_of_type("heap", heap_resources, &last_heap_resource_index);
     last_resource_index--;
