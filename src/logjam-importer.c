@@ -1253,7 +1253,11 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
                 fprintf(stderr, "[W] retrying minutes update operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "[E] update failed for %s on minutes: (%d) %s\n", db_name, error.code, error.message);
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr, "[E] update failed for %s on minutes: (%d) %s\n[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
             }
         }
     }
@@ -1288,7 +1292,11 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
                 fprintf(stderr, "[W] retrying totals update operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "[E] update failed for %s on totals: (%d) %s\n", db_name, error.code, error.message);
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr, "[E] update failed for %s on totals: (%d) %s\n[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
             }
         }
     }
@@ -1357,7 +1365,11 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
                 fprintf(stderr, "[W] retrying quants update operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "[E] update failed for %s on quants: (%d) %s\n", db_name, error.code, error.message);
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr, "[E] update failed for %s on quants: (%d) %s\n[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
             }
         }
     }
