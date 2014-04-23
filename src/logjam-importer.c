@@ -26,7 +26,7 @@ static inline
 void log_zmq_error(int rc)
 {
   if (rc != 0) {
-      fprintf(stderr, "rc: %d, errno: %d (%s)\n", rc, errno, zmq_strerror(errno));
+      fprintf(stderr, "[E] rc: %d, errno: %d (%s)\n", rc, errno, zmq_strerror(errno));
   }
 }
 
@@ -58,8 +58,8 @@ bool update_date_info()
 
     sprintf(iso_date_tomorrow,  "%04d-%02d-%02d", 1900 + lt.tm_year, 1 + lt.tm_mon, lt.tm_mday);
 
-    // printf("today's    ISO date is %s\n", iso_date_today);
-    // printf("tomorrow's ISO date is %s\n", iso_date_tomorrow);
+    // printf("[D] today's    ISO date is %s\n", iso_date_today);
+    // printf("[D] tomorrow's ISO date is %s\n", iso_date_tomorrow);
     bool changed = strcmp(old_date, iso_date_today);
     return changed;
 }
@@ -324,7 +324,7 @@ void initialize_mongo_db_globals()
             char *uri = zconfig_value(db);
             if (uri != NULL) {
                 databases[num_databases] = strdup(uri);
-                printf("database[%zu]: %s\n", num_databases, uri);
+                printf("[I] database[%zu]: %s\n", num_databases, uri);
                 num_databases++;
             }
             db = zconfig_next(db);
@@ -332,7 +332,7 @@ void initialize_mongo_db_globals()
     }
     if (num_databases == 0) {
         databases[num_databases] = DEFAULT_MONGO_URI;
-        printf("database[%zu]: %s\n", num_databases, DEFAULT_MONGO_URI);
+        printf("[I] database[%zu]: %s\n", num_databases, DEFAULT_MONGO_URI);
         num_databases++;
     }
 }
@@ -367,10 +367,10 @@ void live_stream_publish(void *live_stream_socket, const char* key, const char* 
     zframe_t *msg_key = zframe_new(key, strlen(key));
     zframe_t *msg_body = zframe_new(json_str, strlen(json_str));
     rc = zframe_send(&msg_key, live_stream_socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
-    // printf("MSG frame 1 to live stream: rc=%d\n", rc);
+    // printf("[D] MSG frame 1 to live stream: rc=%d\n", rc);
     if (rc == 0) {
         rc = zframe_send(&msg_body, live_stream_socket, ZFRAME_DONTWAIT);
-        // printf("MSG frame 2 to live stream: rc=%d\n", rc);
+        // printf("[D] MSG frame 2 to live stream: rc=%d\n", rc);
     } else {
         zframe_destroy(&msg_body);
     }
@@ -469,7 +469,7 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
         zlist_t *subscriptions = zhash_keys(stream_subscriptions);
         char *stream = zlist_first(subscriptions);
         while (stream != NULL)  {
-            printf("controller: subscribing to stream: %s\n", stream);
+            printf("[I] controller: subscribing to stream: %s\n", stream);
             zsocket_set_subscribe(state.sub_socket, stream);
             stream = zlist_next(subscriptions);
         }
@@ -497,7 +497,7 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
 
     // run the loop
     rc = zloop_start(loop);
-    // printf("zloop return: %d", rc);
+    // printf("[D] zloop return: %d", rc);
 
     // shutdown
     zloop_destroy(&loop);
@@ -522,10 +522,10 @@ processor_t* processor_new(char *db_name)
 
     stream_info_t *stream_info = zhash_lookup(configured_streams, stream_name);
     if (stream_info == NULL) {
-        fprintf(stderr, "did not find stream info: %s\n", stream_name);
+        fprintf(stderr, "[E] did not find stream info: %s\n", stream_name);
         return NULL;
     } else {
-        // printf("found stream info for stream %s: %s\n", stream, stream_name);
+        // printf("[D] found stream info for stream %s: %s\n", stream, stream_name);
     }
 
     processor_t *p = malloc(sizeof(processor_t));
@@ -543,7 +543,7 @@ void processor_destroy(void* processor)
 {
     //void* because we want to use it as a zhash_free_fn
     processor_t* p = processor;
-    // printf("destroying processor: %s. requests: %zu\n", p->stream, p->request_count);
+    // printf("[D] destroying processor: %s. requests: %zu\n", p->stream, p->request_count);
     free(p->db_name);
     zhash_destroy(&p->modules);
     zhash_destroy(&p->totals);
@@ -567,11 +567,11 @@ processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_sta
         strncpy(&db_name[n+7-14], date_str, 10);
         db_name[n+7-14+10] = '\0';
     } else {
-        fprintf(stderr, "dropped request without started_at date\n");
+        fprintf(stderr, "[E] dropped request without started_at date\n");
         return NULL;
     }
 
-    // printf("db_name: %s\n", db_name);
+    // printf("[D] db_name: %s\n", db_name);
 
     processor_t *p = zhash_lookup(parser_state->processors, db_name);
     if (p == NULL) {
@@ -627,7 +627,10 @@ void* parser_indexer_socket_new(zctx_t *context)
 
 void dump_json_object(FILE *f, json_object *jobj) {
     const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PLAIN);
-    fprintf(f, "%s\n", json_str);
+    if (f == stderr)
+        fprintf(f, "[E] %s\n", json_str);
+    else
+        fprintf(f, "[I] %s\n", json_str);
     // don't try to free the json string. it will crash.
 }
 
@@ -638,17 +641,17 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
     json_object *jobj = json_tokener_parse_ex(tokener, json_data, json_data_len);
     enum json_tokener_error jerr = json_tokener_get_error(tokener);
     if (jerr != json_tokener_success) {
-        fprintf(stderr, "Error: %s\n", json_tokener_error_desc(jerr));
+        fprintf(stderr, "[E] Error: %s\n", json_tokener_error_desc(jerr));
         // Handle errors, as appropriate for your application.
     } else {
         // const char *json_str_orig = zframe_strdup(body);
-        // printf("%s\n", json_str_orig);
+        // printf("[D] %s\n", json_str_orig);
         // free(json_str_orig);
         // dump_json_object(stdout, jobj);
     }
     if (tokener->char_offset < json_data_len) // XXX shouldn't access internal fields
     {
-        fprintf(stderr, "Warning: %s\n", "extranoeus data in message payload");
+        fprintf(stderr, "[E] Warning: %s\n", "extranoeus data in message payload");
         // Handle extra characters after parsed object as desired.
         // e.g. issue an error, parse another object from that point, etc...
     }
@@ -989,7 +992,7 @@ void increments_fill_exceptions(increments_t *increments, json_object *exception
         strcpy(ex_str_dup, "exceptions.");
         strcpy(ex_str_dup+11, ex_str);
         int replaced_count = replace_dots_and_dollars(ex_str_dup+11);
-        // printf("EXCEPTION: %s\n", ex_str_dup);
+        // printf("[D] EXCEPTION: %s\n", ex_str_dup);
         if (replaced_count > 0) {
             json_object* new_ex = json_object_new_string(ex_str_dup+11);
             json_object_array_put_idx(exceptions, i, new_ex);
@@ -1029,7 +1032,7 @@ void increments_fill_caller_info(increments_t *increments, json_object *request)
                 int real_app_len = copy_replace_dots_and_dollars(caller_name + 8, app);
                 caller_name[real_app_len + 8] = '-';
                 copy_replace_dots_and_dollars(caller_name + 8 + real_app_len + 1, caller_action);
-                // printf("CALLER: %s\n", caller_name);
+                // printf("[D] CALLER: %s\n", caller_name);
                 json_object_object_add(increments->others, caller_name, NEW_INT1);
             }
         }
@@ -1072,7 +1075,7 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
             break;
         }
         default:
-            fprintf(stderr, "unknown increment type: %s, for key: %s\n", json_type_to_name(type), key);
+            fprintf(stderr, "[E] unknown increment type: %s, for key: %s\n", json_type_to_name(type), key);
             dump_json_object(stderr, increments->others);
         }
         if (new_obj) {
@@ -1097,7 +1100,7 @@ const char* append_to_json_string(json_object **jobj, const char* old_str, const
 
 int dump_module_name(const char* key, void *module, void *arg)
 {
-    printf("module: %s\n", (char*)module);
+    printf("[D] module: %s\n", (char*)module);
     return 0;
 }
 
@@ -1105,17 +1108,17 @@ void dump_metrics(metric_pair_t *metrics)
 {
     for (size_t i=0; i<=last_resource_index; i++) {
         if (metrics[i].val > 0) {
-            printf("%s:%f:%f\n", int_to_resource[i], metrics[i].val, metrics[i].val_squared);
+            printf("[D] %s:%f:%f\n", int_to_resource[i], metrics[i].val, metrics[i].val_squared);
         }
     }
 }
 
 int dump_increments(const char *key, void *total, void *arg)
 {
-    puts("------------------------------------------------");
-    printf("action: %s\n", key);
+    puts("[D] ------------------------------------------------");
+    printf("[D] action: %s\n", key);
     increments_t* increments = total;
-    printf("requests: %zu\n", increments->request_count);
+    printf("[D] requests: %zu\n", increments->request_count);
     dump_metrics(increments->metrics);
     dump_json_object(stdout, increments->others);
     return 0;
@@ -1123,9 +1126,9 @@ int dump_increments(const char *key, void *total, void *arg)
 
 void processor_dump_state(processor_t *self)
 {
-    puts("================================================");
-    printf("db_name: %s\n", self->db_name);
-    printf("processed requests: %zu\n", self->request_count);
+    puts("[D] ================================================");
+    printf("[D] db_name: %s\n", self->db_name);
+    printf("[D] processed requests: %zu\n", self->request_count);
     zhash_foreach(self->modules, dump_module_name, NULL);
     zhash_foreach(self->totals, dump_increments, NULL);
     zhash_foreach(self->minutes, dump_increments, NULL);
@@ -1166,7 +1169,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
             bson_append_double(incs, key, n, json_object_get_double(value_obj));
             break;
         default:
-            fprintf(stderr, "unsupported json type in json to bson conversion: %s, key: %s\n", json_type_to_name(type), key);
+            fprintf(stderr, "[E] unsupported json type in json to bson conversion: %s, key: %s\n", json_type_to_name(type), key);
         }
     }
 
@@ -1175,7 +1178,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
 
     // size_t n;
     // char* bs = bson_as_json(document, &n);
-    // printf("document. size: %zu; value:%s\n", n, bs);
+    // printf("[D] document. size: %zu; value:%s\n", n, bs);
     // bson_destroy(bs);
 
     bson_destroy(incs);
@@ -1204,7 +1207,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
 
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
-    // printf("selector. size: %zu; value:%s\n", n, bs);
+    // printf("[D] selector. size: %zu; value:%s\n", n, bs);
     // bson_destroy(bs);
 
     bson_t *document = increments_to_bson(namespace, increments);
@@ -1214,10 +1217,10 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying minutes update operation on %s\n", db_name);
+                fprintf(stderr, "[W] retrying minutes update operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "update failed for %s on minutes: (%d) %s\n", db_name, error.code, error.message);
+                fprintf(stderr, "[E] update failed for %s on minutes: (%d) %s\n", db_name, error.code, error.message);
             }
         }
     }
@@ -1239,7 +1242,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
 
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
-    // printf("selector. size: %zu; value:%s\n", n, bs);
+    // printf("[D] selector. size: %zu; value:%s\n", n, bs);
     // bson_destroy(bs);
 
     bson_t *document = increments_to_bson(namespace, increments);
@@ -1249,10 +1252,10 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying totals update operation on %s\n", db_name);
+                fprintf(stderr, "[W] retrying totals update operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "update failed for %s on totals: (%d) %s\n", db_name, error.code, error.message);
+                fprintf(stderr, "[E] update failed for %s on totals: (%d) %s\n", db_name, error.code, error.message);
             }
         }
     }
@@ -1299,7 +1302,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
-    // printf("selector. size: %zu; value:%s\n", n, bs);
+    // printf("[D] selector. size: %zu; value:%s\n", n, bs);
     // bson_destroy(bs);
 
     bson_t *incs = bson_new();
@@ -1309,7 +1312,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     bson_append_document(document, "$inc", 4, incs);
 
     // bs = bson_as_json(document, &n);
-    // printf("document. size: %zu; value:%s\n", n, bs);
+    // printf("[D] document. size: %zu; value:%s\n", n, bs);
     // bson_destroy(bs);
 
     if (!dryrun) {
@@ -1318,10 +1321,10 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying quants update operation on %s\n", db_name);
+                fprintf(stderr, "[W] retrying quants update operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "update failed for %s on quants: (%d) %s\n", db_name, error.code, error.message);
+                fprintf(stderr, "[E] update failed for %s on quants: (%d) %s\n", db_name, error.code, error.message);
             }
         }
     }
@@ -1348,10 +1351,10 @@ void ensure_known_database(mongoc_client_t *client, const char* db_name)
     retry:
         if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying update on logjam-global: %s\n", db_name);
+                fprintf(stderr, "[W] retrying update on logjam-global: %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "update failed on logjam-global: (%d) %s\n", error.code, error.message);
+                fprintf(stderr, "[E] update failed on logjam-global: (%d) %s\n", error.code, error.message);
             }
         }
     }
@@ -1470,8 +1473,8 @@ const char* processor_setup_module(processor_t *self, const char *page)
         assert(rc == 0);
         zhash_freefn(self->modules, module, free);
     }
-    // printf("page: %s\n", page);
-    // printf("module: %s\n", module);
+    // printf("[D] page: %s\n", page);
+    // printf("[D] module: %s\n", module);
     return module;
 }
 
@@ -1484,7 +1487,7 @@ int processor_setup_response_code(processor_t *self, json_object *request)
         json_object_object_del(request, "code");
     }
     json_object_object_add(request, "response_code", json_object_new_int(response_code));
-    // printf("response_code: %d\n", response_code);
+    // printf("[D] response_code: %d\n", response_code);
     return response_code;
 }
 
@@ -1505,7 +1508,7 @@ double processor_setup_total_time(processor_t *self, json_object *request)
         total_time_obj = json_object_new_double(total_time);
         json_object_object_add(request, "total_time", total_time_obj);
     }
-    // printf("total_time: %f\n", total_time);
+    // printf("[D] total_time: %f\n", total_time);
     return total_time;
 }
 
@@ -1548,7 +1551,7 @@ int processor_setup_severity(processor_t *self, json_object *request)
         json_object_object_add(request, "severity", severity_obj);
     }
     return severity;
-    // printf("severity: %d\n\n", severity);
+    // printf("[D] severity: %d\n\n", severity);
 }
 
 int processor_setup_minute(processor_t *self, json_object *request)
@@ -1564,7 +1567,7 @@ int processor_setup_minute(processor_t *self, json_object *request)
     }
     json_object *minute_obj = json_object_new_int(minute);
     json_object_object_add(request, "minute", minute_obj);
-    // printf("minute: %d\n", minute);
+    // printf("[D] minute: %d\n", minute);
     return minute;
 }
 
@@ -1579,7 +1582,7 @@ void processor_setup_other_time(processor_t *self, json_object *request, double 
         }
     }
     json_object_object_add(request, "other_time", json_object_new_double(other_time));
-    // printf("other_time: %f\n", other_time);
+    // printf("[D] other_time: %f\n", other_time);
 }
 
 void processor_setup_allocated_memory(processor_t *self, json_object *request)
@@ -1597,7 +1600,7 @@ void processor_setup_allocated_memory(processor_t *self, json_object *request)
         // assume 64bit ruby
         long allocated_memory = allocated_bytes + allocated_objects * 40;
         json_object_object_add(request, "allocated_memory", json_object_new_int64(allocated_memory));
-        // printf("allocated memory: %lu\n", allocated_memory);
+        // printf("[D] allocated memory: %lu\n", allocated_memory);
     }
 }
 
@@ -1608,7 +1611,7 @@ int processor_setup_heap_growth(processor_t *self, json_object *request)
     if (json_object_object_get_ex(request, "heap_growth", &heap_growth_obj)) {
         heap_growth = json_object_get_int(heap_growth_obj);
     }
-    // printf("heap_growth: %d\n", heap_growth);
+    // printf("[D] heap_growth: %d\n", heap_growth);
     return heap_growth;
 }
 
@@ -1675,7 +1678,7 @@ void add_quant(const char* namespace, size_t resource_idx, char kind, size_t qua
 {
     char key[2000];
     sprintf(key, "%c-%zu-%zu-%s", kind, quant, resource_idx, namespace);
-    // printf("QUANT-KEY: %s\n", key);
+    // printf("[D] QUANT-KEY: %s\n", key);
     void *stored = zhash_lookup(quants, key);
     if (stored) {
         size_t new_val = ((size_t)stored) + 1;
@@ -1729,7 +1732,7 @@ bool interesting_request(request_data_t *request_data, json_object *request, str
     for (int i=0; i<info->module_threshold_count; i++) {
         if (!strcmp(request_data->module+2, info->module_thresholds[i].name)) {
             if (request_data->total_time > info->module_thresholds[i].value) {
-                // printf("INTERESTING: %s: %f\n", request_data->module+2, request_data->total_time);
+                // printf("[D] INTERESTING: %s: %f\n", request_data->module+2, request_data->total_time);
                 return true;
             } else
                 return false;
@@ -1915,7 +1918,7 @@ int processor_publish_totals(const char* db_name, void *processor, void *live_st
         // tolower is unsafe and not really necessary
         for (char *p = key; *p; ++p) *p = tolower(*p);
 
-        // printf("publishing totals for db: %s, module: %s, key: %s\n", db_name, module, key);
+        // printf("[D] publishing totals for db: %s, module: %s, key: %s\n", db_name, module, key);
         increments_t *incs = zhash_lookup(self->totals, namespace);
         if (incs) {
             json_object *json = json_object_new_object();
@@ -1927,7 +1930,7 @@ int processor_publish_totals(const char* db_name, void *processor, void *live_st
 
             json_object_put(json);
         } else {
-            fprintf(stderr, "missing increments for db: %s, module: %s, key: %s\n", db_name, module, key);
+            fprintf(stderr, "[E] missing increments for db: %s, module: %s, key: %s\n", db_name, module, key);
         }
         module = zlist_next(modules);
     }
@@ -1989,7 +1992,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("parser [%zu]: tick (%zu messages)\n", state.id, state.request_count);
+            printf("[I] parser [%zu]: tick (%zu messages)\n", state.id, state.request_count);
             msg = zmsg_recv(state.controller_socket);
             zmsg_t *answer = zmsg_new();
             zmsg_addmem(answer, &state.processors, sizeof(zhash_t*));
@@ -2009,7 +2012,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         }
         zmsg_destroy(&msg);
     }
-    printf("parser [%zu]: terminated\n", state.id);
+    printf("[I] parser [%zu]: terminated\n", state.id);
 }
 
 void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *request_count)
@@ -2048,10 +2051,10 @@ int mongo_client_ping(mongoc_client_t *client)
     if (mongoc_cursor_next(cursor, &reply)) {
         available = 0;
         // char *str = bson_as_json(reply, NULL);
-        // fprintf(stdout, "%s\n", str);
+        // fprintf(stdout, "D %s\n", str);
         // bson_free(str);
     } else if (mongoc_cursor_error(cursor, &error)) {
-        fprintf(stderr, "ping failure: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "[E] ping failure: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(&ping);
     mongoc_cursor_destroy(cursor);
@@ -2081,13 +2084,13 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     assert(poller);
 
     while (!zctx_interrupted) {
-        // printf("updater[%zu]: polling\n", id);
+        // printf("[D] updater[%zu]: polling\n", id);
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             msg = zmsg_recv(state.controller_socket);
-            printf("updater[%zu]: tick (%zu updates)\n", id, state.updates_count);
+            printf("[I] updater[%zu]: tick (%zu updates)\n", id, state.updates_count);
             // ping the server
             if (ticks++ % PING_INTERVAL == 0) {
                 for (int i=0; i<num_databases; i++) {
@@ -2115,9 +2118,9 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             processor_destroy(processor);
 
             int64_t end_time_ms = zclock_time();
-            printf("updater[%zu]: (%3d ms) %s\n", id, (int)(end_time_ms - start_time_ms), db_name);
+            printf("[I] updater[%zu]: (%3d ms) %s\n", id, (int)(end_time_ms - start_time_ms), db_name);
         } else {
-            printf("updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
+            printf("[I] updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
             break;
         }
         zmsg_destroy(&msg);
@@ -2127,7 +2130,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
     for (int i = 0; i<num_databases; i++) {
         mongoc_client_destroy(state.mongo_clients[i]);
     }
-    printf("updater[%zu]: terminated\n", id);
+    printf("[I] updater[%zu]: terminated\n", id);
 }
 
 void* request_writer_pull_socket_new(zctx_t *context, int i)
@@ -2148,7 +2151,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     index_keys = bson_new();
     bson_append_int32(index_keys, field, strlen(field), 1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_sparse, &error)) {
-        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 
@@ -2157,7 +2160,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     bson_append_int32(index_keys, "page", 4, 1);
     bson_append_int32(index_keys, field, strlen(field), 1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 }
@@ -2172,7 +2175,7 @@ void add_request_collection_indexes(const char* db_name, mongoc_collection_t *re
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 
@@ -2182,7 +2185,7 @@ void add_request_collection_indexes(const char* db_name, mongoc_collection_t *re
     bson_append_int32(index_keys, "metrics.n", 9, 1);
     bson_append_int32(index_keys, "metrics.v", 9, -1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 
@@ -2201,7 +2204,7 @@ void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_co
     index_keys = bson_new();
     bson_append_int32(index_keys, "logjam_request_id", 17, 1);
     if (!mongoc_collection_create_index(jse_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 
@@ -2209,7 +2212,7 @@ void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_co
     index_keys = bson_new();
     bson_append_int32(index_keys, "description", 11, 1);
     if (!mongoc_collection_create_index(jse_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "index creation failed: (%d) %s\n", error.code, error.message);
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
     }
     bson_destroy(index_keys);
 }
@@ -2219,7 +2222,7 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
     if (dryrun) return NULL;
     mongoc_collection_t *collection = zhash_lookup(self->request_collections, db_name);
     if (collection == NULL) {
-        // printf("creating requests collection: %s\n", db_name);
+        // printf("[D] creating requests collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
         collection = mongoc_client_get_collection(mongo_client, db_name, "requests");
         // add_request_collection_indexes(db_name, collection);
@@ -2234,7 +2237,7 @@ mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* s
     if (dryrun) return NULL;
     mongoc_collection_t *collection = zhash_lookup(self->jse_collections, db_name);
     if (collection == NULL) {
-        // printf("creating jse collection: %s\n", db_name);
+        // printf("[D] creating jse collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
         collection = mongoc_client_get_collection(mongo_client, db_name, "js_exceptions");
         // add_jse_collection_indexes(db_name, collection);
@@ -2249,7 +2252,7 @@ mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t
     if (dryrun) return NULL;
     mongoc_collection_t *collection = zhash_lookup(self->events_collections, db_name);
     if (collection == NULL) {
-        // printf("creating events collection: %s\n", db_name);
+        // printf("[D] creating events collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
         collection = mongoc_client_get_collection(mongo_client, db_name, "events");
         zhash_insert(self->events_collections, db_name, collection);
@@ -2280,7 +2283,7 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
         len = convert_to_win1252(safe_key, len, tmp);
         strcpy(safe_key, tmp);
     }
-    // printf("safe_key: %s\n", safe_key);
+    // printf("[D] safe_key: %s\n", safe_key);
 
     enum json_type type = json_object_get_type(val);
     switch (type) {
@@ -2318,7 +2321,7 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
         if (bson_utf8_validate(str, n, false /* disallow embedded null characters */)) {
             bson_append_utf8(b, safe_key, len, str, n);
         } else {
-            printf("invalid utf8 in string value: %s\n", str);
+            fprintf(stderr, "[E] invalid utf8 in string value: %s\n", str);
             // bson_append_binary(b, safe_key, len, BSON_SUBTYPE_BINARY, (uint8_t*)str, n);
             bson_append_win1252(b, safe_key, len, str, n);
         }
@@ -2328,7 +2331,7 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
         bson_append_null(b, safe_key, len);
         break;
     default:
-        fprintf(stderr, "unexpected json type: %s\n", json_type_to_name(type));
+        fprintf(stderr, "[E] unexpected json type: %s\n", json_type_to_name(type));
         break;
     }
 }
@@ -2394,13 +2397,13 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         bson_oid_t oid;
         bson_oid_init(&oid, NULL);
         bson_append_oid(document, "_id", 3, &oid);
-        // printf("generated oid for document:\n");
+        // printf("[D] generated oid for document:\n");
     }
     json_object_to_bson(request, document);
 
     // size_t n;
     // char* bs = bson_as_json(document, &n);
-    // printf("doument. size: %zu; value:%s\n", n, bs);
+    // printf("[D] doument. size: %zu; value:%s\n", n, bs);
     // bson_destroy(bs);
 
     if (!dryrun) {
@@ -2409,10 +2412,10 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     retry:
         if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying request insert operation on %s\n", db_name);
+                fprintf(stderr, "[W] retrying request insert operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "insert failed for request document on %s: (%d) %s\n", db_name, error.code, error.message);
+                fprintf(stderr, "[E] insert failed for request document on %s: (%d) %s\n", db_name, error.code, error.message);
                 dump_json_object(stderr, request);
             }
         }
@@ -2434,10 +2437,10 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
     retry:
         if (!mongoc_collection_insert(jse_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying exception insert operation on %s\n", db_name);
+                fprintf(stderr, "[W] retrying exception insert operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "insert failed for exception document on %s: (%d) %s\n", db_name, error.code, error.message);
+                fprintf(stderr, "[E] insert failed for exception document on %s: (%d) %s\n", db_name, error.code, error.message);
                 dump_json_object(stderr, request);
             }
         }
@@ -2457,10 +2460,10 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
     retry:
         if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "retrying event insert operation on %s\n", db_name);
+                fprintf(stderr, "[W] retrying event insert operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "insert failed for event document on %s: (%d) %s\n", db_name, error.code, error.message);
+                fprintf(stderr, "[E] insert failed for event document on %s: (%d) %s\n", db_name, error.code, error.message);
                 dump_json_object(stderr, request);
             }
         }
@@ -2569,12 +2572,12 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     char db_name[db_name_len+1];
     memcpy(db_name, zframe_data(db_frame), db_name_len);
     db_name[db_name_len] = '\0';
-    // printf("request_writer: db name: %s\n", db_name);
+    // printf("[D] request_writer: db name: %s\n", db_name);
 
     stream_info_t *stream_info;
     assert(zframe_size(stream_frame) == sizeof(stream_info_t*));
     memcpy(&stream_info, zframe_data(stream_frame), sizeof(stream_info_t*));
-    // printf("request_writer: stream name: %s\n", stream_info->key);
+    // printf("[D] request_writer: stream name: %s\n", stream_info->key);
 
     size_t mod_len = zframe_size(mod_frame);
     char module[mod_len+1];
@@ -2602,7 +2605,7 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
             store_event(db_name, stream_info, request, state);
             break;
         default:
-            printf("unknown task type for request_writer: %c\n", task_type);
+            fprintf(stderr, "[E] unknown task type for request_writer: %c\n", task_type);
         }
     }
     json_object_put(request);
@@ -2629,13 +2632,13 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     assert(poller);
 
     while (!zctx_interrupted) {
-        // printf("writer [%zu]: polling\n", state.id);
+        // printf("[D] writer [%zu]: polling\n", state.id);
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("writer [%zu]: tick (%zu requests)\n", state.id, state.request_count);
+            printf("[I] writer [%zu]: tick (%zu requests)\n", state.id, state.request_count);
             if (ticks++ % PING_INTERVAL == 0) {
                 // ping mongodb to reestablish connection if it got lost
                 for (int i=0; i<num_databases; i++) {
@@ -2645,7 +2648,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             // free collection pointers every hour
             msg = zmsg_recv(state.controller_socket);
             if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - state.id - 1) {
-                printf("writer [%zu]: freeing request collections\n", state.id);
+                printf("[I] writer [%zu]: freeing request collections\n", state.id);
                 zhash_destroy(&state.request_collections);
                 zhash_destroy(&state.jse_collections);
                 zhash_destroy(&state.events_collections);
@@ -2662,7 +2665,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
             }
         } else {
             // interrupted
-            printf("writer [%zu]: no socket input. interrupted = %d\n", state.id, zctx_interrupted);
+            printf("[I] writer [%zu]: no socket input. interrupted = %d\n", state.id, zctx_interrupted);
             break;
         }
         zmsg_destroy(&msg);
@@ -2674,7 +2677,7 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state.mongo_clients[i]);
     }
-    printf("writer [%zu]: terminated\n", state.id);
+    printf("[I] writer [%zu]: terminated\n", state.id);
 }
 
 void *indexer_pull_socket_new(zctx_t *ctx)
@@ -2698,16 +2701,16 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
 
     // if it is a db of today, then make it known
     if (strstr(db_name, iso_date_today)) {
-        printf("indexer[%zu]: ensuring known database: %s\n", id, db_name);
+        printf("[I] indexer[%zu]: ensuring known database: %s\n", id, db_name);
         ensure_known_database(client, db_name);
     }
-    printf("indexer[%zu]: creating indexes for %s\n", id, db_name);
+    printf("[I] indexer[%zu]: creating indexes for %s\n", id, db_name);
 
     collection = mongoc_client_get_collection(client, db_name, "totals");
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
+        fprintf(stderr, "[E] indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
@@ -2717,7 +2720,7 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minutes", 6, 1));
     if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
+        fprintf(stderr, "[E] indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
@@ -2728,7 +2731,7 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     assert(bson_append_int32(keys, "kind", 4, 1));
     assert(bson_append_int32(keys, "quant", 5, 1));
     if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
-        fprintf(stderr, "indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
+        fprintf(stderr, "[E] indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
@@ -2762,7 +2765,7 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
         zhash_freefn(state->databases, db_name, free);
         indexer_create_indexes(state, db_name, stream_info);
     } else {
-        // printf("indexer[%zu]: indexes already created: %s\n", state->id, db_name);
+        // printf("[D] indexer[%zu]: indexes already created: %s\n", state->id, db_name);
     }
 }
 
@@ -2857,12 +2860,12 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("indexer[%zu]: tick\n", state.id);
+            printf("[I] indexer[%zu]: tick\n", state.id);
             msg = zmsg_recv(state.controller_socket);
 
             // if date has changed, start a bg thread to create databases for the next day
             if (update_date_info()) {
-                printf("indexer[%zu]: date change. creating indexes for tomorrow\n", state.id);
+                printf("[I] indexer[%zu]: date change. creating indexes for tomorrow\n", state.id);
                 spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
             }
 
@@ -2875,7 +2878,7 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
 
             // free collection pointers every hour
             if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - state.id - 1) {
-                printf("indexer[%zu]: freeing database info\n", state.id);
+                printf("[I] indexer[%zu]: freeing database info\n", state.id);
                 zhash_destroy(&state.databases);
                 state.databases = zhash_new();
             }
@@ -2886,7 +2889,7 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
             }
         } else {
             // interrupted
-            printf("indexer[%zu]: no socket input. interrupted = %d\n", state.id, zctx_interrupted);
+            printf("[I] indexer[%zu]: no socket input. interrupted = %d\n", state.id, zctx_interrupted);
             break;
         }
         zmsg_destroy(&msg);
@@ -2896,7 +2899,7 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state.mongo_clients[i]);
     }
-    printf("indexer[%zu]: terminated\n", state.id);
+    printf("[I] indexer[%zu]: terminated\n", state.id);
 }
 
 
@@ -2951,7 +2954,7 @@ void combine_increments(zhash_t* target, zhash_t *source)
 
 void combine_processors(processor_t* target, processor_t* source)
 {
-    // printf("combining %s\n", target->db_name);
+    // printf("[D] combining %s\n", target->db_name);
     assert(!strcmp(target->db_name, source->db_name));
     target->request_count += source->request_count;
     combine_modules(target->modules, source->modules);
@@ -2963,7 +2966,7 @@ void combine_processors(processor_t* target, processor_t* source)
 int merge_processors(const char* db_name, void* data, void* arg)
 {
     hash_pair_t *pair = arg;
-    // printf("checking %s\n", db_name);
+    // printf("[D] checking %s\n", db_name);
     processor_t *dest = zhash_lookup(pair->target, db_name);
     if (dest == NULL) {
         zhash_insert(pair->target, db_name, data);
@@ -3027,7 +3030,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     const char* db_name = zlist_first(db_names);
     while (db_name != NULL) {
         processor_t *proc = zhash_lookup(processors[0], db_name);
-        // printf("forwarding %s\n", db_name);
+        // printf("[D] forwarding %s\n", db_name);
         zhash_freefn(processors[0], db_name, NULL);
         zmsg_t *stats_msg = zmsg_new();
         zmsg_addmem(stats_msg, &proc, sizeof(processor_t*));
@@ -3046,7 +3049,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     int64_t end_time_ms = zclock_time();
-    printf("controller: %zu messages (%zu ms)\n", request_count, (size_t)(end_time_ms - start_time_ms));
+    printf("[I] controller: %zu messages (%zu ms)\n", request_count, (size_t)(end_time_ms - start_time_ms));
 
     return 0;
 }
@@ -3084,15 +3087,15 @@ void add_resources_of_type(const char *type, char **type_map, size_t *type_idx)
         }
         last_other_time_resource_index--;
 
-        // printf("other time resources:\n");
+        // printf("[D] other time resources:\n");
         // for (size_t j=0; j<=last_other_time_resource_index; j++) {
-        //      puts(other_time_resources[j]);
+        //      printf("[D] %s\n", other_time_resources[j]);
         // }
     }
 
-    // printf("%s resources:\n", type);
+    // printf("[D] %s resources:\n", type);
     // for (size_t j=0; j<=*type_idx; j++) {
-    //     puts(type_map[j]);
+    //     printf("[D] %s\n", type_map[j]);
     // }
 }
 
@@ -3114,7 +3117,7 @@ void setup_resource_maps()
 
     // for (size_t j=0; j<=last_resource_index; j++) {
     //     const char *r = i2r(j);
-    //     printf("%s = %zu\n", r, r2i(r));
+    //     printf("[D] %s = %zu\n", r, r2i(r));
     // }
 }
 
@@ -3218,7 +3221,7 @@ stream_info_t* stream_info_new(zconfig_t *stream_config)
     if (db_setting) {
         const char* dbval = zconfig_value(db_setting);
         int db_num = atoi(dbval);
-        // printf("db for %s-%s: %d (numdbs: %zu)\n", info->app, info->env, db_num, num_databases);
+        // printf("[D] db for %s-%s: %d (numdbs: %zu)\n", info->app, info->env, db_num, num_databases);
         assert(db_num < num_databases);
         info->db = db_num;
     }
@@ -3230,13 +3233,13 @@ stream_info_t* stream_info_new(zconfig_t *stream_config)
 
 void dump_stream_info(stream_info_t *stream)
 {
-    printf("key: %s\n", stream->key);
-    printf("app: %s\n", stream->app);
-    printf("env: %s\n", stream->env);
-    printf("ignored_request_uri: %s\n", stream->ignored_request_prefix);
-    printf("import_threshold: %d\n", stream->import_threshold);
+    printf("[D] key: %s\n", stream->key);
+    printf("[D] app: %s\n", stream->app);
+    printf("[D] env: %s\n", stream->env);
+    printf("[D] ignored_request_uri: %s\n", stream->ignored_request_prefix);
+    printf("[D] import_threshold: %d\n", stream->import_threshold);
     for (int i = 0; i<stream->module_threshold_count; i++) {
-        printf("module_threshold: %s = %zu\n", stream->module_thresholds[i].name, stream->module_thresholds[i].value);
+        printf("[D] module_threshold: %s = %zu\n", stream->module_thresholds[i].name, stream->module_thresholds[i].value);
     }
 }
 
@@ -3247,14 +3250,14 @@ void setup_stream_config()
     zconfig_t *import_threshold_config = zconfig_locate(config, "backend/defaults/import_threshold");
     if (import_threshold_config) {
         int t = atoi(zconfig_value(import_threshold_config));
-        // printf("setting global import threshold: %d\n", t);
+        // printf("[D] setting global import threshold: %d\n", t);
         global_total_time_import_threshold = t;
     }
 
     zconfig_t *ignored_requests_config = zconfig_locate(config, "backend/defaults/ignored_request_uri");
     if (ignored_requests_config) {
         const char *prefix = zconfig_value(ignored_requests_config);
-        // printf("setting global ignored_requests uri: %s\n", prefix);
+        // printf("[D] setting global ignored_requests uri: %s\n", prefix);
         global_ignored_request_prefix = prefix;
     }
 
@@ -3301,11 +3304,11 @@ void process_arguments(int argc, char * const *argv)
             break;
         case '?':
             if (optopt == 'c')
-                fprintf(stderr, "option -%c requires an argument.\n", optopt);
+                fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
-                fprintf(stderr, "unknown option `-%c'.\n", optopt);
+                fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);
             else
-                fprintf(stderr, "unknown option character `\\x%x'.\n", optopt);
+                fprintf(stderr, "[E] unknown option character `\\x%x'.\n", optopt);
             print_usage(argv);
             exit(1);
         default:
@@ -3320,7 +3323,7 @@ int main(int argc, char * const *argv)
     process_arguments(argc, argv);
 
     if (!zsys_file_exists(config_file)) {
-        fprintf(stderr, "missing config file: %s\n", config_file);
+        fprintf(stderr, "[E] missing config file: %s\n", config_file);
         exit(1);
     }
 
@@ -3387,7 +3390,7 @@ int main(int argc, char * const *argv)
     if (!zctx_interrupted) {
         // run the loop
         rc = zloop_start(loop);
-        printf("shutting down: %d\n", rc);
+        printf("[I] shutting down: %d\n", rc);
     }
 
     // shutdown
