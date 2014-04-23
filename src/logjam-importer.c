@@ -289,9 +289,42 @@ static mongoc_index_opt_t index_opt_sparse;
 #define PING_INTERVAL 5
 #define COLLECTION_REFRESH_INTERVAL 3600
 
+void my_mongo_log_handler(mongoc_log_level_t log_level, const char *log_domain, const char *message, void *user_data)
+{
+   FILE *stream;
+   char level = 'I';
+
+   switch (log_level) {
+   case MONGOC_LOG_LEVEL_ERROR:
+   case MONGOC_LOG_LEVEL_CRITICAL:
+       level = 'E';
+       stream = stderr;
+       break;
+   case MONGOC_LOG_LEVEL_WARNING:
+       level = 'W';
+       stream = stderr;
+       break;
+   case MONGOC_LOG_LEVEL_MESSAGE:
+   case MONGOC_LOG_LEVEL_INFO:
+       level = 'I';
+       stream = stderr;
+       break;
+   case MONGOC_LOG_LEVEL_DEBUG:
+   case MONGOC_LOG_LEVEL_TRACE:
+       level = 'D';
+       stream = stderr;
+       break;
+   default:
+       stream = stdout;
+   }
+
+   fprintf(stream, "[%c] monogc[%s]: %s\n", level, log_domain, message);
+}
+
 void initialize_mongo_db_globals()
 {
     mongoc_init();
+    mongoc_log_set_handler(my_mongo_log_handler, NULL);
 
     wc_wait = mongoc_write_concern_new();
     mongoc_write_concern_set_w(wc_wait, MONGOC_WRITE_CONCERN_W_DEFAULT);
