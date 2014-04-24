@@ -1041,7 +1041,17 @@ int convert_to_win1252(const char *str, size_t n, char *utf8)
     for (int i=0; i < n; i++) {
         uint8_t c = str[i];
         if ((c & 0x80) == 0) { // ascii 7bit
-            utf8[j++] = c;
+            // handle null characters
+            if (c)
+                utf8[j++] = c;
+            else {
+                utf8[j++] = '\\';
+                utf8[j++] = 'u';
+                utf8[j++] = '0';
+                utf8[j++] = '0';
+                utf8[j++] = '0';
+                utf8[j++] = '0';
+           }
         } else { // high bit set
             char *t = win1252_to_utf8[c & 0x7F];
             while ( (c = *t++) ) {
@@ -2360,7 +2370,7 @@ mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t
 
 int bson_append_win1252(bson_t *b, const char *key, size_t key_len, const char* val, size_t val_len)
 {
-    char utf8[4*val_len+1];
+    char utf8[6*val_len+1];
     int new_len = convert_to_win1252(val, val_len, utf8);
     return bson_append_utf8(b, key, key_len, utf8, new_len);
 }
@@ -2376,7 +2386,7 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
     int len = copy_replace_dots_and_dollars(safe_key, key);
 
     if (!bson_utf8_validate(safe_key, len, false)) {
-        char tmp[4*len+1];
+        char tmp[6*len+1];
         len = convert_to_win1252(safe_key, len, tmp);
         strcpy(safe_key, tmp);
     }
