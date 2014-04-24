@@ -2418,7 +2418,7 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
         if (bson_utf8_validate(str, n, false /* disallow embedded null characters */)) {
             bson_append_utf8(b, safe_key, len, str, n);
         } else {
-            fprintf(stderr, "[W] invalid utf8 in string. key: '%s'; value: %*s\n", safe_key, (int)n, str);
+            fprintf(stderr, "[W] invalid utf8 in string. key: '%s'; value[len=%d]: %*s\n", safe_key, (int)n, (int)n, str);
             // bson_append_binary(b, safe_key, len, BSON_SUBTYPE_BINARY, (uint8_t*)str, n);
             bson_append_win1252(b, safe_key, len, str, n);
         }
