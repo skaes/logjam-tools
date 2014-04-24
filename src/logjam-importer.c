@@ -1095,7 +1095,7 @@ void increments_fill_js_exception(increments_t *increments, const char *js_excep
     char xbuffer[l+3*n+1];
     strcpy(xbuffer, "js_exceptions.");
     uri_replace_dots_and_dollars(xbuffer+l, js_exception);
-    // rintf("JS EXCEPTION: %s\n", xbuffer);
+    // printf("[D] JS EXCEPTION: %s\n", xbuffer);
     json_object_object_add(increments->others, xbuffer, NEW_INT1);
 }
 
@@ -1948,6 +1948,14 @@ void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_
 {
     char *page = extract_page_for_jse(request);
     char *js_exception = exctract_key_from_jse_description(request);
+
+    if (strlen(js_exception) == 0) {
+        fprintf(stderr, "[E] could not extract js_exception from request. ignoring.\n");
+        dump_json_object(stderr, request);
+        free(page);
+        free(js_exception);
+        return;
+    }
 
     int minute = processor_setup_minute(self, request);
     const char *module = processor_setup_module(self, page);
