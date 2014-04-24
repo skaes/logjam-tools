@@ -2362,11 +2362,11 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
     }
     case json_type_string: {
         const char *str = json_object_get_string(val);
-        size_t n = strlen(str);
+        size_t n = json_object_get_string_len(val);
         if (bson_utf8_validate(str, n, false /* disallow embedded null characters */)) {
             bson_append_utf8(b, safe_key, len, str, n);
         } else {
-            fprintf(stderr, "[W] key %s: invalid utf8 in string value: %s\n", safe_key, str);
+            fprintf(stderr, "[W] invalid utf8 in string. key: '%s'; value: %*s\n", safe_key, (int)n, str);
             // bson_append_binary(b, safe_key, len, BSON_SUBTYPE_BINARY, (uint8_t*)str, n);
             bson_append_win1252(b, safe_key, len, str, n);
         }
