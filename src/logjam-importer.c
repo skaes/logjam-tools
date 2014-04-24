@@ -667,6 +667,46 @@ void dump_json_object(FILE *f, json_object *jobj) {
     // don't try to free the json string. it will crash.
 }
 
+void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file)
+{
+    assert (self);
+    if (prefix)
+        fprintf (file, "%s", prefix);
+    byte *data = zframe_data (self);
+    size_t size = zframe_size (self);
+
+    int is_bin = 0;
+    uint char_nbr;
+    for (char_nbr = 0; char_nbr < size; char_nbr++)
+        if (data [char_nbr] < 9 || data [char_nbr] > 127)
+            is_bin = 1;
+
+    fprintf (file, "[%03d] ", (int) size);
+    size_t max_size = is_bin? 2048: 4096;
+    const char *ellipsis = "";
+    if (size > max_size) {
+        size = max_size;
+        ellipsis = "...";
+    }
+    for (char_nbr = 0; char_nbr < size; char_nbr++) {
+        if (is_bin)
+            fprintf (file, "%02X", (unsigned char) data [char_nbr]);
+        else
+            fprintf (file, "%c", data [char_nbr]);
+    }
+    fprintf (file, "%s\n", ellipsis);
+}
+
+void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file)
+{
+    zframe_t *frame = zmsg_first(self);
+    int frame_nbr = 0;
+    while (frame && frame_nbr++ < 10) {
+        my_zframe_fprint(frame, prefix, file);
+        frame = zmsg_next(self);
+    }
+}
+
 json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
 {
     char* json_data = (char*)zframe_data(body);
@@ -674,8 +714,7 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
     json_object *jobj = json_tokener_parse_ex(tokener, json_data, json_data_len);
     enum json_tokener_error jerr = json_tokener_get_error(tokener);
     if (jerr != json_tokener_success) {
-        fprintf(stderr, "[E] Error: %s\n", json_tokener_error_desc(jerr));
-        // Handle errors, as appropriate for your application.
+        fprintf(stderr, "[E] parse_json_body: %s\n", json_tokener_error_desc(jerr));
     } else {
         // const char *json_str_orig = zframe_strdup(body);
         // printf("[D] %s\n", json_str_orig);
@@ -684,10 +723,15 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
     }
     if (tokener->char_offset < json_data_len) // XXX shouldn't access internal fields
     {
-        fprintf(stderr, "[E] Warning: %s\n", "extranoeus data in message payload");
         // Handle extra characters after parsed object as desired.
-        // e.g. issue an error, parse another object from that point, etc...
+        fprintf(stderr, "[W] parse_json_body: %s\n", "extranoeus data in message payload");
+        my_zframe_fprint(body, "[W] MSGBODY=", stderr);
     }
+    // if (strnlen(json_data, json_data_len) < json_data_len) {
+    //     fprintf(stderr, "[W] parse_json_body: json payload has null bytes\ndata: %*s\n", json_data_len, json_data);
+    //     dump_json_object(stdout, jobj);
+    //     return NULL;
+    // }
     return jobj;
 }
 
@@ -1983,9 +2027,14 @@ int processor_publish_totals(const char* db_name, void *processor, void *live_st
     return 0;
 }
 
+
+
 void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
 {
-    // zmsg_dump(msg);
+    if (zmsg_size(msg) != 3) {
+        fprintf(stderr, "[E] parser received incomplete message\n");
+        my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+    }
     zframe_t *stream  = zmsg_first(msg);
     zframe_t *topic   = zmsg_next(msg);
     zframe_t *body    = zmsg_last(msg);
@@ -2006,6 +2055,9 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
             // silently ignore unknown request types
         }
         json_object_put(request);
+    } else {
+        fprintf(stderr, "[E] parse error\n");
+        my_zmsg_fprint(msg, "[E] MSGFRAME=", stderr);
     }
 }
 
