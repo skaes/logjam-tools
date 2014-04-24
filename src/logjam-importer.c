@@ -307,12 +307,12 @@ void my_mongo_log_handler(mongoc_log_level_t log_level, const char *log_domain, 
    case MONGOC_LOG_LEVEL_MESSAGE:
    case MONGOC_LOG_LEVEL_INFO:
        level = 'I';
-       stream = stderr;
+       stream = stdout;
        break;
    case MONGOC_LOG_LEVEL_DEBUG:
    case MONGOC_LOG_LEVEL_TRACE:
        level = 'D';
-       stream = stderr;
+       stream = stdout;
        break;
    default:
        stream = stdout;
