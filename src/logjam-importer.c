@@ -2595,9 +2595,9 @@ void publish_error_for_module(stream_info_t *stream_info, const char* module, co
 
 json_object* extract_error_description(json_object* request, int severity)
 {
-    json_object *lines = json_object_object_get(request, "lines");
-    json_object* error_line = NULL;
-    if (lines) {
+    json_object *error_line = NULL;
+    json_object *lines;
+    if (json_object_object_get_ex(request, "lines", &lines)) {
         int len = json_object_array_length(lines);
         for (int i=0; i<len; i++) {
             json_object* line = json_object_array_get_idx(lines, i);
@@ -2634,18 +2634,18 @@ void request_writer_publish_error(stream_info_t* stream_info, const char* module
             json_object_get(severity_obj);
             json_object_object_add(error_info, "severity", severity_obj);
 
-            json_object *action = json_object_object_get(request, "page");
-            assert(action);
+            json_object *action;
+            assert( json_object_object_get_ex(request, "page", &action) );
             json_object_get(action);
             json_object_object_add(error_info, "action", action);
 
-            json_object *rsp = json_object_object_get(request, "response_code");
-            assert(rsp);
+            json_object *rsp;
+            assert( json_object_object_get_ex(request, "response_code", &rsp) );
             json_object_get(rsp);
             json_object_object_add(error_info, "response_code", rsp);
 
-            json_object *started_at = json_object_object_get(request, "started_at");
-            assert(started_at);
+            json_object *started_at;
+            assert( json_object_object_get_ex(request, "started_at", &started_at) );
             json_object_get(started_at);
             json_object_object_add(error_info, "time", started_at);
 
