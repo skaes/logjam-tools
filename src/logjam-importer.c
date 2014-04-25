@@ -3178,7 +3178,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     int64_t end_time_ms = zclock_time();
-    printf("[I] controller: %zu messages (%zu ms)\n", request_count, (size_t)(end_time_ms - start_time_ms));
+    printf("[I] controller: %5zu messages (%zu ms)\n", request_count, (size_t)(end_time_ms - start_time_ms));
 
     return 0;
 }
