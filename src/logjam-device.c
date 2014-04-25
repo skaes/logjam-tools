@@ -467,7 +467,7 @@ int main(int argc, char * const *argv)
     assert_x(receiver==NULL, "zmq socket creation failed");
 
     //  configure the socket
-    zsocket_set_rcvhwm(receiver, 1000);
+    zsocket_set_rcvhwm(receiver, 10000);
     zsocket_set_linger(receiver, 100);
 
     rc = zsocket_bind(receiver, "tcp://%s:%d", "*", pull_port);
@@ -477,8 +477,8 @@ int main(int argc, char * const *argv)
     void *publisher = zsocket_new(context, ZMQ_PUB);
     assert_x(publisher==NULL, "zmq socket creation failed");
 
-    zsocket_set_sndhwm(publisher, 1000);
-    zsocket_set_linger(publisher, 1000);
+    zsocket_set_sndhwm(publisher, 10000);
+    zsocket_set_linger(publisher, 100);
 
     rc = zsocket_bind(publisher, "tcp://%s:%d", "*", pub_port);
     assert_x(rc!=pub_port, "zmq socket bind failed");
