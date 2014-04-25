@@ -418,7 +418,7 @@ void* subscriber_sub_socket_new(zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_SUB);
     assert(socket);
-    zsocket_set_rcvhwm(socket, 1000);
+    zsocket_set_rcvhwm(socket, 10000);
     zsocket_set_linger(socket, 0);
     zsocket_set_reconnect_ivl(socket, 100); // 100 ms
     zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
@@ -451,7 +451,7 @@ void* subscriber_pull_socket_new(zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_PULL);
     assert(socket);
-    zsocket_set_rcvhwm(socket, 1000);
+    zsocket_set_rcvhwm(socket, 10000);
     zsocket_set_linger(socket, 0);
     // TODO: this seems to be superfluous, as we only bind
     zsocket_set_reconnect_ivl(socket, 100); // 100 ms
