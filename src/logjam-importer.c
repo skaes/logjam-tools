@@ -2622,7 +2622,7 @@ json_object* extract_error_description(json_object* request, int severity)
             json_object* line = json_object_array_get_idx(lines, i);
             if (line) {
                 json_object* sev_obj = json_object_array_get_idx(line, 0);
-                if (sev_obj != NULL && json_object_get_int(sev_obj) > 1) {
+                if (sev_obj != NULL && json_object_get_int(sev_obj) >= severity) {
                     error_line = json_object_array_get_idx(line, 2);
                 }
             }
