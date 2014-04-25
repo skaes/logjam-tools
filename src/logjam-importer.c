@@ -667,6 +667,14 @@ void dump_json_object(FILE *f, json_object *jobj) {
     // don't try to free the json string. it will crash.
 }
 
+bool output_socket_ready(void *socket, int msecs)
+{
+    zmq_pollitem_t items[] = { { socket, 0, ZMQ_POLLOUT, 0 } };
+    int rc = zmq_poll(items, 1, msecs);
+    return rc != -1 && (items[0].revents & ZMQ_POLLOUT) != 0;
+}
+
+
 void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file)
 {
     assert (self);
@@ -1906,6 +1914,9 @@ void processor_add_request(processor_t *self, parser_state_t *pstate, json_objec
         zmsg_addstr(msg, request_data.module);
         zmsg_addmem(msg, &request, sizeof(json_object*));
         zmsg_addmem(msg, &self->stream_info, sizeof(stream_info_t*));
+        if (!output_socket_ready(pstate->push_socket, 0)) {
+            fprintf(stderr, "[W] parser [%zu]: push socket not ready\n", pstate->id);
+        }
         zmsg_send(&msg, pstate->push_socket);
     }
 }
@@ -3150,6 +3161,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_t *stats_msg = zmsg_new();
         zmsg_addmem(stats_msg, &proc, sizeof(processor_t*));
         zmsg_addmem(stats_msg, &proc->request_count, sizeof(size_t)); // ????
+        if (!output_socket_ready(state->updates_socket, 0)) {
+            fprintf(stderr, "[W] controller: updates push socket not ready\n");
+        }
         zmsg_send(&stats_msg, state->updates_socket);
         db_name = zlist_next(db_names);
     }
