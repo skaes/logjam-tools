@@ -1274,7 +1274,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
     // size_t n;
     // char* bs = bson_as_json(document, &n);
     // printf("[D] document. size: %zu; value:%s\n", n, bs);
-    // bson_destroy(bs);
+    // bson_free(bs);
 
     bson_destroy(incs);
 
@@ -1303,7 +1303,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
     // printf("[D] selector. size: %zu; value:%s\n", n, bs);
-    // bson_destroy(bs);
+    // bson_free(bs);
 
     bson_t *document = increments_to_bson(namespace, increments);
     if (!dryrun) {
@@ -1342,7 +1342,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
     // printf("[D] selector. size: %zu; value:%s\n", n, bs);
-    // bson_destroy(bs);
+    // bson_free(bs);
 
     bson_t *document = increments_to_bson(namespace, increments);
     if (!dryrun) {
@@ -1406,7 +1406,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
     // printf("[D] selector. size: %zu; value:%s\n", n, bs);
-    // bson_destroy(bs);
+    // bson_ƒree(bs);
 
     bson_t *incs = bson_new();
     bson_append_int32(incs, resource, strlen(resource), (size_t)data);
@@ -1416,7 +1416,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 
     // bs = bson_as_json(document, &n);
     // printf("[D] document. size: %zu; value:%s\n", n, bs);
-    // bson_destroy(bs);
+    // bson_free(bs);
 
     if (!dryrun) {
         bson_error_t error;
@@ -2530,7 +2530,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     // size_t n;
     // char* bs = bson_as_json(document, &n);
     // printf("[D] doument. size: %zu; value:%s\n", n, bs);
-    // bson_destroy(bs);
+    // bson_free(bs);
 
     if (!dryrun) {
         bson_error_t error;
@@ -2541,8 +2541,11 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
                 fprintf(stderr, "[W] retrying request insert operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "[E] insert failed for request document on %s: (%d) %s\n", db_name, error.code, error.message);
-                dump_json_object(stderr, request);
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr, "[E] insert failed for request document on %s: (%d) %s\n[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
             }
         }
     }
@@ -2566,8 +2569,11 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
                 fprintf(stderr, "[W] retrying exception insert operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "[E] insert failed for exception document on %s: (%d) %s\n", db_name, error.code, error.message);
-                dump_json_object(stderr, request);
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr, "[E] insert failed for exception document on %s: (%d) %s\n[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
             }
         }
     }
@@ -2589,8 +2595,11 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
                 fprintf(stderr, "[W] retrying event insert operation on %s\n", db_name);
                 goto retry;
             } else {
-                fprintf(stderr, "[E] insert failed for event document on %s: (%d) %s\n", db_name, error.code, error.message);
-                dump_json_object(stderr, request);
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr, "[E] insert failed for event document on %s: (%d) %s\n[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
             }
         }
     }
