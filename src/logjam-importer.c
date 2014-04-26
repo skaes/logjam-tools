@@ -2512,8 +2512,9 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     bson_t *document = bson_sized_new(2048);
 
     json_object *request_id_obj;
+    const char *request_id = NULL;
     if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
-        const char *request_id = json_object_get_string(request_id_obj);
+        request_id = json_object_get_string(request_id_obj);
         json_object_get(request_id_obj);
         json_object_object_del(request, "request_id");
         // TODO: protect against non uuids (l != 32) ?
@@ -2543,8 +2544,8 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
             } else {
                 size_t n;
                 char* bjs = bson_as_json(document, &n);
-                fprintf(stderr, "[E] insert failed for request document on %s: (%d) %s\n[E] document size: %zu; value: %s\n",
-                        db_name, error.code, error.message, n, bjs);
+                fprintf(stderr, "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n[E] document size: %zu; value: %s\n",
+                        request_id, db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
             }
         }
