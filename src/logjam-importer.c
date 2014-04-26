@@ -2399,10 +2399,10 @@ int bson_append_win1252(bson_t *b, const char *key, size_t key_len, const char* 
 }
 
 
-static void json_object_to_bson(json_object *j, bson_t *b);
+static void json_object_to_bson(const char* id, json_object *j, bson_t *b);
 
 //TODO: optimize this!
-static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
+static void json_key_to_bson_key(const char* id, bson_t *b, json_object *val, const char *key)
 {
     size_t n = strlen(key);
     char safe_key[4*n+1];
@@ -2428,7 +2428,7 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
         break;
     case json_type_object: {
         bson_t *sub = bson_new();
-        json_object_to_bson(val, sub);
+        json_object_to_bson(id, val, sub);
         bson_append_document(b, safe_key, len, sub);
         bson_destroy(sub);
         break;
@@ -2439,7 +2439,7 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
         for (int pos = 0; pos < array_len; pos++) {
             char nk[100];
             sprintf(nk, "%d", pos);
-            json_key_to_bson_key(sub, json_object_array_get_idx(val, pos), nk);
+            json_key_to_bson_key(id, sub, json_object_array_get_idx(val, pos), nk);
         }
         bson_append_array(b, safe_key, len, sub);
         bson_destroy(sub);
@@ -2451,7 +2451,9 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
         if (bson_utf8_validate(str, n, false /* disallow embedded null characters */)) {
             bson_append_utf8(b, safe_key, len, str, n);
         } else {
-            fprintf(stderr, "[W] invalid utf8 in string. key: '%s'; value[len=%d]: %*s\n", safe_key, (int)n, (int)n, str);
+            fprintf(stderr,
+                    "[W] invalid utf8 in string. request: '%s',  key: '%s'; value[len=%d]: %*s\n",
+                    id, safe_key, (int)n, (int)n, str);
             // bson_append_binary(b, safe_key, len, BSON_SUBTYPE_BINARY, (uint8_t*)str, n);
             bson_append_win1252(b, safe_key, len, str, n);
         }
@@ -2466,10 +2468,10 @@ static void json_key_to_bson_key(bson_t *b, json_object *val, const char *key)
     }
 }
 
-static void json_object_to_bson(json_object *j, bson_t* b)
+static void json_object_to_bson(const char *id, json_object *j, bson_t* b)
 {
   json_object_object_foreach(j, key, val) {
-      json_key_to_bson_key(b, val, key);
+      json_key_to_bson_key(id, b, val, key);
   }
 }
 
@@ -2530,7 +2532,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         bson_append_oid(document, "_id", 3, &oid);
         // printf("[D] generated oid for document:\n");
     }
-    json_object_to_bson(request, document);
+    json_object_to_bson(request_id, request, document);
 
     // size_t n;
     // char* bs = bson_as_json(document, &n);
@@ -2565,7 +2567,7 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
 {
     mongoc_collection_t *jse_collection = request_writer_get_jse_collection(state, db_name, stream_info);
     bson_t *document = bson_sized_new(1024);
-    json_object_to_bson(request, document);
+    json_object_to_bson("js_excpetion", request, document);
 
     if (!dryrun) {
         bson_error_t error;
@@ -2593,7 +2595,7 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
 {
     mongoc_collection_t *events_collection = request_writer_get_events_collection(state, db_name, stream_info);
     bson_t *document = bson_sized_new(1024);
-    json_object_to_bson(request, document);
+    json_object_to_bson("event", request, document);
 
     if (!dryrun) {
         bson_error_t error;
