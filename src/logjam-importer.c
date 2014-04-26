@@ -1356,7 +1356,9 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
             } else {
                 size_t n;
                 char* bjs = bson_as_json(document, &n);
-                fprintf(stderr, "[E] update failed for %s on totals: (%d) %s\n[E] document size: %zu; value: %s\n",
+                fprintf(stderr,
+                        "[E] update failed for %s on totals: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
                         db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
             }
@@ -1429,7 +1431,9 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
             } else {
                 size_t n;
                 char* bjs = bson_as_json(document, &n);
-                fprintf(stderr, "[E] update failed for %s on quants: (%d) %s\n[E] document size: %zu; value: %s\n",
+                fprintf(stderr,
+                        "[E] update failed for %s on quants: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
                         db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
             }
@@ -2544,7 +2548,9 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
             } else {
                 size_t n;
                 char* bjs = bson_as_json(document, &n);
-                fprintf(stderr, "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n[E] document size: %zu; value: %s\n",
+                fprintf(stderr,
+                        "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
                         request_id, db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
             }
@@ -2572,7 +2578,9 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
             } else {
                 size_t n;
                 char* bjs = bson_as_json(document, &n);
-                fprintf(stderr, "[E] insert failed for exception document on %s: (%d) %s\n[E] document size: %zu; value: %s\n",
+                fprintf(stderr,
+                        "[E] insert failed for exception document on %s: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
                         db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
             }
@@ -2598,7 +2606,9 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
             } else {
                 size_t n;
                 char* bjs = bson_as_json(document, &n);
-                fprintf(stderr, "[E] insert failed for event document on %s: (%d) %s\n[E] document size: %zu; value: %s\n",
+                fprintf(stderr,
+                        "[E] insert failed for event document on %s: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
                         db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
             }
