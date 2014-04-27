@@ -2520,12 +2520,15 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     json_object *request_id_obj;
     const char *request_id = NULL;
     if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
-        request_id = json_object_get_string(request_id_obj);
-        json_object_get(request_id_obj);
+        int len = json_object_get_string_len(request_id_obj);
+        if (len == 32) {
+            request_id = json_object_get_string(request_id_obj);
+            json_object_get(request_id_obj);
+            bson_append_binary(document, "_id", 3, BSON_SUBTYPE_UUID_DEPRECATED, (uint8_t*)request_id, 32);
+        }
         json_object_object_del(request, "request_id");
-        // TODO: protect against non uuids (l != 32) ?
-        bson_append_binary(document, "_id", 3, BSON_SUBTYPE_UUID_DEPRECATED, (uint8_t*)request_id, strlen(request_id));
-    } else {
+    }
+    if (request_id == NULL) {
         // generate an oid
         bson_oid_t oid;
         bson_oid_init(&oid, NULL);
