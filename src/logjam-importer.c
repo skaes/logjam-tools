@@ -3143,10 +3143,10 @@ int merge_processors(const char* db_name, void* data, void* arg)
 
 int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 {
+    int64_t start_time_ms = zclock_time();
     controller_state_t *state = arg;
     zhash_t *processors[NUM_PARSERS];
     size_t request_counts[NUM_PARSERS];
-    int64_t start_time_ms = zclock_time();
 
     for (size_t i=0; i<NUM_PARSERS; i++) {
         void* parser_pipe = state->parser_pipes[i];
@@ -3215,7 +3215,11 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     int64_t end_time_ms = zclock_time();
-    printf("[I] controller: %5zu messages (%zu ms)\n", request_count, (size_t)(end_time_ms - start_time_ms));
+    int runtime = end_time_ms - start_time_ms;
+    int next_tick = runtime > 999 ? 1 : 1000 - runtime;
+    printf("[I] controller: %5zu messages (%d ms)\n", request_count, runtime);
+    int rc = zloop_timer(loop, next_tick, 1, collect_stats_and_forward, state);
+    assert(rc != -1);
 
     return 0;
 }
@@ -3550,7 +3554,7 @@ int main(int argc, char * const *argv)
     }
 
     // flush increments to database every 1000 ms
-    rc = zloop_timer(loop, 1000, 0, collect_stats_and_forward, &state);
+    rc = zloop_timer(loop, 1000, 1, collect_stats_and_forward, &state);
     assert(rc != -1);
 
     if (!zctx_interrupted) {
