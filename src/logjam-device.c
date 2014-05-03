@@ -16,7 +16,7 @@
 void log_error(int x, char const *context) {
     if (x < 0) {
         char const *errstr = amqp_error_string2(-x);
-        fprintf(stderr, "%s: %s\n", context, errstr);
+        fprintf(stderr, "[E] %s: %s\n", context, errstr);
     }
 }
 
@@ -33,18 +33,18 @@ int log_amqp_error(amqp_rpc_reply_t x, char const *context) {
         return 0;
 
     case AMQP_RESPONSE_NONE:
-        fprintf(stderr, "%s: missing RPC reply type!\n", context);
+        fprintf(stderr, "[E] %s: missing RPC reply type!\n", context);
         break;
 
     case AMQP_RESPONSE_LIBRARY_EXCEPTION:
-        fprintf(stderr, "%s: %s\n", context, amqp_error_string2(x.library_error));
+        fprintf(stderr, "[E] %s: %s\n", context, amqp_error_string2(x.library_error));
         break;
 
     case AMQP_RESPONSE_SERVER_EXCEPTION:
         switch (x.reply.id) {
 	case AMQP_CONNECTION_CLOSE_METHOD: {
             amqp_connection_close_t *m = (amqp_connection_close_t *) x.reply.decoded;
-            fprintf(stderr, "%s: server connection error %d, message: %.*s\n",
+            fprintf(stderr, "[E] %s: server connection error %d, message: %.*s\n",
                     context,
                     m->reply_code,
                     (int) m->reply_text.len, (char *) m->reply_text.bytes);
@@ -52,14 +52,14 @@ int log_amqp_error(amqp_rpc_reply_t x, char const *context) {
 	}
 	case AMQP_CHANNEL_CLOSE_METHOD: {
             amqp_channel_close_t *m = (amqp_channel_close_t *) x.reply.decoded;
-            fprintf(stderr, "%s: server channel error %d, message: %.*s\n",
+            fprintf(stderr, "[E] %s: server channel error %d, message: %.*s\n",
                     context,
                     m->reply_code,
                     (int) m->reply_text.len, (char *) m->reply_text.bytes);
             break;
 	}
 	default:
-            fprintf(stderr, "%s: unknown server error, method id 0x%08X\n", context, x.reply.id);
+            fprintf(stderr, "[E] %s: unknown server error, method id 0x%08X\n", context, x.reply.id);
             break;
         }
         break;
@@ -78,7 +78,7 @@ void die_on_amqp_error(amqp_rpc_reply_t x, char const *context)
 void assert_x(int rc, const char* error_text)
 {
     if (rc != 0) {
-        printf("Failed assertion: %s\n", error_text);
+        fprintf(stderr, "[E] Failed assertion: %s\n", error_text);
         exit(1);
     }
 }
@@ -86,14 +86,14 @@ void assert_x(int rc, const char* error_text)
 void log_zmq_error(int rc)
 {
     if (rc != 0) {
-        printf("errno: %d: %s\n", errno, zmq_strerror(errno));
+        fprintf(stderr, "[E] errno: %d: %s\n", errno, zmq_strerror(errno));
     }
 }
 
 void assert_zmq_rc(int rc)
 {
     if (rc != 0) {
-        printf("rc: %d: %s\n", errno, zmq_strerror(errno));
+        fprintf(stderr, "[E] rc: %d: %s\n", errno, zmq_strerror(errno));
         assert(rc == 0);
     }
 }
@@ -205,7 +205,7 @@ int publish_on_amqp_transport(amqp_connection_state_t connection, zmq_msg_t *mes
     message_body.len   = zmq_msg_size(body);
     message_body.bytes = zmq_msg_data(body);
 
-    //printf("publishing\n");
+    //printf("[D] publishing\n");
 
     // send message to rabbit
     int amqp_rc = amqp_basic_publish(connection,
@@ -237,7 +237,7 @@ int timer_event(zloop_t *loop, int timer_id, void *arg)
     static size_t last_received_bytes = 0;
     size_t message_count = received_messages_count - last_received_count;
     size_t message_bytes = received_messages_bytes - last_received_bytes;
-    printf("processed %zu messages (%zu bytes).\n", message_count, message_bytes);
+    printf("[I] processed %zu messages (%zu bytes).\n", message_count, message_bytes);
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
     return 0;
@@ -260,7 +260,7 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
 
     // read the message parts
     while (!zctx_interrupted) {
-        // printf("receiving part %d\n", i+1);
+        // printf("[D] receiving part %d\n", i+1);
         if (i>2) {
             zmq_msg_t dummy_msg;
             zmq_msg_init(&dummy_msg);
@@ -276,11 +276,11 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
     }
     if (i<2) {
         if (!zctx_interrupted) {
-            printf("Received only %d message parts\n", i);
+            fprintf(stderr, "[E] received only %d message parts\n", i);
         }
         goto cleanup;
     } else if (i>2) {
-        printf("Received more than 3 message parts\n");
+        fprintf(stderr, "[E] received more than 3 message parts\n");
         i = 2;
         goto cleanup;
     }
@@ -319,7 +319,7 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, const char *stream)
     sscanf(stream, "request-stream-%[^-]-%[^-]", app, env);
     char queue[n];
     sprintf(queue, "logjam-device-%s-%s", app, env);
-    printf("binding: %s ==> %s\n", exchange, queue);
+    printf("[I] binding: %s ==> %s\n", exchange, queue);
 
     // amqp_exchange_declare(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t exchange,
     //                       amqp_bytes_t type, amqp_boolean_t passive, amqp_boolean_t durable, amqp_table_t arguments);
@@ -378,13 +378,13 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
         }
 
         if (0) {
-            printf("Delivery %u, exchange %.*s routingkey %.*s\n",
+            printf("[D] delivery %u, exchange %.*s routingkey %.*s\n",
                    (unsigned) envelope.delivery_tag,
                    (int) envelope.exchange.len, (char *) envelope.exchange.bytes,
                    (int) envelope.routing_key.len, (char *) envelope.routing_key.bytes);
 
             if (envelope.message.properties._flags & AMQP_BASIC_CONTENT_TYPE_FLAG) {
-                printf("Content-type: %.*s\n",
+                printf("[D] content-type: %.*s\n",
                    (int) envelope.message.properties.content_type.len,
                    (char *) envelope.message.properties.content_type.bytes);
             }
@@ -452,7 +452,10 @@ int main(int argc, char * const *argv)
     // TODO: figure out sensible port numbers
     pub_port = pull_port + 1;
 
-    printf("started logjam-device.\npull-port: %d\npub-port:  %d\nrabbit-host: %s\n",
+    printf("[I] started logjam-device\n"
+           "[I] pull-port:   %d\n"
+           "[I] pub-port:    %d\n"
+           "[I] rabbit-host: %s\n",
            pull_port, pub_port, rabbit_host);
 
     // load config
@@ -505,12 +508,12 @@ int main(int argc, char * const *argv)
 
     if (rabbit_host != NULL) {
         if (config == NULL) {
-            fprintf(stderr, "cannot start rabbitmq listener thread because no config file given\n");
+            fprintf(stderr, "[E] cannot start rabbitmq listener thread because no config file given\n");
             goto cleanup;
         } else {
             rabbitmq_listener_pipe = zthread_fork(context, rabbitmq_listener, NULL);
             assert_x(rabbitmq_listener_pipe==NULL, "could not fork rabbitmq listener thread");
-            printf("created rabbitmq listener thread\n");
+            printf("[I] created rabbitmq listener thread\n");
             // create amqp publisher connection
             connection = setup_amqp_connection();
             // so far, no exchanges are known
@@ -555,7 +558,7 @@ int main(int argc, char * const *argv)
     zloop_destroy(&loop);
     assert(loop == NULL);
 
-    printf("received %zu messages", received_messages_count);
+    printf("[I] received %zu messages", received_messages_count);
 
  cleanup:
     // close context (this will automatically close all sockets)
