@@ -89,7 +89,6 @@ typedef struct {
 } stream_info_t;
 
 static int global_total_time_import_threshold = 0;
-// TODO: make prefix configurable per stream and namespace
 static const char* global_ignored_request_prefix = NULL;
 
 // utf8 conversion
