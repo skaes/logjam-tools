@@ -2084,10 +2084,10 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
             processor_add_js_exception(processor, parser_state, request);
         else if (!strncmp("events", topic_str, 6))
             processor_add_event(processor, parser_state, request);
-        else
-            fprintf(stderr, "[W] unknown topic key in context %*s: %*s\n",
-                    (int)zframe_size(stream), zframe_data(stream), (int)zframe_size(topic), topic_str);
-
+        else {
+            fprintf(stderr, "[W] unknown topic key\n");
+            my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+        }
         json_object_put(request);
     } else {
         fprintf(stderr, "[E] parse error\n");
