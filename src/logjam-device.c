@@ -262,11 +262,14 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
     while (!zctx_interrupted) {
         // printf("receiving part %d\n", i+1);
         if (i>2) {
-            printf("Received more than 3 message parts\n");
-            exit(1);
+            zmq_msg_t dummy_msg;
+            zmq_msg_init(&dummy_msg);
+            zmq_recvmsg(receiver, &dummy_msg, 0);
+            zmq_msg_close(&dummy_msg);
+        } else {
+            zmq_msg_init(&message_parts[i]);
+            zmq_recvmsg(receiver, &message_parts[i], 0);
         }
-        zmq_msg_init(&message_parts[i]);
-        zmq_recvmsg(receiver, &message_parts[i], 0);
         if (!zsocket_rcvmore(receiver))
             break;
         i++;
@@ -276,7 +279,12 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
             printf("Received only %d message parts\n", i);
         }
         goto cleanup;
+    } else if (i>2) {
+        printf("Received more than 3 message parts\n");
+        i = 2;
+        goto cleanup;
     }
+
     received_messages_count++;
     received_messages_bytes += zmq_msg_size(&message_parts[2]);
 
@@ -293,7 +301,7 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
     publish_on_zmq_transport(&message_parts[0], publisher);
 
  cleanup:
-    for(;i>=0;i--) {
+    for (;i>=0;i--) {
         zmq_msg_close(&message_parts[i]);
     }
 
