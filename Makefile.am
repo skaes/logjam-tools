@@ -5,11 +5,10 @@ AM_CPPFLAGS = $(OPTDIR_CPPFLAGS) $(DEPS_CFLAGS)
 AM_CFLAGS = -Wall
 LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS)
 
-bin_PROGRAMS = logjam-device logjam-proxy logjam-importer
+bin_PROGRAMS = logjam-device logjam-importer
 noinst_PROGRAMS = tester test_subscriber test_publisher
 
 logjam_device_SOURCES = src/logjam-device.c
-logjam_proxy_SOURCES = src/logjam-proxy.c
 logjam_importer_SOURCES = src/logjam-importer.c
 tester_SOURCES = src/tester.c
 test_publisher_SOURCES = src/test_publisher.c
