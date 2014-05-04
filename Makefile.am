@@ -2,7 +2,7 @@ AUTOMAKE_OPTIONS = subdir-objects
 ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS}
 
 AM_CPPFLAGS = $(OPTDIR_CPPFLAGS) $(DEPS_CFLAGS)
-AM_CFLAGS = -Wall
+AM_CFLAGS = --std=gnu99 -Wall
 LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS)
 
 bin_PROGRAMS = logjam-device logjam-importer
