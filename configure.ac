@@ -1,5 +1,5 @@
 AC_INIT([logjam-tools], [0.1], [skaes@railsexpress.de],
-        [logjam-tools], [https://github.com/skaes/logjam-device])
+        [logjam-tools], [https://github.com/skaes/logjam-tools])
 AC_PREREQ([2.59])
 AM_INIT_AUTOMAKE([1.10 -Wall no-define foreign])
 
