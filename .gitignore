@@ -8,6 +8,8 @@ test_publisher
 test_subscriber
 .deps
 autom4te.cache
+Makefile.in
+configure
 .dirstamp
 /Makefile
 /config.status

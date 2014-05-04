@@ -77,8 +77,7 @@ POST_INSTALL = :
 NORMAL_UNINSTALL = :
 PRE_UNINSTALL = :
 POST_UNINSTALL = :
-bin_PROGRAMS = logjam-device$(EXEEXT) logjam-proxy$(EXEEXT) \
-	logjam-importer$(EXEEXT)
+bin_PROGRAMS = logjam-device$(EXEEXT) logjam-importer$(EXEEXT)
 noinst_PROGRAMS = tester$(EXEEXT) test_subscriber$(EXEEXT) \
 	test_publisher$(EXEEXT)
 subdir = .
@@ -108,11 +107,6 @@ am_logjam_importer_OBJECTS = src/logjam-importer.$(OBJEXT)
 logjam_importer_OBJECTS = $(am_logjam_importer_OBJECTS)
 logjam_importer_LDADD = $(LDADD)
 logjam_importer_DEPENDENCIES = $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1)
-am_logjam_proxy_OBJECTS = src/logjam-proxy.$(OBJEXT)
-logjam_proxy_OBJECTS = $(am_logjam_proxy_OBJECTS)
-logjam_proxy_LDADD = $(LDADD)
-logjam_proxy_DEPENDENCIES = $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
 am_test_publisher_OBJECTS = src/test_publisher.$(OBJEXT)
 test_publisher_OBJECTS = $(am_test_publisher_OBJECTS)
@@ -158,11 +152,11 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(logjam_device_SOURCES) $(logjam_importer_SOURCES) \
-	$(logjam_proxy_SOURCES) $(test_publisher_SOURCES) \
-	$(test_subscriber_SOURCES) $(tester_SOURCES)
+	$(test_publisher_SOURCES) $(test_subscriber_SOURCES) \
+	$(tester_SOURCES)
 DIST_SOURCES = $(logjam_device_SOURCES) $(logjam_importer_SOURCES) \
-	$(logjam_proxy_SOURCES) $(test_publisher_SOURCES) \
-	$(test_subscriber_SOURCES) $(tester_SOURCES)
+	$(test_publisher_SOURCES) $(test_subscriber_SOURCES) \
+	$(tester_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -303,7 +297,6 @@ AM_CPPFLAGS = $(OPTDIR_CPPFLAGS) $(DEPS_CFLAGS)
 AM_CFLAGS = -Wall
 LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS)
 logjam_device_SOURCES = src/logjam-device.c
-logjam_proxy_SOURCES = src/logjam-proxy.c
 logjam_importer_SOURCES = src/logjam-importer.c
 tester_SOURCES = src/tester.c
 test_publisher_SOURCES = src/test_publisher.c
@@ -415,12 +408,6 @@ src/logjam-importer.$(OBJEXT): src/$(am__dirstamp) \
 logjam-importer$(EXEEXT): $(logjam_importer_OBJECTS) $(logjam_importer_DEPENDENCIES) $(EXTRA_logjam_importer_DEPENDENCIES) 
 	@rm -f logjam-importer$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(logjam_importer_OBJECTS) $(logjam_importer_LDADD) $(LIBS)
-src/logjam-proxy.$(OBJEXT): src/$(am__dirstamp) \
-	src/$(DEPDIR)/$(am__dirstamp)
-
-logjam-proxy$(EXEEXT): $(logjam_proxy_OBJECTS) $(logjam_proxy_DEPENDENCIES) $(EXTRA_logjam_proxy_DEPENDENCIES) 
-	@rm -f logjam-proxy$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(logjam_proxy_OBJECTS) $(logjam_proxy_LDADD) $(LIBS)
 src/test_publisher.$(OBJEXT): src/$(am__dirstamp) \
 	src/$(DEPDIR)/$(am__dirstamp)
 
@@ -449,7 +436,6 @@ distclean-compile:
 
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/logjam-device.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/logjam-importer.Po@am__quote@
-@AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/logjam-proxy.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/test_publisher.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/test_subscriber.Po@am__quote@
 @AMDEP_TRUE@@am__include@ @am__quote@src/$(DEPDIR)/tester.Po@am__quote@
