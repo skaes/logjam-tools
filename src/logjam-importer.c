@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <zmq.h>
 #include <czmq.h>
 #include <stdio.h>
@@ -452,7 +451,6 @@ void* subscriber_pull_socket_new(zctx_t *context)
     assert(socket);
     zsocket_set_rcvhwm(socket, 10000);
     zsocket_set_linger(socket, 0);
-    // TODO: this seems to be superfluous, as we only bind
     zsocket_set_reconnect_ivl(socket, 100); // 100 ms
     zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 

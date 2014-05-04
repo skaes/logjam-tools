@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #include <zmq.h>
 #include <czmq.h>
 #include <stdio.h>

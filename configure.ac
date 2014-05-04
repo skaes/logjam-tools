@@ -46,7 +46,7 @@ AC_ARG_WITH(opt-dir,
 	])
 
 AS_IF([test "x$with_opt_dir" == "x"],
-      [ PKG_CHECK_MODULES([DEPS],[libzmq >= 3.2.4 libczmq >= 2.0.2 librabbitmq >= 0.4.1],[:],
+      [ PKG_CHECK_MODULES([DEPS],[libzmq >= 3.2.4 libczmq >= 2.0.2 librabbitmq >= 0.4.1 json-c >= 0.11 libbson >= 0.6.6 libmongoc >= 0.94.1],[:],
                           [ AC_SUBST([OPTDIR_CPPFLAGS],["-I/usr/local/include -I/opt/local/include"])
                             AC_SUBST([OPTDIR_LDFLAGS],["-L/usr/local/lib -L/opt/local/lib"])
                             AC_SUBST([DEPS_LIBS],["-lrabbitmq -lzmq -lczmq -ljson-c -lbson-1.0 -lmongoc-1.0"])]
