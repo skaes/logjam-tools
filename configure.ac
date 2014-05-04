@@ -25,11 +25,9 @@ $4])
 OLD_CFLAGS=$CFLAGS
 test -z "$OLD_CFLAGS" && OLD_CFLAGS="-O3 -ggdb"
 
-if test `uname -s` = "Darwin"; then
-  AC_PROG_CC([clang gcc])
-else
-  AC_PROG_CC
-fi
+AS_IF([test `uname -s` == "Darwin"],
+      [AC_PROG_CC([clang gcc])],
+      [AC_PROG_CC(gcc)])
 
 test -z "$OLD_CFLAGS" || CFLAGS=$OLD_CFLAGS
 
