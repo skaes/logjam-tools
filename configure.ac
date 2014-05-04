@@ -23,7 +23,7 @@ $4])
 # AC_CONFIG_HEADERS([config.h])
 
 OLD_CFLAGS=$CFLAGS
-test -z "$OLD_CFLAGS" && OLD_CFLAGS="-O3 -ggdb -I/usr/local/include/libbson-1.0 -I/usr/local/include/libmongoc-1.0"
+test -z "$OLD_CFLAGS" && OLD_CFLAGS="-O3 -ggdb"
 OLD_CC=$CC
 test -z "$OLD_CC" && test `uname -s` = "Darwin" && OLD_CC="clang"
 AC_PROG_CC
@@ -46,8 +46,8 @@ AC_ARG_WITH(opt-dir,
 	])
 
 AS_IF([test "x$with_opt_dir" == "x"],
-      [ PKG_CHECK_MODULES([DEPS],[libzmq >= 3.2.4 libczmq >= 2.0.2 librabbitmq >= 0.4.1 json-c >= 0.11 libbson >= 0.6.6 libmongoc >= 0.94.1],[:],
-                          [ AC_SUBST([OPTDIR_CPPFLAGS],["-I/usr/local/include -I/opt/local/include"])
+      [ PKG_CHECK_MODULES([DEPS],[libzmq >= 3.2.4 libczmq >= 2.0.2 librabbitmq >= 0.4.1 json-c >= 0.11 libbson-1.0 >= 0.6.6 libmongoc-1.0 >= 0.94.1],[:],
+                          [ AC_SUBST([OPTDIR_CPPFLAGS],["-I/usr/local/include -I/usr/local/include/libbson-1.0 -I/usr/local/include/libmongoc-1.0 -I/opt/local/include -I/opt/local/include/libbson-1.0 -I/opt/local/include/libmongoc-1.0"])
                             AC_SUBST([OPTDIR_LDFLAGS],["-L/usr/local/lib -L/opt/local/lib"])
                             AC_SUBST([DEPS_LIBS],["-lrabbitmq -lzmq -lczmq -ljson-c -lbson-1.0 -lmongoc-1.0"])]
                          )
