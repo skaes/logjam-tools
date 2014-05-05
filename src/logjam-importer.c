@@ -219,6 +219,7 @@ typedef struct {
 } increments_t;
 
 #define METRICS_ARRAY_SIZE (sizeof(metric_pair_t) * (last_resource_index + 1))
+#define QUANTS_ARRAY_SIZE (sizeof(size_t) * (last_resource_index + 1))
 
 typedef struct {
     mongoc_collection_t *totals;
@@ -261,6 +262,11 @@ typedef struct {
     void *live_stream_socket;
     size_t request_count;
 } request_writer_state_t;
+
+typedef struct {
+    zhash_t *source;
+    zhash_t *target;
+} hash_pair_t;
 
 /* collection updater callback struct */
 typedef struct {
@@ -1377,7 +1383,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     mongoc_collection_t *collection = cb->collection;
     const char *db_name = cb->db_name;
 
-    // extract keys from namespace
+    // extract keys from namespace: kind-quant-page
     char* p = (char*) namespace;
     char kind[2];
     kind[0] = *(p++);
@@ -1392,15 +1398,6 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     // skip -
     p++;
 
-    size_t resource_index = 0;
-    while (isdigit(*p)) {
-        resource_index *= 10;
-        resource_index += *(p++) - '0';
-    }
-    // skip -
-    p++;
-    const char *resource = i2r(resource_index);
-
     bson_t *selector = bson_new();
     bson_append_utf8(selector, "page", 4, p, strlen(p));
     bson_append_utf8(selector, "kind", 4, kind, 1);
@@ -1409,14 +1406,20 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     // size_t n;
     // char* bs = bson_as_json(selector, &n);
     // printf("[D] selector. size: %zu; value:%s\n", n, bs);
-    // bson_ƒree(bs);
+    // bson_free(bs);
 
     bson_t *incs = bson_new();
-    bson_append_int32(incs, resource, strlen(resource), (size_t)data);
-
+    size_t *quants = data;
+    for (int i=0; i <= last_resource_index; i++) {
+        if (quants[i] > 0) {
+            const char *resource = i2r(i);
+            bson_append_int32(incs, resource, -1, quants[i]);
+        }
+    }
     bson_t *document = bson_new();
     bson_append_document(document, "$inc", 4, incs);
 
+    // size_t n; char*
     // bs = bson_as_json(document, &n);
     // printf("[D] document. size: %zu; value:%s\n", n, bs);
     // bson_free(bs);
@@ -1750,34 +1753,41 @@ void processor_add_minutes(processor_t *self, const char* namespace, size_t minu
 
 int add_quant_to_quants_hash(const char* key, void* data, void *arg)
 {
-    zhash_t* target = arg;
-    void *stored = zhash_lookup(target, key);
-    if (stored) {
-        size_t new_val = ((size_t)stored) + ((size_t)data);
-        zhash_update(target, key, (void*)new_val);
+    hash_pair_t *p = arg;
+    size_t *stored = zhash_lookup(p->target, key);
+    if (stored != NULL) {
+        for (int i=0; i <= last_resource_index; i++) {
+            stored[i] += ((size_t*)data)[i];
+        }
     } else {
-        zhash_insert(target, key, stored);
+        zhash_insert(p->target, key, data);
+        zhash_freefn(p->target, key, free);
+        zhash_freefn(p->source, key, NULL);
     }
     return 0;
 }
 
 void combine_quants(zhash_t *target, zhash_t *source)
 {
-    zhash_foreach(source, add_quant_to_quants_hash, target);
+    hash_pair_t hash_pair;
+    hash_pair.source = source;
+    hash_pair.target = target;
+    zhash_foreach(source, add_quant_to_quants_hash, &hash_pair);
 }
 
 void add_quant(const char* namespace, size_t resource_idx, char kind, size_t quant, zhash_t* quants)
 {
     char key[2000];
-    sprintf(key, "%c-%zu-%zu-%s", kind, quant, resource_idx, namespace);
+    sprintf(key, "%c-%zu-%s", kind, quant, namespace);
     // printf("[D] QUANT-KEY: %s\n", key);
-    void *stored = zhash_lookup(quants, key);
-    if (stored) {
-        size_t new_val = ((size_t)stored) + 1;
-        zhash_update(quants, key, (void*)new_val);
-    } else {
-        zhash_insert(quants, key, (void*)1);
+    size_t *stored = zhash_lookup(quants, key);
+    if (stored == NULL) {
+        stored = malloc(QUANTS_ARRAY_SIZE);
+        memset(stored, 0, QUANTS_ARRAY_SIZE);
+        zhash_insert(quants, key, stored);
+        zhash_freefn(quants, key, free);
     }
+    stored[resource_idx]++;
 }
 
 void processor_add_quants(processor_t *self, const char* namespace, increments_t *increments)
@@ -3080,13 +3090,6 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
     }
     printf("[I] indexer[%zu]: terminated\n", state.id);
 }
-
-
-
-typedef struct {
-    zhash_t *source;
-    zhash_t *target;
-} hash_pair_t;
 
 
 int add_modules(const char* module, void* data, void* arg)
