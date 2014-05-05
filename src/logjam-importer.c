@@ -575,10 +575,14 @@ void processor_destroy(void* processor)
     processor_t* p = processor;
     // printf("[D] destroying processor: %s. requests: %zu\n", p->stream, p->request_count);
     free(p->db_name);
-    zhash_destroy(&p->modules);
-    zhash_destroy(&p->totals);
-    zhash_destroy(&p->minutes);
-    zhash_destroy(&p->quants);
+    if (p->modules != NULL)
+        zhash_destroy(&p->modules);
+    if (p->totals != NULL)
+        zhash_destroy(&p->totals);
+    if (p->minutes != NULL)
+        zhash_destroy(&p->minutes);
+    if (p->quants != NULL)
+        zhash_destroy(&p->quants);
     free(p);
 }
 
@@ -1511,26 +1515,6 @@ stats_collections_t *stats_updater_get_collections(stats_updater_state_t *self, 
     return collections;
 }
 
-int processor_update_mongo_db(const char* db_name, void* data, void* arg)
-{
-    stats_updater_state_t *state = arg;
-    processor_t *processor = data;
-    stats_collections_t *collections = stats_updater_get_collections(state, db_name, processor->stream_info);
-
-    collection_update_callback_t cb;
-    cb.db_name = db_name;
-
-    cb.collection = collections->totals;
-    zhash_foreach(processor->totals, totals_add_increments, &cb);
-
-    cb.collection = collections->minutes;
-    zhash_foreach(processor->minutes, minutes_add_increments, &cb);
-
-    cb.collection = collections->quants;
-    zhash_foreach(processor->quants, quants_add_quants, &cb);
-
-    return 0;
-}
 
 const char* processor_setup_page(processor_t *self, json_object *request)
 {
@@ -2235,18 +2219,53 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             msg = zmsg_recv(state.pull_socket);
             state.updates_count++;
             int64_t start_time_ms = zclock_time();
-            processor_t *processor;
-            size_t request_count;
-            extract_processor_state(msg, &processor, &request_count);
 
-            char db_name[1000];
-            strcpy(db_name, processor->db_name);
+            zframe_t *task_frame = zmsg_first(msg);
+            zframe_t *db_frame = zmsg_next(msg);
+            zframe_t *stream_frame = zmsg_next(msg);
+            zframe_t *hash_frame = zmsg_next(msg);
 
-            processor_update_mongo_db(processor->db_name, processor, &state);
-            processor_destroy(processor);
+            assert(zframe_size(task_frame) == 1);
+            char task_type = *(char*)zframe_data(task_frame);
+
+            size_t n = zframe_size(db_frame);
+            char db_name[n+1];
+            memcpy(db_name, zframe_data(db_frame), n);
+            db_name[n] = '\0';
+
+            stream_info_t *stream_info;
+            assert(zframe_size(stream_frame) == sizeof(stream_info));
+            memcpy(&stream_info, zframe_data(stream_frame), sizeof(stream_info));
+
+            zhash_t *updates;
+            assert(zframe_size(hash_frame) == sizeof(updates));
+            memcpy(&updates, zframe_data(hash_frame), sizeof(updates));
+
+            stats_collections_t *collections = stats_updater_get_collections(&state, db_name, stream_info);
+            collection_update_callback_t cb;
+            cb.db_name = db_name;
+
+            switch (task_type) {
+            case 't':
+                cb.collection = collections->totals;
+                zhash_foreach(updates, totals_add_increments, &cb);
+                break;
+            case 'm':
+                cb.collection = collections->minutes;
+                zhash_foreach(updates, minutes_add_increments, &cb);
+                break;
+            case 'q':
+                cb.collection = collections->quants;
+                zhash_foreach(updates, quants_add_quants, &cb);
+                break;
+            default:
+                fprintf(stderr, "[E] updater[%zu]: unknown task type: %c\n", id, task_type);
+                assert(false);
+            }
+            zhash_destroy(&updates);
 
             int64_t end_time_ms = zclock_time();
-            printf("[I] updater[%zu]: (%3d ms) %s\n", id, (int)(end_time_ms - start_time_ms), db_name);
+            printf("[I] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, (int)(end_time_ms - start_time_ms), db_name);
         } else {
             printf("[I] updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
             break;
@@ -3191,14 +3210,44 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     while (db_name != NULL) {
         processor_t *proc = zhash_lookup(processors[0], db_name);
         // printf("[D] forwarding %s\n", db_name);
-        zhash_freefn(processors[0], db_name, NULL);
-        zmsg_t *stats_msg = zmsg_new();
-        zmsg_addmem(stats_msg, &proc, sizeof(processor_t*));
-        zmsg_addmem(stats_msg, &proc->request_count, sizeof(size_t)); // ????
+        zmsg_t *stats_msg;
+
+        // send totals updates
+        stats_msg = zmsg_new();
+        zmsg_addstr(stats_msg, "t");
+        zmsg_addstr(stats_msg, proc->db_name);
+        zmsg_addmem(stats_msg, &proc->stream_info, sizeof(proc->stream_info));
+        zmsg_addmem(stats_msg, &proc->totals, sizeof(proc->totals));
+        proc->totals = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             fprintf(stderr, "[W] controller: updates push socket not ready\n");
         }
         zmsg_send(&stats_msg, state->updates_socket);
+
+        // send minutes updates
+        stats_msg = zmsg_new();
+        zmsg_addstr(stats_msg, "m");
+        zmsg_addstr(stats_msg, proc->db_name);
+        zmsg_addmem(stats_msg, &proc->stream_info, sizeof(proc->stream_info));
+        zmsg_addmem(stats_msg, &proc->minutes, sizeof(proc->minutes));
+        proc->minutes = NULL;
+        if (!output_socket_ready(state->updates_socket, 0)) {
+            fprintf(stderr, "[W] controller: updates push socket not ready\n");
+        }
+        zmsg_send(&stats_msg, state->updates_socket);
+
+        // send quants updates
+        stats_msg = zmsg_new();
+        zmsg_addstr(stats_msg, "q");
+        zmsg_addstr(stats_msg, proc->db_name);
+        zmsg_addmem(stats_msg, &proc->stream_info, sizeof(proc->stream_info));
+        zmsg_addmem(stats_msg, &proc->quants, sizeof(proc->quants));
+        proc->quants = NULL;
+        if (!output_socket_ready(state->updates_socket, 0)) {
+            fprintf(stderr, "[W] controller: updates push socket not ready\n");
+        }
+        zmsg_send(&stats_msg, state->updates_socket);
+
         db_name = zlist_next(db_names);
     }
     zlist_destroy(&db_names);
