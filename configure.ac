@@ -24,12 +24,11 @@ $4])
 
 OLD_CFLAGS=$CFLAGS
 test -z "$OLD_CFLAGS" && OLD_CFLAGS="-O3 -ggdb"
-
-AS_IF([test `uname -s` == "Darwin"],
-      [AC_PROG_CC([clang gcc])],
-      [AC_PROG_CC(gcc)])
-
+OLD_CC=$CC
+test -z "$OLD_CC" && test `uname -s` = "Darwin" && OLD_CC="clang"
+AC_PROG_CC
 test -z "$OLD_CFLAGS" || CFLAGS=$OLD_CFLAGS
+test -z "$OLD_CC" || CC=$OLD_CC
 
 AC_CONFIG_FILES([Makefile])
 
