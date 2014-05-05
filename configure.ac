@@ -47,7 +47,9 @@ AC_ARG_WITH(opt-dir,
 
 AS_IF([test "x$with_opt_dir" == "x"],
       [ PKG_CHECK_MODULES([DEPS],[libzmq >= 3.2.4 libczmq >= 2.2.1 librabbitmq >= 0.4.1 json-c >= 0.11 libbson-1.0 >= 0.6.6 libmongoc-1.0 >= 0.94.1],[:],
-                          [ AC_SUBST([OPTDIR_CPPFLAGS],["-I/usr/local/include -I/usr/local/include/libbson-1.0 -I/usr/local/include/libmongoc-1.0 -I/opt/local/include -I/opt/local/include/libbson-1.0 -I/opt/local/include/libmongoc-1.0"])
+                          [
+                            AS_ECHO("checking modules failed. using builtin default directories.")
+                            AC_SUBST([OPTDIR_CPPFLAGS],["-I/usr/local/include -I/usr/local/include/libbson-1.0 -I/usr/local/include/libmongoc-1.0 -I/opt/local/include -I/opt/local/include/libbson-1.0 -I/opt/local/include/libmongoc-1.0"])
                             AC_SUBST([OPTDIR_LDFLAGS],["-L/usr/local/lib -L/opt/local/lib"])
                             AC_SUBST([DEPS_LIBS],["-lrabbitmq -lzmq -lczmq -ljson-c -lbson-1.0 -lmongoc-1.0"])]
                          )
