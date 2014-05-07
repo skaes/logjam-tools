@@ -317,8 +317,10 @@ static mongoc_index_opt_t index_opt_sparse;
 #define USE_PINGS false
 #endif
 
+// these are all tick counts
 #define PING_INTERVAL 5
 #define COLLECTION_REFRESH_INTERVAL 3600
+#define CONFIG_FILE_CHECK_INTERVAL 10
 
 void my_mongo_log_handler(mongoc_log_level_t log_level, const char *log_domain, const char *message, void *user_data)
 {
@@ -1351,7 +1353,9 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
             } else {
                 size_t n;
                 char* bjs = bson_as_json(document, &n);
-                fprintf(stderr, "[E] update failed for %s on minutes: (%d) %s\n[E] document size: %zu; value: %s\n",
+                fprintf(stderr,
+                        "[E] update failed for %s on minutes: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
                         db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
             }
@@ -1524,9 +1528,12 @@ stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* 
 
 void destroy_stats_collections(stats_collections_t* collections)
 {
-    if (collections->totals)  mongoc_collection_destroy(collections->totals);
-    if (collections->minutes) mongoc_collection_destroy(collections->minutes);
-    if (collections->quants)  mongoc_collection_destroy(collections->quants);
+    if (collections->totals != NULL)
+        mongoc_collection_destroy(collections->totals);
+    if (collections->minutes != NULL)
+        mongoc_collection_destroy(collections->minutes);
+    if (collections->quants != NULL)
+        mongoc_collection_destroy(collections->quants);
     free(collections);
 }
 
@@ -3291,7 +3298,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_send(&tick, state->writer_pipes[i]);
     }
 
-    bool terminate = (state->ticks % 10 == 0) && config_file_has_changed();
+    bool terminate = (state->ticks % CONFIG_FILE_CHECK_INTERVAL == 0) && config_file_has_changed();
     int64_t end_time_ms = zclock_time();
     int runtime = end_time_ms - start_time_ms;
     int next_tick = runtime > 999 ? 1 : 1000 - runtime;
