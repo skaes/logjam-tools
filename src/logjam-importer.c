@@ -31,9 +31,35 @@ void log_zmq_error(int rc)
 
 /* global config */
 static zconfig_t* config = NULL;
-static char *config_file = "logjam.conf";
+static zfile_t *config_file = NULL;
+static char *config_file_name = "logjam.conf";
+static time_t config_file_last_modified = 0;
+static char *config_file_digest = "";
 static bool dryrun = false;
 static char *subscription_pattern = "";
+
+void config_file_init()
+{
+    config_file = zfile_new(NULL, config_file_name);
+    config_file_last_modified = zfile_modified(config_file);
+    config_file_digest = strdup(zfile_digest(config_file));
+}
+
+bool config_file_has_changed()
+{
+    bool changed = false;
+    zfile_restat(config_file);
+    if (config_file_last_modified != zfile_modified(config_file)) {
+        // bug in czmq: does not reset digest on restat
+        zfile_t *tmp = zfile_new(NULL, config_file_name);
+        char *new_digest = zfile_digest(tmp);
+        // printf("[D] old digest: %s\n[D] new digest: %s\n", config_file_digest, new_digest);
+        changed = strcmp(config_file_digest, new_digest) != 0;
+        zfile_destroy(&tmp);
+    }
+    return changed;
+}
+
 
 #define ISO_DATE_STR_LEN 11
 static char iso_date_today[ISO_DATE_STR_LEN] = {'0'};
@@ -160,6 +186,7 @@ typedef struct {
     void *updater_pipes[NUM_UPDATERS];
     void *updates_socket;
     void *live_stream_socket;
+    size_t ticks;
 } controller_state_t;
 
 /* subscriber state */
@@ -1388,15 +1415,14 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     char kind[2];
     kind[0] = *(p++);
     kind[1] = '\0';
-    // skip '-''
-    p++;
+
+    p++; // skip '-'
     size_t quant = 0;
     while (isdigit(*p)) {
         quant *= 10;
         quant += *(p++) - '0';
     }
-    // skip -
-    p++;
+    p++; // skip '-'
 
     bson_t *selector = bson_new();
     bson_append_utf8(selector, "page", 4, p, strlen(p));
@@ -3167,6 +3193,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     zhash_t *processors[NUM_PARSERS];
     size_t request_counts[NUM_PARSERS];
 
+    state->ticks++;
+
     for (size_t i=0; i<NUM_PARSERS; i++) {
         void* parser_pipe = state->parser_pipes[i];
         zmsg_t *tick = zmsg_new();
@@ -3263,12 +3291,19 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_send(&tick, state->writer_pipes[i]);
     }
 
+    bool terminate = (state->ticks % 10 == 0) && config_file_has_changed();
     int64_t end_time_ms = zclock_time();
     int runtime = end_time_ms - start_time_ms;
     int next_tick = runtime > 999 ? 1 : 1000 - runtime;
     printf("[I] controller: %5zu messages (%d ms)\n", request_count, runtime);
-    int rc = zloop_timer(loop, next_tick, 1, collect_stats_and_forward, state);
-    assert(rc != -1);
+
+    if (terminate) {
+        printf("[I] controller: detected config change. terminating.\n");
+        zctx_interrupted = 1;
+    } else {
+        int rc = zloop_timer(loop, next_tick, 1, collect_stats_and_forward, state);
+        assert(rc != -1);
+    }
 
     return 0;
 }
@@ -3516,7 +3551,7 @@ void process_arguments(int argc, char * const *argv)
             dryrun = true;;
             break;
         case 'c':
-            config_file = optarg;
+            config_file_name = optarg;
             break;
         case 'p':
             subscription_pattern = optarg;
@@ -3541,15 +3576,17 @@ int main(int argc, char * const *argv)
     int rc;
     process_arguments(argc, argv);
 
-    if (!zsys_file_exists(config_file)) {
-        fprintf(stderr, "[E] missing config file: %s\n", config_file);
+    if (!zsys_file_exists(config_file_name)) {
+        fprintf(stderr, "[E] missing config file: %s\n", config_file_name);
         exit(1);
+    } else {
+        config_file_init();
     }
 
     update_date_info();
 
     // load config
-    config = zconfig_load((char*)config_file);
+    config = zconfig_load((char*)config_file_name);
     // zconfig_print(config);
     initialize_mongo_db_globals();
     setup_resource_maps();
@@ -3571,6 +3608,7 @@ int main(int argc, char * const *argv)
     zloop_set_verbose(loop, 0);
 
     controller_state_t state;
+    state.ticks = 0;
 
     // start the indexer
     state.indexer_pipe = zthread_fork(context, indexer, NULL);
