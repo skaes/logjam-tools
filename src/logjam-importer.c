@@ -755,6 +755,7 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
 {
     char* json_data = (char*)zframe_data(body);
     int json_data_len = (int)zframe_size(body);
+    json_tokener_reset(tokener);
     json_object *jobj = json_tokener_parse_ex(tokener, json_data, json_data_len);
     enum json_tokener_error jerr = json_tokener_get_error(tokener);
     if (jerr != json_tokener_success) {
