@@ -54,7 +54,7 @@ int main(int argc, char const * const *argv)
     char *str = zframe_strdup(last_frame);
     size_t n = atol(str);
     free(str);
-    if (n != last_num + 1 && last_num != 0) {
+    if (n > last_num + 1 && last_num != 0) {
         lost += n - (last_num + 1);
     }
     last_num = n;
