@@ -404,6 +404,13 @@ void initialize_mongo_db_globals()
     }
 }
 
+bool output_socket_ready(void *socket, int msecs)
+{
+    zmq_pollitem_t items[] = { { socket, 0, ZMQ_POLLOUT, 0 } };
+    int rc = zmq_poll(items, 1, msecs);
+    return rc != -1 && (items[0].revents & ZMQ_POLLOUT) != 0;
+}
+
 void connect_multiple(void* socket, const char* name, int which)
 {
     for (int i=0; i<which; i++) {
@@ -517,14 +524,31 @@ void* subscriber_pub_socket_new(zctx_t *context)
     return socket;
 }
 
+void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
+{
+    static int seq = 0;
+    // zmsg_send(&msg_copy, state->pub_socket);
+    zmsg_t *msg_copy = zmsg_dup(msg);
+    zmsg_addstrf(msg_copy, "%d", ++seq);
+    zframe_t *frame = zmsg_pop(msg_copy);
+    while (frame != NULL) {
+        zframe_t *next_frame = zmsg_pop(msg_copy);
+        int more = next_frame ? ZFRAME_MORE : 0;
+        zframe_print(frame, "DUP");
+        if (zframe_send(&frame, socket, ZFRAME_DONTWAIT|more) == -1)
+            break;
+        frame = next_frame;
+    }
+    zmsg_destroy(&msg_copy);
+}
+
 int read_request_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
 {
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(item->socket);
     if (msg != NULL) {
         // zmsg_dump(msg);
-        zmsg_t *msg_copy = zmsg_dup(msg);
-        zmsg_send(&msg_copy, state->pub_socket);
+        subscriber_publish_duplicate(msg, state->pub_socket);
         zmsg_send(&msg, state->push_socket);
     }
     return 0;
@@ -716,14 +740,6 @@ void dump_json_object(FILE *f, json_object *jobj) {
         fprintf(f, "[I] %s\n", json_str);
     // don't try to free the json string. it will crash.
 }
-
-bool output_socket_ready(void *socket, int msecs)
-{
-    zmq_pollitem_t items[] = { { socket, 0, ZMQ_POLLOUT, 0 } };
-    int rc = zmq_poll(items, 1, msecs);
-    return rc != -1 && (items[0].revents & ZMQ_POLLOUT) != 0;
-}
-
 
 void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file)
 {

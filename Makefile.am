@@ -6,13 +6,14 @@ AM_CFLAGS = --std=gnu99 -Wall
 LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS)
 
 bin_PROGRAMS = logjam-device logjam-importer
-noinst_PROGRAMS = tester test_subscriber test_publisher
+noinst_PROGRAMS = tester test_subscriber test_publisher test_puller
 
 logjam_device_SOURCES = src/logjam-device.c
 logjam_importer_SOURCES = src/logjam-importer.c
 tester_SOURCES = src/tester.c
 test_publisher_SOURCES = src/test_publisher.c
 test_subscriber_SOURCES = src/test_subscriber.c
+test_puller_SOURCES = src/test_puller.c
 
 dist_noinst_SCRIPTS = autogen.sh
 
