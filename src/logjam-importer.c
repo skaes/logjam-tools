@@ -195,6 +195,7 @@ typedef struct {
     void *sub_socket;
     void *push_socket;
     void *pull_socket;
+    void *pub_socket;
 } subscriber_state_t;
 
 /* parser state */
@@ -506,12 +507,23 @@ void* subscriber_push_socket_new(zctx_t *context)
     return socket;
 }
 
+void* subscriber_pub_socket_new(zctx_t *context)
+{
+    void *socket = zsocket_new(context, ZMQ_PUB);
+    assert(socket);
+    int rc = zsocket_bind(socket, "tcp://*:%d", 9651);
+    assert(rc == 9651);
+    return socket;
+}
+
 int read_request_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
 {
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(item->socket);
     if (msg != NULL) {
         // zmsg_dump(msg);
+        zmsg_t *msg_copy = zmsg_dup(msg);
+        zmsg_send(&msg_copy, state->pub_socket);
         zmsg_send(&msg, state->push_socket);
     }
     return 0;
@@ -525,6 +537,7 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
     state.sub_socket = subscriber_sub_socket_new(ctx);
     state.pull_socket = subscriber_pull_socket_new(ctx);
     state.push_socket = subscriber_push_socket_new(ctx);
+    state.pub_socket = subscriber_pub_socket_new(ctx);
 
     if (zhash_size(stream_subscriptions) == 0) {
         // subscribe to all messages
