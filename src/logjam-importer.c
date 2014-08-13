@@ -526,10 +526,10 @@ void* subscriber_pub_socket_new(zctx_t *context)
 
 void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
 {
-    static int seq = 0;
+    static size_t seq = 0;
     // zmsg_send(&msg_copy, state->pub_socket);
     zmsg_t *msg_copy = zmsg_dup(msg);
-    zmsg_addstrf(msg_copy, "%d", ++seq);
+    zmsg_addstrf(msg_copy, "%zu", ++seq);
     zframe_t *frame = zmsg_pop(msg_copy);
     while (frame != NULL) {
         zframe_t *next_frame = zmsg_pop(msg_copy);
