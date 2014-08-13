@@ -26,12 +26,15 @@ int main(int argc, char const * const *argv)
   void *socket = zsocket_new(context, ZMQ_PULL);
   assert(socket);
 
-  zsocket_set_rcvhwm(socket, 1000);
+  zsocket_set_rcvhwm(socket, 100000);
   zsocket_set_linger(socket, 500);
   zsocket_set_reconnect_ivl(socket, 100); // 100 ms
   zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
-  rc = zsocket_connect(socket, "tcp://localhost:9651");
+  const char* host = "localhost";
+  if (argc>1) host = argv[1];
+
+  rc = zsocket_connect(socket, "tcp://%s:9651", host);
   assert(rc==0);
 
   zmsg_t *msg = NULL;
