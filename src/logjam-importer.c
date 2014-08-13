@@ -534,7 +534,7 @@ void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
     while (frame != NULL) {
         zframe_t *next_frame = zmsg_pop(msg_copy);
         int more = next_frame ? ZFRAME_MORE : 0;
-        zframe_print(frame, "DUP");
+        // zframe_print(frame, "DUP");
         if (zframe_send(&frame, socket, ZFRAME_DONTWAIT|more) == -1)
             break;
         frame = next_frame;
