@@ -509,7 +509,7 @@ void* subscriber_push_socket_new(zctx_t *context)
 
 void* subscriber_pub_socket_new(zctx_t *context)
 {
-    void *socket = zsocket_new(context, ZMQ_PUB);
+    void *socket = zsocket_new(context, ZMQ_PUSH);  /* testing */
     assert(socket);
     zsocket_set_sndhwm(socket, 10000);
     int rc = zsocket_bind(socket, "tcp://*:%d", 9651);
