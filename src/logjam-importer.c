@@ -1694,7 +1694,7 @@ int extract_severity_from_lines_object(json_object* lines)
 
 int processor_setup_severity(processor_t *self, json_object *request)
 {
-    int severity = 5;
+    int severity = 1;
     json_object *severity_obj;
     if (json_object_object_get_ex(request, "severity", &severity_obj)) {
         severity = json_object_get_int(severity_obj);
