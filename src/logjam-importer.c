@@ -1689,7 +1689,8 @@ int extract_severity_from_lines_object(json_object* lines)
             }
         }
     }
-    return log_level;
+    // protect against unknown log levels
+    return (log_level > 5) ? -1 : log_level;
 }
 
 int processor_setup_severity(processor_t *self, json_object *request)
@@ -1702,7 +1703,7 @@ int processor_setup_severity(processor_t *self, json_object *request)
         json_object *lines_obj;
         if (json_object_object_get_ex(request, "lines", &lines_obj)) {
             int extracted_severity = extract_severity_from_lines_object(lines_obj);
-            if (extracted_severity != -1 && extracted_severity < severity) {
+            if (extracted_severity != -1) {
                 severity = extracted_severity;
             }
         }
