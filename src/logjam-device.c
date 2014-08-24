@@ -99,7 +99,11 @@ void assert_zmq_rc(int rc)
 
 /* global config */
 static zconfig_t* config = NULL;
-char *config_file = "logjam.conf";
+static zfile_t *config_file = NULL;
+static char *config_file_name = "logjam.conf";
+static time_t config_file_last_modified = 0;
+static char *config_file_digest = "";
+#define CONFIG_FILE_CHECK_INTERVAL 10
 
 /* rabbit options */
 static char* rabbit_host = NULL;
@@ -112,6 +116,30 @@ static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 // hash of already declared exchanges
 static zhash_t *exchanges = NULL;
+
+
+void config_file_init()
+{
+    config_file = zfile_new(NULL, config_file_name);
+    config_file_last_modified = zfile_modified(config_file);
+    config_file_digest = strdup(zfile_digest(config_file));
+}
+
+bool config_file_has_changed()
+{
+    bool changed = false;
+    zfile_restat(config_file);
+    if (config_file_last_modified != zfile_modified(config_file)) {
+        // bug in czmq: does not reset digest on restat
+        zfile_t *tmp = zfile_new(NULL, config_file_name);
+        char *new_digest = zfile_digest(tmp);
+        // printf("[D] old digest: %s\n[D] new digest: %s\n", config_file_digest, new_digest);
+        changed = strcmp(config_file_digest, new_digest) != 0;
+        zfile_destroy(&tmp);
+    }
+    return changed;
+}
+
 
 #if defined(__APPLE__) && defined(SO_NOSIGPIPE)
 #define FIX_SIG_PIPE
@@ -240,6 +268,14 @@ int timer_event(zloop_t *loop, int timer_id, void *arg)
     printf("[I] processed %zu messages (%zu bytes).\n", message_count, message_bytes);
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
+
+    static size_t ticks = 0;
+    bool terminate = (++ticks % CONFIG_FILE_CHECK_INTERVAL == 0) && config_file_has_changed();
+    if (terminate) {
+        printf("[I] detected config change. terminating.\n");
+        zctx_interrupted = 1;
+    }
+
     return 0;
 }
 
@@ -431,7 +467,7 @@ void process_arguments(int argc, char * const *argv)
             pull_port = atoi(optarg);
             break;
         case 'c':
-            config_file = optarg;
+            config_file_name = optarg;
             break;
         case '?':
             if (optopt == 'c' || optopt == 'p' || optopt == 'r' || optopt == 'e')
@@ -466,8 +502,9 @@ int main(int argc, char * const *argv)
            pull_port, pub_port, rabbit_host);
 
     // load config
-    if (zsys_file_exists(config_file)) {
-        config = zconfig_load((char*)config_file);
+    if (zsys_file_exists(config_file_name)) {
+        config_file_init();
+        config = zconfig_load((char*)config_file_name);
     }
 
     // create context
