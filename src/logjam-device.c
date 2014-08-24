@@ -103,6 +103,7 @@ char *config_file = "logjam.conf";
 
 /* rabbit options */
 static char* rabbit_host = NULL;
+static char* rabbit_env = "development";
 static int rabbit_port = 5672;
 static int pull_port = 9605;
 static int pub_port = 9606;
@@ -316,6 +317,10 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, const char *stream)
     memset(app, 0, n);
     memset(env, 0, n);
     sscanf(stream, "request-stream-%[^-]-%[^-]", app, env);
+    if (strcmp(env, rabbit_env)) {
+        printf("[I] skipping: %s-%s\n", app, env);
+        return;
+    }
     char queue[n];
     sprintf(queue, "logjam-device-%s-%s", app, env);
     printf("[I] binding: %s ==> %s\n", exchange, queue);
@@ -407,17 +412,20 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
 
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-r rabbit-host] [-p pull-port] [-c config-file]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-r rabbit-host] [-p pull-port] [-c config-file] [-e environment]\n", argv[0]);
 }
 
 void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "r:p:c:")) != -1) {
+    while ((c = getopt(argc, argv, "r:p:c:e:")) != -1) {
         switch (c) {
         case 'r':
             rabbit_host = optarg;
+            break;
+        case 'e':
+            rabbit_env = optarg;
             break;
         case 'p':
             pull_port = atoi(optarg);
@@ -426,7 +434,7 @@ void process_arguments(int argc, char * const *argv)
             config_file = optarg;
             break;
         case '?':
-            if (optopt == 'c' || optopt == 'p' || optopt == 'r')
+            if (optopt == 'c' || optopt == 'p' || optopt == 'r' || optopt == 'e')
                 fprintf(stderr, "option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "unknown option `-%c'.\n", optopt);
