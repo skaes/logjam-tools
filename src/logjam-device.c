@@ -475,9 +475,9 @@ int main(int argc, char * const *argv)
     assert_x(context==NULL, "zmq_init failed");
 
     // configure the context
-    zctx_set_linger(context, 100);
-    zctx_set_rcvhwm(context, 1000);
-    zctx_set_pipehwm(context, 1000);
+    zctx_set_linger(context, 1000);
+    zctx_set_rcvhwm(context,  10000);
+    zctx_set_pipehwm(context, 10000);
     // zctx_set_iothreads(context, 2);
 
     // create socket to receive messages on
@@ -485,7 +485,7 @@ int main(int argc, char * const *argv)
     assert_x(receiver==NULL, "zmq socket creation failed");
 
     //  configure the socket
-    zsocket_set_rcvhwm(receiver, 10000);
+    zsocket_set_rcvhwm(receiver, 100000);
     zsocket_set_linger(receiver, 100);
 
     rc = zsocket_bind(receiver, "tcp://%s:%d", "*", pull_port);
@@ -495,7 +495,7 @@ int main(int argc, char * const *argv)
     void *publisher = zsocket_new(context, ZMQ_PUB);
     assert_x(publisher==NULL, "zmq socket creation failed");
 
-    zsocket_set_sndhwm(publisher, 10000);
+    zsocket_set_sndhwm(publisher, 100000);
     zsocket_set_linger(publisher, 100);
 
     rc = zsocket_bind(publisher, "tcp://%s:%d", "*", pub_port);
