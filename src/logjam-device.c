@@ -384,7 +384,7 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, const char *stream)
     amqp_bytes_t queuename = amqp_cstring_bytes(queue);
 
     struct amqp_table_entry_t_ queue_arg_table_entries[1] = {
-        { amqp_cstring_bytes("x-message-ttl"), { AMQP_FIELD_KIND_I32, { 30 * 1000 } } }
+        { amqp_cstring_bytes("x-message-ttl"), { AMQP_FIELD_KIND_I32, { 60 * 1000 } } }
     };
     amqp_table_t queue_argument_table = {1, queue_arg_table_entries};
 
