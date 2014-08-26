@@ -145,6 +145,7 @@ bool config_file_has_changed()
 #define FIX_SIG_PIPE
 #endif
 
+#define RABBIT_LISTENERS 2
 #define FRAME_MAX_DEFAULT 131072
 #define OUR_FRAME_MAX (8 * FRAME_MAX_DEFAULT)
 
@@ -548,16 +549,18 @@ int main(int argc, char * const *argv)
 
     // setup the rabbitmq listener thread
     amqp_connection_state_t connection = NULL;
-    void *rabbitmq_listener_pipe = NULL;
+    void *rabbitmq_listener_pipes[RABBIT_LISTENERS] = { NULL, NULL };
 
     if (rabbit_host != NULL) {
         if (config == NULL) {
             fprintf(stderr, "[E] cannot start rabbitmq listener thread because no config file given\n");
             goto cleanup;
         } else {
-            rabbitmq_listener_pipe = zthread_fork(context, rabbitmq_listener, NULL);
-            assert_x(rabbitmq_listener_pipe==NULL, "could not fork rabbitmq listener thread");
-            printf("[I] created rabbitmq listener thread\n");
+            for (int i = 0; i < RABBIT_LISTENERS; i++) {
+                rabbitmq_listener_pipes[i] = zthread_fork(context, rabbitmq_listener, NULL);
+                assert_x(rabbitmq_listener_pipes[i]==NULL, "could not fork rabbitmq listener thread");
+                printf("[I] created rabbitmq listener thread %d\n", i);
+            }
             // create amqp publisher connection
             connection = setup_amqp_connection();
             // so far, no exchanges are known
@@ -586,13 +589,15 @@ int main(int argc, char * const *argv)
 
     // setup handler for the rabbit listener pipe
     if (rabbit_host != NULL) {
-        zmq_pollitem_t listener_item;
-        publisher_state_t listener_state = {publisher, NULL, 0};
-        listener_item.socket = rabbitmq_listener_pipe;
-        listener_item.events = ZMQ_POLLIN;
-        rc = zloop_poller(loop, &listener_item, read_zmq_message_and_forward, &listener_state);
-        assert(rc == 0);
-        zloop_set_tolerant(loop, &listener_item);
+        for (int i = 0; i < RABBIT_LISTENERS; i++) {
+            zmq_pollitem_t listener_item;
+            publisher_state_t listener_state = {publisher, NULL, 0};
+            listener_item.socket = rabbitmq_listener_pipes[i];
+            listener_item.events = ZMQ_POLLIN;
+            rc = zloop_poller(loop, &listener_item, read_zmq_message_and_forward, &listener_state);
+            assert(rc == 0);
+            zloop_set_tolerant(loop, &listener_item);
+        }
     }
 
     rc = zloop_start(loop);
