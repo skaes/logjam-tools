@@ -424,6 +424,7 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
 
         amqp_maybe_release_buffers(conn);
 
+        // printf("[D] consuming\n");
         res = amqp_consume_message(conn, &envelope, NULL, 0);
 
         if (AMQP_RESPONSE_NORMAL != res.reply_type) {
