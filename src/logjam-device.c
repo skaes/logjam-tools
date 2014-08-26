@@ -97,6 +97,13 @@ void assert_zmq_rc(int rc)
     }
 }
 
+bool output_socket_ready(void *socket, int msecs)
+{
+    zmq_pollitem_t items[] = { { socket, 0, ZMQ_POLLOUT, 0 } };
+    int rc = zmq_poll(items, 1, msecs);
+    return rc != -1 && (items[0].revents & ZMQ_POLLOUT) != 0;
+}
+
 /* global config */
 static zconfig_t* config = NULL;
 static zfile_t *config_file = NULL;
@@ -444,8 +451,13 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
         zmsg_addmem(message, envelope.routing_key.bytes, envelope.routing_key.len);
         zmsg_addmem(message, envelope.message.body.bytes, envelope.message.body.len);
         // zmsg_dump(message);
-        zmsg_send(&message, pipe);
-        zmsg_destroy(&message);
+        if (output_socket_ready(pipe, 0)) {
+            zmsg_send(&message, pipe);
+        } else {
+            if (!zctx_interrupted)
+                fprintf(stderr, "[E] dropped message because pipe wasn't ready\n");
+            zmsg_destroy(&message);
+        }
 
         amqp_destroy_envelope(&envelope);
     }
