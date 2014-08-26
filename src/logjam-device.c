@@ -153,7 +153,7 @@ bool config_file_has_changed()
 #define FIX_SIG_PIPE
 #endif
 
-#define RABBIT_LISTENERS 2
+#define RABBIT_LISTENERS 5
 #define FRAME_MAX_DEFAULT 131072
 #define OUR_FRAME_MAX (8 * FRAME_MAX_DEFAULT)
 
