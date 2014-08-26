@@ -153,7 +153,7 @@ bool config_file_has_changed()
 #define FIX_SIG_PIPE
 #endif
 
-#define RABBIT_LISTENERS 5
+#define RABBIT_LISTENERS 1
 #define FRAME_MAX_DEFAULT 131072
 #define OUR_FRAME_MAX (8 * FRAME_MAX_DEFAULT)
 
@@ -257,14 +257,15 @@ int publish_on_amqp_transport(amqp_connection_state_t connection, zmq_msg_t *mes
 }
 
 
-void shutdown_amqp_connection(amqp_connection_state_t connection, int amqp_rc)
+void shutdown_amqp_connection(amqp_connection_state_t connection, int amqp_rc, uint num_channels)
 {
-    // close amqp connection
+    // close amqp connection, including all open channels
     if (amqp_rc >= 0) {
-        log_amqp_error(amqp_channel_close(connection, 1, AMQP_REPLY_SUCCESS), "Closing AMQP channel");
-        log_amqp_error(amqp_connection_close(connection, AMQP_REPLY_SUCCESS), "Closing AMQP connection");
+        for (int i=1; i <= num_channels; i++)
+            log_amqp_error(amqp_channel_close(connection, i, AMQP_REPLY_SUCCESS), "closing AMQP channel");
+        log_amqp_error(amqp_connection_close(connection, AMQP_REPLY_SUCCESS), "closing AMQP connection");
     }
-    log_error(amqp_destroy_connection(connection), "Ending AMQP connection");
+    log_error(amqp_destroy_connection(connection), "closing AMQP connection");
 }
 
 
@@ -359,7 +360,7 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
     return 0;
 }
 
-void rabbitmq_add_queue(amqp_connection_state_t conn, const char *stream)
+void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_ref, const char *stream)
 {
     const char *exchange = stream;
     const char *routing_key = "#";
@@ -372,14 +373,22 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, const char *stream)
         printf("[I] skipping: %s-%s\n", app, env);
         return;
     }
+    amqp_channel_t channel = ++(*channel_ref);
     char queue[n];
     sprintf(queue, "logjam-device-%s-%s", app, env);
     printf("[I] binding: %s ==> %s\n", exchange, queue);
 
+    if (channel > 1) {
+        printf("[D] opening channel %d\n", channel);
+        amqp_channel_open(conn, channel);
+        die_on_amqp_error(amqp_get_rpc_reply(conn), "Opening AMQP channel");
+    }
+
     // amqp_exchange_declare(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t exchange,
     //                       amqp_bytes_t type, amqp_boolean_t passive, amqp_boolean_t durable, amqp_table_t arguments);
-    amqp_exchange_declare(conn, 1, amqp_cstring_bytes(exchange), amqp_cstring_bytes("topic"),
+    amqp_exchange_declare(conn, channel, amqp_cstring_bytes(exchange), amqp_cstring_bytes("topic"),
                           0, 1, amqp_empty_table);
+    die_on_amqp_error(amqp_get_rpc_reply(conn), "declaring exchange");
 
     amqp_bytes_t queuename = amqp_cstring_bytes(queue);
 
@@ -391,22 +400,23 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, const char *stream)
     // amqp_queue_declare(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t queue,
     //                    amqp_boolean_t passive, amqp_boolean_t durable, amqp_boolean_t exclusive, amqp_boolean_t auto_delete,
     //                    amqp_table_t arguments);
-    amqp_queue_declare(conn, 1, queuename, 0, 0, 0, 1, queue_argument_table);
-    die_on_amqp_error(amqp_get_rpc_reply(conn), "Declaring queue");
+    amqp_queue_declare(conn, channel, queuename, 0, 0, 0, 1, queue_argument_table);
+    die_on_amqp_error(amqp_get_rpc_reply(conn), "declaring queue");
 
     // amqp_queue_bind(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t queue,
     //                 amqp_bytes_t exchange, amqp_bytes_t routing_key, amqp_table_t arguments)
-    amqp_queue_bind(conn, 1, queuename, amqp_cstring_bytes(exchange), amqp_cstring_bytes(routing_key), amqp_empty_table);
-    die_on_amqp_error(amqp_get_rpc_reply(conn), "Binding queue");
+    amqp_queue_bind(conn, channel, queuename, amqp_cstring_bytes(exchange), amqp_cstring_bytes(routing_key), amqp_empty_table);
+    die_on_amqp_error(amqp_get_rpc_reply(conn), "binding queue");
 
     // amqp_basic_consume(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t queue, amqp_bytes_t consumer_tag,
     // amqp_boolean_t no_local, amqp_boolean_t no_ack, amqp_boolean_t exclusive, amqp_table_t arguments)
-    amqp_basic_consume(conn, 1, queuename, amqp_empty_bytes, 0, 1, 0, amqp_empty_table);
-    die_on_amqp_error(amqp_get_rpc_reply(conn), "Consuming");
+    amqp_basic_consume(conn, channel, queuename, amqp_empty_bytes, 0, 1, 0, amqp_empty_table);
+    die_on_amqp_error(amqp_get_rpc_reply(conn), "consuming");
 }
 
 void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
     amqp_connection_state_t conn = setup_amqp_connection();
+    amqp_channel_t channel = 1;
 
     zconfig_t *streams = zconfig_locate(config, "backend/streams");
     assert(streams);
@@ -414,7 +424,7 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
     assert(stream_config);
     do {
         char *stream = zconfig_name(stream_config);
-        rabbitmq_add_queue(conn, stream);
+        rabbitmq_add_queue(conn, &channel, stream);
         stream_config = zconfig_next(stream_config);
     } while (stream_config && !zctx_interrupted);
 
@@ -432,7 +442,7 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
         res = amqp_consume_message(conn, &envelope, &timeout, 0);
 
         if (AMQP_RESPONSE_NORMAL != res.reply_type) {
-            if (AMQP_RESPONSE_LIBRARY_EXCEPTION == res.reply_type && res.library_error == AMQP_STATUS_TIMEOUT) {
+            if (AMQP_RESPONSE_LIBRARY_EXCEPTION == res.reply_type && AMQP_STATUS_TIMEOUT == res.library_error) {
                 continue;
             } else {
                 zctx_interrupted = 1;
@@ -472,7 +482,7 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
     }
 
     // 0 is not the return code
-    shutdown_amqp_connection(conn, 0);
+    shutdown_amqp_connection(conn, 0, channel);
 }
 
 void print_usage(char * const *argv)
@@ -577,7 +587,7 @@ int main(int argc, char * const *argv)
 
     // setup the rabbitmq listener thread
     amqp_connection_state_t connection = NULL;
-    void *rabbitmq_listener_pipes[RABBIT_LISTENERS] = { NULL, NULL };
+    void *rabbitmq_listener_pipes[RABBIT_LISTENERS] = { NULL };
 
     if (rabbit_host != NULL) {
         if (config == NULL) {
@@ -642,7 +652,7 @@ int main(int argc, char * const *argv)
     zctx_destroy(&context);
 
     if (connection) {
-        shutdown_amqp_connection(connection, publisher_state.amqp_rc);
+        shutdown_amqp_connection(connection, publisher_state.amqp_rc, 1);
         rc = publisher_state.amqp_rc < 0;
     }
 
