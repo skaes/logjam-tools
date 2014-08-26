@@ -418,6 +418,10 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
         stream_config = zconfig_next(stream_config);
     } while (stream_config && !zctx_interrupted);
 
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 500000; // 500 ms
+
     while (!zctx_interrupted) {
         amqp_rpc_reply_t res;
         amqp_envelope_t envelope;
@@ -425,12 +429,16 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
         amqp_maybe_release_buffers(conn);
 
         // printf("[D] consuming\n");
-        res = amqp_consume_message(conn, &envelope, NULL, 0);
+        res = amqp_consume_message(conn, &envelope, &timeout, 0);
 
         if (AMQP_RESPONSE_NORMAL != res.reply_type) {
-            zctx_interrupted = 1;
-            log_amqp_error(res, "Consuming from RabbitMQ");
-            break;
+            if (AMQP_RESPONSE_LIBRARY_EXCEPTION == res.reply_type && res.library_error == AMQP_STATUS_TIMEOUT) {
+                continue;
+            } else {
+                zctx_interrupted = 1;
+                log_amqp_error(res, "consuming from RabbitMQ");
+                break;
+            }
         }
 
         if (0) {
