@@ -219,7 +219,7 @@ typedef struct {
     zhash_t *totals;
     zhash_t *minutes;
     zhash_t *quants;
-} processor_t;
+} processor_state_t;
 
 /* request info */
 typedef struct {
@@ -614,7 +614,7 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
 #define STREAM_PREFIX_LEN 15
 // ISO date: 2014-11-11
 
-processor_t* processor_new(char *db_name)
+processor_state_t* processor_new(char *db_name)
 {
     // check whether it's a known stream and return NULL if not
     size_t n = strlen(db_name) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
@@ -631,7 +631,7 @@ processor_t* processor_new(char *db_name)
         // printf("[D] found stream info for stream %s: %s\n", stream, stream_name);
     }
 
-    processor_t *p = malloc(sizeof(processor_t));
+    processor_state_t *p = malloc(sizeof(processor_state_t));
     p->db_name = strdup(db_name);
     p->stream_info = stream_info;
     p->request_count = 0;
@@ -645,7 +645,7 @@ processor_t* processor_new(char *db_name)
 void processor_destroy(void* processor)
 {
     //void* because we want to use it as a zhash_free_fn
-    processor_t* p = processor;
+    processor_state_t* p = processor;
     // printf("[D] destroying processor: %s. requests: %zu\n", p->stream, p->request_count);
     free(p->db_name);
     if (p->modules != NULL)
@@ -659,7 +659,7 @@ void processor_destroy(void* processor)
     free(p);
 }
 
-processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
+processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
 {
     size_t n = zframe_size(stream_frame);
     char db_name[n+100];
@@ -680,7 +680,7 @@ processor_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_sta
 
     // printf("[D] db_name: %s\n", db_name);
 
-    processor_t *p = zhash_lookup(parser_state->processors, db_name);
+    processor_state_t *p = zhash_lookup(parser_state->processors, db_name);
     if (p == NULL) {
         p = processor_new(db_name);
         if (p) {
@@ -1286,7 +1286,7 @@ int dump_increments(const char *key, void *total, void *arg)
     return 0;
 }
 
-void processor_dump_state(processor_t *self)
+void processor_dump_state(processor_state_t *self)
 {
     puts("[D] ================================================");
     printf("[D] db_name: %s\n", self->db_name);
@@ -1298,7 +1298,7 @@ void processor_dump_state(processor_t *self)
 
 int processor_dump_state_from_zhash(const char* db_name, void* processor, void* arg)
 {
-    assert(!strcmp(((processor_t*)processor)->db_name, db_name));
+    assert(!strcmp(((processor_state_t*)processor)->db_name, db_name));
     processor_dump_state(processor);
     return 0;
 }
@@ -1583,7 +1583,7 @@ stats_collections_t *stats_updater_get_collections(stats_updater_state_t *self, 
 }
 
 
-const char* processor_setup_page(processor_t *self, json_object *request)
+const char* processor_setup_page(processor_state_t *self, json_object *request)
 {
     json_object *page_obj = NULL;
     if (json_object_object_get_ex(request, "action", &page_obj)) {
@@ -1605,7 +1605,7 @@ const char* processor_setup_page(processor_t *self, json_object *request)
     return page_str;
 }
 
-const char* processor_setup_module(processor_t *self, const char *page)
+const char* processor_setup_module(processor_state_t *self, const char *page)
 {
     int max_mod_len = strlen(page);
     char module_str[max_mod_len+1];
@@ -1637,7 +1637,7 @@ const char* processor_setup_module(processor_t *self, const char *page)
     return module;
 }
 
-int processor_setup_response_code(processor_t *self, json_object *request)
+int processor_setup_response_code(processor_state_t *self, json_object *request)
 {
     json_object *code_obj = NULL;
     int response_code = 500;
@@ -1650,7 +1650,7 @@ int processor_setup_response_code(processor_t *self, json_object *request)
     return response_code;
 }
 
-double processor_setup_total_time(processor_t *self, json_object *request)
+double processor_setup_total_time(processor_state_t *self, json_object *request)
 {
     // TODO: might be better to drop requests without total_time
     double total_time;
@@ -1693,7 +1693,7 @@ int extract_severity_from_lines_object(json_object* lines)
     return (log_level > 5) ? -1 : log_level;
 }
 
-int processor_setup_severity(processor_t *self, json_object *request)
+int processor_setup_severity(processor_state_t *self, json_object *request)
 {
     int severity = 1;
     json_object *severity_obj;
@@ -1714,7 +1714,7 @@ int processor_setup_severity(processor_t *self, json_object *request)
     // printf("[D] severity: %d\n\n", severity);
 }
 
-int processor_setup_minute(processor_t *self, json_object *request)
+int processor_setup_minute(processor_state_t *self, json_object *request)
 {
     // TODO: protect against bad started_at data
     int minute = 0;
@@ -1731,7 +1731,7 @@ int processor_setup_minute(processor_t *self, json_object *request)
     return minute;
 }
 
-void processor_setup_other_time(processor_t *self, json_object *request, double total_time)
+void processor_setup_other_time(processor_state_t *self, json_object *request, double total_time)
 {
     double other_time = total_time;
     for (size_t i = 0; i <= last_other_time_resource_index; i++) {
@@ -1745,7 +1745,7 @@ void processor_setup_other_time(processor_t *self, json_object *request, double 
     // printf("[D] other_time: %f\n", other_time);
 }
 
-void processor_setup_allocated_memory(processor_t *self, json_object *request)
+void processor_setup_allocated_memory(processor_state_t *self, json_object *request)
 {
     json_object *allocated_memory_obj;
     if (json_object_object_get_ex(request, "allocated_memory", &allocated_memory_obj))
@@ -1764,7 +1764,7 @@ void processor_setup_allocated_memory(processor_t *self, json_object *request)
     }
 }
 
-int processor_setup_heap_growth(processor_t *self, json_object *request)
+int processor_setup_heap_growth(processor_state_t *self, json_object *request)
 {
     json_object *heap_growth_obj = NULL;
     int heap_growth = 0;
@@ -1775,7 +1775,7 @@ int processor_setup_heap_growth(processor_t *self, json_object *request)
     return heap_growth;
 }
 
-json_object* processor_setup_exceptions(processor_t *self, json_object *request)
+json_object* processor_setup_exceptions(processor_state_t *self, json_object *request)
 {
     json_object* exceptions;
     if (json_object_object_get_ex(request, "exceptions", &exceptions)) {
@@ -1788,7 +1788,7 @@ json_object* processor_setup_exceptions(processor_t *self, json_object *request)
     return exceptions;
 }
 
-void processor_add_totals(processor_t *self, const char* namespace, increments_t *increments)
+void processor_add_totals(processor_state_t *self, const char* namespace, increments_t *increments)
 {
     increments_t *stored_increments = zhash_lookup(self->totals, namespace);
     if (stored_increments) {
@@ -1801,7 +1801,7 @@ void processor_add_totals(processor_t *self, const char* namespace, increments_t
     }
 }
 
-void processor_add_minutes(processor_t *self, const char* namespace, size_t minute, increments_t *increments)
+void processor_add_minutes(processor_state_t *self, const char* namespace, size_t minute, increments_t *increments)
 {
     char key[2000];
     snprintf(key, 2000, "%lu-%s", minute, namespace);
@@ -1855,7 +1855,7 @@ void add_quant(const char* namespace, size_t resource_idx, char kind, size_t qua
     stored[resource_idx]++;
 }
 
-void processor_add_quants(processor_t *self, const char* namespace, increments_t *increments)
+void processor_add_quants(processor_state_t *self, const char* namespace, increments_t *increments)
 {
     for (int i=0; i<=last_resource_index; i++){
         double val = increments->metrics[i].val;
@@ -1925,7 +1925,7 @@ int ignore_request(json_object *request, stream_info_t* info)
     return rc;
 }
 
-void processor_add_request(processor_t *self, parser_state_t *pstate, json_object *request)
+void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
     if (ignore_request(request, self->stream_info)) return;
     self->request_count++;
@@ -2015,7 +2015,7 @@ char* exctract_key_from_jse_description(json_object *request)
     return result;
 }
 
-void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_object *request)
+void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
     char *page = extract_page_for_jse(request);
     char *js_exception = exctract_key_from_jse_description(request);
@@ -2061,7 +2061,7 @@ void processor_add_js_exception(processor_t *self, parser_state_t *pstate, json_
     zmsg_send(&msg, pstate->push_socket);
 }
 
-void processor_add_event(processor_t *self, parser_state_t *pstate, json_object *request)
+void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
     processor_setup_minute(self, request);
     json_object_get(request);
@@ -2076,7 +2076,7 @@ void processor_add_event(processor_t *self, parser_state_t *pstate, json_object 
 
 int processor_publish_totals(const char* db_name, void *processor, void *live_stream_socket)
 {
-    processor_t *self = processor;
+    processor_state_t *self = processor;
     if (zhash_size(self->modules) == 0) return 0;
 
     stream_info_t *stream_info = self->stream_info;
@@ -2130,7 +2130,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
     json_object *request = parse_json_body(body, parser_state->tokener);
     if (request != NULL) {
         char *topic_str = (char*) zframe_data(topic);
-        processor_t *processor = processor_create(stream, parser_state, request);
+        processor_state_t *processor = processor_create(stream, parser_state, request);
 
         if (processor == NULL) return;
 
@@ -2212,12 +2212,12 @@ void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *request_cou
     memcpy(request_count, zframe_data(second), sizeof(size_t));
 }
 
-void extract_processor_state(zmsg_t* msg, processor_t **processor, size_t *request_count)
+void extract_processor_state(zmsg_t* msg, processor_state_t **processor, size_t *request_count)
 {
     zframe_t *first = zmsg_first(msg);
     zframe_t *second = zmsg_next(msg);
     assert(zframe_size(first) == sizeof(zhash_t*));
-    memcpy(&*processor, zframe_data(first), sizeof(processor_t*));
+    memcpy(&*processor, zframe_data(first), sizeof(processor_state_t*));
     assert(zframe_size(second) == sizeof(size_t));
     memcpy(request_count, zframe_data(second), sizeof(size_t));
 }
@@ -3199,7 +3199,7 @@ void combine_increments(zhash_t* target, zhash_t *source)
     zhash_foreach(source, add_increments, &hash_pair);
 }
 
-void combine_processors(processor_t* target, processor_t* source)
+void combine_processors(processor_state_t* target, processor_state_t* source)
 {
     // printf("[D] combining %s\n", target->db_name);
     assert(!strcmp(target->db_name, source->db_name));
@@ -3214,13 +3214,13 @@ int merge_processors(const char* db_name, void* data, void* arg)
 {
     hash_pair_t *pair = arg;
     // printf("[D] checking %s\n", db_name);
-    processor_t *dest = zhash_lookup(pair->target, db_name);
+    processor_state_t *dest = zhash_lookup(pair->target, db_name);
     if (dest == NULL) {
         zhash_insert(pair->target, db_name, data);
         zhash_freefn(pair->target, db_name, processor_destroy);
         zhash_freefn(pair->source, db_name, NULL);
     } else {
-        combine_processors(dest, (processor_t*)data);
+        combine_processors(dest, (processor_state_t*)data);
     }
     return 0;
 }
@@ -3278,7 +3278,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     zlist_t *db_names = zhash_keys(processors[0]);
     const char* db_name = zlist_first(db_names);
     while (db_name != NULL) {
-        processor_t *proc = zhash_lookup(processors[0], db_name);
+        processor_state_t *proc = zhash_lookup(processors[0], db_name);
         // printf("[D] forwarding %s\n", db_name);
         zmsg_t *stats_msg;
 
