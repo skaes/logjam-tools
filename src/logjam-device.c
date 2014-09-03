@@ -183,11 +183,11 @@ amqp_connection_state_t setup_amqp_connection()
 int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
 {
     int rc=0;
-    zmq_msg_t *exchange  = &message_parts[0];
-    zmq_msg_t *key       = &message_parts[1];
-    zmq_msg_t *body      = &message_parts[2];
+    zmq_msg_t *app_env = &message_parts[0];
+    zmq_msg_t *key     = &message_parts[1];
+    zmq_msg_t *body    = &message_parts[2];
 
-    rc = zmq_msg_send(exchange, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+    rc = zmq_msg_send(app_env, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
     if (rc == -1) {
         log_zmq_error(rc);
         return rc;
@@ -205,6 +205,7 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
     return rc;
 }
 
+/*
 int publish_on_amqp_transport(amqp_connection_state_t connection, zmq_msg_t *message_parts)
 {
     zmq_msg_t *exchange  = &message_parts[0];
@@ -255,7 +256,7 @@ int publish_on_amqp_transport(amqp_connection_state_t connection, zmq_msg_t *mes
                                      message_body);
     return amqp_rc;
 }
-
+*/
 
 void shutdown_amqp_connection(amqp_connection_state_t connection, int amqp_rc, uint num_channels)
 {
@@ -305,7 +306,7 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
     void *receiver = item->socket;
     publisher_state_t *state = (publisher_state_t*)callback_data;
     void *publisher = state->publisher;
-    amqp_connection_state_t connection = state->connection;
+    // amqp_connection_state_t connection = state->connection;
 
     // read the message parts
     while (!zctx_interrupted) {
@@ -340,6 +341,7 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
     if (msg_bytes > received_messages_max_bytes)
         received_messages_max_bytes = msg_bytes;
 
+    /*
     if (connection != NULL) {
         state->amqp_rc = publish_on_amqp_transport(connection, &message_parts[0]);
 
@@ -349,6 +351,7 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
             goto cleanup;
         }
     }
+    */
 
     publish_on_zmq_transport(&message_parts[0], publisher);
 
