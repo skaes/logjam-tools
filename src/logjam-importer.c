@@ -620,6 +620,7 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
 
 processor_state_t* processor_new(char *db_name)
 {
+    printf("[D] creating processor for db: %s\n", db_name);
     // check whether it's a known stream and return NULL if not
     size_t n = strlen(db_name) - DB_PREFIX_LEN;
     char stream_name[n+1];
@@ -666,6 +667,7 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
     size_t n = zframe_size(stream_frame);
     char db_name[n+100];
     strcpy(db_name, "logjam-");
+    // printf("[D] db_name: %s\n", db_name);
 
     const char *stream_chars = (char*)zframe_data(stream_frame);
     if (n > 15 && !strncmp("request-stream-", stream_chars, 15)) {
@@ -677,17 +679,17 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
         db_name[n+7] = '-';
         db_name[n+7+1] = '\0';
     }
+    // printf("[D] db_name: %s\n", db_name);
 
     json_object* started_at_value;
     if (json_object_object_get_ex(request, "started_at", &started_at_value)) {
         const char *date_str = json_object_get_string(started_at_value);
-        strncpy(&db_name[n+7-14], date_str, 10);
-        db_name[n+7-14+10] = '\0';
+        strncpy(&db_name[n+7+1], date_str, 10);
+        db_name[n+7+1+10] = '\0';
     } else {
         fprintf(stderr, "[E] dropped request without started_at date\n");
         return NULL;
     }
-
     // printf("[D] db_name: %s\n", db_name);
 
     processor_state_t *p = zhash_lookup(parser_state->processors, db_name);
@@ -2130,6 +2132,7 @@ int processor_publish_totals(const char* db_name, void *processor, void *live_st
 
 void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
 {
+    // zmsg_dump(msg);
     if (zmsg_size(msg) < 3) {
         fprintf(stderr, "[E] parser received incomplete message\n");
         my_zmsg_fprint(msg, "[E] FRAME=", stderr);
