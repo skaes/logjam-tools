@@ -620,7 +620,7 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
 
 processor_state_t* processor_new(char *db_name)
 {
-    printf("[D] creating processor for db: %s\n", db_name);
+    // printf("[D] creating processor for db: %s\n", db_name);
     // check whether it's a known stream and return NULL if not
     size_t n = strlen(db_name) - DB_PREFIX_LEN;
     char stream_name[n+1];
