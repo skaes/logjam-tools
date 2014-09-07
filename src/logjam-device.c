@@ -365,22 +365,23 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
 
 void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_ref, const char *stream)
 {
-    const char *exchange = stream;
-    const char *routing_key = "#";
     size_t n = strlen(stream);
     char app[n], env[n];
     memset(app, 0, n);
     memset(env, 0, n);
-    sscanf(stream, "request-stream-%[^-]-%[^-]", app, env);
+    sscanf(stream, "%[^-]-%[^-]", app, env);
     if (strcmp(env, rabbit_env)) {
         printf("[I] skipping: %s-%s\n", app, env);
         return;
     }
-    amqp_channel_t channel = ++(*channel_ref);
-    char queue[n];
+    // printf("[I] processing %s-%s\n", app, env);
+    char exchange[n+15];
+    sprintf(exchange, "request-stream-%s-%s", app, env);
+    char queue[n+14];
     sprintf(queue, "logjam-device-%s-%s", app, env);
     printf("[I] binding: %s ==> %s\n", exchange, queue);
 
+    amqp_channel_t channel = ++(*channel_ref);
     if (channel > 1) {
         printf("[D] opening channel %d\n", channel);
         amqp_channel_open(conn, channel);
@@ -408,6 +409,7 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_re
 
     // amqp_queue_bind(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t queue,
     //                 amqp_bytes_t exchange, amqp_bytes_t routing_key, amqp_table_t arguments)
+    const char *routing_key = "#";
     amqp_queue_bind(conn, channel, queuename, amqp_cstring_bytes(exchange), amqp_cstring_bytes(routing_key), amqp_empty_table);
     die_on_amqp_error(amqp_get_rpc_reply(conn), "binding queue");
 
@@ -469,10 +471,15 @@ void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
 
         // send messages to main thread
         zmsg_t *message = zmsg_new();
-        zmsg_addmem(message, envelope.exchange.bytes, envelope.exchange.len);
+        // skip request-stream prefix, leaving only app-env
+        if (envelope.exchange.len > 15 && !strncmp(envelope.exchange.bytes, "request-stream-", 15))
+            zmsg_addmem(message, envelope.exchange.bytes+15, envelope.exchange.len-15);
+        else
+            zmsg_addmem(message, envelope.exchange.bytes, envelope.exchange.len);
         zmsg_addmem(message, envelope.routing_key.bytes, envelope.routing_key.len);
         zmsg_addmem(message, envelope.message.body.bytes, envelope.message.body.len);
         // zmsg_dump(message);
+
         if (output_socket_ready(pipe, 0)) {
             zmsg_send(&message, pipe);
         } else {

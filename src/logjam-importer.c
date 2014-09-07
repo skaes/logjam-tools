@@ -574,6 +574,14 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
         while (stream != NULL)  {
             printf("[I] controller: subscribing to stream: %s\n", stream);
             zsocket_set_subscribe(state.sub_socket, stream);
+            size_t n = strlen(stream);
+            if (n > 15 && !strncmp(stream, "request-stream-", 15)) {
+                zsocket_set_subscribe(state.sub_socket, stream+15);
+            } else {
+                char old_stream[n+15+1];
+                sprintf(old_stream, "request-stream-%s", stream);
+                zsocket_set_subscribe(state.sub_socket, old_stream);
+            }
             stream = zlist_next(subscriptions);
         }
         zlist_destroy(&subscriptions);
@@ -609,27 +617,21 @@ void subscriber(void *args, zctx_t *ctx, void *pipe)
 
 #define DB_PREFIX "logjam-"
 #define DB_PREFIX_LEN 7
-#define STREAM_PREFIX "request-stream-"
-// strlen(STREAM_PREFIX)
-#define STREAM_PREFIX_LEN 15
-// ISO date: 2014-11-11
 
 processor_state_t* processor_new(char *db_name)
 {
     // check whether it's a known stream and return NULL if not
-    size_t n = strlen(db_name) + STREAM_PREFIX_LEN - DB_PREFIX_LEN;
+    size_t n = strlen(db_name) - DB_PREFIX_LEN;
     char stream_name[n+1];
-    strcpy(stream_name, STREAM_PREFIX);
-    strcpy(stream_name + STREAM_PREFIX_LEN, db_name + DB_PREFIX_LEN);
+    strcpy(stream_name, db_name + DB_PREFIX_LEN);
     stream_name[n-11] = '\0';
 
     stream_info_t *stream_info = zhash_lookup(configured_streams, stream_name);
     if (stream_info == NULL) {
         fprintf(stderr, "[E] did not find stream info: %s\n", stream_name);
         return NULL;
-    } else {
-        // printf("[D] found stream info for stream %s: %s\n", stream, stream_name);
     }
+    // printf("[D] found stream info for stream %s: %s\n", stream_name, stream_info->key);
 
     processor_state_t *p = malloc(sizeof(processor_state_t));
     p->db_name = strdup(db_name);
@@ -664,9 +666,17 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
     size_t n = zframe_size(stream_frame);
     char db_name[n+100];
     strcpy(db_name, "logjam-");
-    memcpy(db_name+7, zframe_data(stream_frame)+15, n-15);
-    db_name[n+7-15] = '-';
-    db_name[n+7-14] = '\0';
+
+    const char *stream_chars = (char*)zframe_data(stream_frame);
+    if (n > 15 && !strncmp("request-stream-", stream_chars, 15)) {
+        memcpy(db_name+7, stream_chars+15, n-15);
+        db_name[n+7-15] = '-';
+        db_name[n+7-14] = '\0';
+    } else {
+        memcpy(db_name+7, stream_chars, n);
+        db_name[n+7] = '-';
+        db_name[n+7+1] = '\0';
+    }
 
     json_object* started_at_value;
     if (json_object_object_get_ex(request, "started_at", &started_at_value)) {
@@ -3494,11 +3504,14 @@ stream_info_t* stream_info_new(zconfig_t *stream_config)
 {
     stream_info_t *info = malloc(sizeof(stream_info_t));
     info->key = zconfig_name(stream_config);
+    if (!strncmp(info->key, "request-stream-", 15)) {
+        info->key += 15;
+    }
     info->key_len = strlen(info->key);
 
     char app[256] = {'\0'};
     char env[256] = {'\0'};;
-    int n = sscanf(info->key, "request-stream-%[^-]-%[^-]", app, env);
+    int n = sscanf(info->key, "%[^-]-%[^-]", app, env);
     assert(n == 2);
 
     info->app = strdup(app);
