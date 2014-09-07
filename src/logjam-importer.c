@@ -2193,7 +2193,8 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("[I] parser [%zu]: tick (%zu messages)\n", state.id, state.request_count);
+            if (state.request_count)
+                printf("[I] parser [%zu]: tick (%zu messages)\n", state.id, state.request_count);
             msg = zmsg_recv(state.controller_socket);
             zmsg_t *answer = zmsg_new();
             zmsg_addmem(answer, &state.processors, sizeof(zhash_t*));
@@ -2291,7 +2292,8 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             msg = zmsg_recv(state.controller_socket);
-            printf("[I] updater[%zu]: tick (%zu updates)\n", id, state.updates_count);
+            if (state.updates_count)
+                printf("[I] updater[%zu]: tick (%zu updates)\n", id, state.updates_count);
             // ping the server
             if (ticks++ % PING_INTERVAL == 0) {
                 for (int i=0; i<num_databases; i++) {
@@ -2906,7 +2908,8 @@ void request_writer(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("[I] writer [%zu]: tick (%zu requests)\n", state.id, state.request_count);
+            if (state.request_count)
+                printf("[I] writer [%zu]: tick (%zu requests)\n", state.id, state.request_count);
             if (ticks++ % PING_INTERVAL == 0) {
                 // ping mongodb to reestablish connection if it got lost
                 for (int i=0; i<num_databases; i++) {
@@ -3128,7 +3131,7 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            printf("[I] indexer[%zu]: tick\n", state.id);
+            // printf("[D] indexer[%zu]: tick\n", state.id);
             msg = zmsg_recv(state.controller_socket);
 
             // if date has changed, start a bg thread to create databases for the next day
