@@ -2139,7 +2139,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
     }
     zframe_t *stream  = zmsg_first(msg);
     zframe_t *topic   = zmsg_next(msg);
-    zframe_t *body    = zmsg_last(msg);
+    zframe_t *body    = zmsg_next(msg);
     json_object *request = parse_json_body(body, parser_state->tokener);
     if (request != NULL) {
         char *topic_str = (char*) zframe_data(topic);
