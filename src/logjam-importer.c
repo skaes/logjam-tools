@@ -548,7 +548,7 @@ int read_request_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback
     zmsg_t *msg = zmsg_recv(item->socket);
     if (msg != NULL) {
         // zmsg_dump(msg);
-        subscriber_publish_duplicate(msg, state->pub_socket);
+        // subscriber_publish_duplicate(msg, state->pub_socket);
         zmsg_send(&msg, state->push_socket);
     }
     return 0;
