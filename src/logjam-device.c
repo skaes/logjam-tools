@@ -302,7 +302,7 @@ typedef struct {
 int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
 {
     int i = 0;
-    zmq_msg_t message_parts[3];
+    zmq_msg_t message_parts[4];
     void *receiver = item->socket;
     publisher_state_t *state = (publisher_state_t*)callback_data;
     void *publisher = state->publisher;
@@ -311,7 +311,7 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
     // read the message parts
     while (!zctx_interrupted) {
         // printf("[D] receiving part %d\n", i+1);
-        if (i>2) {
+        if (i>3) {
             zmq_msg_t dummy_msg;
             zmq_msg_init(&dummy_msg);
             zmq_recvmsg(receiver, &dummy_msg, 0);
@@ -329,9 +329,8 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
             fprintf(stderr, "[E] received only %d message parts\n", i);
         }
         goto cleanup;
-    } else if (i>2) {
-        fprintf(stderr, "[E] received more than 3 message parts\n");
-        i = 2;
+    } else if (i>3) {
+        fprintf(stderr, "[E] received more than 4 message parts\n");
         goto cleanup;
     }
 
