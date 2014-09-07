@@ -2140,15 +2140,16 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
     json_object *request = parse_json_body(body, parser_state->tokener);
     if (request != NULL) {
         char *topic_str = (char*) zframe_data(topic);
+        int n = zframe_size(topic);
         processor_state_t *processor = processor_create(stream, parser_state, request);
 
         if (processor == NULL) return;
 
-        if (!strncmp("logs", topic_str, 4))
+        if (n >= 4 && !strncmp("logs", topic_str, 4))
             processor_add_request(processor, parser_state, request);
-        else if (!strncmp("javascript", topic_str, 10))
+        else if (n >= 10 && !strncmp("javascript", topic_str, 10))
             processor_add_js_exception(processor, parser_state, request);
-        else if (!strncmp("events", topic_str, 6))
+        else if (n >= 6 && !strncmp("events", topic_str, 6))
             processor_add_event(processor, parser_state, request);
         else {
             fprintf(stderr, "[W] unknown topic key\n");
