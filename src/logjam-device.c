@@ -278,7 +278,8 @@ int timer_event(zloop_t *loop, int timer_id, void *arg)
     size_t message_bytes = received_messages_bytes - last_received_bytes;
     double avg_msg_size = message_count ? (message_bytes / 1024.0) / message_count : 0;
     double max_msg_size = received_messages_max_bytes / 1024.0;
-    printf("[I] processed %zu messages (%zu bytes), avg: %.2f KB, max: %.2f KB\n", message_count, message_bytes, avg_msg_size, max_msg_size);
+    printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
+           message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
