@@ -2086,6 +2086,11 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
     zmsg_send(&msg, pstate->push_socket);
 }
 
+void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request)
+{
+    // TODO: implement
+}
+
 int processor_publish_totals(const char* db_name, void *processor, void *live_stream_socket)
 {
     processor_state_t *self = processor;
@@ -2129,7 +2134,6 @@ int processor_publish_totals(const char* db_name, void *processor, void *live_st
 }
 
 
-
 void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
 {
     // zmsg_dump(msg);
@@ -2154,6 +2158,8 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
             processor_add_js_exception(processor, parser_state, request);
         else if (n >= 6 && !strncmp("events", topic_str, 6))
             processor_add_event(processor, parser_state, request);
+        else if (n >= 8 && !strncmp("frontend", topic_str, 8))
+            processor_add_frontend_data(processor, parser_state, request);
         else {
             fprintf(stderr, "[W] unknown topic key\n");
             my_zmsg_fprint(msg, "[E] FRAME=", stderr);
