@@ -3439,10 +3439,10 @@ void setup_resource_maps()
     allocated_objects_index = r2i("allocated_memory");
     allocated_bytes_index = r2i("allocated_bytes");
 
-    for (size_t j=0; j<=last_resource_index; j++) {
-        const char *r = i2r(j);
-        printf("[D] %s = %zu\n", r, r2i(r));
-    }
+    // for (size_t j=0; j<=last_resource_index; j++) {
+    //     const char *r = i2r(j);
+    //     printf("[D] %s = %zu\n", r, r2i(r));
+    // }
 }
 
 
