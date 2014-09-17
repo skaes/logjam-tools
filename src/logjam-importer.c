@@ -247,7 +247,9 @@ typedef struct {
 } metric_pair_t;
 
 typedef struct {
-    size_t request_count;
+    size_t backend_request_count;
+    size_t page_request_count;
+    size_t ajax_request_count;
     metric_pair_t *metrics;
     json_object *others;
 } increments_t;
@@ -838,7 +840,6 @@ increments_t* increments_new()
     increments->metrics = malloc(metrics_size);
     memset(increments->metrics, 0, metrics_size);
 
-    increments->request_count = 1;
     increments->others = json_object_new_object();
     return increments;
 }
@@ -855,7 +856,9 @@ void increments_destroy(void *increments)
 increments_t* increments_clone(increments_t* increments)
 {
     increments_t* new_increments = increments_new();
-    new_increments->request_count = increments->request_count;
+    new_increments->backend_request_count = increments->backend_request_count;
+    new_increments->page_request_count = increments->page_request_count;
+    new_increments->ajax_request_count = increments->ajax_request_count;
     memcpy(new_increments->metrics, increments->metrics, METRICS_ARRAY_SIZE);
     json_object_object_foreach(increments->others, key, value) {
         json_object_get(value);
@@ -899,6 +902,7 @@ void increments_fill_apdex(increments_t *increments, request_data_t *request_dat
     json_object *others = increments->others;
 
     if (total_time >= 2000 || response_code >= 500) {
+        // TODO: users are certainly unhappy when response code is 500. but should really use that here?
         json_object_object_add(others, "apdex.frustrated", NEW_INT1);
     } else if (total_time < 100) {
         json_object_object_add(others, "apdex.happy", NEW_INT1);
@@ -1221,7 +1225,9 @@ void increments_fill_caller_info(increments_t *increments, json_object *request)
 
 void increments_add(increments_t *stored_increments, increments_t* increments)
 {
-    stored_increments->request_count += increments->request_count;
+    stored_increments->backend_request_count += increments->backend_request_count;
+    stored_increments->page_request_count += increments->page_request_count;
+    stored_increments->ajax_request_count += increments->ajax_request_count;
     for (size_t i=0; i<=last_resource_index; i++) {
         metric_pair_t *stored = &(stored_increments->metrics[i]);
         metric_pair_t *addend = &(increments->metrics[i]);
@@ -1298,7 +1304,9 @@ int dump_increments(const char *key, void *total, void *arg)
     puts("[D] ------------------------------------------------");
     printf("[D] action: %s\n", key);
     increments_t* increments = total;
-    printf("[D] requests: %zu\n", increments->request_count);
+    printf("[D] backend requests: %zu\n", increments->backend_request_count);
+    printf("[D] page requests: %zu\n", increments->page_request_count);
+    printf("[D] ajax requests: %zu\n", increments->ajax_request_count);
     dump_metrics(increments->metrics);
     dump_json_object(stdout, increments->others);
     return 0;
@@ -1326,7 +1334,9 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
     // dump_increments(namespace, increments, NULL);
 
     bson_t *incs = bson_new();
-    bson_append_int32(incs, "count", 5, increments->request_count);
+    bson_append_int32(incs, "count", 5, increments->backend_request_count);
+    bson_append_int32(incs, "page_count", 5, increments->page_request_count);
+    bson_append_int32(incs, "ajax_count", 5, increments->ajax_request_count);
 
     for (size_t i=0; i<=last_resource_index; i++) {
         double val = increments->metrics[i].val;
@@ -1946,7 +1956,6 @@ int ignore_request(json_object *request, stream_info_t* info)
 void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
     if (ignore_request(request, self->stream_info)) return;
-    self->request_count++;
 
     // dump_json_object(stdout, request);
     request_data_t request_data;
@@ -1962,6 +1971,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     request_data.heap_growth = processor_setup_heap_growth(self, request);
 
     increments_t* increments = increments_new();
+    increments->backend_request_count = 1;
     increments_fill_metrics(increments, request);
     increments_fill_apdex(increments, &request_data);
     increments_fill_response_code(increments, &request_data);
@@ -2123,7 +2133,9 @@ int processor_publish_totals(const char* db_name, void *processor, void *live_st
         increments_t *incs = zhash_lookup(self->totals, namespace);
         if (incs) {
             json_object *json = json_object_new_object();
-            json_object_object_add(json, "count", json_object_new_int(incs->request_count));
+            json_object_object_add(json, "count", json_object_new_int(incs->backend_request_count));
+            json_object_object_add(json, "page_count", json_object_new_int(incs->page_request_count));
+            json_object_object_add(json, "ajax_count", json_object_new_int(incs->ajax_request_count));
             increments_add_metrics_to_json(incs, json);
             const char* json_str = json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN);
 
@@ -2157,6 +2169,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         processor_state_t *processor = processor_create(stream, parser_state, request);
 
         if (processor == NULL) return;
+        processor->request_count++;
 
         if (n >= 4 && !strncmp("logs", topic_str, 4))
             processor_add_request(processor, parser_state, request);
