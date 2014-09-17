@@ -895,6 +895,7 @@ void increments_add_metrics_to_json(increments_t *increments, json_object *jobj)
 
 #define NEW_INT1 (json_object_new_int(1))
 
+
 void increments_fill_apdex(increments_t *increments, request_data_t *request_data)
 {
     double total_time = request_data->total_time;
@@ -911,6 +912,19 @@ void increments_fill_apdex(increments_t *increments, request_data_t *request_dat
         json_object_object_add(others, "apdex.satisfied", NEW_INT1);
     } else if (total_time < 2000) {
         json_object_object_add(others, "apdex.tolerating", NEW_INT1);
+    }
+}
+
+void increments_fill_frontend_apdex(increments_t *increments, double total_time)
+{
+    json_object *others = increments->others;
+
+    if (total_time < 2000) {
+        json_object_object_add(others, "fapdex.satisfied", NEW_INT1);
+    } else if (total_time < 8000) {
+        json_object_object_add(others, "fapdex.tolerating", NEW_INT1);
+    } else {
+        json_object_object_add(others, "fapdex.frustrated", NEW_INT1);
     }
 }
 
@@ -1334,9 +1348,12 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
     // dump_increments(namespace, increments, NULL);
 
     bson_t *incs = bson_new();
-    bson_append_int32(incs, "count", 5, increments->backend_request_count);
-    bson_append_int32(incs, "page_count", 5, increments->page_request_count);
-    bson_append_int32(incs, "ajax_count", 5, increments->ajax_request_count);
+    if (increments->backend_request_count)
+        bson_append_int32(incs, "count", 5, increments->backend_request_count);
+    if (increments->page_request_count)
+        bson_append_int32(incs, "page_count", 10, increments->page_request_count);
+    if (increments->ajax_request_count)
+        bson_append_int32(incs, "ajax_count", 10, increments->ajax_request_count);
 
     for (size_t i=0; i<=last_resource_index; i++) {
         double val = increments->metrics[i].val;
@@ -1678,24 +1695,24 @@ int processor_setup_response_code(processor_state_t *self, json_object *request)
     return response_code;
 }
 
-double processor_setup_total_time(processor_state_t *self, json_object *request)
+double processor_setup_time(processor_state_t *self, json_object *request, const char *time_name)
 {
     // TODO: might be better to drop requests without total_time
     double total_time;
     json_object *total_time_obj = NULL;
-    if (json_object_object_get_ex(request, "total_time", &total_time_obj)) {
+    if (json_object_object_get_ex(request, time_name, &total_time_obj)) {
         total_time = json_object_get_double(total_time_obj);
         if (total_time == 0.0) {
             total_time = 1.0;
             total_time_obj = json_object_new_double(total_time);
-            json_object_object_add(request, "total_time", total_time_obj);
+            json_object_object_add(request, time_name, total_time_obj);
         }
     } else {
         total_time = 1.0;
         total_time_obj = json_object_new_double(total_time);
-        json_object_object_add(request, "total_time", total_time_obj);
+        json_object_object_add(request, time_name, total_time_obj);
     }
-    // printf("[D] total_time: %f\n", total_time);
+    // printf("[D] %s: %f\n", time_name, total_time);
     return total_time;
 }
 
@@ -1964,7 +1981,8 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     request_data.response_code = processor_setup_response_code(self, request);
     request_data.severity = processor_setup_severity(self, request);
     request_data.minute = processor_setup_minute(self, request);
-    request_data.total_time = processor_setup_total_time(self, request);
+    request_data.total_time = processor_setup_time(self, request, "total_time");
+
     request_data.exceptions = processor_setup_exceptions(self, request);
     processor_setup_other_time(self, request, request_data.total_time);
     processor_setup_allocated_memory(self, request);
@@ -2104,7 +2122,67 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
 
 void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
-    // TODO: implement
+    request_data_t request_data;
+    request_data.page = processor_setup_page(self, request);
+    request_data.module = processor_setup_module(self, request_data.page);
+    request_data.minute = processor_setup_minute(self, request);
+    request_data.total_time = processor_setup_time(self, request, "page_time");
+
+    increments_t* increments = increments_new();
+    increments->page_request_count = 1;
+    increments_fill_metrics(increments, request);
+    increments_fill_frontend_apdex(increments, request_data.total_time);
+
+    processor_add_totals(self, request_data.page, increments);
+    processor_add_totals(self, request_data.module, increments);
+    processor_add_totals(self, "all_pages", increments);
+
+    processor_add_minutes(self, request_data.page, request_data.minute, increments);
+    processor_add_minutes(self, request_data.module, request_data.minute, increments);
+    processor_add_minutes(self, "all_pages", request_data.minute, increments);
+
+    processor_add_quants(self, request_data.page, increments);
+
+    // dump_increments("add_frontend_data", increments, NULL);
+
+    increments_destroy(increments);
+
+    // TODO: store interesting requests
+}
+
+void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request)
+{
+    // dump_json_object(stdout, request);
+    // if (self->request_count % 100 == 0) {
+    //     processor_dump_state(self);
+    // }
+
+    request_data_t request_data;
+    request_data.page = processor_setup_page(self, request);
+    request_data.module = processor_setup_module(self, request_data.page);
+    request_data.minute = processor_setup_minute(self, request);
+    request_data.total_time = processor_setup_time(self, request, "ajax_time");
+
+    increments_t* increments = increments_new();
+    increments->ajax_request_count = 1;
+    increments_fill_metrics(increments, request);
+    increments_fill_frontend_apdex(increments, request_data.total_time);
+
+    processor_add_totals(self, request_data.page, increments);
+    processor_add_totals(self, request_data.module, increments);
+    processor_add_totals(self, "all_pages", increments);
+
+    processor_add_minutes(self, request_data.page, request_data.minute, increments);
+    processor_add_minutes(self, request_data.module, request_data.minute, increments);
+    processor_add_minutes(self, "all_pages", request_data.minute, increments);
+
+    processor_add_quants(self, request_data.page, increments);
+
+    // dump_increments("add_ajax_data", increments, NULL);
+
+    increments_destroy(increments);
+
+    // TODO: store interesting requests
 }
 
 int processor_publish_totals(const char* db_name, void *processor, void *live_stream_socket)
@@ -2177,8 +2255,10 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
             processor_add_js_exception(processor, parser_state, request);
         else if (n >= 6 && !strncmp("events", topic_str, 6))
             processor_add_event(processor, parser_state, request);
-        else if (n >= 8 && !strncmp("frontend", topic_str, 8))
+        else if (n >= 13 && !strncmp("frontend.page", topic_str, 13))
             processor_add_frontend_data(processor, parser_state, request);
+        else if (n >= 13 && !strncmp("frontend.ajax", topic_str, 13))
+            processor_add_ajax_data(processor, parser_state, request);
         else {
             fprintf(stderr, "[W] unknown topic key\n");
             my_zmsg_fprint(msg, "[E] FRAME=", stderr);
