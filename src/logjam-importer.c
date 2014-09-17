@@ -144,6 +144,12 @@ static size_t last_memory_resource_index = 0;
 static char *heap_resources[MAX_RESOURCE_COUNT];
 static size_t last_heap_resource_index = 0;
 
+static char *frontend_resources[MAX_RESOURCE_COUNT];
+static size_t last_frontend_resource_index = 0;
+
+static char *dom_resources[MAX_RESOURCE_COUNT];
+static size_t last_dom_resource_index = 0;
+
 static size_t allocated_objects_index, allocated_bytes_index;
 
 static inline size_t r2i(const char* resource)
@@ -3426,15 +3432,17 @@ void setup_resource_maps()
     add_resources_of_type("call", call_resources, &last_call_resource_index);
     add_resources_of_type("memory", memory_resources, &last_memory_resource_index);
     add_resources_of_type("heap", heap_resources, &last_heap_resource_index);
+    add_resources_of_type("frontend", frontend_resources, &last_frontend_resource_index);
+    add_resources_of_type("dom", dom_resources, &last_dom_resource_index);
     last_resource_index--;
 
     allocated_objects_index = r2i("allocated_memory");
     allocated_bytes_index = r2i("allocated_bytes");
 
-    // for (size_t j=0; j<=last_resource_index; j++) {
-    //     const char *r = i2r(j);
-    //     printf("[D] %s = %zu\n", r, r2i(r));
-    // }
+    for (size_t j=0; j<=last_resource_index; j++) {
+        const char *r = i2r(j);
+        printf("[D] %s = %zu\n", r, r2i(r));
+    }
 }
 
 
