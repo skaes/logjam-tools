@@ -207,7 +207,7 @@ typedef struct {
 /* parser state */
 typedef struct {
     size_t id;
-    size_t request_count;
+    size_t parsed_msgs_count;
     void *controller_socket;
     void *pull_socket;
     void *push_socket;
@@ -2188,7 +2188,7 @@ void parser(void *args, zctx_t *ctx, void *pipe)
 {
     parser_state_t state;
     state.id = (size_t)args;
-    state.request_count = 0;
+    state.parsed_msgs_count = 0;
     state.controller_socket = pipe;
     state.pull_socket = parser_pull_socket_new(ctx);
     state.push_socket = parser_push_socket_new(ctx);
@@ -2205,19 +2205,19 @@ void parser(void *args, zctx_t *ctx, void *pipe)
         zmsg_t *msg = NULL;
         if (socket == state.controller_socket) {
             // tick
-            if (state.request_count)
-                printf("[I] parser [%zu]: tick (%zu messages)\n", state.id, state.request_count);
+            if (state.parsed_msgs_count)
+                printf("[I] parser [%zu]: tick (%zu messages)\n", state.id, state.parsed_msgs_count);
             msg = zmsg_recv(state.controller_socket);
             zmsg_t *answer = zmsg_new();
             zmsg_addmem(answer, &state.processors, sizeof(zhash_t*));
-            zmsg_addmem(answer, &state.request_count, sizeof(size_t));
+            zmsg_addmem(answer, &state.parsed_msgs_count, sizeof(size_t));
             zmsg_send(&answer, state.controller_socket);
-            state.request_count = 0;
+            state.parsed_msgs_count = 0;
             state.processors = processor_hash_new();
         } else if (socket == state.pull_socket) {
             msg = zmsg_recv(state.pull_socket);
             if (msg != NULL) {
-                state.request_count++;
+                state.parsed_msgs_count++;
                 parse_msg_and_forward_interesting_requests(msg, &state);
             }
         } else {
@@ -2229,14 +2229,14 @@ void parser(void *args, zctx_t *ctx, void *pipe)
     printf("[I] parser [%zu]: terminated\n", state.id);
 }
 
-void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *request_count)
+void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs_count)
 {
     zframe_t *first = zmsg_first(msg);
     zframe_t *second = zmsg_next(msg);
     assert(zframe_size(first) == sizeof(zhash_t*));
     memcpy(&*processors, zframe_data(first), sizeof(zhash_t*));
     assert(zframe_size(second) == sizeof(size_t));
-    memcpy(request_count, zframe_data(second), sizeof(size_t));
+    memcpy(parsed_msgs_count, zframe_data(second), sizeof(size_t));
 }
 
 void extract_processor_state(zmsg_t* msg, processor_state_t **processor, size_t *request_count)
@@ -3259,7 +3259,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     int64_t start_time_ms = zclock_time();
     controller_state_t *state = arg;
     zhash_t *processors[NUM_PARSERS];
-    size_t request_counts[NUM_PARSERS];
+    size_t parsed_msgs_counts[NUM_PARSERS];
 
     state->ticks++;
 
@@ -3269,13 +3269,13 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_addstr(tick, "tick");
         zmsg_send(&tick, parser_pipe);
         zmsg_t *response = zmsg_recv(parser_pipe);
-        extract_parser_state(response, &processors[i], &request_counts[i]);
+        extract_parser_state(response, &processors[i], &parsed_msgs_counts[i]);
         zmsg_destroy(&response);
     }
 
-    size_t request_count = request_counts[0];
+    size_t parsed_msgs_count = parsed_msgs_counts[0];
     for (size_t i=1; i<NUM_PARSERS; i++) {
-        request_count += request_counts[i];
+        parsed_msgs_count += parsed_msgs_counts[i];
     }
 
     for (size_t i=1; i<NUM_PARSERS; i++) {
@@ -3363,7 +3363,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     int64_t end_time_ms = zclock_time();
     int runtime = end_time_ms - start_time_ms;
     int next_tick = runtime > 999 ? 1 : 1000 - runtime;
-    printf("[I] controller: %5zu messages (%d ms)\n", request_count, runtime);
+    printf("[I] controller: %5zu messages (%d ms)\n", parsed_msgs_count, runtime);
 
     if (terminate) {
         printf("[I] controller: detected config change. terminating.\n");
