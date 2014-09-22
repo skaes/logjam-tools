@@ -2122,6 +2122,8 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
 
 void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
+    return;
+
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
@@ -2152,6 +2154,8 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
 
 void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
+    return;
+
     // dump_json_object(stdout, request);
     // if (self->request_count % 100 == 0) {
     //     processor_dump_state(self);
