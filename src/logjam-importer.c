@@ -2164,6 +2164,16 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
 void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
     return;
+    // dump_json_object(stderr, request);
+    // if (self->request_count % 100 == 0) {
+    //      processor_dump_state(self);
+    // }
+
+    // json_object *rti_object = NULL;
+    // if (json_object_object_get_ex(request, "rti", &rti_object)) {
+    //     const char *rti = json_object_get_string(rti_object);
+    //     fprintf(stdout, "[D] RTI: %s\n", rti);
+    // }
 
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
