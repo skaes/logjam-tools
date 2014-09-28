@@ -2167,6 +2167,12 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     request_data.minute = processor_setup_minute(self, request);
     request_data.total_time = processor_setup_time(self, request, "ajax_time");
 
+    if (request_data.total_time > 60000) {
+        fprintf(stderr, "[W] dropped request data with nonsensical ajax_time\n");
+        dump_json_object(stderr, request);
+        return;
+    }
+
     increments_t* increments = increments_new();
     increments->ajax_request_count = 1;
     increments_fill_metrics(increments, request);
