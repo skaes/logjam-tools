@@ -64,15 +64,19 @@ bool config_file_has_changed()
 #define ISO_DATE_STR_LEN 11
 static char iso_date_today[ISO_DATE_STR_LEN] = {'0'};
 static char iso_date_tomorrow[ISO_DATE_STR_LEN] = {'0'};
+static time_t time_last_tick = 0;
+// discard all messages which differ by more than 1 hour from the current time
+// if we have larger clockdrift: tough luck
+#define INVALID_MSG_AGE_THRESHOLD 3600
 
 bool update_date_info()
 {
     char old_date[ISO_DATE_STR_LEN];
     strcpy(old_date, iso_date_today);
 
-    time_t today = time(NULL);
+    time_last_tick = time(NULL);
     struct tm lt;
-    assert( localtime_r(&today, &lt) );
+    assert( localtime_r(&time_last_tick, &lt) );
     // calling mktime fills in potentially missing TZ and DST info
     assert( mktime(&lt) != -1 );
     sprintf(iso_date_today,  "%04d-%02d-%02d", 1900 + lt.tm_year, 1 + lt.tm_mon, lt.tm_mday);
@@ -670,6 +674,39 @@ void processor_destroy(void* processor)
     free(p);
 }
 
+#define INVALID_DATE -1
+time_t valid_database_date(const char *date)
+{
+    if (strlen(date) < 19) {
+        fprintf(stderr, "[E] detected crippled date string: %s\n", date);
+        return INVALID_DATE;
+    }
+    struct tm time;
+    memset(&time, 0, sizeof(time));
+    // fill in correct TZ and DST info
+    localtime_r(&time_last_tick, &time);
+    const char* format = date[10] == 'T' ? "%Y-%m-%dT%H:%M:%S" : "%Y-%m-%d %H:%M:%S";
+    if (!strptime(date, format, &time)) {
+        fprintf(stderr, "[E] could not parse date: %s\n", date);
+        return INVALID_DATE;
+    }
+    time_t res = mktime(&time);
+
+    // char b[100];
+    // ctime_r(&time_last_tick, b);
+    // puts(b);
+    // ctime_r(&res, b);
+    // puts(b);
+
+    int drift = abs( difftime (res,time_last_tick) );
+    if ( drift > INVALID_MSG_AGE_THRESHOLD) {
+        fprintf(stderr, "[E] detected intolerable clock drift: %d seconds\n", drift);
+        return INVALID_DATE;
+    }
+    else
+        return res;
+}
+
 processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
 {
     size_t n = zframe_size(stream_frame);
@@ -690,14 +727,17 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
     // printf("[D] db_name: %s\n", db_name);
 
     json_object* started_at_value;
-    if (json_object_object_get_ex(request, "started_at", &started_at_value)) {
-        const char *date_str = json_object_get_string(started_at_value);
-        strncpy(&db_name[n+7+1], date_str, 10);
-        db_name[n+7+1+10] = '\0';
-    } else {
+    if (!json_object_object_get_ex(request, "started_at", &started_at_value)) {
         fprintf(stderr, "[E] dropped request without started_at date\n");
         return NULL;
     }
+    const char *date_str = json_object_get_string(started_at_value);
+    if (INVALID_DATE == valid_database_date(date_str)) {
+        fprintf(stderr, "[E] dropped request for %s with invalid started_at date: %s\n", db_name, date_str);
+        return NULL;
+    }
+    strncpy(&db_name[n+7+1], date_str, 10);
+    db_name[n+7+1+10] = '\0';
     // printf("[D] db_name: %s\n", db_name);
 
     processor_state_t *p = zhash_lookup(parser_state->processors, db_name);
@@ -1761,7 +1801,8 @@ int processor_setup_severity(processor_state_t *self, json_object *request)
 
 int processor_setup_minute(processor_state_t *self, json_object *request)
 {
-    // TODO: protect against bad started_at data
+    // we know that started_at data is valid since we already checked that
+    // when determining which processor to call
     int minute = 0;
     json_object *started_at_obj = NULL;
     if (json_object_object_get_ex(request, "started_at", &started_at_obj)) {
