@@ -907,6 +907,8 @@ increments_t* increments_clone(increments_t* increments)
     return new_increments;
 }
 
+// TODO: this is horribly inefficient. redesign logjam protocol
+// so that metrics come in a sub hash (or several)
 void increments_fill_metrics(increments_t *increments, json_object *request)
 {
     const int n = last_resource_index;
