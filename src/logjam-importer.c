@@ -939,19 +939,17 @@ void increments_add_metrics_to_json(increments_t *increments, json_object *jobj)
 void increments_fill_apdex(increments_t *increments, request_data_t *request_data)
 {
     double total_time = request_data->total_time;
-    long response_code = request_data->response_code;
     json_object *others = increments->others;
 
-    if (total_time >= 2000 || response_code >= 500) {
-        // TODO: users are certainly unhappy when response code is 500. but should really use that here?
-        json_object_object_add(others, "apdex.frustrated", NEW_INT1);
-    } else if (total_time < 100) {
+    if (total_time < 100) {
         json_object_object_add(others, "apdex.happy", NEW_INT1);
         json_object_object_add(others, "apdex.satisfied", NEW_INT1);
     } else if (total_time < 500) {
         json_object_object_add(others, "apdex.satisfied", NEW_INT1);
     } else if (total_time < 2000) {
         json_object_object_add(others, "apdex.tolerating", NEW_INT1);
+    } else {
+        json_object_object_add(others, "apdex.frustrated", NEW_INT1);
     }
 }
 
