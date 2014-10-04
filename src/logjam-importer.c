@@ -2237,7 +2237,7 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     request_data.total_time = processor_setup_time(self, request, "ajax_time");
 
     // TODO: revisit when switching to percentiles
-    if (request_data.total_time > 60000) {
+    if (request_data.total_time > 300000) {
         fprintf(stderr, "[W] dropped request data with nonsensical ajax_time\n");
         dump_json_object(stderr, request);
         return;
