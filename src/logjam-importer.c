@@ -1399,10 +1399,19 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
     bson_t *incs = bson_new();
     if (increments->backend_request_count)
         bson_append_int32(incs, "count", 5, increments->backend_request_count);
-    if (increments->page_request_count)
+    size_t frontend_request_count = 0;
+    if (increments->page_request_count) {
+        frontend_request_count += increments->page_request_count;
         bson_append_int32(incs, "page_count", 10, increments->page_request_count);
-    if (increments->ajax_request_count)
+    }
+    if (increments->ajax_request_count) {
+        frontend_request_count += increments->ajax_request_count;
         bson_append_int32(incs, "ajax_count", 10, increments->ajax_request_count);
+    }
+    // store frontend_count for easier retrieval of frontend totals/minutes
+    if (frontend_request_count) {
+        bson_append_int32(incs, "frontend_count", 14, frontend_request_count);
+    }
 
     for (size_t i=0; i<=last_resource_offset; i++) {
         double val = increments->metrics[i].val;
