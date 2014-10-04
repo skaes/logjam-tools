@@ -938,9 +938,8 @@ void increments_add_metrics_to_json(increments_t *increments, json_object *jobj)
 #define NEW_INT1 (json_object_new_int(1))
 
 
-void increments_fill_apdex(increments_t *increments, request_data_t *request_data)
+void increments_fill_apdex(increments_t *increments, double total_time)
 {
-    double total_time = request_data->total_time;
     json_object *others = increments->others;
 
     if (total_time < 100) {
@@ -959,7 +958,11 @@ void increments_fill_frontend_apdex(increments_t *increments, double total_time)
 {
     json_object *others = increments->others;
 
-    if (total_time < 2000) {
+    if (total_time < 500) {
+        json_object_object_add(others, "fapdex.happy", NEW_INT1);
+        json_object_object_add(others, "fapdex.satisfied", NEW_INT1);
+    }
+    else if (total_time < 2000) {
         json_object_object_add(others, "fapdex.satisfied", NEW_INT1);
     } else if (total_time < 8000) {
         json_object_object_add(others, "fapdex.tolerating", NEW_INT1);
@@ -2032,7 +2035,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     increments_t* increments = increments_new();
     increments->backend_request_count = 1;
     increments_fill_metrics(increments, request);
-    increments_fill_apdex(increments, &request_data);
+    increments_fill_apdex(increments, request_data.total_time);
     increments_fill_response_code(increments, &request_data);
     increments_fill_severity(increments, &request_data);
     increments_fill_caller_info(increments, request);
