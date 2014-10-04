@@ -131,28 +131,34 @@ static char *URI_ESCAPED_DOLLAR = "%24";
 static zhash_t* resource_to_int = NULL;
 static char *int_to_resource[MAX_RESOURCE_COUNT];
 static char *int_to_resource_sq[MAX_RESOURCE_COUNT];
-static size_t last_resource_index = 0;
+static size_t last_resource_offset = 0;
 
 static char *time_resources[MAX_RESOURCE_COUNT];
 static size_t last_time_resource_index = 0;
+static size_t last_time_resource_offset = 0;
 
 static char *other_time_resources[MAX_RESOURCE_COUNT];
 static size_t last_other_time_resource_index = 0;
 
 static char *call_resources[MAX_RESOURCE_COUNT];
 static size_t last_call_resource_index = 0;
+static size_t last_call_resource_offset = 0;
 
 static char *memory_resources[MAX_RESOURCE_COUNT];
 static size_t last_memory_resource_index = 0;
+static size_t last_memory_resource_offset = 0;
 
 static char *heap_resources[MAX_RESOURCE_COUNT];
 static size_t last_heap_resource_index = 0;
+static size_t last_heap_resource_offset = 0;
 
 static char *frontend_resources[MAX_RESOURCE_COUNT];
 static size_t last_frontend_resource_index = 0;
+static size_t last_frontend_resource_offset = 0;
 
 static char *dom_resources[MAX_RESOURCE_COUNT];
 static size_t last_dom_resource_index = 0;
+static size_t last_dom_resource_offset = 0;
 
 static size_t allocated_objects_index, allocated_bytes_index;
 
@@ -163,7 +169,7 @@ static inline size_t r2i(const char* resource)
 
 static inline const char* i2r(size_t i)
 {
-    assert(i <= last_resource_index);
+    assert(i <= last_resource_offset);
     return (const char*)(int_to_resource[i]);
 }
 
@@ -258,8 +264,8 @@ typedef struct {
     json_object *others;
 } increments_t;
 
-#define METRICS_ARRAY_SIZE (sizeof(metric_pair_t) * (last_resource_index + 1))
-#define QUANTS_ARRAY_SIZE (sizeof(size_t) * (last_resource_index + 1))
+#define METRICS_ARRAY_SIZE (sizeof(metric_pair_t) * (last_resource_offset + 1))
+#define QUANTS_ARRAY_SIZE (sizeof(size_t) * (last_resource_offset + 1))
 
 typedef struct {
     mongoc_collection_t *totals;
@@ -911,7 +917,7 @@ increments_t* increments_clone(increments_t* increments)
 // so that metrics come in a sub hash (or several)
 void increments_fill_metrics(increments_t *increments, json_object *request)
 {
-    const int n = last_resource_index;
+    const int n = last_resource_offset;
     for (size_t i=0; i <= n; i++) {
         json_object* metrics_value;
         if (json_object_object_get_ex(request, int_to_resource[i], &metrics_value)) {
@@ -925,7 +931,7 @@ void increments_fill_metrics(increments_t *increments, json_object *request)
 
 void increments_add_metrics_to_json(increments_t *increments, json_object *jobj)
 {
-    const int n = last_resource_index;
+    const int n = last_resource_offset;
     for (size_t i=0; i <= n; i++) {
         metric_pair_t *p = &increments->metrics[i];
         double v = p->val;
@@ -1285,7 +1291,7 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
     stored_increments->backend_request_count += increments->backend_request_count;
     stored_increments->page_request_count += increments->page_request_count;
     stored_increments->ajax_request_count += increments->ajax_request_count;
-    for (size_t i=0; i<=last_resource_index; i++) {
+    for (size_t i=0; i<=last_resource_offset; i++) {
         metric_pair_t *stored = &(stored_increments->metrics[i]);
         metric_pair_t *addend = &(increments->metrics[i]);
         stored->val += addend->val;
@@ -1349,7 +1355,7 @@ int dump_module_name(const char* key, void *module, void *arg)
 
 void dump_metrics(metric_pair_t *metrics)
 {
-    for (size_t i=0; i<=last_resource_index; i++) {
+    for (size_t i=0; i<=last_resource_offset; i++) {
         if (metrics[i].val > 0) {
             printf("[D] %s:%f:%f\n", int_to_resource[i], metrics[i].val, metrics[i].val_squared);
         }
@@ -1398,7 +1404,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
     if (increments->ajax_request_count)
         bson_append_int32(incs, "ajax_count", 10, increments->ajax_request_count);
 
-    for (size_t i=0; i<=last_resource_index; i++) {
+    for (size_t i=0; i<=last_resource_offset; i++) {
         double val = increments->metrics[i].val;
         if (val > 0) {
             const char *name = int_to_resource[i];
@@ -1559,7 +1565,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 
     bson_t *incs = bson_new();
     size_t *quants = data;
-    for (int i=0; i <= last_resource_index; i++) {
+    for (int i=0; i <= last_resource_offset; i++) {
         if (quants[i] > 0) {
             const char *resource = i2r(i);
             bson_append_int32(incs, resource, -1, quants[i]);
@@ -1910,7 +1916,7 @@ int add_quant_to_quants_hash(const char* key, void* data, void *arg)
     hash_pair_t *p = arg;
     size_t *stored = zhash_lookup(p->target, key);
     if (stored != NULL) {
-        for (int i=0; i <= last_resource_index; i++) {
+        for (int i=0; i <= last_resource_offset; i++) {
             stored[i] += ((size_t*)data)[i];
         }
     } else {
@@ -1946,12 +1952,13 @@ void add_quant(const char* namespace, size_t resource_idx, char kind, size_t qua
 
 void processor_add_quants(processor_state_t *self, const char* namespace, increments_t *increments)
 {
-    for (int i=0; i<=last_resource_index; i++){
+    for (int i=0; i<=last_resource_offset; i++){
         double val = increments->metrics[i].val;
         if (val > 0) {
             char kind;
             double d;
-            if (i <= last_time_resource_index) {
+            // printf("[D] trying to add quant: %d=%s\n", i, i2r(i));
+            if (i <= last_time_resource_offset) {
                 kind = 't';
                 d = 100.0;
             } else if (i == allocated_objects_index) {
@@ -1960,7 +1967,11 @@ void processor_add_quants(processor_state_t *self, const char* namespace, increm
             } else if (i == allocated_bytes_index) {
                 kind = 'm';
                 d = 100000.0;
+            } else if ((i > last_heap_resource_offset) && (i <= last_frontend_resource_offset)) {
+                kind = 'f';
+                d = 100.0;
             } else {
+                // printf("[D] skipping quant: %s\n", i2r(i));
                 continue;
             }
             size_t x = (ceil(floor(val/d))+1) * d;
@@ -2776,7 +2787,7 @@ bool json_object_is_zero(json_object* jobj)
 void convert_metrics_for_indexing(json_object *request)
 {
     json_object *metrics = json_object_new_array();
-    for (int i=0; i<=last_resource_index; i++) {
+    for (int i=0; i<=last_resource_offset; i++) {
         const char* resource = int_to_resource[i];
         json_object *resource_val;
         if (json_object_object_get_ex(request, resource, &resource_val)) {
@@ -3542,7 +3553,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
-void add_resources_of_type(const char *type, char **type_map, size_t *type_idx)
+void add_resources_of_type(const char *type, char **type_map, size_t *type_idx, size_t *type_offset)
 {
     char path[256] = {'\0'};
     strcpy(path, "metrics/");
@@ -3553,17 +3564,18 @@ void add_resources_of_type(const char *type, char **type_map, size_t *type_idx)
     assert(metric);
     do {
         char *resource = zconfig_name(metric);
-        zhash_insert(resource_to_int, resource, (void*)last_resource_index);
-        int_to_resource[last_resource_index] = resource;
+        zhash_insert(resource_to_int, resource, (void*)last_resource_offset);
+        int_to_resource[last_resource_offset] = resource;
         char resource_sq[256] = {'\0'};
         strcpy(resource_sq, resource);
         strcpy(resource_sq+strlen(resource), "_sq");
-        int_to_resource_sq[last_resource_index++] = strdup(resource_sq);
+        int_to_resource_sq[last_resource_offset++] = strdup(resource_sq);
         type_map[(*type_idx)++] = resource;
         metric = zconfig_next(metric);
-        assert(last_resource_index < MAX_RESOURCE_COUNT);
+        assert(last_resource_offset < MAX_RESOURCE_COUNT);
     } while (metric);
     (*type_idx) -= 1;
+    *type_offset = last_resource_offset-1;
 
     // set up other_time_resources
     if (!strcmp(type, "time")) {
@@ -3587,6 +3599,27 @@ void add_resources_of_type(const char *type, char **type_map, size_t *type_idx)
     // }
 }
 
+void dump_resource_maps()
+{
+    for (size_t j=0; j<=last_resource_offset; j++) {
+        const char *r = i2r(j);
+        printf("[D] %s = %zu\n", r, r2i(r));
+    }
+    printf("[D] %s = %zu\n", "last_time_resource_index", last_time_resource_index);
+    printf("[D] %s = %zu\n", "last_call_resource_index", last_call_resource_index);
+    printf("[D] %s = %zu\n", "last_memory_resource_index", last_memory_resource_index);
+    printf("[D] %s = %zu\n", "last_heap_resource_index", last_heap_resource_index);
+    printf("[D] %s = %zu\n", "last_frontend_resource_index", last_frontend_resource_index);
+    printf("[D] %s = %zu\n", "last_dom_resource_index", last_dom_resource_index);
+
+    printf("[D] %s = %zu\n", "last_time_resource_offset", last_time_resource_offset);
+    printf("[D] %s = %zu\n", "last_call_resource_offset", last_call_resource_offset);
+    printf("[D] %s = %zu\n", "last_memory_resource_offset", last_memory_resource_offset);
+    printf("[D] %s = %zu\n", "last_heap_resource_offset", last_heap_resource_offset);
+    printf("[D] %s = %zu\n", "last_frontend_resource_offset", last_frontend_resource_offset);
+    printf("[D] %s = %zu\n", "last_dom_resource_offset", last_dom_resource_offset);
+}
+
 // setup bidirectional mapping between resource names and small integers
 void setup_resource_maps()
 {
@@ -3594,21 +3627,18 @@ void setup_resource_maps()
     assert(sizeof(size_t) == sizeof(void*));
 
     resource_to_int = zhash_new();
-    add_resources_of_type("time", time_resources, &last_time_resource_index);
-    add_resources_of_type("call", call_resources, &last_call_resource_index);
-    add_resources_of_type("memory", memory_resources, &last_memory_resource_index);
-    add_resources_of_type("heap", heap_resources, &last_heap_resource_index);
-    add_resources_of_type("frontend", frontend_resources, &last_frontend_resource_index);
-    add_resources_of_type("dom", dom_resources, &last_dom_resource_index);
-    last_resource_index--;
+    add_resources_of_type("time", time_resources, &last_time_resource_index, &last_time_resource_offset);
+    add_resources_of_type("call", call_resources, &last_call_resource_index, &last_call_resource_offset);
+    add_resources_of_type("memory", memory_resources, &last_memory_resource_index, &last_memory_resource_offset);
+    add_resources_of_type("heap", heap_resources, &last_heap_resource_index, &last_heap_resource_offset);
+    add_resources_of_type("frontend", frontend_resources, &last_frontend_resource_index, &last_frontend_resource_offset);
+    add_resources_of_type("dom", dom_resources, &last_dom_resource_index, &last_dom_resource_offset);
+    last_resource_offset--;
 
     allocated_objects_index = r2i("allocated_memory");
     allocated_bytes_index = r2i("allocated_bytes");
 
-    // for (size_t j=0; j<=last_resource_index; j++) {
-    //     const char *r = i2r(j);
-    //     printf("[D] %s = %zu\n", r, r2i(r));
-    // }
+    // dump_resource_maps();
 }
 
 
