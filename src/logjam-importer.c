@@ -1744,7 +1744,7 @@ int processor_setup_response_code(processor_state_t *self, json_object *request)
     return response_code;
 }
 
-double processor_setup_time(processor_state_t *self, json_object *request, const char *time_name)
+double processor_setup_time(processor_state_t *self, json_object *request, const char *time_name, const char *duplicate)
 {
     // TODO: might be better to drop requests without total_time
     double total_time;
@@ -1762,6 +1762,10 @@ double processor_setup_time(processor_state_t *self, json_object *request, const
         json_object_object_add(request, time_name, total_time_obj);
     }
     // printf("[D] %s: %f\n", time_name, total_time);
+    if (duplicate) {
+        // TODO: check whether we could simply share the object
+        json_object_object_add(request, duplicate, json_object_new_double(total_time));
+    }
     return total_time;
 }
 
@@ -2036,7 +2040,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     request_data.response_code = processor_setup_response_code(self, request);
     request_data.severity = processor_setup_severity(self, request);
     request_data.minute = processor_setup_minute(self, request);
-    request_data.total_time = processor_setup_time(self, request, "total_time");
+    request_data.total_time = processor_setup_time(self, request, "total_time", NULL);
 
     request_data.exceptions = processor_setup_exceptions(self, request);
     processor_setup_other_time(self, request, request_data.total_time);
@@ -2192,7 +2196,7 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
     request_data.minute = processor_setup_minute(self, request);
-    request_data.total_time = processor_setup_time(self, request, "page_time");
+    request_data.total_time = processor_setup_time(self, request, "page_time", "frontend_time");
 
     // TODO: revisit when switching to percentiles
     if (request_data.total_time > 300000) {
@@ -2234,7 +2238,7 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
     request_data.minute = processor_setup_minute(self, request);
-    request_data.total_time = processor_setup_time(self, request, "ajax_time");
+    request_data.total_time = processor_setup_time(self, request, "ajax_time", "frontend_time");
 
     // TODO: revisit when switching to percentiles
     if (request_data.total_time > 300000) {
