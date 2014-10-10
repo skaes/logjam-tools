@@ -977,6 +977,40 @@ void increments_fill_frontend_apdex(increments_t *increments, double total_time)
     }
 }
 
+void increments_fill_page_apdex(increments_t *increments, double total_time)
+{
+    json_object *others = increments->others;
+
+    if (total_time < 500) {
+        json_object_object_add(others, "papdex.happy", NEW_INT1);
+        json_object_object_add(others, "papdex.satisfied", NEW_INT1);
+    }
+    else if (total_time < 2000) {
+        json_object_object_add(others, "papdex.satisfied", NEW_INT1);
+    } else if (total_time < 8000) {
+        json_object_object_add(others, "papdex.tolerating", NEW_INT1);
+    } else {
+        json_object_object_add(others, "papdex.frustrated", NEW_INT1);
+    }
+}
+
+void increments_fill_ajax_apdex(increments_t *increments, double total_time)
+{
+    json_object *others = increments->others;
+
+    if (total_time < 500) {
+        json_object_object_add(others, "xapdex.happy", NEW_INT1);
+        json_object_object_add(others, "xapdex.satisfied", NEW_INT1);
+    }
+    else if (total_time < 2000) {
+        json_object_object_add(others, "xapdex.satisfied", NEW_INT1);
+    } else if (total_time < 8000) {
+        json_object_object_add(others, "xapdex.tolerating", NEW_INT1);
+    } else {
+        json_object_object_add(others, "xapdex.frustrated", NEW_INT1);
+    }
+}
+
 void increments_fill_response_code(increments_t *increments, request_data_t *request_data)
 {
     char rsp[256];
@@ -2218,6 +2252,7 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     increments->page_request_count = 1;
     increments_fill_metrics(increments, request);
     increments_fill_frontend_apdex(increments, request_data.total_time);
+    increments_fill_page_apdex(increments, request_data.total_time);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
@@ -2260,6 +2295,7 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     increments->ajax_request_count = 1;
     increments_fill_metrics(increments, request);
     increments_fill_frontend_apdex(increments, request_data.total_time);
+    increments_fill_ajax_apdex(increments, request_data.total_time);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
