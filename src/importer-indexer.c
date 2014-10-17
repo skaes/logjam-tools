@@ -1,0 +1,311 @@
+#include "importer-indexer.h"
+#include "importer-streaminfo.h"
+#include "importer-mongoutils.h"
+
+typedef struct {
+    size_t id;
+    mongoc_client_t *mongo_clients[MAX_DATABASES];
+    mongoc_collection_t *global_collection;
+    void *controller_socket;
+    void *pull_socket;
+    zhash_t *databases;
+} indexer_state_t;
+
+typedef struct {
+    size_t id;
+    char iso_date[ISO_DATE_STR_LEN];
+} bg_indexer_args_t;
+
+
+void *indexer_pull_socket_new(zctx_t *ctx)
+{
+    void *socket = zsocket_new(ctx, ZMQ_PULL);
+    assert(socket);
+    int rc = zsocket_bind(socket, "inproc://indexer");
+    assert(rc == 0);
+    return socket;
+}
+
+void add_request_field_index(const char* field, mongoc_collection_t *requests_collection)
+{
+    bson_error_t error;
+    bson_t *index_keys;
+
+    // collection.create_index([ [f, 1] ], :background => true, :sparse => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, field, strlen(field), 1);
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_sparse, &error)) {
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    }
+    bson_destroy(index_keys);
+
+    // collection.create_index([ ["page", 1], [f, 1] ], :background => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "page", 4, 1);
+    bson_append_int32(index_keys, field, strlen(field), 1);
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    }
+    bson_destroy(index_keys);
+}
+
+void add_request_collection_indexes(const char* db_name, mongoc_collection_t *requests_collection)
+{
+    bson_error_t error;
+    bson_t *index_keys;
+
+    // collection.create_index([ ["metrics.n", 1], ["metrics.v", -1] ], :background => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "metrics.n", 9, 1);
+    bson_append_int32(index_keys, "metrics.v", 9, -1);
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    }
+    bson_destroy(index_keys);
+
+    // collection.create_index([ ["page", 1], ["metrics.n", 1], ["metrics.v", -1] ], :background => true
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "page", 4, 1);
+    bson_append_int32(index_keys, "metrics.n", 9, 1);
+    bson_append_int32(index_keys, "metrics.v", 9, -1);
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    }
+    bson_destroy(index_keys);
+
+    add_request_field_index("response_code", requests_collection);
+    add_request_field_index("severity",      requests_collection);
+    add_request_field_index("minute",        requests_collection);
+    add_request_field_index("exceptions",    requests_collection);
+}
+
+void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_collection)
+{
+    bson_error_t error;
+    bson_t *index_keys;
+
+    // collection.create_index([ ["logjam_request_id", 1] ], :background => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "logjam_request_id", 17, 1);
+    if (!mongoc_collection_create_index(jse_collection, index_keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    }
+    bson_destroy(index_keys);
+
+    // collection.create_index([ ["description", 1] ], :background => true
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "description", 11, 1);
+    if (!mongoc_collection_create_index(jse_collection, index_keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    }
+    bson_destroy(index_keys);
+}
+
+void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_info_t *stream_info)
+{
+    mongoc_client_t *client = state->mongo_clients[stream_info->db];
+    mongoc_collection_t *collection;
+    bson_error_t error;
+    bson_t *keys;
+    size_t id = state->id;
+
+    if (dryrun) return;
+
+    // if it is a db of today, then make it known
+    if (strstr(db_name, iso_date_today)) {
+        printf("[I] indexer[%zu]: ensuring known database: %s\n", id, db_name);
+        ensure_known_database(client, db_name);
+    }
+    printf("[I] indexer[%zu]: creating indexes for %s\n", id, db_name);
+
+    collection = mongoc_client_get_collection(client, db_name, "totals");
+    keys = bson_new();
+    assert(bson_append_int32(keys, "page", 4, 1));
+    if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
+    }
+    bson_destroy(keys);
+    mongoc_collection_destroy(collection);
+
+    collection = mongoc_client_get_collection(client, db_name, "minutes");
+    keys = bson_new();
+    assert(bson_append_int32(keys, "page", 4, 1));
+    assert(bson_append_int32(keys, "minutes", 6, 1));
+    if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
+    }
+    bson_destroy(keys);
+    mongoc_collection_destroy(collection);
+
+    collection = mongoc_client_get_collection(client, db_name, "quants");
+    keys = bson_new();
+    assert(bson_append_int32(keys, "page", 4, 1));
+    assert(bson_append_int32(keys, "kind", 4, 1));
+    assert(bson_append_int32(keys, "quant", 5, 1));
+    if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
+    }
+    bson_destroy(keys);
+    mongoc_collection_destroy(collection);
+
+    collection = mongoc_client_get_collection(client, db_name, "requests");
+    add_request_collection_indexes(db_name, collection);
+    mongoc_collection_destroy(collection);
+
+    collection = mongoc_client_get_collection(client, db_name, "js_exceptions");
+    add_jse_collection_indexes(db_name, collection);
+    mongoc_collection_destroy(collection);
+}
+
+void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int delay)
+{
+    zlist_t *streams = zhash_keys(configured_streams);
+    char *stream = zlist_first(streams);
+    bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
+    while (stream && !zctx_interrupted) {
+        stream_info_t *info = zhash_lookup(configured_streams, stream);
+        assert(info);
+        if (!have_subscriptions || zhash_lookup(stream_subscriptions, stream)) {
+            char db_name[1000];
+            sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
+            indexer_create_indexes(self, db_name, info);
+            if (delay) {
+                zclock_sleep(1000 * delay);
+            }
+        }
+        stream = zlist_next(streams);
+    }
+    zlist_destroy(&streams);
+}
+
+void* create_indexes_for_date(void* args)
+{
+    indexer_state_t state;
+    memset(&state, 0, sizeof(state));
+    bg_indexer_args_t *indexer_args = args;
+    state.id = indexer_args->id;;
+
+    for (int i=0; i<num_databases; i++) {
+        state.mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state.mongo_clients[i]);
+    }
+    state.databases = zhash_new();
+
+    indexer_create_all_indexes(&state, indexer_args->iso_date, 10);
+
+    zhash_destroy(&state.databases);
+    for (int i=0; i<num_databases; i++) {
+        mongoc_client_destroy(state.mongo_clients[i]);
+    }
+
+    free(indexer_args);
+    return NULL;
+}
+
+void spawn_bg_indexer_for_date(size_t id, const char* iso_date)
+{
+    bg_indexer_args_t *indexer_args = malloc(sizeof(bg_indexer_args_t));
+    assert(indexer_args != NULL);
+    indexer_args->id = id;
+    strcpy(indexer_args->iso_date, iso_date);
+    zthread_new(create_indexes_for_date, indexer_args);
+}
+
+void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
+{
+    zframe_t *db_frame = zmsg_first(msg);
+    zframe_t *stream_frame = zmsg_next(msg);
+
+    size_t n = zframe_size(db_frame);
+    char db_name[n+1];
+    memcpy(db_name, zframe_data(db_frame), n);
+    db_name[n] = '\0';
+
+    stream_info_t *stream_info;
+    assert(zframe_size(stream_frame) == sizeof(stream_info_t*));
+    memcpy(&stream_info, zframe_data(stream_frame), sizeof(stream_info_t*));
+
+    const char *known_db = zhash_lookup(state->databases, db_name);
+    if (known_db == NULL) {
+        zhash_insert(state->databases, db_name, strdup(db_name));
+        zhash_freefn(state->databases, db_name, free);
+        indexer_create_indexes(state, db_name, stream_info);
+    } else {
+        // printf("[D] indexer[%zu]: indexes already created: %s\n", state->id, db_name);
+    }
+}
+
+void indexer(void *args, zctx_t *ctx, void *pipe)
+{
+    indexer_state_t state;
+    memset(&state, 0, sizeof(state));
+    state.controller_socket = pipe;
+    state.pull_socket = indexer_pull_socket_new(ctx);
+    for (int i=0; i<num_databases; i++) {
+        state.mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state.mongo_clients[i]);
+    }
+    state.databases = zhash_new();
+    size_t ticks = 0;
+    size_t bg_indexer_runs = 0;
+    { // setup indexes (for today and tomorrow)
+        config_update_date_info();
+        indexer_create_all_indexes(&state, iso_date_today, 0);
+        zmsg_t *msg = zmsg_new();
+        zmsg_addstr(msg, "started");
+        zmsg_send(&msg, state.controller_socket);
+        spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
+    }
+
+    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+    assert(poller);
+
+    while (!zctx_interrupted) {
+        // printf("indexer[%zu]: polling\n", id);
+        // -1 == block until something is readable
+        void *socket = zpoller_wait(poller, -1);
+        zmsg_t *msg = NULL;
+        if (socket == state.controller_socket) {
+            // tick
+            // printf("[D] indexer[%zu]: tick\n", state.id);
+            msg = zmsg_recv(state.controller_socket);
+
+            // if date has changed, start a bg thread to create databases for the next day
+            if (config_update_date_info()) {
+                printf("[I] indexer[%zu]: date change. creating indexes for tomorrow\n", state.id);
+                spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
+            }
+
+            if (ticks++ % PING_INTERVAL == 0) {
+                // ping mongodb to reestablish connection if it got lost
+                for (int i=0; i<num_databases; i++) {
+                    mongo_client_ping(state.mongo_clients[i]);
+                }
+            }
+
+            // free collection pointers every hour
+            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - state.id - 1) {
+                printf("[I] indexer[%zu]: freeing database info\n", state.id);
+                zhash_destroy(&state.databases);
+                state.databases = zhash_new();
+            }
+        } else if (socket == state.pull_socket) {
+            msg = zmsg_recv(state.pull_socket);
+            if (msg != NULL) {
+                handle_indexer_request(msg, &state);
+            }
+        } else {
+            // interrupted
+            printf("[I] indexer[%zu]: no socket input. interrupted = %d\n", state.id, zctx_interrupted);
+            break;
+        }
+        zmsg_destroy(&msg);
+    }
+
+    zhash_destroy(&state.databases);
+    for (int i=0; i<num_databases; i++) {
+        mongoc_client_destroy(state.mongo_clients[i]);
+    }
+    printf("[I] indexer[%zu]: terminated\n", state.id);
+}
+

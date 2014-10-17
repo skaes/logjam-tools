@@ -1,0 +1,510 @@
+#include "importer-requestwriter.h"
+#include "importer-livestream.h"
+#include "importer-indexer.h"
+#include "importer-resources.h"
+#include "importer-mongoutils.h"
+
+typedef struct {
+    size_t id;
+    mongoc_client_t* mongo_clients[MAX_DATABASES];
+    zhash_t *request_collections;
+    zhash_t *jse_collections;
+    zhash_t *events_collections;
+    void *controller_socket;
+    void *pull_socket;
+    void *push_socket;
+    void *live_stream_socket;
+    size_t request_count;
+} request_writer_state_t;
+
+
+
+void* request_writer_pull_socket_new(zctx_t *context, int i)
+{
+    void *socket = zsocket_new(context, ZMQ_PULL);
+    assert(socket);
+    int rc = zsocket_bind(socket, "inproc://request-writer-%d", i);
+    assert(rc == 0);
+    return socket;
+}
+
+mongoc_collection_t* request_writer_get_request_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
+{
+    if (dryrun) return NULL;
+    mongoc_collection_t *collection = zhash_lookup(self->request_collections, db_name);
+    if (collection == NULL) {
+        // printf("[D] creating requests collection: %s\n", db_name);
+        mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
+        collection = mongoc_client_get_collection(mongo_client, db_name, "requests");
+        // add_request_collection_indexes(db_name, collection);
+        zhash_insert(self->request_collections, db_name, collection);
+        zhash_freefn(self->request_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
+    }
+    return collection;
+}
+
+mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
+{
+    if (dryrun) return NULL;
+    mongoc_collection_t *collection = zhash_lookup(self->jse_collections, db_name);
+    if (collection == NULL) {
+        // printf("[D] creating jse collection: %s\n", db_name);
+        mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
+        collection = mongoc_client_get_collection(mongo_client, db_name, "js_exceptions");
+        // add_jse_collection_indexes(db_name, collection);
+        zhash_insert(self->jse_collections, db_name, collection);
+        zhash_freefn(self->jse_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
+    }
+    return collection;
+}
+
+mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
+{
+    if (dryrun) return NULL;
+    mongoc_collection_t *collection = zhash_lookup(self->events_collections, db_name);
+    if (collection == NULL) {
+        // printf("[D] creating events collection: %s\n", db_name);
+        mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
+        collection = mongoc_client_get_collection(mongo_client, db_name, "events");
+        zhash_insert(self->events_collections, db_name, collection);
+        zhash_freefn(self->events_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
+    }
+    return collection;
+}
+
+int bson_append_win1252(bson_t *b, const char *key, size_t key_len, const char* val, size_t val_len)
+{
+    char utf8[6*val_len+1];
+    int new_len = convert_to_win1252(val, val_len, utf8);
+    return bson_append_utf8(b, key, key_len, utf8, new_len);
+}
+
+
+static void json_object_to_bson(const char* context, json_object *j, bson_t *b);
+
+//TODO: optimize this!
+static void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, const char *key)
+{
+    size_t n = strlen(key);
+    char safe_key[4*n+1];
+    int len = copy_replace_dots_and_dollars(safe_key, key);
+
+    if (!bson_utf8_validate(safe_key, len, false)) {
+        char tmp[6*len+1];
+        len = convert_to_win1252(safe_key, len, tmp);
+        strcpy(safe_key, tmp);
+    }
+    // printf("[D] safe_key: %s\n", safe_key);
+
+    enum json_type type = json_object_get_type(val);
+    switch (type) {
+    case json_type_boolean:
+        bson_append_bool(b, safe_key, len, json_object_get_boolean(val));
+        break;
+    case json_type_double:
+        bson_append_double(b, safe_key, len, json_object_get_double(val));
+        break;
+    case json_type_int:
+        bson_append_int32(b, safe_key, len, json_object_get_int(val));
+        break;
+    case json_type_object: {
+        bson_t *sub = bson_new();
+        json_object_to_bson(context, val, sub);
+        bson_append_document(b, safe_key, len, sub);
+        bson_destroy(sub);
+        break;
+    }
+    case json_type_array: {
+        bson_t *sub = bson_new();
+        int array_len = json_object_array_length(val);
+        for (int pos = 0; pos < array_len; pos++) {
+            char nk[100];
+            sprintf(nk, "%d", pos);
+            json_key_to_bson_key(context, sub, json_object_array_get_idx(val, pos), nk);
+        }
+        bson_append_array(b, safe_key, len, sub);
+        bson_destroy(sub);
+        break;
+    }
+    case json_type_string: {
+        const char *str = json_object_get_string(val);
+        size_t n = json_object_get_string_len(val);
+        if (bson_utf8_validate(str, n, false /* disallow embedded null characters */)) {
+            bson_append_utf8(b, safe_key, len, str, n);
+        } else {
+            fprintf(stderr,
+                    "[W] invalid utf8. context: %s,  key: %s, value[len=%d]: %*s\n",
+                    context, safe_key, (int)n, (int)n, str);
+            // bson_append_binary(b, safe_key, len, BSON_SUBTYPE_BINARY, (uint8_t*)str, n);
+            bson_append_win1252(b, safe_key, len, str, n);
+        }
+        break;
+    }
+    case json_type_null:
+        bson_append_null(b, safe_key, len);
+        break;
+    default:
+        fprintf(stderr, "[E] unexpected json type: %s\n", json_type_to_name(type));
+        break;
+    }
+}
+
+static void json_object_to_bson(const char *context, json_object *j, bson_t* b)
+{
+  json_object_object_foreach(j, key, val) {
+      json_key_to_bson_key(context, b, val, key);
+  }
+}
+
+bool json_object_is_zero(json_object* jobj)
+{
+    enum json_type type = json_object_get_type(jobj);
+    if (type == json_type_double) {
+        return 0.0 == json_object_get_double(jobj);
+    }
+    else if (type == json_type_int) {
+        return 0 == json_object_get_int(jobj);
+    }
+    return false;
+}
+
+void convert_metrics_for_indexing(json_object *request)
+{
+    json_object *metrics = json_object_new_array();
+    for (int i=0; i<=last_resource_offset; i++) {
+        const char* resource = int_to_resource[i];
+        json_object *resource_val;
+        if (json_object_object_get_ex(request, resource, &resource_val)) {
+            json_object_get(resource_val);
+            json_object_object_del(request, resource);
+            if (json_object_is_zero(resource_val)) {
+                json_object_put(resource_val);
+            } else {
+                json_object *metric_pair = json_object_new_object();
+                json_object_object_add(metric_pair, "n", json_object_new_string(resource));
+                json_object_object_add(metric_pair, "v", resource_val);
+                json_object_array_add(metrics, metric_pair);
+            }
+        }
+    }
+    json_object_object_add(request, "metrics", metrics);
+}
+
+json_object* store_request(const char* db_name, stream_info_t* stream_info, json_object* request, request_writer_state_t* state)
+{
+    // dump_json_object(stdout, request);
+    convert_metrics_for_indexing(request);
+
+    mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, db_name, stream_info);
+    bson_t *document = bson_sized_new(2048);
+
+    json_object *request_id_obj;
+    const char *request_id = NULL;
+    if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
+        request_id = json_object_get_string(request_id_obj);
+        int len = strlen(request_id);
+        if (len != 32) {
+            // this can't be a UUID
+            fprintf(stderr, "[W] not a valid uuid: %s\n", request_id);
+            request_id = NULL;
+            request_id_obj = NULL;
+        } else {
+            json_object_get(request_id_obj);
+            bson_append_binary(document, "_id", 3, BSON_SUBTYPE_UUID_DEPRECATED, (uint8_t*)request_id, 32);
+        }
+        json_object_object_del(request, "request_id");
+    }
+    if (request_id == NULL) {
+        // generate an oid
+        bson_oid_t oid;
+        bson_oid_init(&oid, NULL);
+        bson_append_oid(document, "_id", 3, &oid);
+        // printf("[D] generated oid for document:\n");
+    }
+    {
+        size_t n = 1024;
+        char context[n];
+        snprintf(context, n, "%s:%s", db_name, request_id);
+        json_object_to_bson(context, request, document);
+    }
+
+    // size_t n;
+    // char* bs = bson_as_json(document, &n);
+    // printf("[D] doument. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
+
+    if (!dryrun) {
+        bson_error_t error;
+        int tries = TOKU_TX_RETRIES;
+    retry:
+        if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
+                fprintf(stderr, "[W] retrying request insert operation on %s\n", db_name);
+                goto retry;
+            } else {
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr,
+                        "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
+                        request_id, db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
+            }
+        }
+    }
+    bson_destroy(document);
+
+    return request_id_obj;
+}
+
+void store_js_exception(const char* db_name, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
+{
+    mongoc_collection_t *jse_collection = request_writer_get_jse_collection(state, db_name, stream_info);
+    bson_t *document = bson_sized_new(1024);
+    json_object_to_bson("js_excpetion", request, document);
+
+    if (!dryrun) {
+        bson_error_t error;
+        int tries = TOKU_TX_RETRIES;
+    retry:
+        if (!mongoc_collection_insert(jse_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
+                fprintf(stderr, "[W] retrying exception insert operation on %s\n", db_name);
+                goto retry;
+            } else {
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr,
+                        "[E] insert failed for exception document on %s: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
+            }
+        }
+    }
+    bson_destroy(document);
+}
+
+void store_event(const char* db_name, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
+{
+    mongoc_collection_t *events_collection = request_writer_get_events_collection(state, db_name, stream_info);
+    bson_t *document = bson_sized_new(1024);
+    json_object_to_bson("event", request, document);
+
+    if (!dryrun) {
+        bson_error_t error;
+        int tries = TOKU_TX_RETRIES;
+    retry:
+        if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
+            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
+                fprintf(stderr, "[W] retrying event insert operation on %s\n", db_name);
+                goto retry;
+            } else {
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr,
+                        "[E] insert failed for event document on %s: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
+            }
+        }
+    }
+    bson_destroy(document);
+}
+
+json_object* extract_error_description(json_object* request, int severity)
+{
+    json_object *error_line = NULL;
+    json_object *lines;
+    if (json_object_object_get_ex(request, "lines", &lines)) {
+        int len = json_object_array_length(lines);
+        for (int i=0; i<len; i++) {
+            json_object* line = json_object_array_get_idx(lines, i);
+            if (line) {
+                json_object* sev_obj = json_object_array_get_idx(line, 0);
+                if (sev_obj != NULL && json_object_get_int(sev_obj) >= severity) {
+                    error_line = json_object_array_get_idx(line, 2);
+                    break;
+                }
+            }
+        }
+    }
+    const char *description;
+    if (error_line) {
+        description = json_object_get_string(error_line);
+    } else {
+        description = "------ unknown ------";
+    }
+    return json_object_new_string(description);
+}
+
+void request_writer_publish_error(stream_info_t* stream_info, const char* module, json_object* request,
+                                  request_writer_state_t* state, json_object* request_id)
+{
+    if (request_id == NULL) return;
+
+    json_object *severity_obj;
+    if (json_object_object_get_ex(request, "severity", &severity_obj)) {
+        int severity = json_object_get_int(severity_obj);
+        if (severity > 1) {
+            json_object *error_info = json_object_new_object();
+            json_object_get(request_id);
+            json_object_object_add(error_info, "request_id", request_id);
+
+            json_object_get(severity_obj);
+            json_object_object_add(error_info, "severity", severity_obj);
+
+            json_object *action;
+            assert( json_object_object_get_ex(request, "page", &action) );
+            json_object_get(action);
+            json_object_object_add(error_info, "action", action);
+
+            json_object *rsp;
+            assert( json_object_object_get_ex(request, "response_code", &rsp) );
+            json_object_get(rsp);
+            json_object_object_add(error_info, "response_code", rsp);
+
+            json_object *started_at;
+            assert( json_object_object_get_ex(request, "started_at", &started_at) );
+            json_object_get(started_at);
+            json_object_object_add(error_info, "time", started_at);
+
+            json_object *description = extract_error_description(request, severity);
+            json_object_object_add(error_info, "description", description);
+
+            json_object *arror = json_object_new_array();
+            json_object_array_add(arror, error_info);
+
+            const char *json_str = json_object_to_json_string_ext(arror, JSON_C_TO_STRING_PLAIN);
+
+            publish_error_for_module(stream_info, "all_pages", json_str, state->live_stream_socket);
+            publish_error_for_module(stream_info, module, json_str, state->live_stream_socket);
+
+            json_object_put(arror);
+        }
+    }
+
+    json_object_put(request_id);
+}
+
+void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
+{
+    zframe_t *db_frame = zmsg_first(msg);
+    zframe_t *type_frame = zmsg_next(msg);
+    zframe_t *mod_frame = zmsg_next(msg);
+    zframe_t *body_frame = zmsg_next(msg);
+    zframe_t *stream_frame = zmsg_next(msg);
+
+    size_t db_name_len = zframe_size(db_frame);
+    char db_name[db_name_len+1];
+    memcpy(db_name, zframe_data(db_frame), db_name_len);
+    db_name[db_name_len] = '\0';
+    // printf("[D] request_writer: db name: %s\n", db_name);
+
+    stream_info_t *stream_info;
+    assert(zframe_size(stream_frame) == sizeof(stream_info_t*));
+    memcpy(&stream_info, zframe_data(stream_frame), sizeof(stream_info_t*));
+    // printf("[D] request_writer: stream name: %s\n", stream_info->key);
+
+    size_t mod_len = zframe_size(mod_frame);
+    char module[mod_len+1];
+    memcpy(module, zframe_data(mod_frame), mod_len);
+    module[mod_len] = '\0';
+
+    json_object *request, *request_id;
+    assert(zframe_size(body_frame) == sizeof(json_object*));
+    memcpy(&request, zframe_data(body_frame), sizeof(json_object*));
+    // dump_json_object(stdout, request);
+
+    assert(zframe_size(type_frame) == 1);
+    char task_type = *((char*)zframe_data(type_frame));
+
+    if (!dryrun) {
+        switch (task_type) {
+        case 'r':
+            request_id = store_request(db_name, stream_info, request, state);
+            request_writer_publish_error(stream_info, module, request, state, request_id);
+            break;
+        case 'j':
+            store_js_exception(db_name, stream_info, request, state);
+            break;
+        case 'e':
+            store_event(db_name, stream_info, request, state);
+            break;
+        default:
+            fprintf(stderr, "[E] unknown task type for request_writer: %c\n", task_type);
+        }
+    }
+    json_object_put(request);
+}
+
+void request_writer(void *args, zctx_t *ctx, void *pipe)
+{
+    request_writer_state_t state;
+    state.id = (size_t)args;
+    state.request_count = 0;
+    state.controller_socket = pipe;
+    state.pull_socket = request_writer_pull_socket_new(ctx, state.id);
+    for (int i=0; i<num_databases; i++) {
+        state.mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state.mongo_clients[i]);
+    }
+    state.request_collections = zhash_new();
+    state.jse_collections = zhash_new();
+    state.events_collections = zhash_new();
+    state.live_stream_socket = live_stream_socket_new(ctx);
+    size_t ticks = 0;
+
+    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+    assert(poller);
+
+    while (!zctx_interrupted) {
+        // printf("[D] writer [%zu]: polling\n", state.id);
+        // -1 == block until something is readable
+        void *socket = zpoller_wait(poller, -1);
+        zmsg_t *msg = NULL;
+        if (socket == state.controller_socket) {
+            // tick
+            if (state.request_count)
+                printf("[I] writer [%zu]: tick (%zu requests)\n", state.id, state.request_count);
+            if (ticks++ % PING_INTERVAL == 0) {
+                // ping mongodb to reestablish connection if it got lost
+                for (int i=0; i<num_databases; i++) {
+                    mongo_client_ping(state.mongo_clients[i]);
+                }
+            }
+            // free collection pointers every hour
+            msg = zmsg_recv(state.controller_socket);
+            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - state.id - 1) {
+                printf("[I] writer [%zu]: freeing request collections\n", state.id);
+                zhash_destroy(&state.request_collections);
+                zhash_destroy(&state.jse_collections);
+                zhash_destroy(&state.events_collections);
+                state.request_collections = zhash_new();
+                state.jse_collections = zhash_new();
+                state.events_collections = zhash_new();
+            }
+            state.request_count = 0;
+        } else if (socket == state.pull_socket) {
+            msg = zmsg_recv(state.pull_socket);
+            if (msg != NULL) {
+                state.request_count++;
+                handle_request_msg(msg, &state);
+            }
+        } else {
+            // interrupted
+            printf("[I] writer [%zu]: no socket input. interrupted = %d\n", state.id, zctx_interrupted);
+            break;
+        }
+        zmsg_destroy(&msg);
+    }
+
+    zhash_destroy(&state.request_collections);
+    zhash_destroy(&state.jse_collections);
+    zhash_destroy(&state.events_collections);
+    for (int i=0; i<num_databases; i++) {
+        mongoc_client_destroy(state.mongo_clients[i]);
+    }
+    printf("[I] writer [%zu]: terminated\n", state.id);
+}
