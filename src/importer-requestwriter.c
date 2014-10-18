@@ -4,6 +4,20 @@
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
 
+
+/*
+ * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, "o" = bind, "[<>v^]" = connect
+ *
+ *                              controller
+ *                                  |
+ *                                 PIPE
+ *               PUSH    PULL       |       PUSH    PULL
+ *  parser(n_p)  >----------o  writer(n_w)  >----------o  live stream server
+ *
+ */
+
+// It might be better to insert a load balancer device between parsers and requests writers.
+
 typedef struct {
     size_t id;
     mongoc_client_t* mongo_clients[MAX_DATABASES];

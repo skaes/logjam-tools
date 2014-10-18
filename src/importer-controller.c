@@ -9,6 +9,27 @@
 #include "importer-subscriber.h"
 #include "importer-resources.h"
 
+
+/*
+ * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, nu_= NUM_UPDATERS, "[<>^v]" = connect, "o" = bind
+ *
+ *                 --- PIPE ---  subscriber
+ *                 --- PIPE ---  parsers(n_p)
+ *  controller:    --- PIPE ---  writers(n_w)
+ *                 --- PIPE ---  updaters(n_u)
+ *
+ *                 PUSH    PULL
+ *                 o----------<  updaters(n_u)
+ *
+ *                 PUSH    PULL
+ *                 >----------o  live stream server
+*/
+
+// The controller creates all other threads, collects data from the parsers every second,
+// combines the data, sends db update requests to the updaters and also feeds the live stream.
+// The data from the pasrers is collected using the pipes, but maybe we should have an
+// independent socket for this.
+
 typedef struct {
     void *subscriber_pipe;
     void *indexer_pipe;

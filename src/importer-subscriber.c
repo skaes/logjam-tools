@@ -1,6 +1,21 @@
 #include "importer-subscriber.h"
 #include "importer-streaminfo.h"
 
+/*
+ * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, "[<>^v]" = connect, "o" = bind
+ *
+ *                               controller
+ *                                   |
+ *                                  PIPE
+ *                 PUB      SUB      |       PULL    PUSH
+ *  logjam device  o----------<  subscriber  o----------<   direct connections
+ *                                   o PUSH
+ *                                   |
+ *                                   |
+ *                                   ^ PULL
+ *                               parser(n_p)
+*/
+
 typedef struct {
     void *controller_socket;
     void *sub_socket;

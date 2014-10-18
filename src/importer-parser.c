@@ -3,6 +3,24 @@
 #include "importer-processor.h"
 #include "importer-parser.h"
 
+/*
+ * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, "[<>^v]" = connect, "o" = bind
+ *
+ *                            controller
+ *                                |
+ *                               PIPE
+ *              PUSH    PULL      |        PUSH       PULL
+ *  subscriber  o----------<  parser(n_p)  >-------------o  request_writer(n_w)
+ *                                v
+ *                                |
+ *                                o
+ *                             indexer
+*/
+
+// Q: Why do we connect to the writers instead of connecting the writers to the parser?
+// A: I think this is upside down, but was maybe caused by dropped requests.
+// It might be better to insert a load balancer device between parsers and request writers
+
 static
 void connect_multiple(void* socket, const char* name, int which)
 {

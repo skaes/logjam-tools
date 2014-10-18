@@ -5,6 +5,22 @@
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
 
+
+/*
+ * connections: n_u = NUM_UPDATERS, "o" = bind, "[<>v^]" = connect
+ *
+ *                                controller
+ *                                    |
+ *                                   PIPE
+ *                 PUSH    PULL       |
+ *  [controller]   o----------<  updater(n_u)
+ *
+ */
+
+// Receives controller commands via PIPE socket and database update tasks vie PULL socket.
+// Currently both messages types are sent by the controller (but this might change).
+// It might be better to insert a load balancer device between controller and updaters.
+
 typedef struct {
     size_t id;
     mongoc_client_t *mongo_clients[MAX_DATABASES];

@@ -2,6 +2,27 @@
 #include "importer-streaminfo.h"
 #include "importer-mongoutils.h"
 
+
+/*
+ * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, "o" = bind, "[<>v^]" = connect
+ *
+ *                            controller
+ *                                |
+ *                               PIPE
+ *               PUSH    PULL     |
+ *  parser(n_p)  >----------o  indexer
+ *
+ */
+
+// The parsers send index creation requests as soon as they see a new date in their input stream.
+// The indexer keeps track of indexes it has already created to avoid repeared mongodb calls.
+// Creating an index on a collection while it is being written to, slows down the writers considerably.
+// The indexer therefore creates databases along with all their indexes one day in advance.
+// On startup, databases and indexes for the current day are created synchronously. The completion
+// of this is signalled to the controller by sending a started message to the controller.
+// Databases and indexs for dates in the future are alaways created via a fresh background
+// thread, spawned from the indexer.
+
 typedef struct {
     size_t id;
     mongoc_client_t *mongo_clients[MAX_DATABASES];
@@ -270,7 +291,7 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
             // printf("[D] indexer[%zu]: tick\n", state.id);
             msg = zmsg_recv(state.controller_socket);
 
-            // if date has changed, start a bg thread to create databases for the next day
+            // if date has changed, start a background thread to create databases for the next day
             if (config_update_date_info()) {
                 printf("[I] indexer[%zu]: date change. creating indexes for tomorrow\n", state.id);
                 spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
