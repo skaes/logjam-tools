@@ -18,7 +18,7 @@ typedef struct {
 } request_writer_state_t;
 
 
-
+static
 void* request_writer_pull_socket_new(zctx_t *context, int i)
 {
     void *socket = zsocket_new(context, ZMQ_PULL);
@@ -28,6 +28,7 @@ void* request_writer_pull_socket_new(zctx_t *context, int i)
     return socket;
 }
 
+static
 mongoc_collection_t* request_writer_get_request_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
 {
     if (dryrun) return NULL;
@@ -43,6 +44,7 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
     return collection;
 }
 
+static
 mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
 {
     if (dryrun) return NULL;
@@ -58,6 +60,7 @@ mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* s
     return collection;
 }
 
+static
 mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
 {
     if (dryrun) return NULL;
@@ -72,6 +75,7 @@ mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t
     return collection;
 }
 
+static
 int bson_append_win1252(bson_t *b, const char *key, size_t key_len, const char* val, size_t val_len)
 {
     char utf8[6*val_len+1];
@@ -80,10 +84,12 @@ int bson_append_win1252(bson_t *b, const char *key, size_t key_len, const char* 
 }
 
 
-static void json_object_to_bson(const char* context, json_object *j, bson_t *b);
+static
+void json_object_to_bson(const char* context, json_object *j, bson_t *b);
 
 //TODO: optimize this!
-static void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, const char *key)
+static
+void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, const char *key)
 {
     size_t n = strlen(key);
     char safe_key[4*n+1];
@@ -149,13 +155,15 @@ static void json_key_to_bson_key(const char* context, bson_t *b, json_object *va
     }
 }
 
-static void json_object_to_bson(const char *context, json_object *j, bson_t* b)
+static
+void json_object_to_bson(const char *context, json_object *j, bson_t* b)
 {
   json_object_object_foreach(j, key, val) {
       json_key_to_bson_key(context, b, val, key);
   }
 }
 
+static
 bool json_object_is_zero(json_object* jobj)
 {
     enum json_type type = json_object_get_type(jobj);
@@ -168,6 +176,7 @@ bool json_object_is_zero(json_object* jobj)
     return false;
 }
 
+static
 void convert_metrics_for_indexing(json_object *request)
 {
     json_object *metrics = json_object_new_array();
@@ -190,6 +199,7 @@ void convert_metrics_for_indexing(json_object *request)
     json_object_object_add(request, "metrics", metrics);
 }
 
+static
 json_object* store_request(const char* db_name, stream_info_t* stream_info, json_object* request, request_writer_state_t* state)
 {
     // dump_json_object(stdout, request);
@@ -257,6 +267,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     return request_id_obj;
 }
 
+static
 void store_js_exception(const char* db_name, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
 {
     mongoc_collection_t *jse_collection = request_writer_get_jse_collection(state, db_name, stream_info);
@@ -285,6 +296,7 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
     bson_destroy(document);
 }
 
+static
 void store_event(const char* db_name, stream_info_t *stream_info, json_object* request, request_writer_state_t* state)
 {
     mongoc_collection_t *events_collection = request_writer_get_events_collection(state, db_name, stream_info);
@@ -313,6 +325,7 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
     bson_destroy(document);
 }
 
+static
 json_object* extract_error_description(json_object* request, int severity)
 {
     json_object *error_line = NULL;
@@ -339,6 +352,7 @@ json_object* extract_error_description(json_object* request, int severity)
     return json_object_new_string(description);
 }
 
+static
 void request_writer_publish_error(stream_info_t* stream_info, const char* module, json_object* request,
                                   request_writer_state_t* state, json_object* request_id)
 {
@@ -388,6 +402,7 @@ void request_writer_publish_error(stream_info_t* stream_info, const char* module
     json_object_put(request_id);
 }
 
+static
 void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
 {
     zframe_t *db_frame = zmsg_first(msg);

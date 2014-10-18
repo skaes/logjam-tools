@@ -3,6 +3,7 @@
 #include "importer-processor.h"
 #include "importer-parser.h"
 
+static
 void connect_multiple(void* socket, const char* name, int which)
 {
     for (int i=0; i<which; i++) {
@@ -18,6 +19,44 @@ void connect_multiple(void* socket, const char* name, int which)
     }
 }
 
+static
+void* parser_pull_socket_new(zctx_t *context)
+{
+    int rc;
+    void *socket = zsocket_new(context, ZMQ_PULL);
+    assert(socket);
+    // connect socket, taking thread startup time into account
+    // TODO: this is a hack. better let controller coordinate this
+    for (int i=0; i<10; i++) {
+        rc = zsocket_connect(socket, "inproc://subscriber");
+        if (rc == 0) break;
+        zclock_sleep(100);
+    }
+    log_zmq_error(rc);
+    assert(rc == 0);
+    return socket;
+}
+
+static
+void* parser_push_socket_new(zctx_t *context)
+{
+    void *socket = zsocket_new(context, ZMQ_PUSH);
+    assert(socket);
+    connect_multiple(socket, "request-writer", NUM_WRITERS);
+    return socket;
+}
+
+static
+void* parser_indexer_socket_new(zctx_t *context)
+{
+    void *socket = zsocket_new(context, ZMQ_PUSH);
+    assert(socket);
+    int rc = zsocket_connect(socket, "inproc://indexer");
+    assert (rc == 0);
+    return socket;
+}
+
+static
 time_t valid_database_date(const char *date)
 {
     if (strlen(date) < 19) {
@@ -50,40 +89,7 @@ time_t valid_database_date(const char *date)
         return res;
 }
 
-void* parser_pull_socket_new(zctx_t *context)
-{
-    int rc;
-    void *socket = zsocket_new(context, ZMQ_PULL);
-    assert(socket);
-    // connect socket, taking thread startup time into account
-    // TODO: this is a hack. better let controller coordinate this
-    for (int i=0; i<10; i++) {
-        rc = zsocket_connect(socket, "inproc://subscriber");
-        if (rc == 0) break;
-        zclock_sleep(100);
-    }
-    log_zmq_error(rc);
-    assert(rc == 0);
-    return socket;
-}
-
-void* parser_push_socket_new(zctx_t *context)
-{
-    void *socket = zsocket_new(context, ZMQ_PUSH);
-    assert(socket);
-    connect_multiple(socket, "request-writer", NUM_WRITERS);
-    return socket;
-}
-
-void* parser_indexer_socket_new(zctx_t *context)
-{
-    void *socket = zsocket_new(context, ZMQ_PUSH);
-    assert(socket);
-    int rc = zsocket_connect(socket, "inproc://indexer");
-    assert (rc == 0);
-    return socket;
-}
-
+static
 processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
 {
     size_t n = zframe_size(stream_frame);
@@ -136,6 +142,7 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
 }
 
 
+static
 json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
 {
     char* json_data = (char*)zframe_data(body);
@@ -165,6 +172,7 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
     return jobj;
 }
 
+static
 void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
 {
     // zmsg_dump(msg);
@@ -209,6 +217,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
     }
 }
 
+static
 zhash_t* processor_hash_new()
 {
     zhash_t *hash = zhash_new();

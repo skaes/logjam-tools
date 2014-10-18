@@ -353,4 +353,3 @@ bool config_update_date_info()
     bool changed = strcmp(old_date, iso_date_today);
     return changed;
 }
-

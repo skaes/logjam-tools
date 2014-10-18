@@ -10,7 +10,8 @@ typedef struct {
 } subscriber_state_t;
 
 
-static void* subscriber_sub_socket_new(zconfig_t* config, zctx_t *context)
+static
+void* subscriber_sub_socket_new(zconfig_t* config, zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_SUB);
     assert(socket);
@@ -43,7 +44,8 @@ static void* subscriber_sub_socket_new(zconfig_t* config, zctx_t *context)
 static char *direct_bind_ip = "*";
 static int direct_bind_port = 9605;
 
-static void* subscriber_pull_socket_new(zctx_t *context)
+static
+void* subscriber_pull_socket_new(zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_PULL);
     assert(socket);
@@ -60,7 +62,8 @@ static void* subscriber_pull_socket_new(zctx_t *context)
     return socket;
 }
 
-static void* subscriber_push_socket_new(zctx_t *context)
+static
+void* subscriber_push_socket_new(zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_PUSH);
     assert(socket);
@@ -69,7 +72,8 @@ static void* subscriber_push_socket_new(zctx_t *context)
     return socket;
 }
 
-static void* subscriber_pub_socket_new(zctx_t *context)
+static
+void* subscriber_pub_socket_new(zctx_t *context)
 {
     void *socket = zsocket_new(context, ZMQ_PUB);  /* testing */
     assert(socket);
@@ -86,7 +90,8 @@ static void* subscriber_pub_socket_new(zctx_t *context)
 #define PUBLISH_DUPLICATES 0
 #endif
 
-static void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
+static
+void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
 {
     static size_t seq = 0;
     // zmsg_send(&msg_copy, state->pub_socket);
@@ -105,7 +110,8 @@ static void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
 }
 
 
-static int read_request_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
+static
+int read_request_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
 {
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(item->socket);

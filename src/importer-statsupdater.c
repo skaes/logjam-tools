@@ -6,6 +6,16 @@
 #include "importer-mongoutils.h"
 
 typedef struct {
+    size_t id;
+    mongoc_client_t *mongo_clients[MAX_DATABASES];
+    mongoc_collection_t *global_collection;
+    zhash_t *stats_collections;
+    void *controller_socket;
+    void *pull_socket;
+    size_t updates_count;
+} stats_updater_state_t;
+
+typedef struct {
     mongoc_collection_t *totals;
     mongoc_collection_t *minutes;
     mongoc_collection_t *quants;
