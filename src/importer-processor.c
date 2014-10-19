@@ -53,13 +53,26 @@ void processor_destroy(void* processor)
     free(p);
 }
 
-#if 0
 
 static
-int dump_module_name(const char* key, void *module, void *arg)
+void dump_modules_hash(zhash_t *modules)
 {
-    printf("[D] module: %s\n", (char*)module);
-    return 0;
+    const char* module = zhash_first(modules);
+    while (module) {
+        printf("[D] module: %s\n", module);
+        module = zhash_next(modules);
+    }
+}
+
+static
+void dump_increments_hash(zhash_t *increments_hash)
+{
+    increments_t *increments = zhash_first(increments_hash);
+    while (increments) {
+        const char *action = zhash_cursor(increments_hash);
+        dump_increments(action, increments);
+        increments = zhash_next(increments_hash);
+    }
 }
 
 static
@@ -68,19 +81,11 @@ void processor_dump_state(processor_state_t *self)
     puts("[D] ================================================");
     printf("[D] db_name: %s\n", self->db_name);
     printf("[D] processed requests: %zu\n", self->request_count);
-    zhash_foreach(self->modules, dump_module_name, NULL);
-    zhash_foreach(self->totals, dump_increments, NULL);
-    zhash_foreach(self->minutes, dump_increments, NULL);
+    dump_modules_hash(self->modules);
+    dump_increments_hash(self->totals);
+    dump_increments_hash(self->minutes);
 }
 
-static
-int processor_dump_state_from_zhash(const char* db_name, void* processor, void* arg)
-{
-    assert(!strcmp(((processor_state_t*)processor)->db_name, db_name));
-    processor_dump_state(processor);
-    return 0;
-}
-#endif
 
 static
 const char* append_to_json_string(json_object **jobj, const char* old_str, const char* add_str)
@@ -482,10 +487,14 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     processor_add_quants(self, request_data.page, increments);
 
     increments_destroy(increments);
-    // dump_json_object(stdout, request);
-    // if (self->request_count % 100 == 0) {
-    //     processor_dump_state(self);
-    // }
+
+    if (0) {
+        dump_json_object(stdout, request);
+        if (self->request_count % 100 == 0) {
+            processor_dump_state(self);
+        }
+    }
+
     if (interesting_request(&request_data, request, self->stream_info)) {
         json_object_get(request);
         zmsg_t *msg = zmsg_new();
@@ -688,9 +697,8 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     // TODO: store interesting requests
 }
 
-int processor_publish_totals(const char* db_name, void *processor, void *live_stream_socket)
+int processor_publish_totals(processor_state_t *self, const char* db_name, zsock_t *live_stream_socket)
 {
-    processor_state_t *self = processor;
     if (zhash_size(self->modules) == 0) return 0;
 
     stream_info_t *stream_info = self->stream_info;
