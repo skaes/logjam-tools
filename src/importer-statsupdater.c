@@ -42,7 +42,7 @@ typedef struct {
     mongoc_collection_t *collection;
 } collection_update_callback_t;
 
-
+static
 bson_t* increments_to_bson(const char* namespace, increments_t* increments)
 {
     // dump_increments(namespace, increments, NULL);
@@ -102,6 +102,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
     return document;
 }
 
+static
 int minutes_add_increments(const char* namespace, void* data, void* arg)
 {
     collection_update_callback_t *cb = arg;
@@ -151,6 +152,7 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     return 0;
 }
 
+static
 int totals_add_increments(const char* namespace, void* data, void* arg)
 {
     collection_update_callback_t *cb = arg;
@@ -193,6 +195,7 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     return 0;
 }
 
+static
 int quants_add_quants(const char* namespace, void* data, void* arg)
 {
     collection_update_callback_t *cb = arg;
@@ -264,6 +267,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
     return 0;
 }
 
+static
 stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* db_name)
 {
     stats_collections_t *collections = malloc(sizeof(stats_collections_t));
@@ -279,6 +283,7 @@ stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* 
     return collections;
 }
 
+static
 void destroy_stats_collections(stats_collections_t* collections)
 {
     if (collections->totals != NULL)
@@ -290,6 +295,7 @@ void destroy_stats_collections(stats_collections_t* collections)
     free(collections);
 }
 
+static
 stats_collections_t *stats_updater_get_collections(stats_updater_state_t *self, const char* db_name, stream_info_t *stream_info)
 {
     stats_collections_t *collections = zhash_lookup(self->stats_collections, db_name);
@@ -337,7 +343,7 @@ void stats_updater_state_destroy(stats_updater_state_t **state_p)
     *state_p = NULL;
 }
 
-extern void stats_updater(zsock_t *pipe, void *args)
+void stats_updater(zsock_t *pipe, void *args)
 {
     size_t id = (size_t)args;
     size_t ticks = 0;

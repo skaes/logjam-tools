@@ -10,6 +10,7 @@ zhash_t *configured_streams = NULL;
 zhash_t *stream_subscriptions = NULL;
 
 
+static
 zlist_t* get_stream_settings(zconfig_t* config, stream_info_t *info, const char* name)
 {
     zconfig_t *setting;
@@ -39,6 +40,7 @@ zlist_t* get_stream_settings(zconfig_t* config, stream_info_t *info, const char*
     return settings;
 }
 
+static
 void add_threshold_settings(zconfig_t* config, stream_info_t* info)
 {
     info->import_threshold = global_total_time_import_threshold;
@@ -73,6 +75,7 @@ void add_threshold_settings(zconfig_t* config, stream_info_t* info)
     zhash_destroy(&module_settings);
 }
 
+static
 void add_ignored_request_settings(zconfig_t* config, stream_info_t* info)
 {
     info->ignored_request_prefix = global_ignored_request_prefix;
@@ -85,6 +88,7 @@ void add_ignored_request_settings(zconfig_t* config, stream_info_t* info)
     zlist_destroy(&settings);
 }
 
+static
 stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
 {
     stream_info_t *info = malloc(sizeof(stream_info_t));
@@ -122,6 +126,7 @@ stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
     return info;
 }
 
+static
 void dump_stream_info(stream_info_t *stream)
 {
     printf("[D] key: %s\n", stream->key);

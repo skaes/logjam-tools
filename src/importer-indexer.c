@@ -38,6 +38,7 @@ typedef struct {
 } bg_indexer_args_t;
 
 
+static
 zsock_t *indexer_pull_socket_new()
 {
     zsock_t *socket = zsock_new(ZMQ_PULL);
@@ -47,6 +48,7 @@ zsock_t *indexer_pull_socket_new()
     return socket;
 }
 
+static
 void add_request_field_index(const char* field, mongoc_collection_t *requests_collection)
 {
     bson_error_t error;
@@ -70,6 +72,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     bson_destroy(index_keys);
 }
 
+static
 void add_request_collection_indexes(const char* db_name, mongoc_collection_t *requests_collection)
 {
     bson_error_t error;
@@ -100,6 +103,7 @@ void add_request_collection_indexes(const char* db_name, mongoc_collection_t *re
     add_request_field_index("exceptions",    requests_collection);
 }
 
+static
 void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_collection)
 {
     bson_error_t error;
@@ -122,6 +126,7 @@ void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_co
     bson_destroy(index_keys);
 }
 
+static
 void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_info_t *stream_info)
 {
     mongoc_client_t *client = state->mongo_clients[stream_info->db];
@@ -178,6 +183,7 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     mongoc_collection_destroy(collection);
 }
 
+static
 void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int delay)
 {
     zlist_t *streams = zhash_keys(configured_streams);
@@ -199,6 +205,7 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
     zlist_destroy(&streams);
 }
 
+static
 void* create_indexes_for_date(void* args)
 {
     indexer_state_t state;
@@ -223,6 +230,7 @@ void* create_indexes_for_date(void* args)
     return NULL;
 }
 
+static
 void spawn_bg_indexer_for_date(size_t id, const char* iso_date)
 {
     bg_indexer_args_t *indexer_args = malloc(sizeof(bg_indexer_args_t));
@@ -232,6 +240,7 @@ void spawn_bg_indexer_for_date(size_t id, const char* iso_date)
     zthread_new(create_indexes_for_date, indexer_args);
 }
 
+static
 void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
 {
     zframe_t *db_frame = zmsg_first(msg);

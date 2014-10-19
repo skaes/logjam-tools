@@ -53,12 +53,16 @@ void processor_destroy(void* processor)
     free(p);
 }
 
+#if 0
+
+static
 int dump_module_name(const char* key, void *module, void *arg)
 {
     printf("[D] module: %s\n", (char*)module);
     return 0;
 }
 
+static
 void processor_dump_state(processor_state_t *self)
 {
     puts("[D] ================================================");
@@ -69,13 +73,16 @@ void processor_dump_state(processor_state_t *self)
     zhash_foreach(self->minutes, dump_increments, NULL);
 }
 
+static
 int processor_dump_state_from_zhash(const char* db_name, void* processor, void* arg)
 {
     assert(!strcmp(((processor_state_t*)processor)->db_name, db_name));
     processor_dump_state(processor);
     return 0;
 }
+#endif
 
+static
 const char* append_to_json_string(json_object **jobj, const char* old_str, const char* add_str)
 {
     int old_len = strlen(old_str);
@@ -90,6 +97,7 @@ const char* append_to_json_string(json_object **jobj, const char* old_str, const
     return json_object_get_string(*jobj);
 }
 
+static
 const char* processor_setup_page(processor_state_t *self, json_object *request)
 {
     json_object *page_obj = NULL;
@@ -112,6 +120,7 @@ const char* processor_setup_page(processor_state_t *self, json_object *request)
     return page_str;
 }
 
+static
 const char* processor_setup_module(processor_state_t *self, const char *page)
 {
     int max_mod_len = strlen(page);
@@ -144,6 +153,7 @@ const char* processor_setup_module(processor_state_t *self, const char *page)
     return module;
 }
 
+static
 int processor_setup_response_code(processor_state_t *self, json_object *request)
 {
     json_object *code_obj = NULL;
@@ -157,6 +167,7 @@ int processor_setup_response_code(processor_state_t *self, json_object *request)
     return response_code;
 }
 
+static
 double processor_setup_time(processor_state_t *self, json_object *request, const char *time_name, const char *duplicate)
 {
     // TODO: might be better to drop requests without total_time
@@ -182,6 +193,7 @@ double processor_setup_time(processor_state_t *self, json_object *request, const
     return total_time;
 }
 
+static
 int extract_severity_from_lines_object(json_object* lines)
 {
     int log_level = -1;
@@ -204,6 +216,7 @@ int extract_severity_from_lines_object(json_object* lines)
     return (log_level > 5) ? -1 : log_level;
 }
 
+static
 int processor_setup_severity(processor_state_t *self, json_object *request)
 {
     int severity = 1;
@@ -225,6 +238,7 @@ int processor_setup_severity(processor_state_t *self, json_object *request)
     // printf("[D] severity: %d\n\n", severity);
 }
 
+static
 int processor_setup_minute(processor_state_t *self, json_object *request)
 {
     // we know that started_at data is valid since we already checked that
@@ -243,6 +257,7 @@ int processor_setup_minute(processor_state_t *self, json_object *request)
     return minute;
 }
 
+static
 void processor_setup_other_time(processor_state_t *self, json_object *request, double total_time)
 {
     double other_time = total_time;
@@ -257,6 +272,7 @@ void processor_setup_other_time(processor_state_t *self, json_object *request, d
     // printf("[D] other_time: %f\n", other_time);
 }
 
+static
 void processor_setup_allocated_memory(processor_state_t *self, json_object *request)
 {
     json_object *allocated_memory_obj;
@@ -276,6 +292,7 @@ void processor_setup_allocated_memory(processor_state_t *self, json_object *requ
     }
 }
 
+static
 int processor_setup_heap_growth(processor_state_t *self, json_object *request)
 {
     json_object *heap_growth_obj = NULL;
@@ -287,6 +304,7 @@ int processor_setup_heap_growth(processor_state_t *self, json_object *request)
     return heap_growth;
 }
 
+static
 json_object* processor_setup_exceptions(processor_state_t *self, json_object *request)
 {
     json_object* exceptions;
@@ -300,6 +318,7 @@ json_object* processor_setup_exceptions(processor_state_t *self, json_object *re
     return exceptions;
 }
 
+static
 void processor_add_totals(processor_state_t *self, const char* namespace, increments_t *increments)
 {
     increments_t *stored_increments = zhash_lookup(self->totals, namespace);
@@ -313,6 +332,7 @@ void processor_add_totals(processor_state_t *self, const char* namespace, increm
     }
 }
 
+static
 void processor_add_minutes(processor_state_t *self, const char* namespace, size_t minute, increments_t *increments)
 {
     char key[2000];
@@ -330,6 +350,7 @@ void processor_add_minutes(processor_state_t *self, const char* namespace, size_
 
 #define QUANTS_ARRAY_SIZE (sizeof(size_t) * (last_resource_offset + 1))
 
+static
 void add_quant(const char* namespace, size_t resource_idx, char kind, size_t quant, zhash_t* quants)
 {
     char key[2000];
@@ -345,6 +366,7 @@ void add_quant(const char* namespace, size_t resource_idx, char kind, size_t qua
     stored[resource_idx]++;
 }
 
+static
 void processor_add_quants(processor_state_t *self, const char* namespace, increments_t *increments)
 {
     for (int i=0; i<=last_resource_offset; i++){
@@ -376,6 +398,7 @@ void processor_add_quants(processor_state_t *self, const char* namespace, increm
     }
 }
 
+static
 bool interesting_request(request_data_t *request_data, json_object *request, stream_info_t* info)
 {
     int time_threshold = info ? info->import_threshold : global_total_time_import_threshold;
@@ -403,6 +426,7 @@ bool interesting_request(request_data_t *request_data, json_object *request, str
     return false;
 }
 
+static
 int ignore_request(json_object *request, stream_info_t* info)
 {
     int rc = 0;
@@ -477,6 +501,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     }
 }
 
+static
 char* extract_page_for_jse(json_object *request)
 {
     json_object *page_obj = NULL;
@@ -498,6 +523,7 @@ char* extract_page_for_jse(json_object *request)
     return page;
 }
 
+static
 char* exctract_key_from_jse_description(json_object *request)
 {
     json_object *description_obj = NULL;
