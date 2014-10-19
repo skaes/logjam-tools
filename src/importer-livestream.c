@@ -1,15 +1,15 @@
 #include "importer-livestream.h"
 
-void* live_stream_socket_new(zctx_t *context)
+zsock_t* live_stream_socket_new()
 {
-    void *live_stream_socket = zsocket_new(context, ZMQ_PUSH);
+    zsock_t *live_stream_socket = zsock_new(ZMQ_PUSH);
     assert(live_stream_socket);
-    int rc = zsocket_connect(live_stream_socket, "tcp://localhost:9607");
+    int rc = zsock_connect(live_stream_socket, "tcp://localhost:9607");
     assert(rc == 0);
     return live_stream_socket;
 }
 
-void live_stream_publish(void *live_stream_socket, const char* key, const char* json_str)
+void live_stream_publish(zsock_t *live_stream_socket, const char* key, const char* json_str)
 {
     int rc = 0;
     zframe_t *msg_key = zframe_new(key, strlen(key));
@@ -24,7 +24,7 @@ void live_stream_publish(void *live_stream_socket, const char* key, const char* 
     }
 }
 
-void publish_error_for_module(stream_info_t *stream_info, const char* module, const char* json_str, void* live_stream_socket)
+void publish_error_for_module(stream_info_t *stream_info, const char* module, const char* json_str, zsock_t* live_stream_socket)
 {
     size_t n = stream_info->app_len + 1 + stream_info->env_len;
     // skip :: at the beginning of module

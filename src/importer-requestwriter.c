@@ -24,20 +24,19 @@ typedef struct {
     zhash_t *request_collections;
     zhash_t *jse_collections;
     zhash_t *events_collections;
-    void *controller_socket;
-    void *pull_socket;
-    void *push_socket;
-    void *live_stream_socket;
+    zsock_t *controller_socket;
+    zsock_t *pull_socket;
+    zsock_t *live_stream_socket;
     size_t request_count;
 } request_writer_state_t;
 
 
 static
-void* request_writer_pull_socket_new(zctx_t *context, int i)
+zsock_t* request_writer_pull_socket_new(int i)
 {
-    void *socket = zsocket_new(context, ZMQ_PULL);
+    zsock_t *socket = zsock_new(ZMQ_PULL);
     assert(socket);
-    int rc = zsocket_bind(socket, "inproc://request-writer-%d", i);
+    int rc = zsock_bind(socket, "inproc://request-writer-%d", i);
     assert(rc == 0);
     return socket;
 }
@@ -468,72 +467,104 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     json_object_put(request);
 }
 
-void request_writer(void *args, zctx_t *ctx, void *pipe)
+static
+request_writer_state_t* request_writer_state_new(zsock_t *pipe, size_t id)
 {
-    request_writer_state_t state;
-    state.id = (size_t)args;
-    state.request_count = 0;
-    state.controller_socket = pipe;
-    state.pull_socket = request_writer_pull_socket_new(ctx, state.id);
+    request_writer_state_t *state = (request_writer_state_t*) zmalloc(sizeof(request_writer_state_t));
+    state->id = id;
+    state->request_count = 0;
+    state->controller_socket = pipe;
+    state->pull_socket = request_writer_pull_socket_new(id);
+    state->live_stream_socket = live_stream_socket_new();
     for (int i=0; i<num_databases; i++) {
-        state.mongo_clients[i] = mongoc_client_new(databases[i]);
-        assert(state.mongo_clients[i]);
+        state->mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state->mongo_clients[i]);
     }
-    state.request_collections = zhash_new();
-    state.jse_collections = zhash_new();
-    state.events_collections = zhash_new();
-    state.live_stream_socket = live_stream_socket_new(ctx);
-    size_t ticks = 0;
+    state->request_collections = zhash_new();
+    state->jse_collections = zhash_new();
+    state->events_collections = zhash_new();
+    return state;
+}
 
-    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+static
+void request_writer_state_destroy(request_writer_state_t **state_p)
+{
+    request_writer_state_t *state = *state_p;
+    // must not destroy the pipe, as it's owned by the actor
+    zsock_destroy(&state->pull_socket);
+    zsock_destroy(&state->live_stream_socket);
+    zhash_destroy(&state->request_collections);
+    zhash_destroy(&state->jse_collections);
+    zhash_destroy(&state->events_collections);
+    for (int i=0; i<num_databases; i++) {
+        mongoc_client_destroy(state->mongo_clients[i]);
+    }
+    *state_p = NULL;
+}
+
+void request_writer(zsock_t *pipe, void *args)
+{
+    size_t id = (size_t)args;
+    size_t ticks = 0;
+    request_writer_state_t *state = request_writer_state_new(pipe, id);
+    // signal readyiness after sockets have been created
+    zsock_signal(pipe, 0);
+
+    zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
     assert(poller);
 
     while (!zctx_interrupted) {
-        // printf("[D] writer [%zu]: polling\n", state.id);
+        // printf("[D] writer [%zu]: polling\n", id);
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;
-        if (socket == state.controller_socket) {
-            // tick
-            if (state.request_count)
-                printf("[I] writer [%zu]: tick (%zu requests)\n", state.id, state.request_count);
-            if (ticks++ % PING_INTERVAL == 0) {
-                // ping mongodb to reestablish connection if it got lost
-                for (int i=0; i<num_databases; i++) {
-                    mongo_client_ping(state.mongo_clients[i]);
+        if (socket == state->controller_socket) {
+            msg = zmsg_recv(state->controller_socket);
+            char *cmd = zmsg_popstr(msg);
+            zmsg_destroy(&msg);
+            if (streq(cmd, "tick")) {
+                if (state->request_count)
+                    printf("[I] writer [%zu]: tick (%zu requests)\n", id, state->request_count);
+                if (ticks++ % PING_INTERVAL == 0) {
+                    // ping mongodb to reestablish connection if it got lost
+                    for (int i=0; i<num_databases; i++) {
+                        mongo_client_ping(state->mongo_clients[i]);
+                    }
                 }
+                // free collection pointers every hour
+                if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {
+                    printf("[I] writer [%zu]: freeing request collections\n", id);
+                    zhash_destroy(&state->request_collections);
+                    zhash_destroy(&state->jse_collections);
+                    zhash_destroy(&state->events_collections);
+                    state->request_collections = zhash_new();
+                    state->jse_collections = zhash_new();
+                    state->events_collections = zhash_new();
+                }
+                state->request_count = 0;
+                free(cmd);
+            } else if (streq(cmd, "$TERM")) {
+                // printf("[D] writer [%zu]: received $TERM command\n", id);
+                free(cmd);
+                break;
+            } else {
+                printf("[E] writer [%zu]: received unknnown command: %s\n", id, cmd);
+                assert(false);
             }
-            // free collection pointers every hour
-            msg = zmsg_recv(state.controller_socket);
-            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - state.id - 1) {
-                printf("[I] writer [%zu]: freeing request collections\n", state.id);
-                zhash_destroy(&state.request_collections);
-                zhash_destroy(&state.jse_collections);
-                zhash_destroy(&state.events_collections);
-                state.request_collections = zhash_new();
-                state.jse_collections = zhash_new();
-                state.events_collections = zhash_new();
-            }
-            state.request_count = 0;
-        } else if (socket == state.pull_socket) {
-            msg = zmsg_recv(state.pull_socket);
+        } else if (socket == state->pull_socket) {
+            msg = zmsg_recv(state->pull_socket);
             if (msg != NULL) {
-                state.request_count++;
-                handle_request_msg(msg, &state);
+                state->request_count++;
+                handle_request_msg(msg, state);
+                zmsg_destroy(&msg);
             }
         } else {
-            // interrupted
-            printf("[I] writer [%zu]: no socket input. interrupted = %d\n", state.id, zctx_interrupted);
+            // msg == NULL, probably interrupted by signal handler
             break;
         }
-        zmsg_destroy(&msg);
     }
 
-    zhash_destroy(&state.request_collections);
-    zhash_destroy(&state.jse_collections);
-    zhash_destroy(&state.events_collections);
-    for (int i=0; i<num_databases; i++) {
-        mongoc_client_destroy(state.mongo_clients[i]);
-    }
-    printf("[I] writer [%zu]: terminated\n", state.id);
+    printf("[I] writer [%zu]: shutting down\n", id);
+    request_writer_state_destroy(&state);
+    printf("[I] writer [%zu]: terminated\n", id);
 }

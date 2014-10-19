@@ -31,13 +31,14 @@
 // independent socket for this.
 
 typedef struct {
-    void *subscriber_pipe;
-    void *indexer_pipe;
-    void *parser_pipes[NUM_PARSERS];
-    void *writer_pipes[NUM_WRITERS];
-    void *updater_pipes[NUM_UPDATERS];
-    void *updates_socket;
-    void *live_stream_socket;
+    zconfig_t *config;
+    zactor_t *subscriber;
+    zactor_t *indexer;
+    zactor_t *parsers[NUM_PARSERS];
+    zactor_t *writers[NUM_WRITERS];
+    zactor_t *updaters[NUM_UPDATERS];
+    zsock_t *updates_socket;
+    zsock_t *live_stream_socket;
     size_t ticks;
 } controller_state_t;
 
@@ -170,11 +171,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     state->ticks++;
 
     for (size_t i=0; i<NUM_PARSERS; i++) {
-        void* parser_pipe = state->parser_pipes[i];
-        zmsg_t *tick = zmsg_new();
-        zmsg_addstr(tick, "tick");
-        zmsg_send(&tick, parser_pipe);
-        zmsg_t *response = zmsg_recv(parser_pipe);
+        zactor_t* parser = state->parsers[i];
+        zstr_send(parser, "tick");
+        zmsg_t *response = zmsg_recv(parser);
         extract_parser_state(response, &processors[i], &parsed_msgs_counts[i]);
         zmsg_destroy(&response);
     }
@@ -196,17 +195,11 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     zhash_foreach(processors[0], processor_publish_totals, state->live_stream_socket);
 
     // tell indexer to tick
-    {
-        zmsg_t *tick = zmsg_new();
-        zmsg_addstr(tick, "tick");
-        zmsg_send(&tick, state->indexer_pipe);
-    }
+    zstr_send(state->indexer, "tick");
 
     // tell stats updaters to tick
     for (int i=0; i<NUM_UPDATERS; i++) {
-        zmsg_t *tick = zmsg_new();
-        zmsg_addstr(tick, "tick");
-        zmsg_send(&tick, state->updater_pipes[i]);
+        zstr_send(state->updaters[i], "tick");
     }
 
     // forward to stats_updaters
@@ -260,9 +253,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     // tell request writers to tick
     for (int i=0; i<NUM_WRITERS; i++) {
-        zmsg_t *tick = zmsg_new();
-        zmsg_addstr(tick, "tick");
-        zmsg_send(&tick, state->writer_pipes[i]);
+        zstr_send(state->writers[i], "tick");
     }
 
     bool terminate = (state->ticks % CONFIG_FILE_CHECK_INTERVAL == 0) && config_file_has_changed();
@@ -282,53 +273,73 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
+static
+bool controller_create_actors(controller_state_t *state)
+{
+    // start the indexer
+    state->indexer = zactor_new(indexer, NULL);
+    if (zctx_interrupted) return false;
+
+    // create socket for stats updates
+    state->updates_socket = zsock_new(ZMQ_PUSH);
+    int rc = zsock_bind(state->updates_socket, "inproc://stats-updates");
+    assert(rc == 0);
+
+    // connect to live stream
+    state->live_stream_socket = live_stream_socket_new();
+
+    // start all worker threads
+    state->subscriber = zactor_new(subscriber, state->config);
+    for (size_t i=0; i<NUM_WRITERS; i++) {
+        state->writers[i] = zactor_new(request_writer, (void*)i);
+    }
+    for (size_t i=0; i<NUM_UPDATERS; i++) {
+        state->updaters[i] = zactor_new(stats_updater, (void*)i);
+    }
+    for (size_t i=0; i<NUM_PARSERS; i++) {
+        state->parsers[i] = zactor_new(parser, (void*)i);
+    }
+    return true;
+}
+
+static
+void controller_destroy_actors(controller_state_t *state)
+{
+    zactor_destroy(&state->subscriber);
+    zactor_destroy(&state->indexer);
+    for (size_t i=0; i<NUM_PARSERS; i++) {
+        zactor_destroy(&state->parsers[i]);
+    }
+    for (size_t i=0; i<NUM_WRITERS; i++) {
+        zactor_destroy(&state->writers[i]);
+    }
+    for (size_t i=0; i<NUM_UPDATERS; i++) {
+        zactor_destroy(&state->updaters[i]);
+    }
+    zsock_destroy(&state->live_stream_socket);
+    zsock_destroy(&state->updates_socket);
+}
+
 int run_controller_loop(zconfig_t* config)
 {
     int rc;
+    // set global config
+    zsys_init();
+    zsys_set_io_threads(1);
+    zsys_set_rcvhwm(1000);
+    zsys_set_sndhwm(1000);
+    zsys_set_linger(100);
 
-    // establish global zeromq context
-    zctx_t *context = zctx_new();
-    assert(context);
-    zctx_set_rcvhwm(context, 1000);
-    zctx_set_sndhwm(context, 1000);
-    zctx_set_linger(context, 100);
+    controller_state_t state = {.ticks = 0, .config = config};
+    bool start_up_complete = controller_create_actors(&state);
+
+    if (!start_up_complete)
+        goto exit;
 
     // set up event loop
     zloop_t *loop = zloop_new();
     assert(loop);
     zloop_set_verbose(loop, 0);
-
-    controller_state_t state = {.ticks = 0};
-
-    // start the indexer
-    state.indexer_pipe = zthread_fork(context, indexer, NULL);
-    {
-        // wait for initial db index creation
-        zmsg_t * msg = zmsg_recv(state.indexer_pipe);
-        zmsg_destroy(&msg);
-
-        if (zctx_interrupted) goto exit;
-    }
-
-    // create socket for stats updates
-    state.updates_socket = zsocket_new(context, ZMQ_PUSH);
-    rc = zsocket_bind(state.updates_socket, "inproc://stats-updates");
-    assert(rc == 0);
-
-    // connect to live stream
-    state.live_stream_socket = live_stream_socket_new(context);
-
-    // start all worker threads
-    state.subscriber_pipe = zthread_fork(context, subscriber, config);
-    for (size_t i=0; i<NUM_WRITERS; i++) {
-        state.writer_pipes[i] = zthread_fork(context, request_writer, (void*)i);
-    }
-    for (size_t i=0; i<NUM_UPDATERS; i++) {
-        state.updater_pipes[i] = zthread_fork(context, stats_updater, (void*)i);
-    }
-    for (size_t i=0; i<NUM_PARSERS; i++) {
-        state.parser_pipes[i] = zthread_fork(context, parser, (void*)i);
-    }
 
     // flush increments to database every 1000 ms
     rc = zloop_timer(loop, 1000, 1, collect_stats_and_forward, &state);
@@ -337,7 +348,7 @@ int run_controller_loop(zconfig_t* config)
     if (!zctx_interrupted) {
         // run the loop
         rc = zloop_start(loop);
-        printf("[I] shutting down: %d\n", rc);
+        printf("[I] controller: shutting down\n");
     }
 
     // shutdown
@@ -345,7 +356,9 @@ int run_controller_loop(zconfig_t* config)
     assert(loop == NULL);
 
  exit:
-    zctx_destroy(&context);
+    controller_destroy_actors(&state);
+    zsys_shutdown();
 
+    printf("[I] controller: terminated\n");
     return 0;
 }

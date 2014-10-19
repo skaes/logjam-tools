@@ -22,13 +22,13 @@
 // It might be better to insert a load balancer device between parsers and request writers
 
 static
-void connect_multiple(void* socket, const char* name, int which)
+void connect_multiple(zsock_t* socket, const char* name, int which)
 {
     for (int i=0; i<which; i++) {
         // TODO: HACK!
         int rc;
         for (int j=0; j<10; j++) {
-            rc = zsocket_connect(socket, "inproc://%s-%d", name, i);
+            rc = zsock_connect(socket, "inproc://%s-%d", name, i);
             if (rc == 0) break;
             zclock_sleep(100); // ms
         }
@@ -38,15 +38,15 @@ void connect_multiple(void* socket, const char* name, int which)
 }
 
 static
-void* parser_pull_socket_new(zctx_t *context)
+zsock_t* parser_pull_socket_new()
 {
     int rc;
-    void *socket = zsocket_new(context, ZMQ_PULL);
+    zsock_t *socket = zsock_new(ZMQ_PULL);
     assert(socket);
     // connect socket, taking thread startup time into account
     // TODO: this is a hack. better let controller coordinate this
     for (int i=0; i<10; i++) {
-        rc = zsocket_connect(socket, "inproc://subscriber");
+        rc = zsock_connect(socket, "inproc://subscriber");
         if (rc == 0) break;
         zclock_sleep(100);
     }
@@ -56,20 +56,20 @@ void* parser_pull_socket_new(zctx_t *context)
 }
 
 static
-void* parser_push_socket_new(zctx_t *context)
+zsock_t* parser_push_socket_new()
 {
-    void *socket = zsocket_new(context, ZMQ_PUSH);
+    zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
     connect_multiple(socket, "request-writer", NUM_WRITERS);
     return socket;
 }
 
 static
-void* parser_indexer_socket_new(zctx_t *context)
+zsock_t* parser_indexer_socket_new()
 {
-    void *socket = zsocket_new(context, ZMQ_PUSH);
+    zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
-    int rc = zsocket_connect(socket, "inproc://indexer");
+    int rc = zsock_connect(socket, "inproc://indexer");
     assert (rc == 0);
     return socket;
 }
@@ -243,47 +243,84 @@ zhash_t* processor_hash_new()
     return hash;
 }
 
-void parser(void *args, zctx_t *ctx, void *pipe)
+static
+parser_state_t* parser_state_new(zsock_t *pipe, size_t id)
 {
-    parser_state_t state;
-    state.id = (size_t)args;
-    state.parsed_msgs_count = 0;
-    state.controller_socket = pipe;
-    state.pull_socket = parser_pull_socket_new(ctx);
-    state.push_socket = parser_push_socket_new(ctx);
-    state.indexer_socket = parser_indexer_socket_new(ctx);
-    assert( state.tokener = json_tokener_new() );
-    state.processors = processor_hash_new();
+    parser_state_t *state = (parser_state_t *) zmalloc(sizeof(parser_state_t));
+    state->id = id;
+    state->parsed_msgs_count = 0;
+    state->controller_socket = pipe;
+    state->pull_socket = parser_pull_socket_new();
+    state->push_socket = parser_push_socket_new();
+    state->indexer_socket = parser_indexer_socket_new();
+    assert( state->tokener = json_tokener_new() );
+    state->processors = processor_hash_new();
+    return state;
+}
 
-    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+static
+void parser_state_destroy(parser_state_t **state_p)
+{
+    parser_state_t *state = *state_p;
+    // must not destroy the pipe, as it's owned by the actor
+    zsock_destroy(&state->pull_socket);
+    zsock_destroy(&state->push_socket);
+    zsock_destroy(&state->indexer_socket);
+    zhash_destroy(&state->processors);
+    *state_p = NULL;
+}
+
+void parser(zsock_t *pipe, void *args)
+{
+    size_t id = (size_t)args;
+    parser_state_t *state = parser_state_new(pipe, id);
+    // signal readyiness after sockets have been created
+    zsock_signal(pipe, 0);
+
+    zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
     assert(poller);
 
     while (!zctx_interrupted) {
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;
-        if (socket == state.controller_socket) {
-            // tick
-            if (state.parsed_msgs_count)
-                printf("[I] parser [%zu]: tick (%zu messages)\n", state.id, state.parsed_msgs_count);
-            msg = zmsg_recv(state.controller_socket);
-            zmsg_t *answer = zmsg_new();
-            zmsg_addmem(answer, &state.processors, sizeof(zhash_t*));
-            zmsg_addmem(answer, &state.parsed_msgs_count, sizeof(size_t));
-            zmsg_send(&answer, state.controller_socket);
-            state.parsed_msgs_count = 0;
-            state.processors = processor_hash_new();
-        } else if (socket == state.pull_socket) {
-            msg = zmsg_recv(state.pull_socket);
+        if (socket == state->controller_socket) {
+            msg = zmsg_recv(state->controller_socket);
+            char *cmd = zmsg_popstr(msg);
+            zmsg_destroy(&msg);
+            if (streq(cmd, "tick")) {
+                if (state->parsed_msgs_count)
+                    printf("[I] parser [%zu]: tick (%zu messages)\n", state->id, state->parsed_msgs_count);
+                zmsg_t *answer = zmsg_new();
+                zmsg_addmem(answer, &state->processors, sizeof(zhash_t*));
+                zmsg_addmem(answer, &state->parsed_msgs_count, sizeof(size_t));
+                zmsg_send(&answer, state->controller_socket);
+                state->parsed_msgs_count = 0;
+                state->processors = processor_hash_new();
+                free(cmd);
+            } else if (streq(cmd, "$TERM")) {
+                // printf("[D] parser [%zu]: received $TERM command\n", id);
+                free(cmd);
+                break;
+            } else {
+                printf("[E] parser [%zu]: received unknnown command: %s\n", id, cmd);
+                free(cmd);
+                assert(false);
+            }
+        } else if (socket == state->pull_socket) {
+            msg = zmsg_recv(state->pull_socket);
             if (msg != NULL) {
-                state.parsed_msgs_count++;
-                parse_msg_and_forward_interesting_requests(msg, &state);
+                state->parsed_msgs_count++;
+                parse_msg_and_forward_interesting_requests(msg, state);
+                zmsg_destroy(&msg);
             }
         } else {
-            // interrupted
+            // msg == NULL, probably interrupted by signal handler
             break;
         }
-        zmsg_destroy(&msg);
     }
-    printf("[I] parser [%zu]: terminated\n", state.id);
+
+    printf("[I] parser [%zu]: shutting down\n", id);
+    parser_state_destroy(&state);
+    printf("[I] parser [%zu]: terminated\n", id);
 }

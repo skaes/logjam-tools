@@ -26,8 +26,8 @@ typedef struct {
     mongoc_client_t *mongo_clients[MAX_DATABASES];
     mongoc_collection_t *global_collection;
     zhash_t *stats_collections;
-    void *controller_socket;
-    void *pull_socket;
+    zsock_t *controller_socket;
+    zsock_t *pull_socket;
     size_t updates_count;
 } stats_updater_state_t;
 
@@ -304,25 +304,48 @@ stats_collections_t *stats_updater_get_collections(stats_updater_state_t *self, 
     return collections;
 }
 
+static
+stats_updater_state_t* stats_updater_state_new(zsock_t *pipe, size_t id)
+{
+    stats_updater_state_t *state = (stats_updater_state_t*) zmalloc(sizeof(*state));
+    state->id = id;
+    state->updates_count = 0;
+    state->controller_socket = pipe;
+    state->pull_socket = zsock_new(ZMQ_PULL);
+    assert(state->pull_socket);
 
-void stats_updater(void *args, zctx_t *ctx, void *pipe)
+    int rc = zsock_connect(state->pull_socket, "inproc://stats-updates");
+    assert(rc==0);
+
+    for (int i = 0; i<num_databases; i++) {
+        state->mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state->mongo_clients[i]);
+    }
+    state->stats_collections = zhash_new();
+    return state;
+}
+
+static
+void stats_updater_state_destroy(stats_updater_state_t **state_p)
+{
+    stats_updater_state_t *state = *state_p;
+    zsock_destroy(&state->pull_socket);
+    zhash_destroy(&state->stats_collections);
+    for (int i = 0; i<num_databases; i++) {
+        mongoc_client_destroy(state->mongo_clients[i]);
+    }
+    *state_p = NULL;
+}
+
+extern void stats_updater(zsock_t *pipe, void *args)
 {
     size_t id = (size_t)args;
-    stats_updater_state_t state;
-    state.updates_count = 0;
-    state.controller_socket = pipe;
-    state.pull_socket = zsocket_new(ctx, ZMQ_PULL);
-    assert(state.pull_socket);
-    int rc = zsocket_connect(state.pull_socket, "inproc://stats-updates");
-    assert(rc==0);
-    for (int i = 0; i<num_databases; i++) {
-        state.mongo_clients[i] = mongoc_client_new(databases[i]);
-        assert(state.mongo_clients[i]);
-    }
-    state.stats_collections = zhash_new();
     size_t ticks = 0;
+    stats_updater_state_t *state = stats_updater_state_new(pipe, id);
+    // signal readyiness after sockets have been created
+    zsock_signal(pipe, 0);
 
-    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+    zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
     assert(poller);
 
     while (!zctx_interrupted) {
@@ -330,25 +353,37 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;
-        if (socket == state.controller_socket) {
-            msg = zmsg_recv(state.controller_socket);
-            if (state.updates_count)
-                printf("[I] updater[%zu]: tick (%zu updates)\n", id, state.updates_count);
-            // ping the server
-            if (ticks++ % PING_INTERVAL == 0) {
-                for (int i=0; i<num_databases; i++) {
-                    mongo_client_ping(state.mongo_clients[i]);
+        if (socket == state->controller_socket) {
+            msg = zmsg_recv(state->controller_socket);
+            char *cmd = zmsg_popstr(msg);
+            zmsg_destroy(&msg);
+            if (streq(cmd, "tick")) {
+                if (state->updates_count)
+                    printf("[I] updater[%zu]: tick (%zu updates)\n", id, state->updates_count);
+                // ping the server
+                if (ticks++ % PING_INTERVAL == 0) {
+                    for (int i=0; i<num_databases; i++) {
+                        mongo_client_ping(state->mongo_clients[i]);
+                    }
                 }
+                // refresh database information
+                if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {
+                    zhash_destroy(&state->stats_collections);
+                    state->stats_collections = zhash_new();
+                }
+                state->updates_count = 0;
+                free(cmd);
+            } else if (streq(cmd, "$TERM")) {
+                // printf("[D] updater[%zu]: received $TERM command\n", id);
+                free(cmd);
+                break;
+            } else {
+                printf("[E] updater[%zu]: received unknnown command: %s\n", id, cmd);
+                assert(false);
             }
-            // refresh database information
-            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {
-                zhash_destroy(&state.stats_collections);
-                state.stats_collections = zhash_new();
-            }
-            state.updates_count = 0;
-        } else if (socket == state.pull_socket) {
-            msg = zmsg_recv(state.pull_socket);
-            state.updates_count++;
+        } else if (socket == state->pull_socket) {
+            msg = zmsg_recv(state->pull_socket);
+            state->updates_count++;
             int64_t start_time_ms = zclock_time();
 
             zframe_t *task_frame = zmsg_first(msg);
@@ -372,7 +407,7 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
             assert(zframe_size(hash_frame) == sizeof(updates));
             memcpy(&updates, zframe_data(hash_frame), sizeof(updates));
 
-            stats_collections_t *collections = stats_updater_get_collections(&state, db_name, stream_info);
+            stats_collections_t *collections = stats_updater_get_collections(state, db_name, stream_info);
             collection_update_callback_t cb;
             cb.db_name = db_name;
 
@@ -397,16 +432,14 @@ void stats_updater(void *args, zctx_t *ctx, void *pipe)
 
             int64_t end_time_ms = zclock_time();
             printf("[I] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, (int)(end_time_ms - start_time_ms), db_name);
+            zmsg_destroy(&msg);
         } else {
             printf("[I] updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
             break;
         }
-        zmsg_destroy(&msg);
     }
 
-    zhash_destroy(&state.stats_collections);
-    for (int i = 0; i<num_databases; i++) {
-        mongoc_client_destroy(state.mongo_clients[i]);
-    }
+    printf("[I] updater[%zu]: shutting down\n", id);
+    stats_updater_state_destroy(&state);
     printf("[I] updater[%zu]: terminated\n", id);
 }

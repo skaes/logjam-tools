@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-extern void stats_updater(void *args, zctx_t *ctx, void *pipe);
+extern void stats_updater(zsock_t *pipe, void *args);
 
 #ifdef __cplusplus
 }

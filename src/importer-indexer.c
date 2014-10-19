@@ -27,8 +27,8 @@ typedef struct {
     size_t id;
     mongoc_client_t *mongo_clients[MAX_DATABASES];
     mongoc_collection_t *global_collection;
-    void *controller_socket;
-    void *pull_socket;
+    zsock_t *controller_socket;
+    zsock_t *pull_socket;
     zhash_t *databases;
 } indexer_state_t;
 
@@ -38,11 +38,11 @@ typedef struct {
 } bg_indexer_args_t;
 
 
-void *indexer_pull_socket_new(zctx_t *ctx)
+zsock_t *indexer_pull_socket_new()
 {
-    void *socket = zsocket_new(ctx, ZMQ_PULL);
+    zsock_t *socket = zsock_new(ZMQ_PULL);
     assert(socket);
-    int rc = zsocket_bind(socket, "inproc://indexer");
+    int rc = zsock_bind(socket, "inproc://indexer");
     assert(rc == 0);
     return socket;
 }
@@ -256,29 +256,52 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
     }
 }
 
-void indexer(void *args, zctx_t *ctx, void *pipe)
+static
+indexer_state_t* indexer_state_new(zsock_t *pipe, size_t id)
 {
-    indexer_state_t state;
-    memset(&state, 0, sizeof(state));
-    state.controller_socket = pipe;
-    state.pull_socket = indexer_pull_socket_new(ctx);
+    indexer_state_t *state = (indexer_state_t*) zmalloc(sizeof(*state));
+    memset(state, 0, sizeof(*state));
+    state->id = id;
+    state->controller_socket = pipe;
+    state->pull_socket = indexer_pull_socket_new();
     for (int i=0; i<num_databases; i++) {
-        state.mongo_clients[i] = mongoc_client_new(databases[i]);
-        assert(state.mongo_clients[i]);
+        state->mongo_clients[i] = mongoc_client_new(databases[i]);
+        assert(state->mongo_clients[i]);
     }
-    state.databases = zhash_new();
+    state->databases = zhash_new();
+    return state;
+}
+
+static
+void indexer_state_destroy(indexer_state_t **state_p)
+{
+    indexer_state_t *state = *state_p;
+    zsock_destroy(&state->pull_socket);
+    zhash_destroy(&state->databases);
+    for (int i=0; i<num_databases; i++) {
+        mongoc_client_destroy(state->mongo_clients[i]);
+    }
+    *state_p = NULL;
+}
+
+void indexer(zsock_t *pipe, void *args)
+{
+    size_t id = 0;
     size_t ticks = 0;
     size_t bg_indexer_runs = 0;
-    { // setup indexes (for today and tomorrow)
-        config_update_date_info();
-        indexer_create_all_indexes(&state, iso_date_today, 0);
-        zmsg_t *msg = zmsg_new();
-        zmsg_addstr(msg, "started");
-        zmsg_send(&msg, state.controller_socket);
-        spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
-    }
+    indexer_state_t *state = indexer_state_new(pipe, id);
 
-    zpoller_t *poller = zpoller_new(state.controller_socket, state.pull_socket, NULL);
+    // setup indexes for today (synchronously)
+    config_update_date_info();
+    indexer_create_all_indexes(state, iso_date_today, 0);
+
+    // signal readyiness after index creation
+    zsock_signal(pipe, 0);
+
+    // setup indexes for tomorrow (asynchronously)
+    spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
+
+    zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
     assert(poller);
 
     while (!zctx_interrupted) {
@@ -286,47 +309,52 @@ void indexer(void *args, zctx_t *ctx, void *pipe)
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;
-        if (socket == state.controller_socket) {
-            // tick
-            // printf("[D] indexer[%zu]: tick\n", state.id);
-            msg = zmsg_recv(state.controller_socket);
-
-            // if date has changed, start a background thread to create databases for the next day
-            if (config_update_date_info()) {
-                printf("[I] indexer[%zu]: date change. creating indexes for tomorrow\n", state.id);
-                spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
-            }
-
-            if (ticks++ % PING_INTERVAL == 0) {
-                // ping mongodb to reestablish connection if it got lost
-                for (int i=0; i<num_databases; i++) {
-                    mongo_client_ping(state.mongo_clients[i]);
+        if (socket == state->controller_socket) {
+            msg = zmsg_recv(state->controller_socket);
+            char *cmd = zmsg_popstr(msg);
+            zmsg_destroy(&msg);
+            if (streq(cmd, "tick")) {
+                // printf("[D] indexer[%zu]: tick\n", id);
+                // if date has changed, start a background thread to create databases for the next day
+                if (config_update_date_info()) {
+                    printf("[I] indexer[%zu]: date change. creating indexes for tomorrow\n", id);
+                    spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
                 }
+                if (ticks++ % PING_INTERVAL == 0) {
+                    // ping mongodb to reestablish connection if it got lost
+                    for (int i=0; i<num_databases; i++) {
+                        mongo_client_ping(state->mongo_clients[i]);
+                    }
+                }
+                // free collection pointers every hour
+                if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {
+                    printf("[I] indexer[%zu]: freeing database info\n", id);
+                    zhash_destroy(&state->databases);
+                    state->databases = zhash_new();
+                }
+                free(cmd);
+            } else if (streq(cmd, "$TERM")) {
+                // printf("[D] indexer[%zu]: received $TERM command\n", id);
+                free(cmd);
+                break;
+            } else {
+                printf("[E] indexer[%zu]: received unknnown command: %s\n", id, cmd);
+                assert(false);
             }
-
-            // free collection pointers every hour
-            if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - state.id - 1) {
-                printf("[I] indexer[%zu]: freeing database info\n", state.id);
-                zhash_destroy(&state.databases);
-                state.databases = zhash_new();
-            }
-        } else if (socket == state.pull_socket) {
-            msg = zmsg_recv(state.pull_socket);
+        } else if (socket == state->pull_socket) {
+            msg = zmsg_recv(state->pull_socket);
             if (msg != NULL) {
-                handle_indexer_request(msg, &state);
+                handle_indexer_request(msg, state);
+                zmsg_destroy(&msg);
             }
         } else {
             // interrupted
-            printf("[I] indexer[%zu]: no socket input. interrupted = %d\n", state.id, zctx_interrupted);
+            printf("[I] indexer[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
             break;
         }
-        zmsg_destroy(&msg);
     }
 
-    zhash_destroy(&state.databases);
-    for (int i=0; i<num_databases; i++) {
-        mongoc_client_destroy(state.mongo_clients[i]);
-    }
-    printf("[I] indexer[%zu]: terminated\n", state.id);
+    printf("[I] indexer[%zu]: shutting down\n", id);
+    indexer_state_destroy(&state);
+    printf("[I] indexer[%zu]: terminated\n", id);
 }
-

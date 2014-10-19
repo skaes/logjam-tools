@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-extern void request_writer(void *args, zctx_t *ctx, void *pipe);
+    extern void request_writer(zsock_t *pipe, void *args);
 
 #ifdef __cplusplus
 }

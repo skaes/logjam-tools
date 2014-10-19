@@ -8,9 +8,9 @@
 extern "C" {
 #endif
 
-extern void* live_stream_socket_new(zctx_t *context);
-extern void live_stream_publish(void *live_stream_socket, const char* key, const char* json_str);
-extern void publish_error_for_module(stream_info_t *stream_info, const char* module, const char* json_str, void* live_stream_socket);
+extern zsock_t* live_stream_socket_new();
+extern void live_stream_publish(zsock_t *live_stream_socket, const char* key, const char* json_str);
+extern void publish_error_for_module(stream_info_t *stream_info, const char* module, const char* json_str, zsock_t* live_stream_socket);
 
 #ifdef __cplusplus
 }

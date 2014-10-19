@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-extern void subscriber(void *args, zctx_t *ctx, void *pipe);
+extern void subscriber(zsock_t *pipe, void *args);
 
 #ifdef __cplusplus
 }

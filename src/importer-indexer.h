@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-extern void indexer(void *args, zctx_t *ctx, void *pipe);
+extern void indexer(zsock_t *pipe, void *args);
 
 #ifdef __cplusplus
 }
