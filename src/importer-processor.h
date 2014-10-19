@@ -1,8 +1,12 @@
-#ifndef LOGJAM_IMPORTER_PROCESSOR_H
-#define LOGJAM_IMPORTER_PROCESSOR_H
+#ifndef __LOGJAM_IMPORTER_PROCESSOR_H_INCLUDED__
+#define __LOGJAM_IMPORTER_PROCESSOR_H_INCLUDED__
 
 #include "importer-parser.h"
 #include "importer-streaminfo.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct {
     char *db_name;
@@ -22,5 +26,9 @@ extern void processor_add_event(processor_state_t *self, parser_state_t *pstate,
 extern void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request);
 extern void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request);
 extern int processor_publish_totals(const char* db_name, void *processor, void *live_stream_socket);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

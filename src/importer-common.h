@@ -1,5 +1,5 @@
-#ifndef LOGJAM_IMPORTER_COMMON_H
-#define LOGJAM_IMPORTER_COMMON_H
+#ifndef __LOGJAM_IMPORTER_COMMON_H_INCLUDED__
+#define __LOGJAM_IMPORTER_COMMON_H_INCLUDED__
 
 #include <zmq.h>
 #include <czmq.h>
@@ -12,6 +12,10 @@
 #include <json-c/json.h>
 #include <bson.h>
 #include <mongoc.h>
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #ifdef DEBUG
 #undef DEBUG
@@ -87,5 +91,9 @@ void log_zmq_error(int rc)
       fprintf(stderr, "[E] rc: %d, errno: %d (%s)\n", rc, errno, zmq_strerror(errno));
   }
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

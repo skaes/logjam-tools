@@ -1,7 +1,11 @@
-#ifndef LOGJAM_IMPORTER_RESOURCES_H
-#define LOGJAM_IMPORTER_RESOURCES_H
+#ifndef __LOGJAM_IMPORTER_RESOURCES_H__INCLUDED__
+#define __LOGJAM_IMPORTER_RESOURCES_H__INCLUDED__
 
 #include "importer-common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* resource maps */
 #define MAX_RESOURCE_COUNT 100
@@ -52,5 +56,9 @@ static inline const char* i2r(size_t i)
     assert(i <= last_resource_offset);
     return (const char*)(int_to_resource[i]);
 }
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

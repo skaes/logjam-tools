@@ -1,7 +1,11 @@
-#ifndef LOGJAM_IMPORTER_INCREMENTS_H
-#define LOGJAM_IMPORTER_INCREMENTS_H
+#ifndef __LOGJAM_IMPORTER_INCREMENTS_H_INCLUDED__
+#define __LOGJAM_IMPORTER_INCREMENTS_H_INCLUDED__
 
 #include "importer-common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // TODO: support integer values (for call metrics)
 
@@ -47,5 +51,9 @@ extern void increments_fill_caller_info(increments_t *increments, json_object *r
 
 extern void dump_metrics(metric_pair_t *metrics);
 extern int dump_increments(const char *key, void *total, void *arg);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

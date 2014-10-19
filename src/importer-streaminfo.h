@@ -1,7 +1,11 @@
-#ifndef LOGJAM_IMPORTER_STREAM_INFO_H
-#define LOGJAM_IMPORTER_STREAM_INFO_H
+#ifndef __LOGJAM_IMPORTER_STREAM_INFO_H_INCLUDED__
+#define __LOGJAM_IMPORTER_STREAM_INFO_H_INCLUDED__
 
 #include "importer-common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct {
     const char* name;
@@ -31,5 +35,9 @@ extern zhash_t *configured_streams;
 extern zhash_t *stream_subscriptions;
 
 void setup_stream_config(zconfig_t* config, const char* pattern);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

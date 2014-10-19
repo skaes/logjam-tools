@@ -1,7 +1,11 @@
-#ifndef LOGJAM_IMPORTER_MONGO_UTILS_H
-#define LOGJAM_IMPORTER_MONGO_UTILS_H
+#ifndef __LOGJAM_IMPORTER_MONGO_UTILS_H_INCLUDED__
+#define __LOGJAM_IMPORTER_MONGO_UTILS_H_INCLUDED__
 
 #include "importer-common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #define USE_UNACKNOWLEDGED_WRITES 0
 #define USE_BACKGROUND_INDEX_BUILDS 1
@@ -28,5 +32,9 @@ extern void my_mongo_log_handler(mongoc_log_level_t log_level, const char *log_d
 extern void initialize_mongo_db_globals(zconfig_t* config);
 extern void ensure_known_database(mongoc_client_t *client, const char* db_name);
 extern int mongo_client_ping(mongoc_client_t *client);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

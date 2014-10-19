@@ -1,8 +1,16 @@
-#ifndef LOGJAM_IMPORTER_STATS_UPDATER_H
-#define LOGJAM_IMPORTER_STATS_UPDATER_H
+#ifndef __LOGJAM_IMPORTER_STATS_UPDATER_H_INCLUDED__
+#define __LOGJAM_IMPORTER_STATS_UPDATER_H_INCLUDED__
 
 #include "importer-common.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 extern void stats_updater(void *args, zctx_t *ctx, void *pipe);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

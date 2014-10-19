@@ -1,7 +1,11 @@
-#ifndef LOGJAM_IMPORTER_PARSER_H
-#define LOGJAM_IMPORTER_PARSER_H
+#ifndef __LOGJAM_IMPORTER_PARSER_H_INCLUDED__
+#define __LOGJAM_IMPORTER_PARSER_H_INCLUDED__
 
 #include "importer-common.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 typedef struct {
     size_t id;
@@ -15,5 +19,9 @@ typedef struct {
 } parser_state_t;
 
 extern void parser(void *args, zctx_t *ctx, void *pipe);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif
