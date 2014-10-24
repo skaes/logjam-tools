@@ -255,6 +255,7 @@ parser_state_t* parser_state_new(zsock_t *pipe, size_t id)
     state->indexer_socket = parser_indexer_socket_new();
     assert( state->tokener = json_tokener_new() );
     state->processors = processor_hash_new();
+    state->tracker = tracker_new();
     return state;
 }
 
@@ -267,6 +268,7 @@ void parser_state_destroy(parser_state_t **state_p)
     zsock_destroy(&state->push_socket);
     zsock_destroy(&state->indexer_socket);
     zhash_destroy(&state->processors);
+    tracker_destroy(&state->tracker);
     free(state);
     *state_p = NULL;
 }

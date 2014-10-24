@@ -34,6 +34,7 @@ typedef struct {
     zconfig_t *config;
     zactor_t *subscriber;
     zactor_t *indexer;
+    zactor_t *tracker;
     zactor_t *parsers[NUM_PARSERS];
     zactor_t *writers[NUM_WRITERS];
     zactor_t *updaters[NUM_UPDATERS];
@@ -152,7 +153,10 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     state->ticks++;
 
-    //printf("[D] controller: collecting data from parsers: tick[%zu]\n", state->ticks);
+    // tell tracker to tick
+    zstr_send(state->tracker, "tick");
+
+    // printf("[D] controller: collecting data from parsers: tick[%zu]\n", state->ticks);
     for (size_t i=0; i<NUM_PARSERS; i++) {
         zactor_t* parser = state->parsers[i];
         zstr_send(parser, "tick");
@@ -265,6 +269,10 @@ bool controller_create_actors(controller_state_t *state)
     state->indexer = zactor_new(indexer, NULL);
     if (zctx_interrupted) return false;
 
+    //start the tracker
+    state->tracker = zactor_new(tracker, NULL);
+    if (zctx_interrupted) return false;
+
     // create socket for stats updates
     state->updates_socket = zsock_new(ZMQ_PUSH);
     int rc = zsock_bind(state->updates_socket, "inproc://stats-updates");
@@ -293,6 +301,7 @@ void controller_destroy_actors(controller_state_t *state)
 {
     zactor_destroy(&state->subscriber);
     zactor_destroy(&state->indexer);
+    zactor_destroy(&state->tracker);
     for (size_t i=0; i<NUM_PARSERS; i++) {
         zactor_destroy(&state->parsers[i]);
     }

@@ -483,6 +483,16 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
 
     increments_destroy(increments);
 
+    json_object *request_id_obj;
+    if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
+        const char *uuid = json_object_get_string(request_id_obj);
+        if (uuid) {
+            char app_env_uuid[1024] = {0};
+            snprintf(app_env_uuid, 1024, "%s-%s", self->stream_info->key, uuid);
+            tracker_add_uuid(pstate->tracker, app_env_uuid);
+        }
+    }
+
     if (0) {
         dump_json_object(stdout, request);
         if (self->request_count % 100 == 0) {
@@ -600,6 +610,31 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
     zmsg_send(&msg, pstate->push_socket);
 }
 
+static
+int check_frontend_request_validity(parser_state_t *pstate, json_object *request, const char* type)
+{
+    json_object *request_id_obj;
+    if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
+        const char *uuid = json_object_get_string(request_id_obj);
+        if (uuid) {
+            if (tracker_delete_uuid(pstate->tracker, uuid)) {
+                // fprintf(stderr, "[D] processor: tracker found %s request with request_id: %s\n", uuid, type);
+                // dump_json_object(stdout, request);
+                return 1;
+            } else {
+                fprintf(stderr, "[W] processor: tracker could not find request_id for %s request: %s\n", type, uuid);
+                // dump_json_object(stderr, request);
+                return 0;
+            }
+        } else {
+            fprintf(stderr, "[E] processor: dropped %s request without request_id\n", type);
+            dump_json_object(stderr, request);
+            return 0;
+        }
+    }
+    return 0;
+}
+
 void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
     // dump_json_object(stderr, request);
@@ -612,6 +647,9 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     //     const char *rti = json_object_get_string(rti_object);
     //     fprintf(stdout, "[D] RTI: %s\n", rti);
     // }
+
+    if (!check_frontend_request_validity(pstate, request, "frontend"))
+        return;
 
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
@@ -655,6 +693,9 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     // if (self->request_count % 100 == 0) {
     //     processor_dump_state(self);
     // }
+
+    if (!check_frontend_request_validity(pstate, request, "ajax"))
+        return;
 
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
