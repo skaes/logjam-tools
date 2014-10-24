@@ -126,10 +126,10 @@ void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
 
 
 static
-int read_request_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
+int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
     subscriber_state_t *state = callback_data;
-    zmsg_t *msg = zmsg_recv(item->socket);
+    zmsg_t *msg = zmsg_recv(socket);
     if (msg != NULL) {
         if (PUBLISH_DUPLICATES) {
             // zmsg_dump(msg);
@@ -141,9 +141,9 @@ int read_request_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback
 }
 
 static
-int terminate(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
+int terminate(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
-    zmsg_t *msg = zmsg_recv(item->socket);
+    zmsg_t *msg = zmsg_recv(socket);
     if (msg) {
         char *cmd = zmsg_popstr(msg);
         if (streq(cmd, "$TERM")) {
@@ -199,24 +199,15 @@ void subscriber(zsock_t *pipe, void *args)
     zloop_set_verbose(loop, 0);
 
     // setup handler for actor messages
-    zmq_pollitem_t pipe_item;
-    pipe_item.socket = zsock_resolve(state.controller_socket);
-    pipe_item.events = ZMQ_POLLIN;
-    rc = zloop_poller(loop, &pipe_item, terminate, &state);
+    rc = zloop_reader(loop, state.controller_socket, terminate, &state);
     assert(rc == 0);
 
      // setup handler for the sub socket
-    zmq_pollitem_t sub_item;
-    sub_item.socket = zsock_resolve(state.sub_socket);
-    sub_item.events = ZMQ_POLLIN;
-    rc = zloop_poller(loop, &sub_item, read_request_and_forward, &state);
+    rc = zloop_reader(loop, state.sub_socket, read_request_and_forward, &state);
     assert(rc == 0);
 
     // setup handler for the pull socket
-    zmq_pollitem_t pull_item;
-    pull_item.socket = zsock_resolve(state.pull_socket);
-    pull_item.events = ZMQ_POLLIN;
-    rc = zloop_poller(loop, &pull_item, read_request_and_forward, &state);
+    rc = zloop_reader(loop, state.pull_socket, read_request_and_forward, &state);
     assert(rc == 0);
 
     // run the loop

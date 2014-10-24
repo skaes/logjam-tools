@@ -168,7 +168,7 @@ void setup_stream_config(zconfig_t *config, const char *pattern)
     do {
         stream_info_t *stream_info = stream_info_new(config, stream);
         const char *key = stream_info->key;
-        // dump_stream_info(stream_info);
+        if (0)  dump_stream_info(stream_info);
         zhash_insert(configured_streams, key, stream_info);
         if (have_subscription_pattern && strstr(key, pattern) != NULL) {
             int rc = zhash_insert(stream_subscriptions, key, stream_info);
