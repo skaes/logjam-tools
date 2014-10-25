@@ -303,7 +303,7 @@ void parser(zsock_t *pipe, void *args)
                 free(cmd);
                 break;
             } else {
-                printf("[E] parser [%zu]: received unknnown command: %s\n", id, cmd);
+                printf("[E] parser [%zu]: received unknown command: %s\n", id, cmd);
                 free(cmd);
                 assert(false);
             }

@@ -7,80 +7,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <getopt.h>
-#include <amqp_tcp_socket.h>
-#include <amqp.h>
-#include <amqp_framing.h>
-
-
-void log_error(int x, char const *context) {
-    if (x < 0) {
-        char const *errstr = amqp_error_string2(-x);
-        fprintf(stderr, "[E] %s: %s\n", context, errstr);
-    }
-}
-
-void die_on_error(int x, char const *context) {
-    if (x < 0) {
-        log_error(x, context);
-        exit(1);
-    }
-}
-
-int log_amqp_error(amqp_rpc_reply_t x, char const *context) {
-    switch (x.reply_type) {
-    case AMQP_RESPONSE_NORMAL:
-        return 0;
-
-    case AMQP_RESPONSE_NONE:
-        fprintf(stderr, "[E] %s: missing RPC reply type!\n", context);
-        break;
-
-    case AMQP_RESPONSE_LIBRARY_EXCEPTION:
-        fprintf(stderr, "[E] %s: %s\n", context, amqp_error_string2(x.library_error));
-        break;
-
-    case AMQP_RESPONSE_SERVER_EXCEPTION:
-        switch (x.reply.id) {
-	case AMQP_CONNECTION_CLOSE_METHOD: {
-            amqp_connection_close_t *m = (amqp_connection_close_t *) x.reply.decoded;
-            fprintf(stderr, "[E] %s: server connection error %d, message: %.*s\n",
-                    context,
-                    m->reply_code,
-                    (int) m->reply_text.len, (char *) m->reply_text.bytes);
-            break;
-	}
-	case AMQP_CHANNEL_CLOSE_METHOD: {
-            amqp_channel_close_t *m = (amqp_channel_close_t *) x.reply.decoded;
-            fprintf(stderr, "[E] %s: server channel error %d, message: %.*s\n",
-                    context,
-                    m->reply_code,
-                    (int) m->reply_text.len, (char *) m->reply_text.bytes);
-            break;
-	}
-	default:
-            fprintf(stderr, "[E] %s: unknown server error, method id 0x%08X\n", context, x.reply.id);
-            break;
-        }
-        break;
-    }
-
-    return 1;
-}
-
-void die_on_amqp_error(amqp_rpc_reply_t x, char const *context)
-{
-    if (0 != log_amqp_error(x, context)) {
-        exit(1);
-    }
-}
-
-void assert_x(int rc, const char* error_text)
-{
-    if (rc != 0) {
-        fprintf(stderr, "[E] Failed assertion: %s\n", error_text);
-        exit(1);
-    }
-}
+#include "rabbitmq-listener.h"
 
 void log_zmq_error(int rc)
 {
@@ -97,33 +24,27 @@ void assert_zmq_rc(int rc)
     }
 }
 
-bool output_socket_ready(void *socket, int msecs)
-{
-    zmq_pollitem_t items[] = { { socket, 0, ZMQ_POLLOUT, 0 } };
-    int rc = zmq_poll(items, 1, msecs);
-    return rc != -1 && (items[0].revents & ZMQ_POLLOUT) != 0;
-}
-
 /* global config */
 static zconfig_t* config = NULL;
 static zfile_t *config_file = NULL;
 static char *config_file_name = "logjam.conf";
 static time_t config_file_last_modified = 0;
 static char *config_file_digest = "";
+// check every 10 ticks whether config file has changed
 #define CONFIG_FILE_CHECK_INTERVAL 10
 
-/* rabbit options */
-static char* rabbit_host = NULL;
-static char* rabbit_env = "development";
-static int rabbit_port = 5672;
 static int pull_port = 9605;
 static int pub_port = 9606;
 
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
-// hash of already declared exchanges
-static zhash_t *exchanges = NULL;
+
+typedef struct {
+    // raw zmq sockets, to avoid zsock_resolve
+    void *receiver;
+    void *publisher;
+} publisher_state_t;
 
 
 void config_file_init()
@@ -146,38 +67,6 @@ bool config_file_has_changed()
         zfile_destroy(&tmp);
     }
     return changed;
-}
-
-
-#if defined(__APPLE__) && defined(SO_NOSIGPIPE)
-#define FIX_SIG_PIPE
-#endif
-
-#define RABBIT_LISTENERS 1
-#define FRAME_MAX_DEFAULT 131072
-#define OUR_FRAME_MAX (8 * FRAME_MAX_DEFAULT)
-
-amqp_connection_state_t setup_amqp_connection()
-{
-    amqp_connection_state_t connection = amqp_new_connection();
-    amqp_socket_t *socket = amqp_tcp_socket_new(connection);
-
-#ifdef FIX_SIG_PIPE
-    // why doesn't librabbitmq do this, eh?
-    int sockfd = amqp_get_sockfd(connection);
-    int one = 1; //
-    setsockopt(sockfd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
-#endif
-
-    int status = amqp_socket_open(socket, rabbit_host, rabbit_port);
-    assert_x(status, "Opening RabbitMQ socket");
-
-    die_on_amqp_error(amqp_login(connection, "/", 0, OUR_FRAME_MAX, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest"),
-                      "Logging in to RabbitMQ");
-    amqp_channel_open(connection, 1);
-    die_on_amqp_error(amqp_get_rpc_reply(connection), "Opening AMQP channel");
-
-    return connection;
 }
 
 int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
@@ -205,70 +94,6 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
     return rc;
 }
 
-/*
-int publish_on_amqp_transport(amqp_connection_state_t connection, zmq_msg_t *message_parts)
-{
-    zmq_msg_t *exchange  = &message_parts[0];
-    zmq_msg_t *key       = &message_parts[1];
-    zmq_msg_t *body      = &message_parts[2];
-
-    // extract data
-    amqp_bytes_t exchange_name;
-    exchange_name.len   = zmq_msg_size(exchange);
-    exchange_name.bytes = zmq_msg_data(exchange);
-
-    size_t n = exchange_name.len;
-    char exchange_string[n + 1];
-    memcpy(exchange_string, exchange_name.bytes, n);
-    exchange_string[n] = '\0';
-
-    char *stored_exchange = zhash_lookup(exchanges, exchange_string);
-    if (stored_exchange == NULL) {
-        stored_exchange = strdup(exchange_string);
-        assert( zhash_insert(exchanges, stored_exchange, stored_exchange) );
-        // declare exchange, as we haven't seen it before
-        amqp_boolean_t passive = 0;
-        amqp_boolean_t durable = 1;
-        amqp_bytes_t exchange_type;
-        exchange_type = amqp_cstring_bytes("topic");
-        amqp_exchange_declare(connection, 1, exchange_name, exchange_type, passive, durable, amqp_empty_table);
-        die_on_amqp_error(amqp_get_rpc_reply(connection), "Declaring AMQP exchange");
-    }
-
-    amqp_bytes_t routing_key;
-    routing_key.len   = zmq_msg_size(key);
-    routing_key.bytes = zmq_msg_data(key);
-
-    amqp_bytes_t message_body;
-    message_body.len   = zmq_msg_size(body);
-    message_body.bytes = zmq_msg_data(body);
-
-    //printf("[D] publishing\n");
-
-    // send message to rabbit
-    int amqp_rc = amqp_basic_publish(connection,
-                                     1,
-                                     exchange_name,
-                                     routing_key,
-                                     0,
-                                     0,
-                                     NULL,
-                                     message_body);
-    return amqp_rc;
-}
-*/
-
-void shutdown_amqp_connection(amqp_connection_state_t connection, int amqp_rc, uint num_channels)
-{
-    // close amqp connection, including all open channels
-    if (amqp_rc >= 0) {
-        for (int i=1; i <= num_channels; i++)
-            log_amqp_error(amqp_channel_close(connection, i, AMQP_REPLY_SUCCESS), "closing AMQP channel");
-        log_amqp_error(amqp_connection_close(connection, AMQP_REPLY_SUCCESS), "closing AMQP connection");
-    }
-    log_error(amqp_destroy_connection(connection), "closing AMQP connection");
-}
-
 
 int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
@@ -294,20 +119,13 @@ int timer_event(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
-typedef struct {
-    void *publisher;
-    amqp_connection_state_t connection;
-    int amqp_rc;
-} publisher_state_t;
-
-int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *callback_data)
+int read_zmq_message_and_forward(zloop_t *loop, zsock_t *_receiver, void *callback_data)
 {
     int i = 0;
     zmq_msg_t message_parts[4];
-    void *receiver = item->socket;
     publisher_state_t *state = (publisher_state_t*)callback_data;
+    void *receiver = state->receiver;
     void *publisher = state->publisher;
-    // amqp_connection_state_t connection = state->connection;
 
     // read the message parts
     while (!zctx_interrupted) {
@@ -341,18 +159,6 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
     if (msg_bytes > received_messages_max_bytes)
         received_messages_max_bytes = msg_bytes;
 
-    /*
-    if (connection != NULL) {
-        state->amqp_rc = publish_on_amqp_transport(connection, &message_parts[0]);
-
-        if (state->amqp_rc < 0) {
-            log_error(state->amqp_rc, "Publishing via AMQP");
-            zctx_interrupted = 1;
-            goto cleanup;
-        }
-    }
-    */
-
     publish_on_zmq_transport(&message_parts[0], publisher);
 
  cleanup:
@@ -361,138 +167,6 @@ int read_zmq_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void *call
     }
 
     return 0;
-}
-
-void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_ref, const char *stream)
-{
-    size_t n = strlen(stream);
-    char app[n], env[n];
-    memset(app, 0, n);
-    memset(env, 0, n);
-    sscanf(stream, "%[^-]-%[^-]", app, env);
-    if (strcmp(env, rabbit_env)) {
-        printf("[I] skipping: %s-%s\n", app, env);
-        return;
-    }
-    // printf("[I] processing %s-%s\n", app, env);
-    char exchange[n+15];
-    sprintf(exchange, "request-stream-%s-%s", app, env);
-    char queue[n+14];
-    sprintf(queue, "logjam-device-%s-%s", app, env);
-    printf("[I] binding: %s ==> %s\n", exchange, queue);
-
-    amqp_channel_t channel = ++(*channel_ref);
-    if (channel > 1) {
-        printf("[D] opening channel %d\n", channel);
-        amqp_channel_open(conn, channel);
-        die_on_amqp_error(amqp_get_rpc_reply(conn), "Opening AMQP channel");
-    }
-
-    // amqp_exchange_declare(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t exchange,
-    //                       amqp_bytes_t type, amqp_boolean_t passive, amqp_boolean_t durable, amqp_table_t arguments);
-    amqp_exchange_declare(conn, channel, amqp_cstring_bytes(exchange), amqp_cstring_bytes("topic"),
-                          0, 1, amqp_empty_table);
-    die_on_amqp_error(amqp_get_rpc_reply(conn), "declaring exchange");
-
-    amqp_bytes_t queuename = amqp_cstring_bytes(queue);
-
-    struct amqp_table_entry_t_ queue_arg_table_entries[1] = {
-        { amqp_cstring_bytes("x-message-ttl"), { AMQP_FIELD_KIND_I32, { 60 * 1000 } } }
-    };
-    amqp_table_t queue_argument_table = {1, queue_arg_table_entries};
-
-    // amqp_queue_declare(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t queue,
-    //                    amqp_boolean_t passive, amqp_boolean_t durable, amqp_boolean_t exclusive, amqp_boolean_t auto_delete,
-    //                    amqp_table_t arguments);
-    amqp_queue_declare(conn, channel, queuename, 0, 0, 0, 1, queue_argument_table);
-    die_on_amqp_error(amqp_get_rpc_reply(conn), "declaring queue");
-
-    // amqp_queue_bind(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t queue,
-    //                 amqp_bytes_t exchange, amqp_bytes_t routing_key, amqp_table_t arguments)
-    const char *routing_key = "#";
-    amqp_queue_bind(conn, channel, queuename, amqp_cstring_bytes(exchange), amqp_cstring_bytes(routing_key), amqp_empty_table);
-    die_on_amqp_error(amqp_get_rpc_reply(conn), "binding queue");
-
-    // amqp_basic_consume(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t queue, amqp_bytes_t consumer_tag,
-    // amqp_boolean_t no_local, amqp_boolean_t no_ack, amqp_boolean_t exclusive, amqp_table_t arguments)
-    amqp_basic_consume(conn, channel, queuename, amqp_empty_bytes, 0, 1, 0, amqp_empty_table);
-    die_on_amqp_error(amqp_get_rpc_reply(conn), "consuming");
-}
-
-void rabbitmq_listener(void *args, zctx_t *context, void *pipe) {
-    amqp_connection_state_t conn = setup_amqp_connection();
-    amqp_channel_t channel = 1;
-
-    zconfig_t *streams = zconfig_locate(config, "backend/streams");
-    assert(streams);
-    zconfig_t *stream_config = zconfig_child(streams);
-    assert(stream_config);
-    do {
-        char *stream = zconfig_name(stream_config);
-        rabbitmq_add_queue(conn, &channel, stream);
-        stream_config = zconfig_next(stream_config);
-    } while (stream_config && !zctx_interrupted);
-
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = 500000; // 500 ms
-
-    while (!zctx_interrupted) {
-        amqp_rpc_reply_t res;
-        amqp_envelope_t envelope;
-
-        amqp_maybe_release_buffers(conn);
-
-        // printf("[D] consuming\n");
-        res = amqp_consume_message(conn, &envelope, &timeout, 0);
-
-        if (AMQP_RESPONSE_NORMAL != res.reply_type) {
-            if (AMQP_RESPONSE_LIBRARY_EXCEPTION == res.reply_type && AMQP_STATUS_TIMEOUT == res.library_error) {
-                continue;
-            } else {
-                zctx_interrupted = 1;
-                log_amqp_error(res, "consuming from RabbitMQ");
-                break;
-            }
-        }
-
-        if (0) {
-            printf("[D] delivery %u, exchange %.*s routingkey %.*s\n",
-                   (unsigned) envelope.delivery_tag,
-                   (int) envelope.exchange.len, (char *) envelope.exchange.bytes,
-                   (int) envelope.routing_key.len, (char *) envelope.routing_key.bytes);
-
-            if (envelope.message.properties._flags & AMQP_BASIC_CONTENT_TYPE_FLAG) {
-                printf("[D] content-type: %.*s\n",
-                   (int) envelope.message.properties.content_type.len,
-                   (char *) envelope.message.properties.content_type.bytes);
-            }
-        }
-
-        // send messages to main thread
-        zmsg_t *message = zmsg_new();
-        // skip request-stream prefix, leaving only app-env
-        if (envelope.exchange.len > 15 && !strncmp(envelope.exchange.bytes, "request-stream-", 15))
-            zmsg_addmem(message, envelope.exchange.bytes+15, envelope.exchange.len-15);
-        else
-            zmsg_addmem(message, envelope.exchange.bytes, envelope.exchange.len);
-        zmsg_addmem(message, envelope.routing_key.bytes, envelope.routing_key.len);
-        zmsg_addmem(message, envelope.message.body.bytes, envelope.message.body.len);
-        // zmsg_dump(message);
-
-        if (output_socket_ready(pipe, 0)) {
-            zmsg_send(&message, pipe);
-        } else {
-            if (!zctx_interrupted)
-                fprintf(stderr, "[E] dropped message because pipe wasn't ready\n");
-            zmsg_destroy(&message);
-        }
-
-        amqp_destroy_envelope(&envelope);
-    }
-
-    // 0 is not the return code
-    shutdown_amqp_connection(conn, 0, channel);
 }
 
 void print_usage(char * const *argv)
@@ -538,8 +212,8 @@ int main(int argc, char * const *argv)
     int rc=0;
     process_arguments(argc, argv);
 
-    setvbuf(stdout,NULL,_IOLBF,0);
-    setvbuf(stderr,NULL,_IOLBF,0);
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    setvbuf(stderr, NULL, _IOLBF, 0);
 
     // TODO: figure out sensible port numbers
     pub_port = pull_port + 1;
@@ -556,63 +230,48 @@ int main(int argc, char * const *argv)
         config = zconfig_load((char*)config_file_name);
     }
 
-    // create context
-    zctx_t *context = zctx_new();
-    assert_x(context==NULL, "zmq_init failed");
-
-    // configure the context
-    zctx_set_linger(context, 1000);
-    zctx_set_rcvhwm(context,  10000);
-    zctx_set_pipehwm(context, 10000);
-    // zctx_set_iothreads(context, 2);
+    // set global config
+    zsys_init();
+    zsys_set_rcvhwm(10000);
+    zsys_set_sndhwm(10000);
+    zsys_set_pipehwm(1000);
+    zsys_set_linger(100);
+    // zsys_set_io_threads(2);
 
     // create socket to receive messages on
-    void *receiver = zsocket_new(context, ZMQ_PULL);
-    assert_x(receiver==NULL, "zmq socket creation failed");
+    zsock_t *receiver = zsock_new(ZMQ_PULL);
+    assert_x(receiver != NULL, "zmq socket creation failed");
 
     //  configure the socket
-    zsocket_set_rcvhwm(receiver, 100000);
-    zsocket_set_linger(receiver, 100);
+    zsock_set_rcvhwm(receiver, 100000);
 
-    rc = zsocket_bind(receiver, "tcp://%s:%d", "*", pull_port);
-    assert_x(rc!=pull_port, "zmq socket bind failed");
+    // bind externally
+    rc = zsock_bind(receiver, "tcp://%s:%d", "*", pull_port);
+    assert_x(rc == pull_port, "receiver socket: external bind failed");
+
+    // bind internally
+    rc = zsock_bind(receiver, "inproc://receiver");
+    assert_x(rc != -1, "receiver socket: internal bind failed");
 
     // create socket for publishing
-    void *publisher = zsocket_new(context, ZMQ_PUB);
-    assert_x(publisher==NULL, "zmq socket creation failed");
+    zsock_t *publisher = zsock_new(ZMQ_PUB);
+    assert_x(publisher != NULL, "socket creation failed");
+    zsock_set_sndhwm(publisher, 100000);
 
-    zsocket_set_sndhwm(publisher, 100000);
-    zsocket_set_linger(publisher, 100);
-
-    rc = zsocket_bind(publisher, "tcp://%s:%d", "*", pub_port);
-    assert_x(rc!=pub_port, "zmq socket bind failed");
-
-    /* test code
-       zmsg_t *test_message = zmsg_new();
-       zmsg_addstr(test_message, "testtesttest");
-       zmsg_addstr(test_message, "data");
-       zmsg_send(&test_message, publisher);
-       assert(test_message==NULL);
-    */
+    rc = zsock_bind(publisher, "tcp://%s:%d", "*", pub_port);
+    assert_x(rc == pub_port, "socket bind failed");
 
     // setup the rabbitmq listener thread
-    amqp_connection_state_t connection = NULL;
-    void *rabbitmq_listener_pipes[RABBIT_LISTENERS] = { NULL };
+    zactor_t *rabbit_listener = NULL;
 
     if (rabbit_host != NULL) {
         if (config == NULL) {
             fprintf(stderr, "[E] cannot start rabbitmq listener thread because no config file given\n");
             goto cleanup;
         } else {
-            for (int i = 0; i < RABBIT_LISTENERS; i++) {
-                rabbitmq_listener_pipes[i] = zthread_fork(context, rabbitmq_listener, NULL);
-                assert_x(rabbitmq_listener_pipes[i]==NULL, "could not fork rabbitmq listener thread");
-                printf("[I] created rabbitmq listener thread %d\n", i);
-            }
-            // create amqp publisher connection
-            connection = setup_amqp_connection();
-            // so far, no exchanges are known
-            exchanges = zhash_new();
+            rabbit_listener = zactor_new(rabbitmq_listener, config);
+            assert_x(rabbit_listener != NULL, "could not fork rabbitmq listener thread");
+            printf("[I] created rabbitmq listener thread\n");
         }
     }
 
@@ -627,44 +286,33 @@ int main(int argc, char * const *argv)
     assert(rc != -1);
 
     // setup handler for the receiver socket
-    zmq_pollitem_t item;
-    item.socket = receiver;
-    item.events = ZMQ_POLLIN;
-    publisher_state_t publisher_state = {publisher, connection, 0};
-    rc = zloop_poller(loop, &item, read_zmq_message_and_forward, &publisher_state);
+    publisher_state_t publisher_state = {
+        .receiver = zsock_resolve(receiver),
+        .publisher = zsock_resolve(publisher),
+    };
+    rc = zloop_reader(loop, receiver, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
-    zloop_set_tolerant(loop, &item);
+    zloop_reader_set_tolerant(loop, receiver);
 
-    // setup handler for the rabbit listener pipe
-    if (rabbit_host != NULL) {
-        for (int i = 0; i < RABBIT_LISTENERS; i++) {
-            zmq_pollitem_t listener_item;
-            publisher_state_t listener_state = {publisher, NULL, 0};
-            listener_item.socket = rabbitmq_listener_pipes[i];
-            listener_item.events = ZMQ_POLLIN;
-            rc = zloop_poller(loop, &listener_item, read_zmq_message_and_forward, &listener_state);
-            assert(rc == 0);
-            zloop_set_tolerant(loop, &listener_item);
-        }
-    }
-
+    printf("starting main event loop\n");
     rc = zloop_start(loop);
+    printf("main event zloop terminated with return code %d\n", rc);
     assert(rc == 0);
-    // printf("zloop return: %d", rc);
 
     zloop_destroy(&loop);
     assert(loop == NULL);
 
-    printf("[I] received %zu messages", received_messages_count);
+    printf("[I] received %zu messages\n", received_messages_count);
 
  cleanup:
-    // close context (this will automatically close all sockets)
-    zctx_destroy(&context);
+    printf("[I] shutting down\n");
 
-    if (connection) {
-        shutdown_amqp_connection(connection, publisher_state.amqp_rc, 1);
-        rc = publisher_state.amqp_rc < 0;
-    }
+    zactor_destroy(&rabbit_listener);
+    zsock_destroy(&receiver);
+    zsock_destroy(&publisher);
+    zsys_shutdown();
+
+    printf("[I] terminated\n");
 
     return rc;
 }
