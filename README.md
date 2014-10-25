@@ -11,7 +11,7 @@ A daemon which offers a zeromq PULL socket endpoint for applications
 to connect to and a zeromq SUB socket for forwarding. It optionally
 subscribes to a RabbitMQ server to collect application messages from
 there and republishes them on the PUB socket. You can place as many of
-those devices as needed to scale the infrastructure.
+those devices as needed to to scale the logging infrastructure.
 
 ## logjam-importer
 
@@ -24,8 +24,10 @@ use since April 2014 and hasn't crashed once.
 
 On my iMac, one logjam-device can forward 20K messages per second (4K
 message size). This is about 20 times faster than my original attempt
-using ruby. The importer currently handles up 30K app messages per
-second on moderate hardware (24 cores, peak load factor of 4-5)
+using ruby. The importer currently handles up to 30K app messages per
+second on moderate hardware and scales with the number of cores.
+
+![CPU Usage Graph](doc/logjam-importer-cpu-usage.png)
 
 See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
 
