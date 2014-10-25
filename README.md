@@ -1,39 +1,50 @@
-# A ZeroMQ device for logjam
+# Logjam Tools
 
-This might replace rabbitmq usage for logjam at some point.
+A collection of programs and daemons build the server side
+infrastructure for logjam (see https://github.com/skaes/logjam_app).
 
-For now, it's just a bridge to rabbitmq.
+Currently only two daemons are provided:
+
+## logjam-device
+
+A daemon which offers a zeromq PULL socket endpoint for applications
+to connect to and a zeromq SUB socket for forwarding. It optionally
+subscribes to a RabbitMQ server to collect application messages from
+there and republishes them on the PUB socket. You can place as many of
+those devices as needed to scale the infrastructure.
+
+## logjam-importer
+
+A daemon which is schduled to replace all of the ruy importer code
+still in logjam. It's much less resource intensive than the ruby code
+and a _lot_ faster, while still very stable: it has been in production
+use since April 2014 and hasn't crashed once.
 
 ## Speed
 
-On my iMac, one device can forward 20K messages per second (4K message size).
-
-Which is about 20 times faster than my original attempt using ruby.
+On my iMac, one logjam-device can forward 20K messages per second (4K
+message size). This is about 20 times faster than my original attempt
+using ruby. The importer currently handles up 30K app messages per
+second on moderate hardware (24 cores, peak load factor of 4-5)
 
 See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
 
 
 ## Dependencies
 
-* librabbitmq
-* libzmq
-* libczmq
-* libbson
-* libmongoc
-* json-c
+* librabbitmq (0.5.2)
+* libzmq (4.0.5)
+* libczmq (3.0.0rc1)
+* libmongoc (git master, 1.0.2 has a memory leak)
+* libbson (included in libmongoc as a submodule)
+* json-c (0.11)
 
 # Installation
 
-On OS X:
-
-* Install zmq, czmq and rabbitmq-c ports (or use brew, if you like it better)
-
-```
-sudo port install zmq, czmq, rabbitmq-c
-```
-
+* Download and install rabbitmq-c from https://github.com/alanxz/rabbitmq-c/releases/tag/v0.5.2
+* Download and install zmq 4.0.5 from http://zeromq.org/intro:get-the-software
+* Dowmload and install czmq 3.0.0rc1 from http://czmq.zeromq.org/page:get-the-software
 * Download and install json-c version 0.11 from https://s3.amazonaws.com/json-c_releases/releases/index.html
-* Clone https://github.com/mongodb/libbson and follow build/install instructions
 * Clone https://github.com/mongodb/mongo-c-driver and follow build/install instrictions
 
 Then
@@ -53,48 +64,6 @@ headers and libraries are installed under `/usr/local` or
 `--with-opt-dir=dir1:dir2:dir3` as argument to `sh autogen.sh` (or
 `./configure`).
 
-## Usage
-
-For now, the device needs to be running on the same machine as rabbitmq
-
-```logjam-device <device-port> <rabbitmq-port>```
-
-## Testing on OS X
-
-First, build the test programs:
-
-```
-make check
-```
-
-In order to run the tests on OS X you will need to increase two kernel paramters: number
-of total files per system and number of open files per process. The easiest way to do this
-is to create the file /etc/sysctl.conf and add the following lines and reboot.
-
-```
-kern.maxfiles=40960
-kern.maxfilesperproc=30000
-```
-
-Alternativly, you can also set the parameters from a root shell:
-
-```
-sysctl -w kern.maxfiles=40960
-sysctl -w kern.maxfilesperproc=30000
-```
-
-In addition, you must set file limits in the shell before starting the tester and logjam-device
-
-```ulimit -n 30000```
-
-Or run the tasks
-
-```
-make run
-make test
-```
-
-in two separate shells.
 
 ## License
 
