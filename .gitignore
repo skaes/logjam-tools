@@ -17,3 +17,4 @@ configure
 logjam-importer
 .gdbinit
 test_puller
+builds/*

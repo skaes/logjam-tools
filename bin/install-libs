@@ -1,24 +1,82 @@
-#!/bin/sh
-wget https://github.com/alanxz/rabbitmq-c/releases/download/v0.4.1/rabbitmq-c-0.4.1.tar.gz
-tar xzvf rabbitmq-c-0.4.1.tar.gz
-cd rabbitmq-c-0.4.1
-./configure
+#!/bin/bash
+set -e
+
+cd builds
+
+case $OSTYPE in
+    darwin*)
+        CC=clang
+        CXX=clang++
+        ldconfig=/usr/bin/true
+        ;;
+    *)
+        CC=gcc
+        CXX=g++
+        ldconfig=ldconfig
+        ;;
+esac
+
+export CC CXX
+
+d=rabbitmq-c-0.5.2
+f=${d}.tar.gz
+test -f $f || wget https://github.com/alanxz/rabbitmq-c/releases/download/v0.5.2/$f
+test -d $d || tar xzvf $f
+cd $d
+test -f config.status || ./configure
 make
 sudo make install
+sudo $ldconfig
 cd ..
-# rm -rf rabbitmq-c-0.4.1*
-wget http://download.zeromq.org/zeromq-3.2.4.tar.gz
-tar xzvf zeromq-3.2.4.tar.gz
-cd zeromq-3.2.4
-./configure
+
+d=zeromq-4.0.5
+f=${d}.tar.gz
+test -f $f || wget http://download.zeromq.org/$f
+test -d $d || tar xzvf $f
+cd $d
+test -f config.status || ./configure
 make
 sudo make install
+sudo $ldconfig
 cd ..
-# rm -rf zeromq-3.2.4*
-wget http://download.zeromq.org/czmq-2.0.3.tar.gz
-tar xzvf czmq-2.0.3.tar.gz
-cd czmq-2.0.3
-./configure
+
+d=czmq-3.0.0
+f=czmq-3.0.0-rc1.tar.gz
+test -f $f || wget http://download.zeromq.org/$f
+test -d $d || tar xzvf $f
+cd $d
+test -f config.status || ./configure
 make
 sudo make install
+sudo $ldconfig
 cd ..
+
+d=mongo-c-driver
+test -d $d || git clone git@github.com:mongodb/${d}.git
+cd $d
+git reset --hard
+git co master
+git pull origin master
+git co 048c851919dc32c98b5f8a9a0270e69af9385db3
+test -f config.status || (sh autogen.sh && ./configure)
+make
+sudo make install
+sudo $ldconfig
+cd ..
+
+# json-c configure fails if it's not put in another sub dir. go figure.'
+test -d murks || mkdir murks
+cd murks
+
+d=json-c
+test -d $d || git clone git@github.com:skaes/${d}.git
+cd $d
+git reset --hard
+git co master
+git pull origin master
+git co 36be1c4c7ade78fae8ef67280cd4f98ff9f81016
+test -f config.status || (sh autogen.sh && ./configure)
+make
+sudo make install
+sudo $ldconfig
+cd ../..

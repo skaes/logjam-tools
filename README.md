@@ -32,28 +32,37 @@ second on moderate hardware and scales with the number of cores.
 See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
 
 
-## Dependencies
+# Dependencies
 
 * librabbitmq (0.5.2)
 * libzmq (4.0.5)
 * libczmq (3.0.0rc1)
-* libmongoc (git master, 1.0.2 has a memory leak)
-* libbson (included in libmongoc as a submodule)
-* json-c (0.11)
+* mongo-c-driver (git master, 1.0.2 has a memory leak)
+* libbson (included in mongo-c-driver as a submodule)
+* json-c (0.12 patched)
 
 # Installation
 
-* Download and install rabbitmq-c from https://github.com/alanxz/rabbitmq-c/releases/tag/v0.5.2
-* Download and install zmq 4.0.5 from http://zeromq.org/intro:get-the-software
-* Dowmload and install czmq 3.0.0rc1 from http://czmq.zeromq.org/page:get-the-software
-* Download and install json-c version 0.11 from https://s3.amazonaws.com/json-c_releases/releases/index.html
-* Clone https://github.com/mongodb/mongo-c-driver and follow build/install instrictions
-
-Then
-
+Start by cloning the repository:
 ```
 git clone git://github.com/skaes/logjam-tools.git
 cd logjam-tools
+```
+
+Then, run `./bin/install-libs` to install all dependecies in `/usr/local`.
+
+Or install them manually:
+* Download and install rabbitmq-c from https://github.com/alanxz/rabbitmq-c/releases/tag/v0.5.2
+* Download and install zmq 4.0.5 from http://zeromq.org/intro:get-the-software
+* Dowmload and install czmq 3.0.0rc1 from http://czmq.zeromq.org/page:get-the-software
+* Clone https://github.com/skaes/json-c.git checkout
+  36be1c4c7ade78fae8ef67280cd4f98ff9f81016, build and install
+* Clone https://github.com/mongodb/mongo-c-driver, checkout
+  048c851919dc32c98b5f8a9a0270e69af9385db3, build and install
+
+
+Finally
+```
 sh autogen.sh
 make
 sudo make install
