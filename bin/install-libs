@@ -52,7 +52,7 @@ sudo $ldconfig
 cd ..
 
 d=mongo-c-driver
-test -d $d || git clone git@github.com:mongodb/${d}.git
+test -d $d || git clone https://github.com/mongodb/${d}.git
 cd $d
 git reset --hard
 git checkout master
@@ -69,7 +69,7 @@ test -d murks || mkdir murks
 cd murks
 
 d=json-c
-test -d $d || git clone git@github.com:skaes/${d}.git
+test -d $d || git clone https://github.com/skaes/${d}.git
 cd $d
 git reset --hard
 git checkout master
