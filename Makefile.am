@@ -3,7 +3,7 @@ ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS}
 
 AM_CPPFLAGS = $(OPTDIR_CPPFLAGS) $(DEPS_CFLAGS) -D_GNU_SOURCE
 AM_CFLAGS = --std=gnu99 -Wall
-LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS)
+LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS) -lm
 
 bin_PROGRAMS = logjam-device logjam-importer
 noinst_PROGRAMS = tester test_subscriber test_publisher test_puller
