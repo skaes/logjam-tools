@@ -56,11 +56,8 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
     return socket;
 }
 
-static char *direct_bind_ip = "*";
-static int direct_bind_port = 9605;
-
 static
-zsock_t* subscriber_pull_socket_new()
+zsock_t* subscriber_pull_socket_new(zconfig_t* config)
 {
     zsock_t *socket = zsock_new(ZMQ_PULL);
     assert(socket);
@@ -69,16 +66,16 @@ zsock_t* subscriber_pull_socket_new()
     zsock_set_reconnect_ivl(socket, 100); // 100 ms
     zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
-    // connect socket to endpoints
-    // TODO: read bind_ip and port from config
-    int rc = zsock_bind(socket, "tcp://%s:%d", direct_bind_ip, direct_bind_port);
-    assert(rc == direct_bind_port);
+    char *pull_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pull", "tcp://127.0.0.1:9605");
+    printf("[I] subscriber: binding PULL socket to %s\n", pull_spec);
+    int rc = zsock_bind(socket, "%s", pull_spec);
+    assert(rc != -1);
 
     return socket;
 }
 
 static
-zsock_t* subscriber_push_socket_new()
+zsock_t* subscriber_push_socket_new(zconfig_t* config)
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
@@ -88,13 +85,15 @@ zsock_t* subscriber_push_socket_new()
 }
 
 static
-zsock_t* subscriber_pub_socket_new()
+zsock_t* subscriber_pub_socket_new(zconfig_t* config)
 {
     zsock_t *socket = zsock_new(ZMQ_PUB);
     assert(socket);
     zsock_set_sndhwm(socket, 200000);
-    int rc = zsock_bind(socket, "tcp://*:%d", 9651);
-    assert(rc == 9651);
+    char *pub_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pub", "tcp://127.0.0.1:9651");
+    printf("[I] subscriber: binding PUB socket to %s\n", pub_spec);
+    int rc = zsock_bind(socket, "%s", pub_spec);
+    assert(rc != -1);
     return socket;
 }
 
@@ -163,9 +162,9 @@ void subscriber(zsock_t *pipe, void *args)
     zconfig_t* config = args;
     state.controller_socket = pipe;
     state.sub_socket  = subscriber_sub_socket_new(config);
-    state.pull_socket = subscriber_pull_socket_new();
-    state.push_socket = subscriber_push_socket_new();
-    state.pub_socket  = subscriber_pub_socket_new();
+    state.pull_socket = subscriber_pull_socket_new(config);
+    state.push_socket = subscriber_push_socket_new(config);
+    state.pub_socket  = subscriber_pub_socket_new(config);
 
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);
