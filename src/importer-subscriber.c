@@ -42,14 +42,14 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
     assert(endpoint);
     do {
         zconfig_t *binding = zconfig_child(endpoint);
-        assert(binding);
-        do {
+        while (binding) {
             char *spec = zconfig_value(binding);
+            printf("[I] subscriber: connecting SUB socket to %s\n", spec);
             int rc = zsock_connect(socket, "%s", spec);
             log_zmq_error(rc);
             assert(rc == 0);
             binding = zconfig_next(binding);
-        } while (binding);
+        }
         endpoint = zconfig_next(endpoint);
     } while (endpoint);
 
