@@ -36,22 +36,17 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
     zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
     // connect socket to endpoints
-    zconfig_t *endpoints = zconfig_locate(config, "frontend/endpoints");
-    assert(endpoints);
-    zconfig_t *endpoint = zconfig_child(endpoints);
-    assert(endpoint);
-    do {
-        zconfig_t *binding = zconfig_child(endpoint);
-        while (binding) {
-            char *spec = zconfig_value(binding);
-            printf("[I] subscriber: connecting SUB socket to %s\n", spec);
-            int rc = zsock_connect(socket, "%s", spec);
-            log_zmq_error(rc);
-            assert(rc == 0);
-            binding = zconfig_next(binding);
-        }
-        endpoint = zconfig_next(endpoint);
-    } while (endpoint);
+    zconfig_t *bindings = zconfig_locate(config, "frontend/endpoints/bindings");
+    assert(bindings);
+    zconfig_t *binding = zconfig_child(bindings);
+    while (binding) {
+        char *spec = zconfig_value(binding);
+        printf("[I] subscriber: connecting SUB socket to %s\n", spec);
+        int rc = zsock_connect(socket, "%s", spec);
+        log_zmq_error(rc);
+        assert(rc == 0);
+        binding = zconfig_next(binding);
+    }
 
     return socket;
 }
