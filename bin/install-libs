@@ -20,7 +20,7 @@ export CC CXX
 
 d=rabbitmq-c-0.5.2
 f=${d}.tar.gz
-test -f $f || wget https://github.com/alanxz/rabbitmq-c/releases/download/v0.5.2/$f
+test -f $f || wget -nv https://github.com/alanxz/rabbitmq-c/releases/download/v0.5.2/$f
 test -d $d || tar xzvf $f
 cd $d
 test -f config.status || ./configure
@@ -31,7 +31,7 @@ cd ..
 
 d=zeromq-4.0.5
 f=${d}.tar.gz
-test -f $f || wget http://download.zeromq.org/$f
+test -f $f || wget -nv http://download.zeromq.org/$f
 test -d $d || tar xzvf $f
 cd $d
 test -f config.status || ./configure
@@ -42,7 +42,7 @@ cd ..
 
 d=czmq-3.0.0
 f=czmq-3.0.0-rc1.tar.gz
-test -f $f || wget http://download.zeromq.org/$f
+test -f $f || wget -nv http://download.zeromq.org/$f
 test -d $d || tar xzvf $f
 cd $d
 test -f config.status || ./configure
@@ -64,7 +64,7 @@ sudo make install
 sudo $ldconfig
 cd ..
 
-# json-c configure fails if it's not put in another sub dir. go figure.'
+# json-c configure fails if it's not put in another sub dir. go figure.
 test -d murks || mkdir murks
 cd murks
 
