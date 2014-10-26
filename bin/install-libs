@@ -55,9 +55,9 @@ d=mongo-c-driver
 test -d $d || git clone git@github.com:mongodb/${d}.git
 cd $d
 git reset --hard
-git co master
+git checkout master
 git pull origin master
-git co 048c851919dc32c98b5f8a9a0270e69af9385db3
+git checkout 048c851919dc32c98b5f8a9a0270e69af9385db3
 test -f config.status || (sh autogen.sh && ./configure)
 make
 sudo make install
@@ -72,9 +72,9 @@ d=json-c
 test -d $d || git clone git@github.com:skaes/${d}.git
 cd $d
 git reset --hard
-git co master
+git checkout master
 git pull origin master
-git co 36be1c4c7ade78fae8ef67280cd4f98ff9f81016
+git checkout 36be1c4c7ade78fae8ef67280cd4f98ff9f81016
 test -f config.status || (sh autogen.sh && ./configure)
 make
 sudo make install
