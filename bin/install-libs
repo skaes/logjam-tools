@@ -16,6 +16,8 @@ case $OSTYPE in
         ;;
 esac
 
+test -z "$SUDO" && SUDO="sudo"
+
 export CC CXX
 
 d=rabbitmq-c-0.5.2
@@ -25,8 +27,8 @@ test -d $d || tar xzvf $f
 cd $d
 test -f config.status || ./configure
 make
-sudo make install
-sudo $ldconfig
+$SUDO make install
+$SUDO $ldconfig
 cd ..
 
 d=zeromq-4.0.5
@@ -36,8 +38,8 @@ test -d $d || tar xzvf $f
 cd $d
 test -f config.status || ./configure
 make
-sudo make install
-sudo $ldconfig
+$SUDO make install
+$SUDO $ldconfig
 cd ..
 
 d=czmq-3.0.0
@@ -47,8 +49,8 @@ test -d $d || tar xzvf $f
 cd $d
 test -f config.status || ./configure
 make
-sudo make install
-sudo $ldconfig
+$SUDO make install
+$SUDO $ldconfig
 cd ..
 
 d=mongo-c-driver
@@ -60,8 +62,8 @@ git pull origin master
 git checkout 048c851919dc32c98b5f8a9a0270e69af9385db3
 test -f config.status || (sh autogen.sh && ./configure)
 make
-sudo make install
-sudo $ldconfig
+$SUDO make install
+$SUDO $ldconfig
 cd ..
 
 # json-c configure fails if it's not put in another sub dir. go figure.
@@ -77,6 +79,6 @@ git pull origin master
 git checkout 36be1c4c7ade78fae8ef67280cd4f98ff9f81016
 test -f config.status || (sh autogen.sh && ./configure)
 make
-sudo make install
-sudo $ldconfig
+$SUDO make install
+$SUDO $ldconfig
 cd ../..

@@ -1,6 +1,6 @@
 # Logjam Tools
 
-A collection of programs and daemons build the server side
+A collection of programs and daemons to build the server side
 infrastructure for logjam (see https://github.com/skaes/logjam_app).
 
 Currently only two daemons are provided:
@@ -15,7 +15,7 @@ those devices as needed to to scale the logging infrastructure.
 
 ## logjam-importer
 
-A daemon which is schduled to replace all of the ruy importer code
+A daemon which is scheduled to replace all of the ruby importer code
 still in logjam. It's much less resource intensive than the ruby code
 and a _lot_ faster, while still very stable: it has been in production
 use since April 2014 and hasn't crashed once.
