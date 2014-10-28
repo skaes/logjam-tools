@@ -31,6 +31,17 @@ $SUDO make install
 $SUDO $ldconfig
 cd ..
 
+d=libsodium-1.0.0
+f=${d}.tar.gz
+test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.0/$f
+test -d $d || tar xzvf $f
+cd $d
+test -f config.status || ./configure
+make
+$SUDO make install
+$SUDO $ldconfig
+cd ..
+
 d=zeromq-4.0.5
 f=${d}.tar.gz
 test -f $f || wget -nv http://download.zeromq.org/$f
