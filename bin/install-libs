@@ -71,7 +71,7 @@ git reset --hard
 git checkout master
 git pull origin master
 git checkout 048c851919dc32c98b5f8a9a0270e69af9385db3
-test -f config.status || (sh autogen.sh && ./configure)
+test -f config.status || (sh autogen.sh && ./configure --with-libbson=bundled)
 make
 $SUDO make install
 $SUDO $ldconfig
