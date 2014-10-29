@@ -127,7 +127,7 @@ void shutdown_amqp_connection(amqp_connection_state_t connection, int amqp_rc, u
 static
 void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_ref, const char *stream)
 {
-    size_t n = strlen(stream);
+    size_t n = strlen(stream) + 1;
     char app[n], env[n];
     memset(app, 0, n);
     memset(env, 0, n);

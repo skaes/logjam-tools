@@ -28,10 +28,10 @@ void live_stream_publish(zsock_t *live_stream_socket, const char* key, const cha
 
 void publish_error_for_module(stream_info_t *stream_info, const char* module, const char* json_str, zsock_t* live_stream_socket)
 {
-    size_t n = stream_info->app_len + 1 + stream_info->env_len;
+    size_t n = stream_info->app_len + 1 + stream_info->env_len + 1;
     // skip :: at the beginning of module
     while (*module == ':') module++;
-    size_t m = strlen(module);
+    size_t m = strlen(module) + 1;
     char key[n + m + 3];
     sprintf(key, "%s-%s,%s", stream_info->app, stream_info->env, module);
     // TODO: change this crap in the live stream publisher

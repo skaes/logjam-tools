@@ -220,11 +220,11 @@ void increments_fill_caller_info(increments_t *increments, json_object *request)
         if (json_object_object_get_ex(request, "caller_id", &caller_id_obj)) {
             const char *caller_id = json_object_get_string(caller_id_obj);
             if (caller_id == NULL || *caller_id == '\0') return;
-            size_t n = strlen(caller_id);
+            size_t n = strlen(caller_id) + 1;
             char app[n], env[n], rid[n];
             if (3 == sscanf(caller_id, "%[^-]-%[^-]-%[^-]", app, env, rid)) {
-                size_t app_len = strlen(app);
-                size_t action_len = strlen(caller_action);
+                size_t app_len = strlen(app) + 1;
+                size_t action_len = strlen(caller_action) + 1;
                 char caller_name[4*(app_len + action_len) + 2 + 8];
                 strcpy(caller_name, "callers.");
                 int real_app_len = copy_replace_dots_and_dollars(caller_name + 8, app);
