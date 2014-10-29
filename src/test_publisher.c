@@ -96,7 +96,7 @@ int main(int argc, char const * const *argv)
   assert(rc == 0);
 
   rc = zloop_start(loop);
-  // printf("zloop return: %d", rc);
+  printf("zloop return: %d", rc);
 
   zloop_destroy(&loop);
   assert(loop == NULL);

@@ -118,6 +118,7 @@ int main(int argc, char const * const *argv)
   for (i=0;i<socket_count;i++) {
     zsocket_destroy(context, sockets[i]);
   }
+  free(sockets);
   zctx_destroy(&context);
 
   return 0;

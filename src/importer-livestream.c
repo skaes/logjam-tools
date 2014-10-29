@@ -18,8 +18,10 @@ void live_stream_publish(zsock_t *live_stream_socket, const char* key, const cha
     // printf("[D] MSG frame 1 to live stream: rc=%d\n", rc);
     if (rc == 0) {
         rc = zframe_send(&msg_body, live_stream_socket, ZFRAME_DONTWAIT);
-        // printf("[D] MSG frame 2 to live stream: rc=%d\n", rc);
+        if (rc)
+            printf("[E] MSG frame 2 to live stream: rc=%d\n", rc);
     } else {
+        printf("[E] MSG frame 1 to live stream: rc=%d\n", rc);
         zframe_destroy(&msg_body);
     }
 }

@@ -206,8 +206,7 @@ void subscriber(zsock_t *pipe, void *args)
 
     // run the loop
     fprintf(stdout, "[I] subscriber: listening\n");
-    rc = zloop_start(loop);
-    log_zmq_error(rc);
+    zloop_start(loop);
     fprintf(stdout, "[I] subscriber: shutting down\n");
 
     // shutdown

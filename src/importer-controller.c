@@ -321,7 +321,7 @@ int run_controller_loop(zconfig_t* config)
 
     if (!zctx_interrupted) {
         // run the loop
-        rc = zloop_start(loop);
+        zloop_start(loop);
         printf("[I] controller: shutting down\n");
     }
 
