@@ -290,6 +290,7 @@ void indexer_state_destroy(indexer_state_t **state_p)
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state->mongo_clients[i]);
     }
+    free(state);
     *state_p = NULL;
 }
 

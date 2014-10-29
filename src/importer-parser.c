@@ -267,6 +267,7 @@ void parser_state_destroy(parser_state_t **state_p)
     zsock_destroy(&state->push_socket);
     zsock_destroy(&state->indexer_socket);
     zhash_destroy(&state->processors);
+    free(state);
     *state_p = NULL;
 }
 
