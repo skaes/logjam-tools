@@ -3,6 +3,11 @@
 A collection of programs and daemons to build the server side
 infrastructure for logjam (see https://github.com/skaes/logjam_app).
 
+<a href="https://scan.coverity.com/projects/3357">
+  <img alt="Coverity Scan Build Status"
+       src="https://scan.coverity.com/projects/3357/badge.svg"/>
+</a>
+
 Currently only two daemons are provided:
 
 ## logjam-device
