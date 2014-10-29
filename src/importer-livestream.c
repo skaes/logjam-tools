@@ -11,19 +11,10 @@ zsock_t* live_stream_socket_new()
 
 void live_stream_publish(zsock_t *live_stream_socket, const char* key, const char* json_str)
 {
-    int rc = 0;
-    zframe_t *msg_key = zframe_new(key, strlen(key));
-    zframe_t *msg_body = zframe_new(json_str, strlen(json_str));
-    rc = zframe_send(&msg_key, live_stream_socket, ZFRAME_MORE|ZFRAME_DONTWAIT);
-    // printf("[D] MSG frame 1 to live stream: rc=%d\n", rc);
-    if (rc == 0) {
-        rc = zframe_send(&msg_body, live_stream_socket, ZFRAME_DONTWAIT);
-        if (rc)
-            printf("[E] MSG frame 2 to live stream: rc=%d\n", rc);
-    } else {
-        printf("[E] MSG frame 1 to live stream: rc=%d\n", rc);
-        zframe_destroy(&msg_body);
-    }
+    if (output_socket_ready(live_stream_socket, 0))
+        zstr_sendx(live_stream_socket, key, json_str, NULL);
+    else if (!zctx_interrupted)
+        fprintf(stderr, "[E] live stream socket buffer full\n");
 }
 
 void publish_error_for_module(stream_info_t *stream_info, const char* module, const char* json_str, zsock_t* live_stream_socket)
