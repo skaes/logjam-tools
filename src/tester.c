@@ -58,7 +58,7 @@ int main(int argc, char const * const *argv)
   assert_x(ZMQ_VERSION <= 20200 && socket_count > 512,
            "zeromq < 3.2 only supports up to 512 sockets");
 
-  void **sockets = malloc(socket_count * sizeof(void*));
+  void **sockets = zmalloc(socket_count * sizeof(void*));
 
   int j;
   for (j=0; j<socket_count; j++) {

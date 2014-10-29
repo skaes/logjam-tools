@@ -61,7 +61,7 @@ void add_threshold_settings(zconfig_t* config, stream_info_t* info)
     zlist_destroy(&settings);
     int n = zhash_size(module_settings);
     info->module_threshold_count = n;
-    info->module_thresholds = malloc(n * sizeof(module_threshold_t));
+    info->module_thresholds = zmalloc(n * sizeof(module_threshold_t));
     zlist_t *modules = zhash_keys(module_settings);
     int i = 0;
     const char *module = zlist_first(modules);
@@ -91,7 +91,7 @@ void add_ignored_request_settings(zconfig_t* config, stream_info_t* info)
 static
 stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
 {
-    stream_info_t *info = malloc(sizeof(stream_info_t));
+    stream_info_t *info = zmalloc(sizeof(stream_info_t));
     info->key = zconfig_name(stream_config);
     if (!strncmp(info->key, "request-stream-", 15)) {
         info->key += 15;

@@ -25,7 +25,7 @@ processor_state_t* processor_new(char *db_name)
     }
     // printf("[D] found stream info for stream %s: %s\n", stream_name, stream_info->key);
 
-    processor_state_t *p = malloc(sizeof(processor_state_t));
+    processor_state_t *p = zmalloc(sizeof(processor_state_t));
     p->db_name = strdup(db_name);
     p->stream_info = stream_info;
     p->request_count = 0;
@@ -363,8 +363,7 @@ void add_quant(const char* namespace, size_t resource_idx, char kind, size_t qua
     // printf("[D] QUANT-KEY: %s\n", key);
     size_t *stored = zhash_lookup(quants, key);
     if (stored == NULL) {
-        stored = malloc(QUANTS_ARRAY_SIZE);
-        memset(stored, 0, QUANTS_ARRAY_SIZE);
+        stored = zmalloc(QUANTS_ARRAY_SIZE);
         zhash_insert(quants, key, stored);
         zhash_freefn(quants, key, free);
     }

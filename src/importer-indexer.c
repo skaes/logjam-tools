@@ -233,7 +233,7 @@ void* create_indexes_for_date(void* args)
 static
 void spawn_bg_indexer_for_date(size_t id, const char* iso_date)
 {
-    bg_indexer_args_t *indexer_args = malloc(sizeof(bg_indexer_args_t));
+    bg_indexer_args_t *indexer_args = zmalloc(sizeof(bg_indexer_args_t));
     assert(indexer_args != NULL);
     indexer_args->id = id;
     strcpy(indexer_args->iso_date, iso_date);
@@ -268,8 +268,7 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
 static
 indexer_state_t* indexer_state_new(zsock_t *pipe, size_t id)
 {
-    indexer_state_t *state = (indexer_state_t*) zmalloc(sizeof(*state));
-    memset(state, 0, sizeof(*state));
+    indexer_state_t *state = zmalloc(sizeof(*state));
     state->id = id;
     state->controller_socket = pipe;
     state->pull_socket = indexer_pull_socket_new();

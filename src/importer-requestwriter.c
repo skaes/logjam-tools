@@ -470,7 +470,7 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
 static
 request_writer_state_t* request_writer_state_new(zsock_t *pipe, size_t id)
 {
-    request_writer_state_t *state = (request_writer_state_t*) zmalloc(sizeof(request_writer_state_t));
+    request_writer_state_t *state = zmalloc(sizeof(request_writer_state_t));
     state->id = id;
     state->request_count = 0;
     state->controller_socket = pipe;

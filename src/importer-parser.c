@@ -246,7 +246,7 @@ zhash_t* processor_hash_new()
 static
 parser_state_t* parser_state_new(zsock_t *pipe, size_t id)
 {
-    parser_state_t *state = (parser_state_t *) zmalloc(sizeof(parser_state_t));
+    parser_state_t *state = zmalloc(sizeof(parser_state_t));
     state->id = id;
     state->parsed_msgs_count = 0;
     state->controller_socket = pipe;

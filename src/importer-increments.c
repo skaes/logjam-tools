@@ -28,12 +28,10 @@ void dump_increments(const char *action, increments_t* increments)
 increments_t* increments_new()
 {
     const size_t inc_size = sizeof(increments_t);
-    increments_t* increments = malloc(inc_size);
-    memset(increments, 0, inc_size);
+    increments_t* increments = zmalloc(inc_size);
 
     const size_t metrics_size = METRICS_ARRAY_SIZE;
-    increments->metrics = malloc(metrics_size);
-    memset(increments->metrics, 0, metrics_size);
+    increments->metrics = zmalloc(metrics_size);
 
     increments->others = json_object_new_object();
     return increments;

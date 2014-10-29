@@ -270,9 +270,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 static
 stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* db_name)
 {
-    stats_collections_t *collections = malloc(sizeof(stats_collections_t));
-    assert(collections);
-    memset(collections, 0, sizeof(stats_collections_t));
+    stats_collections_t *collections = zmalloc(sizeof(stats_collections_t));
 
     if (dryrun) return collections;
 
@@ -325,7 +323,7 @@ void update_collection(zhash_t *updates, zhash_foreach_fn *fn, collection_update
 static
 stats_updater_state_t* stats_updater_state_new(zsock_t *pipe, size_t id)
 {
-    stats_updater_state_t *state = (stats_updater_state_t*) zmalloc(sizeof(*state));
+    stats_updater_state_t *state = zmalloc(sizeof(*state));
     state->id = id;
     state->updates_count = 0;
     state->controller_socket = pipe;
