@@ -18,3 +18,4 @@ logjam-importer
 .gdbinit
 test_puller
 builds/*
+cov-int

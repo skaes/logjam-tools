@@ -22,8 +22,18 @@ dist_noinst_SCRIPTS = autogen.sh
 TEST_PUBLISHERS=1
 ULIMIT=20000
 
+.PHONY: test run cov-build analyze
+
 test: tester
 	for i in $(TEST_PUBLISHERS); do (ulimit -n $(ULIMIT); ./tester 200 100000&); done
 
 run: logjam-device
 	ulimit -n $(ULIMIT); ./logjam-device 12345 localhost
+
+cov-build: clean
+	cov-build --dir cov-int make
+
+analyze: clean
+	scan-build ./configure
+	report=`scan-build make | egrep -e '^scan-build: Run'`; echo $$report;\
+        scan-view `echo $$report | sed -e "s/scan-build: Run 'scan-view \(.*\)' to examine bug reports./\1/"`
