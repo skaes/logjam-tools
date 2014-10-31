@@ -141,6 +141,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     size_t parsed_msgs_counts[NUM_PARSERS];
 
     state->ticks++;
+    printf("[D] controller: collecting data from parsers\n");
 
     for (size_t i=0; i<NUM_PARSERS; i++) {
         zactor_t* parser = state->parsers[i];
@@ -161,6 +162,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     // publish on live stream (need to do this while we still own the processors)
+    printf("[D] controller: publishing live streams\n");
     processor_state_t *processor_state = zhash_first(processors[0]);
     while (processor_state) {
         const char *db_name = zhash_cursor(processors[0]);
@@ -177,6 +179,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     // forward to stats_updaters
+    printf("[D] controller: forwarding updates\n");
     zlist_t *db_names = zhash_keys(processors[0]);
     const char* db_name = zlist_first(db_names);
     while (db_name != NULL) {
