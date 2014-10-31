@@ -156,6 +156,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         parsed_msgs_count += parsed_msgs_counts[i];
     }
 
+    printf("[D] controller: combining processors states\n");
     for (size_t i=1; i<NUM_PARSERS; i++) {
         combine_processors(processors[i], processors[0]);
         zhash_destroy(&processors[i]);
