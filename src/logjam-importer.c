@@ -48,9 +48,8 @@ int main(int argc, char * const *argv)
     if (!zsys_file_exists(config_file_name)) {
         fprintf(stderr, "[E] missing config file: %s\n", config_file_name);
         exit(1);
-    } else {
-        config_file_init(config_file_name);
     }
+    config_file_init(config_file_name);
 
     config_update_date_info();
 

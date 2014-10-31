@@ -42,14 +42,10 @@ void processor_destroy(void* processor)
     processor_state_t* p = processor;
     // printf("[D] destroying processor: %s. requests: %zu\n", p->stream, p->request_count);
     free(p->db_name);
-    if (p->modules != NULL)
-        zhash_destroy(&p->modules);
-    if (p->totals != NULL)
-        zhash_destroy(&p->totals);
-    if (p->minutes != NULL)
-        zhash_destroy(&p->minutes);
-    if (p->quants != NULL)
-        zhash_destroy(&p->quants);
+    zhash_destroy(&p->modules);
+    zhash_destroy(&p->totals);
+    zhash_destroy(&p->minutes);
+    zhash_destroy(&p->quants);
     free(p);
 }
 
