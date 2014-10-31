@@ -315,7 +315,7 @@ void update_collection(zhash_t *updates, zhash_foreach_fn *fn, collection_update
     void *update = zhash_first(updates);
     while (update) {
         const char *key = zhash_cursor(updates);
-        (*fn)(key, update, cb);
+        fn(key, update, cb);
         update = zhash_next(updates);
     }
 }
