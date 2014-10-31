@@ -55,7 +55,7 @@ extern time_t time_last_tick;
 extern void dump_json_object(FILE *f, json_object *jobj);
 extern void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file);
 extern void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file);
-extern bool output_socket_ready(void *socket, int msecs);
+extern bool output_socket_ready(zsock_t* socket, int msecs);
 
 extern int replace_dots_and_dollars(char *s);
 extern int copy_replace_dots_and_dollars(char* buffer, const char *s);

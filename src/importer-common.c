@@ -51,7 +51,7 @@ void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file)
 }
 
 
-bool output_socket_ready(void *socket, int msecs)
+bool output_socket_ready(zsock_t *socket, int msecs)
 {
     zmq_pollitem_t items[] = { { zsock_resolve(socket), 0, ZMQ_POLLOUT, 0 } };
     int rc = zmq_poll(items, 1, msecs);
