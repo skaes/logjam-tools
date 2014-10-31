@@ -28,7 +28,6 @@ extern mongoc_write_concern_t *wc_wait;
 extern mongoc_index_opt_t index_opt_default;
 extern mongoc_index_opt_t index_opt_sparse;
 
-extern void my_mongo_log_handler(mongoc_log_level_t log_level, const char *log_domain,  const char *message, void *user_data);
 extern void initialize_mongo_db_globals(zconfig_t* config);
 extern void ensure_known_database(mongoc_client_t *client, const char* db_name);
 extern int mongo_client_ping(mongoc_client_t *client);

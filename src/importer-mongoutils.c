@@ -10,6 +10,7 @@ mongoc_write_concern_t *wc_wait = NULL;
 mongoc_index_opt_t index_opt_default;
 mongoc_index_opt_t index_opt_sparse;
 
+static
 void my_mongo_log_handler(mongoc_log_level_t log_level, const char *log_domain, const char *message, void *user_data)
 {
    FILE *stream;
