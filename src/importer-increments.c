@@ -12,15 +12,17 @@ void dump_metrics(metric_pair_t *metrics)
     }
 }
 
-void dump_increments(const char *action, increments_t* increments)
+int dump_increments(const char *key, void *total, void *arg)
 {
     puts("[D] ------------------------------------------------");
-    printf("[D] action: %s\n", action);
+    printf("[D] action: %s\n", key);
+    increments_t* increments = total;
     printf("[D] backend requests: %zu\n", increments->backend_request_count);
     printf("[D] page requests: %zu\n", increments->page_request_count);
     printf("[D] ajax requests: %zu\n", increments->ajax_request_count);
     dump_metrics(increments->metrics);
     dump_json_object(stdout, increments->others);
+    return 0;
 }
 
 #define METRICS_ARRAY_SIZE (sizeof(metric_pair_t) * (last_resource_offset + 1))

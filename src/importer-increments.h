@@ -50,7 +50,7 @@ extern void increments_fill_js_exception(increments_t *increments, const char *j
 extern void increments_fill_caller_info(increments_t *increments, json_object *request);
 
 extern void dump_metrics(metric_pair_t *metrics);
-extern void dump_increments(const char *action, increments_t *increments);
+extern int dump_increments(const char *key, void *total, void *arg);
 
 #ifdef __cplusplus
 }
