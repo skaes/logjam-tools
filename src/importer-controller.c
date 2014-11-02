@@ -50,13 +50,25 @@ typedef struct {
 
 
 static
-int add_quant_to_quants_hash(const char* key, void* data, void *arg)
+void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs_count)
+{
+    zframe_t *first = zmsg_first(msg);
+    zframe_t *second = zmsg_next(msg);
+    assert(zframe_size(first) == sizeof(zhash_t*));
+    memcpy(&*processors, zframe_data(first), sizeof(zhash_t*));
+    assert(zframe_size(second) == sizeof(size_t));
+    memcpy(parsed_msgs_count, zframe_data(second), sizeof(size_t));
+}
+
+
+static
+int add_quants(const char* key, void* data, void *arg)
 {
     hash_pair_t *p = arg;
-    size_t *stored = zhash_lookup(p->target, key);
-    if (stored != NULL) {
+    size_t *dest = zhash_lookup(p->target, key);
+    if (dest) {
         for (int i=0; i <= last_resource_offset; i++) {
-            stored[i] += ((size_t*)data)[i];
+            dest[i] += ((size_t*)data)[i];
         }
     } else {
         zhash_insert(p->target, key, data);
@@ -72,44 +84,19 @@ void combine_quants(zhash_t *target, zhash_t *source)
     hash_pair_t hash_pair;
     hash_pair.source = source;
     hash_pair.target = target;
-    zhash_foreach(source, add_quant_to_quants_hash, &hash_pair);
+    zhash_foreach(source, add_quants, &hash_pair);
 }
 
-static
-void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs_count)
-{
-    zframe_t *first = zmsg_first(msg);
-    zframe_t *second = zmsg_next(msg);
-    assert(zframe_size(first) == sizeof(zhash_t*));
-    memcpy(&*processors, zframe_data(first), sizeof(zhash_t*));
-    assert(zframe_size(second) == sizeof(size_t));
-    memcpy(parsed_msgs_count, zframe_data(second), sizeof(size_t));
-}
 
 static
 int add_modules(const char* module, void* data, void* arg)
 {
     hash_pair_t *pair = arg;
     char *dest = zhash_lookup(pair->target, module);
-    if (dest == NULL) {
+    if (!dest) {
         zhash_insert(pair->target, module, data);
         zhash_freefn(pair->target, module, free);
         zhash_freefn(pair->source, module, NULL);
-    }
-    return 0;
-}
-
-static
-int add_increments(const char* namespace, void* data, void* arg)
-{
-    hash_pair_t *pair = arg;
-    increments_t *dest_increments = zhash_lookup(pair->target, namespace);
-    if (dest_increments == NULL) {
-        zhash_insert(pair->target, namespace, data);
-        zhash_freefn(pair->target, namespace, increments_destroy);
-        zhash_freefn(pair->source, namespace, NULL);
-    } else {
-        increments_add(dest_increments, (increments_t*)data);
     }
     return 0;
 }
@@ -123,6 +110,22 @@ void combine_modules(zhash_t* target, zhash_t *source)
     zhash_foreach(source, add_modules, &hash_pair);
 }
 
+
+static
+int add_increments(const char* namespace, void* data, void* arg)
+{
+    hash_pair_t *pair = arg;
+    increments_t *dest_increments = zhash_lookup(pair->target, namespace);
+    if (dest_increments) {
+        increments_add(dest_increments, (increments_t*)data);
+    } else {
+        zhash_insert(pair->target, namespace, data);
+        zhash_freefn(pair->target, namespace, increments_destroy);
+        zhash_freefn(pair->source, namespace, NULL);
+    }
+    return 0;
+}
+
 static
 void combine_increments(zhash_t* target, zhash_t *source)
 {
@@ -132,17 +135,6 @@ void combine_increments(zhash_t* target, zhash_t *source)
     zhash_foreach(source, add_increments, &hash_pair);
 }
 
-static
-void combine_processors(processor_state_t* target, processor_state_t* source)
-{
-    // printf("[D] combining %s\n", target->db_name);
-    assert(!strcmp(target->db_name, source->db_name));
-    target->request_count += source->request_count;
-    combine_modules(target->modules, source->modules);
-    combine_increments(target->totals, source->totals);
-    combine_increments(target->minutes, source->minutes);
-    combine_quants(target->quants, source->quants);
-}
 
 static
 int merge_processors(const char* db_name, void* data, void* arg)
@@ -150,14 +142,30 @@ int merge_processors(const char* db_name, void* data, void* arg)
     hash_pair_t *pair = arg;
     // printf("[D] checking %s\n", db_name);
     processor_state_t *dest = zhash_lookup(pair->target, db_name);
-    if (dest == NULL) {
+    if (dest) {
+        // printf("[D] combining %s\n", dest->db_name);
+        processor_state_t *src = data;
+        assert(streq(dest->db_name, src->db_name));
+        dest->request_count += src->request_count;
+        combine_modules(dest->modules, src->modules);
+        combine_increments(dest->totals, src->totals);
+        combine_increments(dest->minutes, src->minutes);
+        combine_quants(dest->quants, src->quants);
+    } else {
         zhash_insert(pair->target, db_name, data);
         zhash_freefn(pair->target, db_name, processor_destroy);
         zhash_freefn(pair->source, db_name, NULL);
-    } else {
-        combine_processors(dest, (processor_state_t*)data);
     }
     return 0;
+}
+
+static
+void combine_processors(zhash_t *source, zhash_t *target)
+{
+    hash_pair_t pair;
+    pair.source = source;
+    pair.target = target;
+    zhash_foreach(source, merge_processors, &pair);
 }
 
 static
@@ -170,7 +178,6 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     state->ticks++;
     printf("[D] controller: collecting data from parsers\n");
-
     for (size_t i=0; i<NUM_PARSERS; i++) {
         zactor_t* parser = state->parsers[i];
         zstr_send(parser, "tick");
@@ -179,17 +186,11 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_destroy(&response);
     }
 
+    printf("[D] controller: combining processors states\n");
     size_t parsed_msgs_count = parsed_msgs_counts[0];
     for (size_t i=1; i<NUM_PARSERS; i++) {
         parsed_msgs_count += parsed_msgs_counts[i];
-    }
-
-    printf("[D] controller: combining processors states\n");
-    for (size_t i=1; i<NUM_PARSERS; i++) {
-        hash_pair_t pair;
-        pair.source = processors[i];
-        pair.target = processors[0];
-        zhash_foreach(pair.source, merge_processors, &pair);
+        combine_processors(processors[i], processors[0]);
         zhash_destroy(&processors[i]);
     }
 
