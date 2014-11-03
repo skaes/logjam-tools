@@ -683,10 +683,9 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     // TODO: store interesting requests
 }
 
-int processor_publish_totals(const char* db_name, void *processor, void *live_stream_socket)
+void processor_publish_totals(processor_state_t *self, const char* db_name, zsock_t *live_stream_socket)
 {
-    processor_state_t *self = processor;
-    if (zhash_size(self->modules) == 0) return 0;
+    if (zhash_size(self->modules) == 0) return;
 
     stream_info_t *stream_info = self->stream_info;
     size_t n = stream_info->app_len + 1 + stream_info->env_len;
@@ -724,5 +723,4 @@ int processor_publish_totals(const char* db_name, void *processor, void *live_st
         module = zlist_next(modules);
     }
     zlist_destroy(&modules);
-    return 0;
 }

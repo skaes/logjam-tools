@@ -170,7 +170,12 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     // publish on live stream (need to do this while we still own the processors)
     printf("[D] controller: publishing live streams\n");
-    zhash_foreach(processors[0], processor_publish_totals, state->live_stream_socket);
+    processor_state_t* processor = zhash_first(processors[0]);
+    while (processor) {
+        const char* db_name = zhash_cursor(processors[0]);
+        processor_publish_totals(processor, db_name, state->live_stream_socket);
+        processor = zhash_next(processors[0]);
+    }
 
     // tell indexer to tick
     zstr_send(state->indexer, "tick");
