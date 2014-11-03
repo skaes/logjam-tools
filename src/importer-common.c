@@ -353,13 +353,3 @@ bool config_update_date_info()
     bool changed = strcmp(old_date, iso_date_today);
     return changed;
 }
-
-int set_thread_name(const char* name)
-{
-#ifdef __linux__
-    pthread_t self = pthread_self();
-    return pthread_setname_np(self, name);
-#else
-    return 0;
-#endif
-}
