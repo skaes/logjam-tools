@@ -356,9 +356,11 @@ bool config_update_date_info()
 
 int set_thread_name(const char* name)
 {
-#ifdef __linux__
+#if defined(__linux__)
     pthread_t self = pthread_self();
     return pthread_setname_np(self, name);
+#elif defined(__APPLE__)
+    return pthread_setname_np(name);
 #else
     return 0;
 #endif
