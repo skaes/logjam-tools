@@ -306,7 +306,7 @@ void controller_destroy_actors(controller_state_t *state)
 
 int run_controller_loop(zconfig_t* config)
 {
-    set_thread_name("controller");
+    set_thread_name("controller[0]");
 
     int rc;
     // set global config
