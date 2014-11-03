@@ -55,7 +55,7 @@ void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs
 }
 
 static
-void combine_quants(zhash_t *target, zhash_t *source)
+void merge_quants(zhash_t *target, zhash_t *source)
 {
     size_t *source_quants = NULL;
 
@@ -77,7 +77,7 @@ void combine_quants(zhash_t *target, zhash_t *source)
 }
 
 static
-void combine_modules(zhash_t* target, zhash_t *source)
+void merge_modules(zhash_t* target, zhash_t *source)
 {
     char *source_module = NULL;
 
@@ -95,7 +95,7 @@ void combine_modules(zhash_t* target, zhash_t *source)
 }
 
 static
-void combine_increments(zhash_t* target, zhash_t *source)
+void merge_increments(zhash_t* target, zhash_t *source)
 {
     increments_t *source_increments = NULL;
 
@@ -116,7 +116,7 @@ void combine_increments(zhash_t* target, zhash_t *source)
 
 
 static
-void combine_processors(zhash_t *source, zhash_t *target)
+void merge_processors(zhash_t *target, zhash_t *source)
 {
     processor_state_t* source_processor = NULL;
 
@@ -129,10 +129,10 @@ void combine_processors(zhash_t *source, zhash_t *target)
             // printf("[D] combining %s\n", dest_processor->db_name);
             assert( streq(dest_processor->db_name, source_processor->db_name) );
             dest_processor->request_count += source_processor->request_count;
-            combine_modules(dest_processor->modules, source_processor->modules);
-            combine_increments(dest_processor->totals, source_processor->totals);
-            combine_increments(dest_processor->minutes, source_processor->minutes);
-            combine_quants(dest_processor->quants, source_processor->quants);
+            merge_modules(dest_processor->modules, source_processor->modules);
+            merge_increments(dest_processor->totals, source_processor->totals);
+            merge_increments(dest_processor->minutes, source_processor->minutes);
+            merge_quants(dest_processor->quants, source_processor->quants);
         } else {
             zhash_insert(target, db_name, source_processor);
             zhash_freefn(target, db_name, processor_destroy);
@@ -164,7 +164,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     size_t parsed_msgs_count = parsed_msgs_counts[0];
     for (size_t i=1; i<NUM_PARSERS; i++) {
         parsed_msgs_count += parsed_msgs_counts[i];
-        combine_processors(processors[i], processors[0]);
+        merge_processors(processors[0], processors[i]);
         zhash_destroy(&processors[i]);
     }
 
