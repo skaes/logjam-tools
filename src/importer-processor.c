@@ -11,7 +11,7 @@
 
 processor_state_t* processor_new(char *db_name)
 {
-    printf("[D] creating processor for db: %s\n", db_name);
+    // printf("[D] creating processor for db: %s\n", db_name);
     // check whether it's a known stream and return NULL if not
     size_t n = strlen(db_name) - DB_PREFIX_LEN;
     char stream_name[n+1];
@@ -40,7 +40,7 @@ void processor_destroy(void* processor)
 {
     //void* because we want to use it as a zhash_free_fn
     processor_state_t* p = processor;
-    printf("[D] destroying processor: %s. requests: %zu\n", p->db_name, p->request_count);
+    // printf("[D] destroying processor: %s. requests: %zu\n", p->db_name, p->request_count);
     free(p->db_name);
     zhash_destroy(&p->modules);
     zhash_destroy(&p->totals);
