@@ -60,7 +60,7 @@ void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs
     memcpy(parsed_msgs_count, zframe_data(second), sizeof(size_t));
 }
 
-#define USE_ZHASH_FOREACH 0
+#define USE_ZHASH_FOREACH 1
 
 static
 int add_quants(const char* key, void* data, void *arg)
