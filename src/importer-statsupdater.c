@@ -342,6 +342,18 @@ void stats_updater_state_destroy(stats_updater_state_t **state_p)
     *state_p = NULL;
 }
 
+static
+void update_collection(zhash_t *updates, zhash_foreach_fn *fn, collection_update_callback_t *cb)
+{
+    void *update = zhash_first(updates);
+    while (update) {
+        const char *key = zhash_cursor(updates);
+        fn(key, update, cb);
+        update = zhash_next(updates);
+    }
+}
+
+
 void stats_updater(zsock_t *pipe, void *args)
 {
     size_t id = (size_t)args;
@@ -419,15 +431,15 @@ void stats_updater(zsock_t *pipe, void *args)
             switch (task_type) {
             case 't':
                 cb.collection = collections->totals;
-                zhash_foreach(updates, totals_add_increments, &cb);
+                update_collection(updates, totals_add_increments, &cb);
                 break;
             case 'm':
                 cb.collection = collections->minutes;
-                zhash_foreach(updates, minutes_add_increments, &cb);
+                update_collection(updates, minutes_add_increments, &cb);
                 break;
             case 'q':
                 cb.collection = collections->quants;
-                zhash_foreach(updates, quants_add_quants, &cb);
+                update_collection(updates, quants_add_quants, &cb);
                 break;
             default:
                 fprintf(stderr, "[E] updater[%zu]: unknown task type: %c\n", id, task_type);
