@@ -274,6 +274,10 @@ void parser_state_destroy(parser_state_t **state_p)
 void parser(zsock_t *pipe, void *args)
 {
     size_t id = (size_t)args;
+    char *thread_name;
+    asprintf(&thread_name, "logjam-importer: parser[%zu]", id);
+    set_thread_name(thread_name);
+
     parser_state_t *state = parser_state_new(pipe, id);
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);
@@ -323,5 +327,6 @@ void parser(zsock_t *pipe, void *args)
 
     printf("[I] parser [%zu]: shutting down\n", id);
     parser_state_destroy(&state);
+    free(thread_name);
     printf("[I] parser [%zu]: terminated\n", id);
 }

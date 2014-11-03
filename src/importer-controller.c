@@ -306,6 +306,10 @@ void controller_destroy_actors(controller_state_t *state)
 
 int run_controller_loop(zconfig_t* config)
 {
+    char *thread_name;
+    asprintf(&thread_name, "logjam-importer: controller[%zu]", (size_t)0);
+    set_thread_name(thread_name);
+
     int rc;
     // set global config
     zsys_init();
@@ -342,6 +346,7 @@ int run_controller_loop(zconfig_t* config)
  exit:
     controller_destroy_actors(&state);
     zsys_shutdown();
+    free(thread_name);
 
     printf("[I] controller: terminated\n");
     return 0;
