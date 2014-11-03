@@ -357,8 +357,9 @@ void update_collection(zhash_t *updates, zhash_foreach_fn *fn, collection_update
 void stats_updater(zsock_t *pipe, void *args)
 {
     size_t id = (size_t)args;
-    char *thread_name;
-    asprintf(&thread_name, "logjam-importer: updater[%zu]", id);
+    char thread_name[16];
+    memset(thread_name, 0, 16);
+    snprintf(thread_name, 16, "updater[%zu]", id);
     set_thread_name(thread_name);
 
     size_t ticks = 0;
@@ -462,6 +463,5 @@ void stats_updater(zsock_t *pipe, void *args)
 
     printf("[I] updater[%zu]: shutting down\n", id);
     stats_updater_state_destroy(&state);
-    free(thread_name);
     printf("[I] updater[%zu]: terminated\n", id);
 }

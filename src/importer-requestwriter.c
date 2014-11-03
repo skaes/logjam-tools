@@ -506,8 +506,9 @@ void request_writer_state_destroy(request_writer_state_t **state_p)
 void request_writer(zsock_t *pipe, void *args)
 {
     size_t id = (size_t)args;
-    char *thread_name;
-    asprintf(&thread_name, "logam-importer: writer[%zu]", id);
+    char thread_name[16];
+    memset(thread_name, 0, 16);
+    snprintf(thread_name, 16, "writer[%zu]", id);
     set_thread_name(thread_name);
 
     size_t ticks = 0;
@@ -571,6 +572,5 @@ void request_writer(zsock_t *pipe, void *args)
 
     printf("[I] writer [%zu]: shutting down\n", id);
     request_writer_state_destroy(&state);
-    free(thread_name);
     printf("[I] writer [%zu]: terminated\n", id);
 }

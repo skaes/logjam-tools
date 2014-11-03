@@ -213,8 +213,9 @@ void* create_indexes_for_date(void* args)
     bg_indexer_args_t *indexer_args = args;
     state.id = indexer_args->id;;
 
-    char *thread_name;
-    asprintf(&thread_name, "logam-importer: background-indexer[%zu]", state.id);
+    char thread_name[16];
+    memset(thread_name, 0, 16);
+    snprintf(thread_name, 16, "indexer[%zu]", state.id);
     set_thread_name(thread_name);
 
     for (int i=0; i<num_databases; i++) {
@@ -231,7 +232,6 @@ void* create_indexes_for_date(void* args)
     }
 
     free(indexer_args);
-    free(thread_name);
     return NULL;
 }
 
@@ -301,8 +301,9 @@ void indexer_state_destroy(indexer_state_t **state_p)
 void indexer(zsock_t *pipe, void *args)
 {
     size_t id = 0;
-    char *thread_name;
-    asprintf(&thread_name, "logam-importer: indexer[%zu]", id);
+    char thread_name[16];
+    memset(thread_name, 0, 16);
+    snprintf(thread_name, 16, "indexer[%zu]", id);
     set_thread_name(thread_name);
 
     size_t ticks = 0;
@@ -374,6 +375,5 @@ void indexer(zsock_t *pipe, void *args)
 
     printf("[I] indexer[%zu]: shutting down\n", id);
     indexer_state_destroy(&state);
-    free(thread_name);
     printf("[I] indexer[%zu]: terminated\n", id);
 }

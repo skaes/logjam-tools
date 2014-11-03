@@ -152,7 +152,7 @@ int terminate(zloop_t *loop, zsock_t *socket, void *callback_data)
 
 void subscriber(zsock_t *pipe, void *args)
 {
-    set_thread_name("logam-importer: subscriber");
+    set_thread_name("subscriber");
 
     int rc;
     subscriber_state_t state;
