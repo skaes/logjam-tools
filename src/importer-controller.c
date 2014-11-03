@@ -43,12 +43,6 @@ typedef struct {
 } controller_state_t;
 
 
-typedef struct {
-    zhash_t *source;
-    zhash_t *target;
-} hash_pair_t;
-
-
 static
 void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs_count)
 {
@@ -60,139 +54,91 @@ void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs
     memcpy(parsed_msgs_count, zframe_data(second), sizeof(size_t));
 }
 
-#define USE_ZHASH_FOREACH 1
-
-static
-int add_quants(const char* key, void* data, void *arg)
-{
-    hash_pair_t *p = arg;
-    size_t *dest = zhash_lookup(p->target, key);
-    if (dest) {
-        for (int i=0; i <= last_resource_offset; i++) {
-            dest[i] += ((size_t*)data)[i];
-        }
-    } else {
-        zhash_insert(p->target, key, data);
-        zhash_freefn(p->target, key, free);
-        zhash_freefn(p->source, key, NULL);
-    }
-    return 0;
-}
-
 static
 void combine_quants(zhash_t *target, zhash_t *source)
 {
-    hash_pair_t hash_pair = { .source = source, .target = target };
-    if (USE_ZHASH_FOREACH) {
-        zhash_foreach(source, add_quants, &hash_pair);
-    } else {
-        size_t *source_quants = zhash_first(source);
-        while (source_quants) {
-            const char* key = zhash_cursor(source);
-            add_quants(key, source_quants, &hash_pair);
-            source_quants = zhash_next(source);
+    size_t *source_quants = NULL;
+
+    while ( (source_quants = zhash_first(source)) ) {
+        const char* key = zhash_cursor(source);
+        assert(key);
+        size_t *dest = zhash_lookup(target, key);
+        if (dest) {
+            for (int i=0; i <= last_resource_offset; i++) {
+                dest[i] += source_quants[i];
+            }
+        } else {
+            zhash_insert(target, key, source_quants);
+            zhash_freefn(target, key, free);
+            zhash_freefn(source, key, NULL);
         }
+        zhash_delete(source, key);
     }
-}
-
-
-static
-int add_modules(const char* module, void* data, void* arg)
-{
-    hash_pair_t *p = arg;
-    char *dest = zhash_lookup(p->target, module);
-    if (!dest) {
-        zhash_insert(p->target, module, data);
-        zhash_freefn(p->target, module, free);
-        zhash_freefn(p->source, module, NULL);
-    }
-    return 0;
 }
 
 static
 void combine_modules(zhash_t* target, zhash_t *source)
 {
-    hash_pair_t hash_pair = { .source = source, .target = target };
-    if (USE_ZHASH_FOREACH) {
-        zhash_foreach(source, add_modules, &hash_pair);
-    } else {
-        increments_t *source_module = zhash_first(source);
-        while (source_module) {
-            const char* module = zhash_cursor(source);
-            add_modules(module, source_module, &hash_pair);
-            source_module = zhash_next(source);
+    char *source_module = NULL;
+
+    while ( (source_module = zhash_first(source)) ) {
+        const char* module = zhash_cursor(source);
+        assert(module);
+        char *dest_module = zhash_lookup(target, module);
+        if (!dest_module) {
+            zhash_insert(target, module, source_module);
+            zhash_freefn(target, module, free);
+            zhash_freefn(source, module, NULL);
         }
+        zhash_delete(source, module);
     }
-}
-
-
-static
-int add_increments(const char* namespace, void* data, void* arg)
-{
-    hash_pair_t *p = arg;
-    increments_t *dest_increments = zhash_lookup(p->target, namespace);
-    if (dest_increments) {
-        increments_add(dest_increments, (increments_t*)data);
-    } else {
-        zhash_insert(p->target, namespace, data);
-        zhash_freefn(p->target, namespace, increments_destroy);
-        zhash_freefn(p->source, namespace, NULL);
-    }
-    return 0;
 }
 
 static
 void combine_increments(zhash_t* target, zhash_t *source)
 {
-    hash_pair_t hash_pair = { .source = source, .target = target };
-    if (USE_ZHASH_FOREACH) {
-        zhash_foreach(source, add_increments, &hash_pair);
-    } else {
-        increments_t *source_increments = zhash_first(source);
-        while (source_increments) {
-            const char* namespace = zhash_cursor(source);
-            add_increments(namespace, source_increments, &hash_pair);
-            source_increments = zhash_next(source);
+    increments_t *source_increments = NULL;
+
+    while ( (source_increments = zhash_first(source)) ) {
+        const char* namespace = zhash_cursor(source);
+        assert(namespace);
+        increments_t *dest_increments = zhash_lookup(target, namespace);
+        if (dest_increments) {
+            increments_add(dest_increments, source_increments);
+        } else {
+            zhash_insert(target, namespace, source_increments);
+            zhash_freefn(target, namespace, increments_destroy);
+            zhash_freefn(source, namespace, NULL);
         }
+        zhash_delete(source, namespace);
     }
 }
 
-static
-int merge_processors(const char* db_name, void* data, void* arg)
-{
-    hash_pair_t *p = arg;
-    // printf("[D] checking %s\n", db_name);
-    processor_state_t *dest = zhash_lookup(p->target, db_name);
-    if (dest) {
-        // printf("[D] combining %s\n", dest->db_name);
-        processor_state_t *src = data;
-        assert(streq(dest->db_name, src->db_name));
-        dest->request_count += src->request_count;
-        combine_modules(dest->modules, src->modules);
-        combine_increments(dest->totals, src->totals);
-        combine_increments(dest->minutes, src->minutes);
-        combine_quants(dest->quants, src->quants);
-    } else {
-        zhash_insert(p->target, db_name, data);
-        zhash_freefn(p->target, db_name, processor_destroy);
-        zhash_freefn(p->source, db_name, NULL);
-    }
-    return 0;
-}
 
 static
 void combine_processors(zhash_t *source, zhash_t *target)
 {
-    hash_pair_t hash_pair = { .source = source, .target = target };
-    if (USE_ZHASH_FOREACH) {
-        zhash_foreach(source, merge_processors, &hash_pair);
-    } else {
-        processor_state_t* source_processor = zhash_first(source);
-        while (source_processor) {
-            const char *db_name = zhash_cursor(source);
-            merge_processors(db_name, source_processor, &hash_pair);
-            source_processor = zhash_next(source);
+    processor_state_t* source_processor = NULL;
+
+    while ( (source_processor = zhash_first(source)) ) {
+        const char *db_name = zhash_cursor(source);
+        assert(db_name);
+        processor_state_t *dest_processor = zhash_lookup(target, db_name);
+
+        if (dest_processor) {
+            // printf("[D] combining %s\n", dest_processor->db_name);
+            assert( streq(dest_processor->db_name, source_processor->db_name) );
+            dest_processor->request_count += source_processor->request_count;
+            combine_modules(dest_processor->modules, source_processor->modules);
+            combine_increments(dest_processor->totals, source_processor->totals);
+            combine_increments(dest_processor->minutes, source_processor->minutes);
+            combine_quants(dest_processor->quants, source_processor->quants);
+        } else {
+            zhash_insert(target, db_name, source_processor);
+            zhash_freefn(target, db_name, processor_destroy);
+            zhash_freefn(source, db_name, NULL);
         }
+        zhash_delete(source, db_name);
     }
 }
 
