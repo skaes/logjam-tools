@@ -65,6 +65,7 @@ extern int convert_to_win1252(const char *str, size_t n, char *utf8);
 extern void config_file_init(const char* file_name);
 extern bool config_file_has_changed();
 extern bool config_update_date_info();
+extern int set_thread_name(const char* name);
 
 
 #define USE_UNACKNOWLEDGED_WRITES 0
