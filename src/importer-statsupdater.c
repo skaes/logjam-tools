@@ -458,7 +458,7 @@ void stats_updater(zsock_t *pipe, void *args)
             int runtime = end_time_ms - start_time_ms;
             if (runtime > 0)
                 state->update_time += runtime;
-            printf("[D] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, runtime, db_name);
+            // printf("[D] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, runtime, db_name);
             zmsg_destroy(&msg);
         } else {
             printf("[I] updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
