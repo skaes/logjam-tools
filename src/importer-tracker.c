@@ -67,13 +67,14 @@ int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid)
     return deleted;
 }
 
-#define ONE_MINUTE_MS (1000 * 60)
+// expire uuids after 5 minutes
+#define EXPIRE_THRESHOLD_MS (1000 * 60 * 5)
 
 static
 void tracker_state_set_time_params(tracker_state_t* state)
 {
     state->current_time_ms = zclock_time();
-    state->age_threshold_ms = state->current_time_ms - ONE_MINUTE_MS;
+    state->age_threshold_ms = state->current_time_ms - EXPIRE_THRESHOLD_MS;
 }
 
 static
