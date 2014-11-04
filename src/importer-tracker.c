@@ -12,6 +12,7 @@ typedef struct {
     size_t added;
     size_t deleted;
     size_t expired;
+    size_t failed;
     zsock_t *additions;
     zsock_t *deletions;
     zsock_t *pipe;
@@ -150,7 +151,6 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *args)
 {
     int rc = 0;
     tracker_state_t *state = args;
-    state->deleted++;
     server_clean_old_uuids(state);
     zmsg_t *msg = zmsg_recv(socket);
     assert(msg);
@@ -160,8 +160,10 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *args)
         // fprintf(stdout, "[D] tracker[%zu]: found uuid: %s\n", state->id, uuid);
         rc = 1;
         zring_delete(state->uuids, uuid);
+        state->deleted++;
     } else {
         // fprintf(stdout, "[D] tracker[%zu]: did not find uuid: %s\n", state->id, uuid);
+        state->failed++;
     }
     free(uuid);
     zmsg_addmem(msg, &rc, sizeof(rc));
@@ -184,11 +186,12 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *args)
             return -1;
         } else if (streq(cmd, "tick")) {
             server_clean_old_uuids(state);
-            fprintf(stdout, "[I] tracker[%zu]: uuid hash size %zu (added=%zu, deleted=%zu, expired=%zu)\n",
-                    state->id, zring_size(state->uuids), state->added, state->deleted, state->expired);
+            fprintf(stdout, "[I] tracker[%zu]: uuid hash size %zu (added=%zu, deleted=%zu, expired=%zu, failed=%zu)\n",
+                    state->id, zring_size(state->uuids), state->added, state->deleted, state->expired, state->failed);
             state->added = 0;
             state->deleted = 0;
             state->expired = 0;
+            state->failed = 0;
         } else {
             fprintf(stderr, "[E] tracker[%zu]: received unknown actor command: %s\n", state->id, cmd);
         }
