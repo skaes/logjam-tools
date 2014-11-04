@@ -145,7 +145,7 @@ void merge_processors(zhash_t *target, zhash_t *source)
 static
 int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 {
-    int64_t start_time_ms = zclock_time();
+    int64_t start_time_ms = zclock_mono();
     controller_state_t *state = arg;
     zhash_t *processors[NUM_PARSERS];
     size_t parsed_msgs_counts[NUM_PARSERS];
@@ -242,7 +242,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     bool terminate = (state->ticks % CONFIG_FILE_CHECK_INTERVAL == 0) && config_file_has_changed();
-    int64_t end_time_ms = zclock_time();
+    int64_t end_time_ms = zclock_mono();
     int runtime = end_time_ms - start_time_ms;
     int next_tick = runtime > 999 ? 1 : 1000 - runtime;
     printf("[I] controller: %5zu messages (%d ms)\n", parsed_msgs_count, runtime);

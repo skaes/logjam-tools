@@ -27,7 +27,8 @@ typedef struct {
     zsock_t *controller_socket;
     zsock_t *pull_socket;
     zsock_t *live_stream_socket;
-    size_t request_count;
+    int updates_count;     // updates performend since last tick
+    int update_time;       // processing time since last tick (micro seconds)
 } request_writer_state_t;
 
 
@@ -472,7 +473,6 @@ request_writer_state_t* request_writer_state_new(zsock_t *pipe, size_t id)
 {
     request_writer_state_t *state = zmalloc(sizeof(request_writer_state_t));
     state->id = id;
-    state->request_count = 0;
     state->controller_socket = pipe;
     state->pull_socket = request_writer_pull_socket_new(id);
     state->live_stream_socket = live_stream_socket_new();
@@ -529,8 +529,8 @@ void request_writer(zsock_t *pipe, void *args)
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
-                if (state->request_count)
-                    printf("[I] writer [%zu]: tick (%zu requests)\n", id, state->request_count);
+                if (state->updates_count || state->update_time)
+                    printf("[I] writer [%zu]: tick (%d requests, %d ms)\n", id, state->updates_count, state->update_time/1000);
                 if (ticks++ % PING_INTERVAL == 0) {
                     // ping mongodb to reestablish connection if it got lost
                     for (int i=0; i<num_databases; i++) {
@@ -547,7 +547,8 @@ void request_writer(zsock_t *pipe, void *args)
                     state->jse_collections = zhash_new();
                     state->events_collections = zhash_new();
                 }
-                state->request_count = 0;
+                state->updates_count = 0;
+                state->update_time = 0;
                 free(cmd);
             } else if (streq(cmd, "$TERM")) {
                 // printf("[D] writer [%zu]: received $TERM command\n", id);
@@ -560,9 +561,12 @@ void request_writer(zsock_t *pipe, void *args)
         } else if (socket == state->pull_socket) {
             msg = zmsg_recv(state->pull_socket);
             if (msg != NULL) {
-                state->request_count++;
+                int64_t start_time_us = zclock_usecs();
                 handle_request_msg(msg, state);
                 zmsg_destroy(&msg);
+                int64_t end_time_us = zclock_usecs();
+                state->updates_count++;
+                state->update_time += end_time_us - start_time_us;
             }
         } else {
             // msg == NULL, probably interrupted by signal handler

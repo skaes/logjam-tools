@@ -28,8 +28,8 @@ typedef struct {
     zhash_t *stats_collections;
     zsock_t *controller_socket;
     zsock_t *pull_socket;
-    int updates_count;  // updates performend since last tick
-    int update_time;       // processing time since last tick
+    int updates_count;     // updates performend since last tick
+    int update_time;       // processing time since last tick (micro seconds)
 } stats_updater_state_t;
 
 typedef struct {
@@ -381,7 +381,7 @@ void stats_updater(zsock_t *pipe, void *args)
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
                 if (state->updates_count || state->update_time) {
-                    printf("[I] updater[%zu]: tick (%d updates, %d ms)\n", id, state->updates_count, state->update_time);
+                    printf("[I] updater[%zu]: tick (%d updates, %d ms)\n", id, state->updates_count, state->update_time/1000);
                 }
                 // ping the server
                 if (ticks++ % PING_INTERVAL == 0) {
@@ -408,7 +408,7 @@ void stats_updater(zsock_t *pipe, void *args)
         } else if (socket == state->pull_socket) {
             msg = zmsg_recv(state->pull_socket);
             state->updates_count++;
-            int64_t start_time_ms = zclock_time();
+            int64_t start_time_us = zclock_usecs();
 
             zframe_t *task_frame = zmsg_first(msg);
             zframe_t *db_frame = zmsg_next(msg);
@@ -454,11 +454,10 @@ void stats_updater(zsock_t *pipe, void *args)
             }
             zhash_destroy(&updates);
 
-            int64_t end_time_ms = zclock_time();
-            int runtime = end_time_ms - start_time_ms;
-            if (runtime > 0)
-                state->update_time += runtime;
-            // printf("[D] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, runtime, db_name);
+            int64_t end_time_us = zclock_usecs();
+            int runtime = end_time_us - start_time_us;
+            state->update_time += runtime;
+            // printf("[D] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, runtime/1000, db_name);
             zmsg_destroy(&msg);
         } else {
             printf("[I] updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
