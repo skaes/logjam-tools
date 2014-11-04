@@ -47,6 +47,8 @@ extern "C" {
 #define MAX_DATABASES 100
 #define DEFAULT_MONGO_URI "mongodb://127.0.0.1:27017/"
 
+extern bool dryrun;
+
 #define ISO_DATE_STR_LEN 11
 extern char iso_date_today[ISO_DATE_STR_LEN];
 extern char iso_date_tomorrow[ISO_DATE_STR_LEN];

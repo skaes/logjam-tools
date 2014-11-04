@@ -18,8 +18,6 @@ extern "C" {
 #define USE_PINGS false
 #endif
 
-extern bool dryrun;
-
 extern size_t num_databases;
 extern const char *databases[MAX_DATABASES];
 
