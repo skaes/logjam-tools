@@ -151,7 +151,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     size_t parsed_msgs_counts[NUM_PARSERS];
 
     state->ticks++;
-    printf("[D] controller: collecting data from parsers: tick[%zu]\n", state->ticks);
+
+    //printf("[D] controller: collecting data from parsers: tick[%zu]\n", state->ticks);
     for (size_t i=0; i<NUM_PARSERS; i++) {
         zactor_t* parser = state->parsers[i];
         zstr_send(parser, "tick");
@@ -160,7 +161,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_destroy(&response);
     }
 
-    printf("[D] controller: combining processors states\n");
+    // printf("[D] controller: combining processors states\n");
     size_t parsed_msgs_count = parsed_msgs_counts[0];
     for (size_t i=1; i<NUM_PARSERS; i++) {
         parsed_msgs_count += parsed_msgs_counts[i];
@@ -169,7 +170,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     // publish on live stream (need to do this while we still own the processors)
-    printf("[D] controller: publishing live streams\n");
+    // printf("[D] controller: publishing live streams\n");
     processor_state_t* processor = zhash_first(processors[0]);
     while (processor) {
         const char* db_name = zhash_cursor(processors[0]);
@@ -186,7 +187,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     // forward to stats_updaters
-    printf("[D] controller: forwarding updates\n");
+    // printf("[D] controller: forwarding updates\n");
     zlist_t *db_names = zhash_keys(processors[0]);
     const char* db_name = zlist_first(db_names);
     while (db_name != NULL) {
@@ -214,7 +215,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_addmem(stats_msg, &proc->minutes, sizeof(proc->minutes));
         proc->minutes = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
-            fprintf(stderr, "[W] controller: updates push socket not ready\n");
+            fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send(&stats_msg, state->updates_socket);
 
@@ -226,7 +227,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_addmem(stats_msg, &proc->quants, sizeof(proc->quants));
         proc->quants = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
-            fprintf(stderr, "[W] controller: updates push socket not ready\n");
+            fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send(&stats_msg, state->updates_socket);
 
@@ -274,6 +275,7 @@ bool controller_create_actors(controller_state_t *state)
 
     // start all worker threads
     state->subscriber = zactor_new(subscriber, state->config);
+
     for (size_t i=0; i<NUM_WRITERS; i++) {
         state->writers[i] = zactor_new(request_writer, (void*)i);
     }

@@ -28,7 +28,8 @@ typedef struct {
     zhash_t *stats_collections;
     zsock_t *controller_socket;
     zsock_t *pull_socket;
-    size_t updates_count;
+    int updates_count;  // updates performend since last tick
+    int update_time;       // processing time since last tick
 } stats_updater_state_t;
 
 typedef struct {
@@ -313,7 +314,6 @@ stats_updater_state_t* stats_updater_state_new(zsock_t *pipe, size_t id)
 {
     stats_updater_state_t *state = zmalloc(sizeof(*state));
     state->id = id;
-    state->updates_count = 0;
     state->controller_socket = pipe;
     state->pull_socket = zsock_new(ZMQ_PULL);
     assert(state->pull_socket);
@@ -380,8 +380,9 @@ void stats_updater(zsock_t *pipe, void *args)
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
-                if (state->updates_count)
-                    printf("[I] updater[%zu]: tick (%zu updates)\n", id, state->updates_count);
+                if (state->updates_count || state->update_time) {
+                    printf("[I] updater[%zu]: tick (%d updates, %d ms)\n", id, state->updates_count, state->update_time);
+                }
                 // ping the server
                 if (ticks++ % PING_INTERVAL == 0) {
                     for (int i=0; i<num_databases; i++) {
@@ -394,13 +395,14 @@ void stats_updater(zsock_t *pipe, void *args)
                     state->stats_collections = zhash_new();
                 }
                 state->updates_count = 0;
+                state->update_time = 0;
                 free(cmd);
             } else if (streq(cmd, "$TERM")) {
                 // printf("[D] updater[%zu]: received $TERM command\n", id);
                 free(cmd);
                 break;
             } else {
-                printf("[E] updater[%zu]: received unknnown command: %s\n", id, cmd);
+                fprintf(stderr, "[E] updater[%zu]: received unknnown command: %s\n", id, cmd);
                 assert(false);
             }
         } else if (socket == state->pull_socket) {
@@ -453,7 +455,10 @@ void stats_updater(zsock_t *pipe, void *args)
             zhash_destroy(&updates);
 
             int64_t end_time_ms = zclock_time();
-            printf("[I] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, (int)(end_time_ms - start_time_ms), db_name);
+            int runtime = end_time_ms - start_time_ms;
+            if (runtime > 0)
+                state->update_time += runtime;
+            printf("[D] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, runtime, db_name);
             zmsg_destroy(&msg);
         } else {
             printf("[I] updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
