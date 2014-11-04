@@ -1,5 +1,7 @@
 #include "importer-common.h"
 
+bool dryrun = false;
+
 void dump_json_object(FILE *f, json_object *jobj)
 {
     const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PLAIN);

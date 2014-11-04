@@ -1,7 +1,5 @@
 #include "importer-mongoutils.h"
 
-bool dryrun = false;
-
 size_t num_databases = 0;
 const char *databases[MAX_DATABASES];
 

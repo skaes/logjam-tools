@@ -11,6 +11,8 @@ zsock_t* live_stream_socket_new()
 
 void live_stream_publish(zsock_t *live_stream_socket, const char* key, const char* json_str)
 {
+    if (dryrun) return;
+
     if (output_socket_ready(live_stream_socket, 0))
         zstr_sendx(live_stream_socket, key, json_str, NULL);
     else if (!zctx_interrupted)
