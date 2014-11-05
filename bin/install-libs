@@ -58,7 +58,7 @@ test -d $d || git clone https://github.com/zeromq/${d}.git
 cd $d
 git reset --hard
 git fetch
-git checkout eb17019cf1919bbf936693b1500938b3abd3bacd
+git checkout 694d76ab3378e6cf9cd79f98966d0a0c55368d1a
 test -f config.status || (sh autogen.sh && ./configure)
 make
 $LSUDO make install

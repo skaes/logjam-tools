@@ -76,13 +76,14 @@ int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** orig
             assert(zframe_size(rcf) == sizeof(int));
             deleted = *((int*)zframe_data(rcf));
         }
+        zmsg_destroy(&msg);
     }
-    zmsg_destroy(&msg);
     return deleted;
 }
 
-// expire uuids after 5 minutes
-#define EXPIRE_THRESHOLD_MS (1000 * 60 * 5)
+#define EXPIRE_THRESHOLD_1MINUTE (1000 * 10 * 60)
+#define EXPIRE_THRESHOLD_5MINUTES (1000 * 10 * 60 * 5)
+#define EXPIRE_THRESHOLD_MS EXPIRE_THRESHOLD_1MINUTE
 
 static
 void tracker_state_set_time_params(tracker_state_t* state)
@@ -142,6 +143,8 @@ void server_clean_old_uuids(tracker_state_t *state)
     uint64_t item;
     while ( (item = (uint64_t)zring_first(uuids)) ) {
         if (item < age_threshold) {
+            // const char *uuid = zring_key(uuids);
+            // printf("[D] tracker[%zu]: expired uuid: %s\n", state->id, uuid);
             state->expired++;
             zring_remove(uuids, (void*)item);
         } else {
@@ -152,8 +155,8 @@ void server_clean_old_uuids(tracker_state_t *state)
     failure_t *failure;
     while ( (failure = zring_first(failures)) ) {
         if (failure->created_time_ms < age_threshold) {
-            const char *uuid = zring_item(failures);
-            printf("[D] tracker[%zu]: failed uuid: %s\n", state->id, uuid);
+            // const char *uuid = zring_key(failures);
+            // printf("[D] tracker[%zu]: failed uuid: %s\n", state->id, uuid);
             state->failed++;
             zmsg_destroy(&failure->msg);
             zring_remove(failures, failure);
@@ -176,8 +179,9 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
         printf("[I] tracker[%zu]: forwarding late uuid: %s\n", state->id, uuid);
         zring_delete(state->failures, uuid);
         zmsg_send(&failure->msg, state->subscriber);
+        free(failure);
     } else {
-        //printf("[D] tracker[%zu]: adding uuid: %s\n", state->id, uuid);
+        // printf("[D] tracker[%zu]: adding uuid: %s\n", state->id, uuid);
         zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
         state->added++;
     }
