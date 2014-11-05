@@ -131,8 +131,10 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
     zmsg_t *msg = zmsg_recv(socket);
     if (msg != NULL) {
         if (PUBLISH_DUPLICATES) {
-            // zmsg_dump(msg);
             subscriber_publish_duplicate(msg, state->pub_socket);
+        }
+        if (!output_socket_ready(state->push_socket, 0)) {
+            fprintf(stderr, "[W] subscriber: push socket not ready. blocking!\n");
         }
         zmsg_send(&msg, state->push_socket);
     }
