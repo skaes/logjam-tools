@@ -55,6 +55,7 @@ extern char iso_date_tomorrow[ISO_DATE_STR_LEN];
 extern time_t time_last_tick;
 
 extern void dump_json_object(FILE *f, json_object *jobj);
+extern void* my_zmsg_popptr(zmsg_t* msg);
 extern void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file);
 extern void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file);
 extern bool output_socket_ready(zsock_t* socket, int msecs);

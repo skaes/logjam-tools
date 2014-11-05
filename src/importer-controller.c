@@ -267,11 +267,12 @@ bool controller_create_actors(controller_state_t *state)
 {
     // start the indexer
     state->indexer = zactor_new(indexer, NULL);
-    if (zctx_interrupted) return false;
+
+    // create subscriber
+    state->subscriber = zactor_new(subscriber, state->config);
 
     //start the tracker
     state->tracker = zactor_new(tracker, NULL);
-    if (zctx_interrupted) return false;
 
     // create socket for stats updates
     state->updates_socket = zsock_new(ZMQ_PUSH);
@@ -280,9 +281,6 @@ bool controller_create_actors(controller_state_t *state)
 
     // connect to live stream
     state->live_stream_socket = live_stream_socket_new();
-
-    // start all worker threads
-    state->subscriber = zactor_new(subscriber, state->config);
 
     for (size_t i=0; i<NUM_WRITERS; i++) {
         state->writers[i] = zactor_new(request_writer, (void*)i);
@@ -293,7 +291,8 @@ bool controller_create_actors(controller_state_t *state)
     for (size_t i=0; i<NUM_PARSERS; i++) {
         state->parsers[i] = zactor_new(parser, (void*)i);
     }
-    return true;
+
+    return !zctx_interrupted;
 }
 
 static

@@ -1,9 +1,14 @@
 #include "importer-tracker.h"
 
-struct _uuid_tracker_t{
+struct _uuid_tracker_t {
     zsock_t *additions;
     zsock_t *deletions;
 };
+
+typedef struct {
+    uint64_t created_time_ms;
+    zmsg_t *msg;
+} failure_t;
 
 typedef struct {
     size_t id;
@@ -15,9 +20,12 @@ typedef struct {
     size_t failed;
     zsock_t *additions;
     zsock_t *deletions;
+    zsock_t *subscriber;
     zsock_t *pipe;
     zring_t *uuids;
+    zring_t *failures;
 } tracker_state_t;
+
 
 uuid_tracker_t* tracker_new()
 {
@@ -51,10 +59,16 @@ int tracker_add_uuid(uuid_tracker_t *tracker, const char* uuid)
     return zstr_send(tracker->additions, uuid);
 }
 
-int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid)
+int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** original_msg)
 {
-    zstr_send(tracker->deletions, uuid);
-    zmsg_t *msg = zmsg_recv(tracker->deletions);
+    zmsg_t *msg = zmsg_new();
+    assert(msg);
+    zmsg_addstr(msg, uuid);
+    zmsg_addmem(msg, original_msg, sizeof(*original_msg));
+    zmsg_send(&msg, tracker->deletions);
+    *original_msg = NULL;
+
+    msg = zmsg_recv(tracker->deletions);
     int deleted = 0;
     if (msg) {
         zframe_t *rcf = zmsg_first(msg);
@@ -85,6 +99,9 @@ tracker_state_t* tracker_state_new(zsock_t *pipe, size_t id)
     ts->id = id;
     ts->pipe = pipe;
     ts->uuids = zring_new();
+    ts->failures = zring_new();
+
+    tracker_state_set_time_params(ts);
 
     ts->additions = zsock_new(ZMQ_PULL);
     assert(ts->additions);
@@ -96,7 +113,10 @@ tracker_state_t* tracker_state_new(zsock_t *pipe, size_t id)
     rc = zsock_bind(ts->deletions, "inproc://tracker-deletions");
     assert(rc != -1);
 
-    tracker_state_set_time_params(ts);
+    ts->subscriber = zsock_new(ZMQ_PUSH);
+    assert(ts->subscriber);
+    rc = zsock_connect(ts->subscriber, "inproc://subscriber-pull");
+    assert(rc != -1);
 
     return ts;
 }
@@ -106,65 +126,89 @@ void tracker_state_destroy(tracker_state_t **tracker)
     tracker_state_t *ts = *tracker;
     zsock_destroy(&ts->additions);
     zsock_destroy(&ts->deletions);
+    zsock_destroy(&ts->subscriber);
     zring_destroy(&ts->uuids);
+    zring_destroy(&ts->failures);
     *tracker = NULL;
 }
 
 static
-int server_clean_old_uuids(tracker_state_t *state)
+void server_clean_old_uuids(tracker_state_t *state)
 {
     zring_t *uuids = state->uuids;
+    zring_t *failures = state->failures;
     uint64_t age_threshold = state->age_threshold_ms;
-    int expired = 0;
 
     uint64_t item;
     while ( (item = (uint64_t)zring_first(uuids)) ) {
         if (item < age_threshold) {
-            expired++;
+            state->expired++;
             zring_remove(uuids, (void*)item);
         } else {
             break;
         }
     }
 
-    state->expired += expired;
-    return expired;
+    failure_t *failure;
+    while ( (failure = zring_first(failures)) ) {
+        if (failure->created_time_ms < age_threshold) {
+            state->failed++;
+            zmsg_destroy(&failure->msg);
+            zring_remove(failures, failure);
+        } else {
+            break;
+        }
+    }
 }
 
 static
 int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
 {
     tracker_state_t *state = args;
-    state->added++;
     zmsg_t *msg = zmsg_recv(socket);
     assert(msg);
     char *uuid = zmsg_popstr(msg);
     assert(uuid);
-    //fprintf(stdout, "[D] tracker[%zu]: adding uuid: %s\n", state->id, uuid);
-    zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
+    failure_t *failure = zring_lookup(state->failures, uuid);
+    if (failure) {
+        fprintf(stdout, "[D] tracker[%zu]: forwarding late uuid: %s\n", state->id, uuid);
+        zring_delete(state->failures, uuid);
+        zmsg_send(&failure->msg, state->subscriber);
+    } else {
+        //fprintf(stdout, "[D] tracker[%zu]: adding uuid: %s\n", state->id, uuid);
+        zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
+        state->added++;
+    }
     free(uuid);
     zmsg_destroy(&msg);
     return 0;
 }
 
 static
-int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *args)
+int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
 {
     int rc = 0;
-    tracker_state_t *state = args;
+    tracker_state_t *state = arg;
     server_clean_old_uuids(state);
     zmsg_t *msg = zmsg_recv(socket);
     assert(msg);
     char *uuid = zmsg_popstr(msg);
     assert(uuid);
+    zmsg_t *original_msg = my_zmsg_popptr(msg);
+    assert(original_msg);
     if (zring_lookup(state->uuids, uuid)) {
         // fprintf(stdout, "[D] tracker[%zu]: found uuid: %s\n", state->id, uuid);
         rc = 1;
         zring_delete(state->uuids, uuid);
         state->deleted++;
+        zmsg_destroy(&original_msg);
     } else {
-        // fprintf(stdout, "[D] tracker[%zu]: did not find uuid: %s\n", state->id, uuid);
-        state->failed++;
+        fprintf(stdout, "[D] tracker[%zu]: missing uuid: %s\n", state->id, uuid);
+        failure_t *failure = zmalloc(sizeof(*failure));
+        failure->created_time_ms = state->current_time_ms;
+        failure->msg = original_msg;
+        zring_insert(state->failures, uuid, failure);
+        // state->failed++;
     }
     free(uuid);
     zmsg_addmem(msg, &rc, sizeof(rc));

@@ -191,16 +191,16 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
 }
 
 static
-void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
+void parse_msg_and_forward_interesting_requests(zmsg_t **msg, parser_state_t *parser_state)
 {
     // zmsg_dump(msg);
-    if (zmsg_size(msg) < 3) {
+    if (zmsg_size(*msg) < 3) {
         fprintf(stderr, "[E] parser received incomplete message\n");
-        my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+        my_zmsg_fprint(*msg, "[E] FRAME=", stderr);
     }
-    zframe_t *stream  = zmsg_first(msg);
-    zframe_t *topic   = zmsg_next(msg);
-    zframe_t *body    = zmsg_next(msg);
+    zframe_t *stream  = zmsg_first(*msg);
+    zframe_t *topic   = zmsg_next(*msg);
+    zframe_t *body    = zmsg_next(*msg);
     json_object *request = parse_json_body(body, parser_state->tokener);
     if (request != NULL) {
         char *topic_str = (char*) zframe_data(topic);
@@ -209,7 +209,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
 
         if (processor == NULL) {
             fprintf(stderr, "[E] could not create processor\n");
-            my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+            my_zmsg_fprint(*msg, "[E] FRAME=", stderr);
             return;
         }
         processor->request_count++;
@@ -221,17 +221,17 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         else if (n >= 6 && !strncmp("events", topic_str, 6))
             processor_add_event(processor, parser_state, request);
         else if (n >= 13 && !strncmp("frontend.page", topic_str, 13))
-            processor_add_frontend_data(processor, parser_state, request);
+            processor_add_frontend_data(processor, parser_state, request, msg);
         else if (n >= 13 && !strncmp("frontend.ajax", topic_str, 13))
-            processor_add_ajax_data(processor, parser_state, request);
+            processor_add_ajax_data(processor, parser_state, request, msg);
         else {
             fprintf(stderr, "[W] unknown topic key\n");
-            my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+            my_zmsg_fprint(*msg, "[E] FRAME=", stderr);
         }
         json_object_put(request);
     } else {
         fprintf(stderr, "[E] parse error\n");
-        my_zmsg_fprint(msg, "[E] MSGFRAME=", stderr);
+        my_zmsg_fprint(*msg, "[E] MSGFRAME=", stderr);
     }
 }
 
@@ -319,7 +319,7 @@ void parser(zsock_t *pipe, void *args)
             msg = zmsg_recv(state->pull_socket);
             if (msg != NULL) {
                 state->parsed_msgs_count++;
-                parse_msg_and_forward_interesting_requests(msg, state);
+                parse_msg_and_forward_interesting_requests(&msg, state);
                 zmsg_destroy(&msg);
             }
         } else {

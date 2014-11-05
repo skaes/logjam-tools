@@ -66,6 +66,11 @@ zsock_t* subscriber_pull_socket_new(zconfig_t* config)
     int rc = zsock_bind(socket, "%s", pull_spec);
     assert(rc != -1);
 
+    const char *inproc_binding = "inproc://subscriber-pull";
+    printf("[I] subscriber: binding PULL socket to %s\n", inproc_binding);
+    rc = zsock_bind(socket, "%s", inproc_binding);
+    assert(rc != -1);
+
     return socket;
 }
 
