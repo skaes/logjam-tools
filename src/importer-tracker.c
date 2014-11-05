@@ -171,11 +171,11 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
     assert(uuid);
     failure_t *failure = zring_lookup(state->failures, uuid);
     if (failure) {
-        fprintf(stdout, "[D] tracker[%zu]: forwarding late uuid: %s\n", state->id, uuid);
+        printf("[I] tracker[%zu]: forwarding late uuid: %s\n", state->id, uuid);
         zring_delete(state->failures, uuid);
         zmsg_send(&failure->msg, state->subscriber);
     } else {
-        //fprintf(stdout, "[D] tracker[%zu]: adding uuid: %s\n", state->id, uuid);
+        //printf("[D] tracker[%zu]: adding uuid: %s\n", state->id, uuid);
         zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
         state->added++;
     }
@@ -197,13 +197,13 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
     zmsg_t *original_msg = my_zmsg_popptr(msg);
     assert(original_msg);
     if (zring_lookup(state->uuids, uuid)) {
-        // fprintf(stdout, "[D] tracker[%zu]: found uuid: %s\n", state->id, uuid);
+        // printf("[D] tracker[%zu]: found uuid: %s\n", state->id, uuid);
         rc = 1;
         zring_delete(state->uuids, uuid);
         state->deleted++;
         zmsg_destroy(&original_msg);
     } else {
-        fprintf(stdout, "[D] tracker[%zu]: missing uuid: %s\n", state->id, uuid);
+        // printf("[D] tracker[%zu]: missing uuid: %s\n", state->id, uuid);
         failure_t *failure = zmalloc(sizeof(*failure));
         failure->created_time_ms = state->current_time_ms;
         failure->msg = original_msg;
@@ -231,8 +231,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *args)
             return -1;
         } else if (streq(cmd, "tick")) {
             server_clean_old_uuids(state);
-            fprintf(stdout, "[I] tracker[%zu]: uuid hash size %zu (added=%zu, deleted=%zu, expired=%zu, failed=%zu)\n",
-                    state->id, zring_size(state->uuids), state->added, state->deleted, state->expired, state->failed);
+            printf("[I] tracker[%zu]: uuid hash size %zu (added=%zu, deleted=%zu, expired=%zu, failed=%zu, delayed=%zu)\n",
+                   state->id, zring_size(state->uuids), state->added, state->deleted, state->expired, state->failed, zring_size(state->failures));
             state->added = 0;
             state->deleted = 0;
             state->expired = 0;
