@@ -152,6 +152,8 @@ void server_clean_old_uuids(tracker_state_t *state)
     failure_t *failure;
     while ( (failure = zring_first(failures)) ) {
         if (failure->created_time_ms < age_threshold) {
+            const char *uuid = zring_item(failures);
+            printf("[D] tracker[%zu]: failed uuid: %s\n", state->id, uuid);
             state->failed++;
             zmsg_destroy(&failure->msg);
             zring_remove(failures, failure);
