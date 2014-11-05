@@ -81,8 +81,8 @@ int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** orig
     return deleted;
 }
 
-#define EXPIRE_THRESHOLD_1MINUTE (1000 * 10 * 60)
-#define EXPIRE_THRESHOLD_5MINUTES (1000 * 10 * 60 * 5)
+#define EXPIRE_THRESHOLD_1MINUTE (1000 * 60 * 1)
+#define EXPIRE_THRESHOLD_5MINUTES (1000 * 60 * 5)
 #define EXPIRE_THRESHOLD_MS EXPIRE_THRESHOLD_1MINUTE
 
 static
