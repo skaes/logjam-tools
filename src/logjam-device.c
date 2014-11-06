@@ -34,7 +34,7 @@ static void meta_dump_network(msg_meta_t *meta)
     // copy meta
     msg_meta_t m = *meta;
     meta_network_2_native(&m);
-    printf("device: %hu, sequence: %llu, created: %llu\n", m.device_number, m.sequence_number, m.created_ms);
+    printf("[D] device: %hu, sequence: %llu, created: %llu\n", m.device_number, m.sequence_number, m.created_ms);
 }
 
 typedef struct {
@@ -102,7 +102,7 @@ static int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
     memcpy(zmq_msg_data(&meta), &msg_meta, sizeof(msg_meta));
     meta_native_2_network(zmq_msg_data(&meta));
 
-    meta_dump_network(zmq_msg_data(&meta));
+    if (0) meta_dump_network(zmq_msg_data(&meta));
 
     rc = zmq_msg_send(&meta, publisher, ZMQ_DONTWAIT);
     if (rc == -1) {
