@@ -127,7 +127,8 @@ void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
     zmsg_destroy(&msg_copy);
 }
 
-static void extract_meta(zmsg_t *msg, msg_meta_t *meta)
+static
+void extract_meta(zmsg_t *msg, msg_meta_t *meta)
 {
     zframe_t *app_env_f = zmsg_pop(msg);
     zframe_t *routing_key_f = zmsg_pop(msg);
@@ -196,6 +197,7 @@ int terminate(zloop_t *loop, zsock_t *socket, void *callback_data)
 }
 
 
+static
 subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config)
 {
     subscriber_state_t *state = zmalloc(sizeof(*state));
@@ -207,6 +209,7 @@ subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config)
     return state;
 }
 
+static
 void subscriber_state_destroy(subscriber_state_t **state_p)
 {
     subscriber_state_t *state = *state_p;
@@ -218,6 +221,7 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
 }
 
 
+static
 void setup_subscriptions(subscriber_state_t *state)
 {
     if (zhash_size(stream_subscriptions) == 0) {
