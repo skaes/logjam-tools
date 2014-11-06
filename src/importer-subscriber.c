@@ -164,7 +164,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
             if (gap > 0 && old_sequence_number) {
                 fprintf(stderr, "[E] subscriber: lost %llu messages from device %d\n", gap, meta.device_number);
             } else {
-                printf("[D] subscriber: msg(device %d, sequence %llu)\n", meta.device_number, meta.sequence_number);
+                // printf("[D] subscriber: msg(device %d, sequence %llu)\n", meta.device_number, meta.sequence_number);
             }
             state->sequence_numbers[meta.device_number] = meta.sequence_number;
         }
