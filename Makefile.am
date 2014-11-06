@@ -8,8 +8,8 @@ LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS) -lm
 bin_PROGRAMS = logjam-device logjam-importer
 noinst_PROGRAMS = tester test_subscriber test_publisher test_puller
 
-logjam_device_SOURCES = src/logjam-device.c src/rabbitmq-listener.h src/rabbitmq-listener.c
-logjam_importer_SOURCES = src/logjam-importer.c src/importer-processor.c src/importer-processor.h src/importer-common.h src/importer-common.c src/importer-parser.h src/importer-parser.c src/importer-livestream.h  src/importer-livestream.c src/importer-increments.c src/importer-increments.h src/importer-subscriber.c src/importer-subscriber.h src/importer-statsupdater.h src/importer-statsupdater.c src/importer-requestwriter.c src/importer-requestwriter.h src/importer-indexer.c src/importer-indexer.h src/importer-controller.c src/importer-controller.h src/importer-streaminfo.c src/importer-streaminfo.h src/importer-resources.c src/importer-resources.h src/importer-mongoutils.c src/importer-mongoutils.h src/importer-tracker.c src/importer-tracker.h
+logjam_device_SOURCES = src/logjam-device.c src/rabbitmq-listener.h src/rabbitmq-listener.c src/logjam-util.h src/logjam-util.c
+logjam_importer_SOURCES = src/logjam-importer.c src/importer-processor.c src/importer-processor.h src/importer-common.h src/importer-common.c src/importer-parser.h src/importer-parser.c src/importer-livestream.h  src/importer-livestream.c src/importer-increments.c src/importer-increments.h src/importer-subscriber.c src/importer-subscriber.h src/importer-statsupdater.h src/importer-statsupdater.c src/importer-requestwriter.c src/importer-requestwriter.h src/importer-indexer.c src/importer-indexer.h src/importer-controller.c src/importer-controller.h src/importer-streaminfo.c src/importer-streaminfo.h src/importer-resources.c src/importer-resources.h src/importer-mongoutils.c src/importer-mongoutils.h src/importer-tracker.c src/importer-tracker.h src/logjam-util.h src/logjam-util.c
 tester_SOURCES = src/tester.c
 test_publisher_SOURCES = src/test_publisher.c
 test_subscriber_SOURCES = src/test_subscriber.c

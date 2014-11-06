@@ -1,5 +1,6 @@
 #include "importer-subscriber.h"
 #include "importer-streaminfo.h"
+#include "logjam-util.h"
 
 /*
  * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, "[<>^v]" = connect, "o" = bind
@@ -16,12 +17,15 @@
  *                               parser(n_p)
 */
 
+#define MAX_DEVICES 256
+
 typedef struct {
     zsock_t *controller_socket;
     zsock_t *sub_socket;
     zsock_t *push_socket;
     zsock_t *pull_socket;
     zsock_t *pub_socket;
+    uint64_t sequence_numbers[MAX_DEVICES];
 } subscriber_state_t;
 
 
@@ -123,13 +127,45 @@ void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
     zmsg_destroy(&msg_copy);
 }
 
+static void extract_meta(zmsg_t *msg, msg_meta_t *meta)
+{
+    zframe_t *app_env_f = zmsg_pop(msg);
+    zframe_t *routing_key_f = zmsg_pop(msg);
+    zframe_t *body_f = zmsg_pop(msg);
+    zframe_t *meta_f = zmsg_pop(msg);
+    zmsg_prepend(msg, &app_env_f);
+    zmsg_prepend(msg, &routing_key_f);
+    zmsg_prepend(msg, &body_f);
+    memcpy(meta, zframe_data(meta_f), sizeof(*meta));
+    meta_network_2_native(meta);
+}
 
 static
 int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
-    if (msg != NULL) {
+    if (msg) {
+        int n = zmsg_size(msg);
+        if (n < 3 || n > 4) {
+            fprintf(stderr, "[E] subscriber: dropped invalid message\n");
+            my_zmsg_fprint(msg, "[E] FRAME= ", stderr);
+            return 0;
+        }
+        if (n == 4) {
+            msg_meta_t meta;
+            extract_meta(msg, &meta);
+            if (meta.device_number > MAX_DEVICES) {
+                fprintf(stderr, "[E] subscriber: received illegal device number\n");
+                return 0;
+            }
+            int64_t gap = meta.sequence_number - (state->sequence_numbers[meta.device_number]++);
+            if (gap > 0) {
+                fprintf(stderr, "[E] subscriber: lost %llu messages from device %d\n", gap, meta.device_number);
+            } else {
+                printf("[D] subscriber: msg(device %d, sequence %llu)\n", meta.device_number, meta.sequence_number);
+            }
+        }
         if (PUBLISH_DUPLICATES) {
             subscriber_publish_duplicate(msg, state->pub_socket);
         }
@@ -157,39 +193,58 @@ int terminate(zloop_t *loop, zsock_t *socket, void *callback_data)
     return 0;
 }
 
+
+subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config)
+{
+    subscriber_state_t *state = zmalloc(sizeof(*state));
+    state->controller_socket = pipe;
+    state->sub_socket  = subscriber_sub_socket_new(config);
+    state->pull_socket = subscriber_pull_socket_new(config);
+    state->push_socket = subscriber_push_socket_new(config);
+    state->pub_socket  = subscriber_pub_socket_new(config);
+    for (int i = 0; i < MAX_DEVICES; i++)
+        state->sequence_numbers[i] = 0xFFFFFFFFFFFFFF;
+    return state;
+}
+
+void subscriber_state_destroy(subscriber_state_t **state_p)
+{
+    subscriber_state_t *state = *state_p;
+    zsock_destroy(&state->sub_socket);
+    zsock_destroy(&state->pull_socket);
+    zsock_destroy(&state->push_socket);
+    zsock_destroy(&state->pub_socket);
+    *state_p = NULL;
+}
+
 void subscriber(zsock_t *pipe, void *args)
 {
     set_thread_name("subscriber[0]");
 
     int rc;
-    subscriber_state_t state;
     zconfig_t* config = args;
-    state.controller_socket = pipe;
-    state.sub_socket  = subscriber_sub_socket_new(config);
-    state.pull_socket = subscriber_pull_socket_new(config);
-    state.push_socket = subscriber_push_socket_new(config);
-    state.pub_socket  = subscriber_pub_socket_new(config);
+    subscriber_state_t *state = subscriber_state_new(pipe, config);
 
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);
 
     if (zhash_size(stream_subscriptions) == 0) {
         // subscribe to all messages
-        zsock_set_subscribe(state.sub_socket, "");
+        zsock_set_subscribe(state->sub_socket, "");
     } else {
         // setup subscriptions for only a subset
         zlist_t *subscriptions = zhash_keys(stream_subscriptions);
         char *stream = zlist_first(subscriptions);
         while (stream != NULL)  {
             printf("[I] subscriber: subscribing to stream: %s\n", stream);
-            zsock_set_subscribe(state.sub_socket, stream);
+            zsock_set_subscribe(state->sub_socket, stream);
             size_t n = strlen(stream);
             if (n > 15 && !strncmp(stream, "request-stream-", 15)) {
-                zsock_set_subscribe(state.sub_socket, stream+15);
+                zsock_set_subscribe(state->sub_socket, stream+15);
             } else {
                 char old_stream[n+15+1];
                 sprintf(old_stream, "request-stream-%s", stream);
-                zsock_set_subscribe(state.sub_socket, old_stream);
+                zsock_set_subscribe(state->sub_socket, old_stream);
             }
             stream = zlist_next(subscriptions);
         }
@@ -202,15 +257,15 @@ void subscriber(zsock_t *pipe, void *args)
     zloop_set_verbose(loop, 0);
 
     // setup handler for actor messages
-    rc = zloop_reader(loop, state.controller_socket, terminate, &state);
+    rc = zloop_reader(loop, state->controller_socket, terminate, state);
     assert(rc == 0);
 
      // setup handler for the sub socket
-    rc = zloop_reader(loop, state.sub_socket, read_request_and_forward, &state);
+    rc = zloop_reader(loop, state->sub_socket, read_request_and_forward, state);
     assert(rc == 0);
 
     // setup handler for the pull socket
-    rc = zloop_reader(loop, state.pull_socket, read_request_and_forward, &state);
+    rc = zloop_reader(loop, state->pull_socket, read_request_and_forward, state);
     assert(rc == 0);
 
     // run the loop
@@ -219,11 +274,7 @@ void subscriber(zsock_t *pipe, void *args)
     fprintf(stdout, "[I] subscriber: shutting down\n");
 
     // shutdown
-    zsock_destroy(&state.sub_socket);
-    zsock_destroy(&state.pull_socket);
-    zsock_destroy(&state.push_socket);
-    zsock_destroy(&state.pub_socket);
-
+    subscriber_state_destroy(&state);
     zloop_destroy(&loop);
     assert(loop == NULL);
 

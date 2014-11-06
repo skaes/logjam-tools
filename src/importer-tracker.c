@@ -160,6 +160,7 @@ void server_clean_old_uuids(tracker_state_t *state)
             state->failed++;
             zmsg_destroy(&failure->msg);
             zring_remove(failures, failure);
+            free(failure);
         } else {
             break;
         }

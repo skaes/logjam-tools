@@ -7,22 +7,9 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <getopt.h>
+#include "logjam-util.h"
 #include "rabbitmq-listener.h"
 
-void log_zmq_error(int rc)
-{
-    if (rc != 0) {
-        fprintf(stderr, "[E] errno: %d: %s\n", errno, zmq_strerror(errno));
-    }
-}
-
-void assert_zmq_rc(int rc)
-{
-    if (rc != 0) {
-        fprintf(stderr, "[E] rc: %d: %s\n", errno, zmq_strerror(errno));
-        assert(rc == 0);
-    }
-}
 
 /* global config */
 static zconfig_t* config = NULL;
@@ -40,6 +27,16 @@ static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
 
+static msg_meta_t msg_meta = {0,0,0};
+
+static void meta_dump_network(msg_meta_t *meta)
+{
+    // copy meta
+    msg_meta_t m = *meta;
+    meta_network_2_native(&m);
+    printf("device: %hu, sequence: %llu, created: %llu\n", m.device_number, m.sequence_number, m.created_ms);
+}
+
 typedef struct {
     // raw zmq sockets, to avoid zsock_resolve
     void *receiver;
@@ -47,14 +44,21 @@ typedef struct {
 } publisher_state_t;
 
 
-void config_file_init()
+inline void log_zmq_error(int rc)
+{
+    if (rc != 0) {
+        fprintf(stderr, "[E] errno: %d: %s\n", errno, zmq_strerror(errno));
+    }
+}
+
+static void config_file_init()
 {
     config_file = zfile_new(NULL, config_file_name);
     config_file_last_modified = zfile_modified(config_file);
     config_file_digest = strdup(zfile_digest(config_file));
 }
 
-bool config_file_has_changed()
+static bool config_file_has_changed()
 {
     bool changed = false;
     zfile_restat(config_file);
@@ -69,7 +73,7 @@ bool config_file_has_changed()
     return changed;
 }
 
-int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
+static int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
 {
     int rc=0;
     zmq_msg_t *app_env = &message_parts[0];
@@ -86,16 +90,30 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
         log_zmq_error(rc);
         return rc;
     }
-    rc = zmq_msg_send(body, publisher, ZMQ_DONTWAIT);
+    rc = zmq_msg_send(body, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
     if (rc == -1) {
         log_zmq_error(rc);
         return rc;
     }
+
+    msg_meta.sequence_number++;
+    zmq_msg_t meta;
+    zmq_msg_init_size(&meta, sizeof(msg_meta));
+    memcpy(zmq_msg_data(&meta), &msg_meta, sizeof(msg_meta));
+    meta_native_2_network(zmq_msg_data(&meta));
+
+    meta_dump_network(zmq_msg_data(&meta));
+
+    rc = zmq_msg_send(&meta, publisher, ZMQ_DONTWAIT);
+    if (rc == -1) {
+        log_zmq_error(rc);
+    }
+    zmq_msg_close(&meta);
     return rc;
 }
 
 
-int timer_event(zloop_t *loop, int timer_id, void *arg)
+static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
     static size_t last_received_count = 0;
     static size_t last_received_bytes = 0;
@@ -109,6 +127,8 @@ int timer_event(zloop_t *loop, int timer_id, void *arg)
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
 
+    msg_meta.created_ms = zclock_time();
+
     static size_t ticks = 0;
     bool terminate = (++ticks % CONFIG_FILE_CHECK_INTERVAL == 0) && config_file_has_changed();
     if (terminate) {
@@ -119,7 +139,7 @@ int timer_event(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
-int read_zmq_message_and_forward(zloop_t *loop, zsock_t *_receiver, void *callback_data)
+static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *_receiver, void *callback_data)
 {
     int i = 0;
     zmq_msg_t message_parts[4];
@@ -169,17 +189,20 @@ int read_zmq_message_and_forward(zloop_t *loop, zsock_t *_receiver, void *callba
     return 0;
 }
 
-void print_usage(char * const *argv)
+static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-r rabbit-host] [-p pull-port] [-c config-file] [-e environment]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-d device number] [-r rabbit-host] [-p pull-port] [-c config-file] [-e environment]\n", argv[0]);
 }
 
-void process_arguments(int argc, char * const *argv)
+static void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "r:p:c:e:")) != -1) {
+    while ((c = getopt(argc, argv, "d:r:p:c:e:")) != -1) {
         switch (c) {
+        case 'd':
+            msg_meta.device_number = atoi(optarg);
+            break;
         case 'r':
             rabbit_host = optarg;
             break;
@@ -293,6 +316,9 @@ int main(int argc, char * const *argv)
     rc = zloop_reader(loop, receiver, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, receiver);
+
+    // initialize clock
+    msg_meta.created_ms = zclock_time();
 
     printf("starting main event loop\n");
     rc = zloop_start(loop);
