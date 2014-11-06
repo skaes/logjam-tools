@@ -217,17 +217,9 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
     *state_p = NULL;
 }
 
-void subscriber(zsock_t *pipe, void *args)
+
+void setup_subscriptions(subscriber_state_t *state)
 {
-    set_thread_name("subscriber[0]");
-
-    int rc;
-    zconfig_t* config = args;
-    subscriber_state_t *state = subscriber_state_new(pipe, config);
-
-    // signal readyiness after sockets have been created
-    zsock_signal(pipe, 0);
-
     if (zhash_size(stream_subscriptions) == 0) {
         // subscribe to all messages
         zsock_set_subscribe(state->sub_socket, "");
@@ -250,6 +242,21 @@ void subscriber(zsock_t *pipe, void *args)
         }
         zlist_destroy(&subscriptions);
     }
+}
+
+void subscriber(zsock_t *pipe, void *args)
+{
+    set_thread_name("subscriber[0]");
+
+    int rc;
+    zconfig_t* config = args;
+    subscriber_state_t *state = subscriber_state_new(pipe, config);
+
+    // signal readyiness after sockets have been created
+    zsock_signal(pipe, 0);
+
+    // subscribe to either all messages, or a subset
+    setup_subscriptions(state);
 
     // set up event loop
     zloop_t *loop = zloop_new();
