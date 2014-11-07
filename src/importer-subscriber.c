@@ -10,11 +10,11 @@
  *                                  PIPE
  *                 PUB      SUB      |       PULL    PUSH
  *  logjam device  o----------<  subscriber  o----------<   direct connections
- *                                   o PUSH
- *                                   |
- *                                   |
- *                                   ^ PULL
- *                               parser(n_p)
+ *                              PUSH o        \
+ *                                  /          \
+ *                                 /            ^ PUSH
+ *                           PULL ^             tracker
+ *                         parser(n_p)
 */
 
 #define MAX_DEVICES 256

@@ -11,10 +11,10 @@
  *                               PIPE
  *              PUSH    PULL      |        PUSH       PULL
  *  subscriber  o----------<  parser(n_p)  >-------------o  request_writer(n_w)
- *                                v
- *                                |
- *                                o
- *                             indexer
+ *                       PUSH v   REQ v v PUSH
+ *                            |        \ \
+ *                       PULL o     REP o o PULL
+ *                      indexer         tracker
 */
 
 // Q: Why do we connect to the writers instead of connecting the writers to the parser?
