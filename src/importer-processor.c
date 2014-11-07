@@ -622,8 +622,8 @@ int check_frontend_request_validity(parser_state_t *pstate, json_object *request
                 // dump_json_object(stdout, request);
                 return 1;
             } else {
-                // fprintf(stderr, "[D] processor: tracker could not find request_id for %s request: %s\n", type, uuid);
-                // dump_json_object(stderr, request);
+                fprintf(stderr, "[D] processor: tracker could process %s request: request_id %s\n", type, uuid);
+                dump_json_object(stderr, request);
                 return 0;
             }
         } else {

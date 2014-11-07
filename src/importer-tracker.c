@@ -237,7 +237,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
         state->deleted++;
         zmsg_destroy(&original_msg);
     } else if ( (seen = (uint64_t)zring_lookup(state->successes, uuid)) ) {
-        fprintf(stderr, "[W] tracker[%zu]: duplicate frontend(%s) uuid: %s\n", state->id, request_type, uuid);
+        fprintf(stderr, "[W] tracker[%zu]: duplicate %s uuid: %s\n", state->id, request_type, uuid);
         state->duplicates++;
     } else {
         // printf("[D] tracker[%zu]: missing uuid: %s\n", state->id, uuid);
