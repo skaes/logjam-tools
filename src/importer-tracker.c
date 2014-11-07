@@ -194,6 +194,8 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
     if (failure) {
         printf("[I] tracker[%zu]: forwarding late uuid: %s\n", state->id, uuid);
         zring_delete(state->failures, uuid);
+        zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
+        state->added++;
         zmsg_send(&failure->msg, state->subscriber);
         free(failure);
     } else {
