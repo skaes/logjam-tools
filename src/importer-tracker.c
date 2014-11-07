@@ -18,12 +18,14 @@ typedef struct {
     size_t deleted;
     size_t expired;
     size_t failed;
+    size_t duplicates;
     zsock_t *additions;
     zsock_t *deletions;
     zsock_t *subscriber;
     zsock_t *pipe;
     zring_t *uuids;
     zring_t *failures;
+    zring_t *successes;
 } tracker_state_t;
 
 
@@ -101,6 +103,7 @@ tracker_state_t* tracker_state_new(zsock_t *pipe, size_t id)
     ts->pipe = pipe;
     ts->uuids = zring_new();
     ts->failures = zring_new();
+    ts->successes = zring_new();
 
     tracker_state_set_time_params(ts);
 
@@ -130,6 +133,7 @@ void tracker_state_destroy(tracker_state_t **tracker)
     zsock_destroy(&ts->subscriber);
     zring_destroy(&ts->uuids);
     zring_destroy(&ts->failures);
+    zring_destroy(&ts->successes);
     *tracker = NULL;
 }
 
@@ -138,9 +142,11 @@ void server_clean_old_uuids(tracker_state_t *state)
 {
     zring_t *uuids = state->uuids;
     zring_t *failures = state->failures;
+    zring_t *successes = state->successes;
     uint64_t age_threshold = state->age_threshold_ms;
-
     uint64_t item;
+    failure_t *failure;
+
     while ( (item = (uint64_t)zring_first(uuids)) ) {
         if (item < age_threshold) {
             // const char *uuid = zring_key(uuids);
@@ -152,7 +158,6 @@ void server_clean_old_uuids(tracker_state_t *state)
         }
     }
 
-    failure_t *failure;
     while ( (failure = zring_first(failures)) ) {
         if (failure->created_time_ms < age_threshold) {
             // const char *uuid = zring_key(failures);
@@ -161,6 +166,16 @@ void server_clean_old_uuids(tracker_state_t *state)
             zmsg_destroy(&failure->msg);
             zring_remove(failures, failure);
             free(failure);
+        } else {
+            break;
+        }
+    }
+
+    while ( (item = (uint64_t)zring_first(successes)) ) {
+        if (item < age_threshold) {
+            // const char *uuid = zring_key(successes);
+            // printf("[D] tracker[%zu]: success uuid: %s\n", state->id, uuid);
+            zring_remove(successes, (void*)item);
         } else {
             break;
         }
@@ -182,9 +197,14 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
         zmsg_send(&failure->msg, state->subscriber);
         free(failure);
     } else {
-        // printf("[D] tracker[%zu]: adding uuid: %s\n", state->id, uuid);
-        zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
-        state->added++;
+        uint64_t seen = (uint64_t)zring_lookup(state->successes, uuid);
+        if (seen) {
+            fprintf(stderr, "[E] tracker[%zu]: refused adding duplicate uuid: %s\n", state->id, uuid);
+        } else {
+            // printf("[D] tracker[%zu]: adding uuid: %s\n", state->id, uuid);
+            zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
+            state->added++;
+        }
     }
     free(uuid);
     zmsg_destroy(&msg);
@@ -203,19 +223,23 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
     assert(uuid);
     zmsg_t *original_msg = my_zmsg_popptr(msg);
     assert(original_msg);
-    if (zring_lookup(state->uuids, uuid)) {
+    uint64_t seen;
+    if ( (seen = (uint64_t)zring_lookup(state->uuids, uuid)) ) {
         // printf("[D] tracker[%zu]: found uuid: %s\n", state->id, uuid);
         rc = 1;
         zring_delete(state->uuids, uuid);
+        zring_insert(state->successes, uuid, (void*)seen);
         state->deleted++;
         zmsg_destroy(&original_msg);
+    } else if ( (seen = (uint64_t)zring_lookup(state->successes, uuid)) ) {
+        fprintf(stderr, "[W] tracker[%zu]: duplicate uuid: %s\n", state->id, uuid);
+        state->duplicates++;
     } else {
         // printf("[D] tracker[%zu]: missing uuid: %s\n", state->id, uuid);
         failure_t *failure = zmalloc(sizeof(*failure));
         failure->created_time_ms = state->current_time_ms;
         failure->msg = original_msg;
         zring_insert(state->failures, uuid, failure);
-        // state->failed++;
     }
     free(uuid);
     zmsg_addmem(msg, &rc, sizeof(rc));
@@ -238,12 +262,15 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *args)
             return -1;
         } else if (streq(cmd, "tick")) {
             server_clean_old_uuids(state);
-            printf("[I] tracker[%zu]: uuid hash size %zu (added=%zu, deleted=%zu, expired=%zu, failed=%zu, delayed=%zu)\n",
-                   state->id, zring_size(state->uuids), state->added, state->deleted, state->expired, state->failed, zring_size(state->failures));
+            printf("[I] tracker[%zu]: uuid hash size %zu"
+                   "(added=%zu, deleted=%zu, expired=%zu, failed=%zu, delayed=%zu, duplicates=%zu)\n",
+                   state->id, zring_size(state->uuids), state->added, state->deleted, state->expired,
+                   state->failed, zring_size(state->failures), state->duplicates);
             state->added = 0;
             state->deleted = 0;
             state->expired = 0;
             state->failed = 0;
+            state->duplicates = 0;
         } else {
             fprintf(stderr, "[E] tracker[%zu]: received unknown actor command: %s\n", state->id, cmd);
         }
