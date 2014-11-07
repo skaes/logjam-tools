@@ -61,12 +61,13 @@ int tracker_add_uuid(uuid_tracker_t *tracker, const char* uuid)
     return zstr_send(tracker->additions, uuid);
 }
 
-int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** original_msg)
+int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** original_msg, const char* request_type)
 {
     zmsg_t *msg = zmsg_new();
     assert(msg);
     zmsg_addstr(msg, uuid);
     zmsg_addmem(msg, original_msg, sizeof(*original_msg));
+    zmsg_addstr(msg, request_type);
     zmsg_send(&msg, tracker->deletions);
     *original_msg = NULL;
 
@@ -225,6 +226,8 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
     assert(uuid);
     zmsg_t *original_msg = my_zmsg_popptr(msg);
     assert(original_msg);
+    char *request_type = zmsg_popstr(msg);
+    assert(request_type);
     uint64_t seen;
     if ( (seen = (uint64_t)zring_lookup(state->uuids, uuid)) ) {
         // printf("[D] tracker[%zu]: found uuid: %s\n", state->id, uuid);
@@ -234,7 +237,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
         state->deleted++;
         zmsg_destroy(&original_msg);
     } else if ( (seen = (uint64_t)zring_lookup(state->successes, uuid)) ) {
-        fprintf(stderr, "[W] tracker[%zu]: duplicate frontend uuid: %s\n", state->id, uuid);
+        fprintf(stderr, "[W] tracker[%zu]: duplicate frontend(%s) uuid: %s\n", state->id, request_type, uuid);
         state->duplicates++;
     } else {
         // printf("[D] tracker[%zu]: missing uuid: %s\n", state->id, uuid);

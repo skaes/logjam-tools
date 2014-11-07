@@ -617,7 +617,7 @@ int check_frontend_request_validity(parser_state_t *pstate, json_object *request
     if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
         const char *uuid = json_object_get_string(request_id_obj);
         if (uuid) {
-            if (tracker_delete_uuid(pstate->tracker, uuid, msg)) {
+            if (tracker_delete_uuid(pstate->tracker, uuid, msg, type)) {
                 // fprintf(stderr, "[D] processor: tracker found %s request with request_id: %s\n", uuid, type);
                 // dump_json_object(stdout, request);
                 return 1;
