@@ -1,34 +1,54 @@
 #include "importer-tracker.h"
 
+/*
+ * connections:  n_p = NUM_PARSERS, "[<>^v]" = connect, "o" = bind
+ *
+ *                               controller
+ *                                   |
+ *                                  PIPE
+ *                                   |
+ *                                tracker >-----o subscriber
+ *                                o     o
+ *                            REP |     | PULL
+ *                   deletes *    |     |     * inserts
+ *                            REQ ^     ^ PUSH
+ *                              parser(n_p)
+*/
+
+
+// tracker client state
 struct _uuid_tracker_t {
-    zsock_t *additions;
-    zsock_t *deletions;
+    zsock_t *additions;    // inserts, client socket
+    zsock_t *deletions;    // deletes, client socket
 };
 
+// tracker server state
+typedef struct {
+    size_t id;                    // 0
+    uint64_t current_time_ms;     // updated by time event to save cpu cycles
+    uint64_t age_threshold_ms;    // drop entries older than this timestamp
+    size_t added;                 // number of inserts since last tick
+    size_t deleted;               // number of deletes since last tick
+    size_t expired;               // number of expired entries since last tick
+    size_t failed;                // number of failed deletions since last tick
+    size_t duplicates;            // number of duplicate inserts since last tick
+    zsock_t *additions;           // inserts, server socket
+    zsock_t *deletions;           // deletions, server socket
+    zsock_t *subscriber;          // send retriable frontend request inserts back to subscriber
+    zsock_t *pipe;                // controller pipe
+    zring_t *uuids;               // inserted backend request uuids    [uuid --> insertion time]
+    zring_t *failures;            // failed frontend request deletions [uuid --> {insertion time, original zmq message}]
+    zring_t *successes;           // successfully processed deletions  [uuid --> insertion time]
+} tracker_state_t;
+
+// see ^^^failures^^^
 typedef struct {
     uint64_t created_time_ms;
     zmsg_t *msg;
 } failure_t;
 
-typedef struct {
-    size_t id;                    // 0
-    uint64_t current_time_ms;     // updated by time event to save cpu cycles
-    uint64_t age_threshold_ms;    // drop entries older than this timestamp
-    size_t added;
-    size_t deleted;
-    size_t expired;
-    size_t failed;
-    size_t duplicates;
-    zsock_t *additions;
-    zsock_t *deletions;
-    zsock_t *subscriber;
-    zsock_t *pipe;
-    zring_t *uuids;
-    zring_t *failures;
-    zring_t *successes;
-} tracker_state_t;
 
-
+// construct client instance
 uuid_tracker_t* tracker_new()
 {
     int rc;
@@ -47,6 +67,7 @@ uuid_tracker_t* tracker_new()
     return tracker;
 }
 
+// destroy client instance
 void tracker_destroy(uuid_tracker_t **tracker)
 {
     uuid_tracker_t *t = *tracker;
@@ -56,11 +77,14 @@ void tracker_destroy(uuid_tracker_t **tracker)
     *tracker = NULL;
 }
 
+// client interface to send uuid addition requests to server (asynchronously)
 int tracker_add_uuid(uuid_tracker_t *tracker, const char* uuid)
 {
     return zstr_send(tracker->additions, uuid);
 }
 
+// client interface to send uuid deletion requests to server (synchronously)
+// returns whether request has been successfull
 int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** original_msg, const char* request_type)
 {
     zmsg_t *msg = zmsg_new();
@@ -88,6 +112,7 @@ int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** orig
 #define EXPIRE_THRESHOLD_5MINUTES (1000 * 60 * 5)
 #define EXPIRE_THRESHOLD_MS EXPIRE_THRESHOLD_5MINUTES
 
+// set current server time and expiry threshold (called from timer callback function)
 static
 void tracker_state_set_time_params(tracker_state_t* state)
 {
@@ -95,6 +120,7 @@ void tracker_state_set_time_params(tracker_state_t* state)
     state->age_threshold_ms = state->current_time_ms - EXPIRE_THRESHOLD_MS;
 }
 
+// initialize server state
 static
 tracker_state_t* tracker_state_new(zsock_t *pipe, size_t id)
 {
@@ -126,6 +152,7 @@ tracker_state_t* tracker_state_new(zsock_t *pipe, size_t id)
     return ts;
 }
 
+// destroy server state
 static
 void tracker_state_destroy(tracker_state_t **tracker)
 {
@@ -139,6 +166,7 @@ void tracker_state_destroy(tracker_state_t **tracker)
     *tracker = NULL;
 }
 
+// remove expired uuids from server state
 static
 void clean_expired_uuids(tracker_state_t *state, uint64_t age_threshold)
 {
@@ -156,6 +184,7 @@ void clean_expired_uuids(tracker_state_t *state, uint64_t age_threshold)
     }
 }
 
+// remove expired failures from server state
 static
 void clean_expired_failures(tracker_state_t *state, uint64_t age_threshold)
 {
@@ -175,6 +204,7 @@ void clean_expired_failures(tracker_state_t *state, uint64_t age_threshold)
     }
 }
 
+// remove expired successes from server state
 static
 void clean_expired_successes(tracker_state_t *state, uint64_t age_threshold)
 {
@@ -191,6 +221,7 @@ void clean_expired_successes(tracker_state_t *state, uint64_t age_threshold)
     }
 }
 
+// remove expired uuids, failures and successes from server state
 static
 void server_clean_expired_items(tracker_state_t *state)
 {
@@ -200,6 +231,7 @@ void server_clean_expired_items(tracker_state_t *state)
     clean_expired_successes(state, age_threshold);
 }
 
+// add a uuid
 static
 int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
 {
@@ -231,6 +263,8 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
     return 0;
 }
 
+
+// delete a uuid
 static
 int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
 {
@@ -269,6 +303,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
     return 0;
 }
 
+// reset servers state and log state
 static
 void tracker_tick(tracker_state_t *state)
 {
@@ -284,6 +319,7 @@ void tracker_tick(tracker_state_t *state)
     state->duplicates = 0;
 }
 
+// perform actor command: "$TERM" or "tick". othwerwise log error.
 static
 int actor_command(zloop_t *loop, zsock_t *socket, void *args)
 {
@@ -307,6 +343,7 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *args)
     return rc;
 }
 
+// update seriver time and expiry
 static
 int timer_event(zloop_t *loop, int timer_id, void *args)
 {
