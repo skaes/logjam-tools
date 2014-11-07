@@ -6,12 +6,13 @@
  *                               controller
  *                                   |
  *                                  PIPE
- *                                   |
- *                                tracker >-----o subscriber
+ *                                   |    PUSH   PULL
+ *                                tracker >---------o subscriber
  *                                o     o
  *                            REP |     | PULL
  *                   deletes *    |     |     * inserts
- *                            REQ ^     ^ PUSH
+ *                            REQ |     | PUSH
+ *                                ^     ^
  *                              parser(n_p)
 */
 
