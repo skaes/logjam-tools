@@ -11,9 +11,9 @@ typedef struct {
 } failure_t;
 
 typedef struct {
-    size_t id;
-    uint64_t current_time_ms;
-    uint64_t age_threshold_ms;
+    size_t id;                    // 0
+    uint64_t current_time_ms;     // updated by time event to save cpu cycles
+    uint64_t age_threshold_ms;    // drop entries older than this timestamp
     size_t added;
     size_t deleted;
     size_t expired;
@@ -192,7 +192,7 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
     assert(uuid);
     failure_t *failure = zring_lookup(state->failures, uuid);
     if (failure) {
-        printf("[I] tracker[%zu]: forwarding late uuid: %s\n", state->id, uuid);
+        printf("[I] tracker[%zu]: forwarding late backend uuid: %s\n", state->id, uuid);
         zring_delete(state->failures, uuid);
         zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
         state->added++;
@@ -201,7 +201,7 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
     } else {
         uint64_t seen = (uint64_t)zring_lookup(state->successes, uuid);
         if (seen) {
-            fprintf(stderr, "[E] tracker[%zu]: refused adding duplicate uuid: %s\n", state->id, uuid);
+            fprintf(stderr, "[E] tracker[%zu]: refused adding duplicate backend uuid: %s\n", state->id, uuid);
         } else {
             // printf("[D] tracker[%zu]: adding uuid: %s\n", state->id, uuid);
             zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
@@ -234,7 +234,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
         state->deleted++;
         zmsg_destroy(&original_msg);
     } else if ( (seen = (uint64_t)zring_lookup(state->successes, uuid)) ) {
-        fprintf(stderr, "[W] tracker[%zu]: duplicate uuid: %s\n", state->id, uuid);
+        fprintf(stderr, "[W] tracker[%zu]: duplicate frontend uuid: %s\n", state->id, uuid);
         state->duplicates++;
     } else {
         // printf("[D] tracker[%zu]: missing uuid: %s\n", state->id, uuid);
