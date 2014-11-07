@@ -126,6 +126,7 @@ tracker_state_t* tracker_state_new(zsock_t *pipe, size_t id)
     return ts;
 }
 
+static
 void tracker_state_destroy(tracker_state_t **tracker)
 {
     tracker_state_t *ts = *tracker;
@@ -139,15 +140,10 @@ void tracker_state_destroy(tracker_state_t **tracker)
 }
 
 static
-void server_clean_old_uuids(tracker_state_t *state)
+void clean_expired_uuids(tracker_state_t *state, uint64_t age_threshold)
 {
     zring_t *uuids = state->uuids;
-    zring_t *failures = state->failures;
-    zring_t *successes = state->successes;
-    uint64_t age_threshold = state->age_threshold_ms;
     uint64_t item;
-    failure_t *failure;
-
     while ( (item = (uint64_t)zring_first(uuids)) ) {
         if (item < age_threshold) {
             // const char *uuid = zring_key(uuids);
@@ -158,7 +154,13 @@ void server_clean_old_uuids(tracker_state_t *state)
             break;
         }
     }
+}
 
+static
+void clean_expired_failures(tracker_state_t *state, uint64_t age_threshold)
+{
+    zring_t *failures = state->failures;
+    failure_t *failure;
     while ( (failure = zring_first(failures)) ) {
         if (failure->created_time_ms < age_threshold) {
             // const char *uuid = zring_key(failures);
@@ -171,7 +173,13 @@ void server_clean_old_uuids(tracker_state_t *state)
             break;
         }
     }
+}
 
+static
+void clean_expired_successes(tracker_state_t *state, uint64_t age_threshold)
+{
+    zring_t *successes = state->successes;
+    uint64_t item;
     while ( (item = (uint64_t)zring_first(successes)) ) {
         if (item < age_threshold) {
             // const char *uuid = zring_key(successes);
@@ -181,6 +189,15 @@ void server_clean_old_uuids(tracker_state_t *state)
             break;
         }
     }
+}
+
+static
+void server_clean_expired_items(tracker_state_t *state)
+{
+    uint64_t age_threshold = state->age_threshold_ms;
+    clean_expired_uuids(state, age_threshold);
+    clean_expired_failures(state, age_threshold);
+    clean_expired_successes(state, age_threshold);
 }
 
 static
@@ -219,7 +236,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
 {
     int rc = 0;
     tracker_state_t *state = arg;
-    server_clean_old_uuids(state);
+    server_clean_expired_items(state);
     zmsg_t *msg = zmsg_recv(socket);
     assert(msg);
     char *uuid = zmsg_popstr(msg);
@@ -253,8 +270,24 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
 }
 
 static
+void tracker_tick(tracker_state_t *state)
+{
+    server_clean_expired_items(state);
+    printf("[I] tracker[%zu]: uuid hash size %zu"
+           "(added=%zu, deleted=%zu, expired=%zu, failed=%zu, delayed=%zu, duplicates=%zu)\n",
+           state->id, zring_size(state->uuids), state->added, state->deleted, state->expired,
+           state->failed, zring_size(state->failures), state->duplicates);
+    state->added = 0;
+    state->deleted = 0;
+    state->expired = 0;
+    state->failed = 0;
+    state->duplicates = 0;
+}
+
+static
 int actor_command(zloop_t *loop, zsock_t *socket, void *args)
 {
+    int rc = 0;
     tracker_state_t *state = args;
     zmsg_t *msg = zmsg_recv(socket);
     if (msg) {
@@ -262,35 +295,27 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *args)
         assert(cmd);
         zmsg_destroy(&msg);
         if (streq(cmd, "$TERM")) {
-            // fprintf(stderr, "[D] tracker[%d]: received $TERM command\n", state->id);
-            free(cmd);
-            return -1;
+            // printf("[D] tracker[%d]: received $TERM command\n", state->id);
+            rc = -1;
         } else if (streq(cmd, "tick")) {
-            server_clean_old_uuids(state);
-            printf("[I] tracker[%zu]: uuid hash size %zu"
-                   "(added=%zu, deleted=%zu, expired=%zu, failed=%zu, delayed=%zu, duplicates=%zu)\n",
-                   state->id, zring_size(state->uuids), state->added, state->deleted, state->expired,
-                   state->failed, zring_size(state->failures), state->duplicates);
-            state->added = 0;
-            state->deleted = 0;
-            state->expired = 0;
-            state->failed = 0;
-            state->duplicates = 0;
+            tracker_tick(state);
         } else {
             fprintf(stderr, "[E] tracker[%zu]: received unknown actor command: %s\n", state->id, cmd);
         }
         free(cmd);
     }
-    return 0;
+    return rc;
 }
 
-int server_timer_event(zloop_t *loop, int timer_id, void *args)
+static
+int timer_event(zloop_t *loop, int timer_id, void *args)
 {
     tracker_state_t* state = (tracker_state_t*)args;
     tracker_state_set_time_params(state);
     return 0;
 }
 
+// zactor loop
 void tracker(zsock_t *pipe, void *args)
 {
     set_thread_name("tracker[0]");
@@ -307,7 +332,7 @@ void tracker(zsock_t *pipe, void *args)
     zloop_set_verbose(loop, 0);
 
     // setup timer to track current time using 10ms resolution
-    int timer_id = zloop_timer(loop, 10, 0, server_timer_event, state);
+    int timer_id = zloop_timer(loop, 10, 0, timer_event, state);
     assert(timer_id != -1);
 
     // setup handler for actor messages
