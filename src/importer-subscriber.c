@@ -139,6 +139,7 @@ void extract_meta(zmsg_t *msg, msg_meta_t *meta)
     zmsg_append(msg, &body_f);
     memcpy(meta, zframe_data(meta_f), sizeof(*meta));
     meta_network_2_native(meta);
+    zframe_destroy(&meta_f);
 }
 
 static
