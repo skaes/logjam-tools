@@ -193,7 +193,7 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
     assert(uuid);
     failure_t *failure = zring_lookup(state->failures, uuid);
     if (failure) {
-        printf("[I] tracker[%zu]: forwarding late backend uuid: %s\n", state->id, uuid);
+        // printf("[D] tracker[%zu]: forwarding late backend uuid: %s\n", state->id, uuid);
         zring_delete(state->failures, uuid);
         zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
         state->added++;
@@ -237,7 +237,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
         state->deleted++;
         zmsg_destroy(&original_msg);
     } else if ( (seen = (uint64_t)zring_lookup(state->successes, uuid)) ) {
-        fprintf(stderr, "[W] tracker[%zu]: duplicate %s uuid: %s\n", state->id, request_type, uuid);
+        // fprintf(stderr, "[W] tracker[%zu]: duplicate %s uuid: %s\n", state->id, request_type, uuid);
         state->duplicates++;
     } else {
         // printf("[D] tracker[%zu]: missing uuid: %s\n", state->id, uuid);
