@@ -199,7 +199,7 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
         zmsg_send(&failure->msg, state->subscriber);
         free(failure);
     } else {
-        uint64_t seen = (uint64_t)zring_lookup(state->successes, uuid);
+        uint64_t seen = (uint64_t)zring_lookup(state->successes, uuid) || (uint64_t)zring_lookup(state->uuids, uuid);
         if (seen) {
             fprintf(stderr, "[E] tracker[%zu]: refused adding duplicate backend uuid: %s\n", state->id, uuid);
         } else {
