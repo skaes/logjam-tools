@@ -128,28 +128,18 @@ void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
     zmsg_destroy(&msg_copy);
 }
 
-static
-void extract_meta(zmsg_t *msg, msg_meta_t *meta)
-{
-    zframe_t *app_env_f = zmsg_pop(msg);
-    zframe_t *routing_key_f = zmsg_pop(msg);
-    zframe_t *body_f = zmsg_pop(msg);
-    zframe_t *meta_f = zmsg_pop(msg);
-    zmsg_append(msg, &app_env_f);
-    zmsg_append(msg, &routing_key_f);
-    zmsg_append(msg, &body_f);
-    memcpy(meta, zframe_data(meta_f), sizeof(*meta));
-    meta_network_2_native(meta);
-    zframe_destroy(&meta_f);
-}
 
 static
 void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
 {
     msg_meta_t meta;
-    extract_meta(msg, &meta);
+    int rc = msg_extract_meta_info(msg, &meta);
+    if (!rc) {
+        // fprintf(stderr, "[W] subscriber: received incomplete meta info\n");
+        return;
+    }
     if (meta.device_number > MAX_DEVICES) {
-        fprintf(stderr, "[E] subscriber: received illegal device number\n");
+        fprintf(stderr, "[E] subscriber: received illegal device number: %d\n", meta.device_number);
         return;
     }
     int64_t old_sequence_number = state->sequence_numbers[meta.device_number];
