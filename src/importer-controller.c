@@ -153,7 +153,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     state->ticks++;
 
-    // tell tracker to tick
+    // tell tracker and subscriber to tick
+    zstr_send(state->subscriber, "tick");
     zstr_send(state->tracker, "tick");
 
     // printf("[D] controller: collecting data from parsers: tick[%zu]\n", state->ticks);

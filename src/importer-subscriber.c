@@ -128,6 +128,7 @@ void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
     zmsg_destroy(&msg_copy);
 }
 
+static int warn_about_meta_info = 1;
 
 static
 void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
@@ -135,11 +136,15 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
     msg_meta_t meta;
     int rc = msg_extract_meta_info(msg, &meta);
     if (!rc) {
-        // fprintf(stderr, "[W] subscriber: received incomplete meta info\n");
+        if (warn_about_meta_info) {
+            fprintf(stderr, "[W] subscriber: received invalid meta info\n");
+            warn_about_meta_info = 0;
+        }
         return;
     }
     if (meta.device_number > MAX_DEVICES) {
         fprintf(stderr, "[E] subscriber: received illegal device number: %d\n", meta.device_number);
+        warn_about_meta_info = 0;
         return;
     }
     int64_t old_sequence_number = state->sequence_numbers[meta.device_number];
@@ -189,6 +194,9 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
         if (streq(cmd, "$TERM")) {
             // fprintf(stderr, "[D] subscriber: received $TERM command\n");
             rc = -1;
+        }
+        else if (streq(cmd, "tick")) {
+            warn_about_meta_info = 1;
         } else {
             fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
         }
