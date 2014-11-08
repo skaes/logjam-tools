@@ -141,6 +141,10 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
         }
         return;
     }
+    if (meta.device_number == 0) {
+        // ignore device number 0
+        return;
+    }
     if (meta.device_number > MAX_DEVICES && !state->meta_info_failures++) {
         fprintf(stderr, "[E] subscriber: received illegal device number: %d\n", meta.device_number);
         return;
