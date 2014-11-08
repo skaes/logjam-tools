@@ -144,6 +144,69 @@ void merge_processors(zhash_t *target, zhash_t *source)
 }
 
 static
+void publish_totals(stream_info_t *stream_info, zhash_t *totals, zsock_t *live_stream_socket)
+{
+    size_t n = stream_info->app_len + 1 + stream_info->env_len;
+    zhash_t *known_modules = stream_info->known_modules;
+    void *value = zhash_first(known_modules);
+    while (value) {
+        const char *module = zhash_cursor(known_modules);
+        const char *namespace = module;
+        // skip :: at the beginning of module
+        while (*module == ':') module++;
+        size_t m = strlen(module);
+        char key[n + m + 3];
+        sprintf(key, "%s-%s,%s", stream_info->app, stream_info->env, module);
+        // TODO: change this crap in the live stream publisher
+        // tolower is unsafe and not really necessary
+        for (char *p = key; *p; ++p) *p = tolower(*p);
+
+        // printf("[D] publishing totals for module: %s, key: %s\n", module, key);
+        json_object *json = json_object_new_object();
+        increments_t *incs = totals ? zhash_lookup(totals, namespace) : NULL;
+        if (incs) {
+            json_object_object_add(json, "count", json_object_new_int(incs->backend_request_count));
+            json_object_object_add(json, "page_count", json_object_new_int(incs->page_request_count));
+            json_object_object_add(json, "ajax_count", json_object_new_int(incs->ajax_request_count));
+            increments_add_metrics_to_json(incs, json);
+
+        } else {
+            json_object_object_add(json, "count", json_object_new_int(0));
+            json_object_object_add(json, "page_count", json_object_new_int(0));
+            json_object_object_add(json, "ajax_count", json_object_new_int(0));
+        }
+        const char* json_str = json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN);
+        live_stream_publish(live_stream_socket, key, json_str);
+        json_object_put(json);
+
+        value = zhash_next(known_modules);
+    }
+}
+
+static
+void publish_totals_for_every_known_stream(controller_state_t *state, zhash_t *processors)
+{
+    processor_state_t* processor = zhash_first(processors);
+    zhash_t *published_streams= zhash_new();
+    while (processor) {
+        stream_info_t *stream_info = processor->stream_info;
+        update_known_modules(stream_info, processor->modules);
+        zhash_insert(published_streams, stream_info->key, (void*)1);
+        publish_totals(stream_info, processor->totals, state->live_stream_socket);
+        processor = zhash_next(processors);
+    }
+
+    stream_info_t *stream_info = zhash_first(configured_streams);
+    while (stream_info) {
+        if (!zhash_lookup(published_streams, stream_info->key)) {
+            publish_totals(stream_info, NULL, state->live_stream_socket);
+        }
+        stream_info = zhash_next(configured_streams);
+    }
+    zhash_destroy(&published_streams);
+}
+
+static
 int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 {
     int64_t start_time_ms = zclock_mono();
@@ -176,12 +239,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     // publish on live stream (need to do this while we still own the processors)
     // printf("[D] controller: publishing live streams\n");
-    processor_state_t* processor = zhash_first(processors[0]);
-    while (processor) {
-        const char* db_name = zhash_cursor(processors[0]);
-        processor_publish_totals(processor, db_name, state->live_stream_socket);
-        processor = zhash_next(processors[0]);
-    }
+    publish_totals_for_every_known_stream(state, processors[0]);
 
     // tell indexer to tick
     zstr_send(state->indexer, "tick");

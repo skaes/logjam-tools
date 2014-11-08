@@ -92,6 +92,8 @@ static
 stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
 {
     stream_info_t *info = zmalloc(sizeof(stream_info_t));
+    assert(info);
+
     info->key = zconfig_name(stream_config);
     if (!strncmp(info->key, "request-stream-", 15)) {
         info->key += 15;
@@ -122,6 +124,9 @@ stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
     }
     add_threshold_settings(config, info);
     add_ignored_request_settings(config, info);
+
+    info->known_modules = zhash_new();
+    assert(info->known_modules);
 
     return info;
 }
@@ -176,4 +181,38 @@ void setup_stream_config(zconfig_t *config, const char *pattern)
         }
         stream = zconfig_next(stream);
     } while (stream);
+}
+
+#define ONE_DAY_MS (1000 * 60 * 60 * 24)
+
+void update_known_modules(stream_info_t *stream_info, zhash_t* module_hash)
+{
+    uint64_t now = zclock_time();
+    uint64_t age_threshold = now - ONE_DAY_MS;
+    zhash_t *known_modules = stream_info->known_modules;
+
+    // update timestamps for modules just seen
+    void *elem = zhash_first(module_hash);
+    while (elem) {
+        const char *module = zhash_cursor(module_hash);
+        zhash_update(known_modules, module, (void*)now);
+        elem = zhash_next(module_hash);
+    }
+
+    // delete modules we haven't heard from for over a day
+    zlist_t* modules = zhash_keys(known_modules);
+    const char* module = zlist_first(modules);
+    while (module) {
+        uint64_t last_seen = (uint64_t)zhash_lookup(known_modules, module);
+        if (last_seen < age_threshold) {
+            zhash_delete(known_modules, module);
+        }
+        module = zlist_next(modules);
+    }
+
+    // update all_pages, unless no module is left
+    if (zhash_size(known_modules) > 0)
+        zhash_update(known_modules, "all_pages", (void*)now);
+
+    zlist_destroy(&modules);
 }

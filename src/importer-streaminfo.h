@@ -24,6 +24,7 @@ typedef struct {
     int module_threshold_count;
     module_threshold_t *module_thresholds;
     const char *ignored_request_prefix;
+    zhash_t *known_modules;
 } stream_info_t;
 
 extern int global_total_time_import_threshold;
@@ -34,7 +35,8 @@ extern zhash_t *configured_streams;
 // all streams we want to subscribe to
 extern zhash_t *stream_subscriptions;
 
-void setup_stream_config(zconfig_t* config, const char* pattern);
+extern void setup_stream_config(zconfig_t* config, const char* pattern);
+extern void update_known_modules(stream_info_t *stream_info, zhash_t* module_hash);
 
 #ifdef __cplusplus
 }
