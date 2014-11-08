@@ -145,7 +145,8 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
     int64_t old_sequence_number = state->sequence_numbers[meta.device_number];
     int64_t gap = meta.sequence_number - old_sequence_number - 1;
     if (gap > 0 && old_sequence_number) {
-        fprintf(stderr, "[E] subscriber: lost %llu messages from device %d\n", gap, meta.device_number);
+        fprintf(stderr, "[E] subscriber: lost %" PRIi64 " messages from device %" PRIu32 "\n",
+                gap, meta.device_number);
     } else {
         // printf("[D] subscriber: msg(device %d, sequence %llu)\n", meta.device_number, meta.sequence_number);
     }

@@ -25,7 +25,7 @@ uint64_t ntohll(uint64_t native_number)
 
 void dump_meta_info(msg_meta_t *meta)
 {
-    printf("[D] meta(tag%hx version%hu device %u sequence: %llu created: %llu)\n",
+    printf("[D] meta(tag%hx version%hu device %u sequence: %" PRIu64 " created: %" PRIu64 ")\n",
            meta->tag, meta->version, meta->device_number, meta->sequence_number, meta->created_ms);
 }
 
