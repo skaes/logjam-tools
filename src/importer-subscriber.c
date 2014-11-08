@@ -17,7 +17,7 @@
  *                         parser(n_p)
 */
 
-#define MAX_DEVICES 256
+#define MAX_DEVICES 4096
 
 // actor state
 typedef struct {
