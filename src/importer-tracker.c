@@ -299,6 +299,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
         zring_insert(state->failures, uuid, failure);
     }
     free(uuid);
+    free(request_type);
     zmsg_addmem(msg, &rc, sizeof(rc));
     zmsg_send(&msg, socket);
     return 0;

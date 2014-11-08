@@ -208,6 +208,7 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
         }
         free(cmd);
+        zmsg_destroy(&msg);
     }
     return rc;
 }
