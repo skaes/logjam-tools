@@ -19,3 +19,7 @@ logjam-importer
 test_puller
 builds/*
 cov-int
+aclocal.m4
+depcomp
+install-sh
+missing
