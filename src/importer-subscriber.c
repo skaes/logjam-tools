@@ -27,6 +27,8 @@ typedef struct {
     zsock_t *pull_socket;                         // pull for direct connections (apps)
     zsock_t *pub_socket;                          // republish all incoming messages (optional)
     uint64_t sequence_numbers[MAX_DEVICES];       // last seen message sequence number for given device
+    size_t message_count;                         // how many messages we have processed since last tick
+    size_t meta_info_failures;                    // how many messages had invalid meta info since last tickk
 } subscriber_state_t;
 
 
@@ -128,23 +130,19 @@ void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
     zmsg_destroy(&msg_copy);
 }
 
-static int warn_about_meta_info = 1;
-
 static
 void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
 {
     msg_meta_t meta;
     int rc = msg_extract_meta_info(msg, &meta);
     if (!rc) {
-        if (warn_about_meta_info) {
+        if (!state->meta_info_failures++) {
             fprintf(stderr, "[W] subscriber: received invalid meta info\n");
-            warn_about_meta_info = 0;
         }
         return;
     }
-    if (meta.device_number > MAX_DEVICES) {
+    if (meta.device_number > MAX_DEVICES && !state->meta_info_failures++) {
         fprintf(stderr, "[E] subscriber: received illegal device number: %d\n", meta.device_number);
-        warn_about_meta_info = 0;
         return;
     }
     int64_t old_sequence_number = state->sequence_numbers[meta.device_number];
@@ -164,6 +162,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
     if (msg) {
+        state->message_count++;
         int n = zmsg_size(msg);
         if (n < 3 || n > 4) {
             fprintf(stderr, "[E] subscriber: dropped invalid message\n");
@@ -188,6 +187,7 @@ static
 int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
     int rc = 0;
+    subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
     if (msg) {
         char *cmd = zmsg_popstr(msg);
@@ -196,7 +196,10 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             rc = -1;
         }
         else if (streq(cmd, "tick")) {
-            warn_about_meta_info = 1;
+            printf("[I] subscriber: %zu messages, %zu meta info failures\n",
+                   state->message_count, state->meta_info_failures);
+            state->message_count = 0;
+            state->meta_info_failures = 0;
         } else {
             fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
         }
