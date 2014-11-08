@@ -91,7 +91,7 @@ int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** orig
     zmsg_t *msg = zmsg_new();
     assert(msg);
     zmsg_addstr(msg, uuid);
-    zmsg_addmem(msg, original_msg, sizeof(*original_msg));
+    zmsg_addptr(msg, *original_msg);
     zmsg_addstr(msg, request_type);
     zmsg_send(&msg, tracker->deletions);
     *original_msg = NULL;
@@ -276,7 +276,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
     assert(msg);
     char *uuid = zmsg_popstr(msg);
     assert(uuid);
-    zmsg_t *original_msg = my_zmsg_popptr(msg);
+    zmsg_t *original_msg = zmsg_popptr(msg);
     assert(original_msg);
     char *request_type = zmsg_popstr(msg);
     assert(request_type);

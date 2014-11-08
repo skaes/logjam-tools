@@ -506,8 +506,8 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         zmsg_addstr(msg, self->db_name);
         zmsg_addstr(msg, "r");
         zmsg_addstr(msg, request_data.module);
-        zmsg_addmem(msg, &request, sizeof(json_object*));
-        zmsg_addmem(msg, &self->stream_info, sizeof(stream_info_t*));
+        zmsg_addptr(msg, request);
+        zmsg_addptr(msg, self->stream_info);
         if (!output_socket_ready(pstate->push_socket, 0)) {
             fprintf(stderr, "[W] parser [%zu]: push socket not ready\n", pstate->id);
         }
@@ -592,8 +592,8 @@ void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate,
     zmsg_addstr(msg, self->db_name);
     zmsg_addstr(msg, "j");
     zmsg_addstr(msg, module);
-    zmsg_addmem(msg, &request, sizeof(json_object*));
-    zmsg_addmem(msg, &self->stream_info, sizeof(stream_info_t*));
+    zmsg_addptr(msg, request);
+    zmsg_addptr(msg, self->stream_info);
     zmsg_send(&msg, pstate->push_socket);
 }
 
@@ -605,8 +605,8 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
     zmsg_addstr(msg, self->db_name);
     zmsg_addstr(msg, "e");
     zmsg_addstr(msg, "");
-    zmsg_addmem(msg, &request, sizeof(json_object*));
-    zmsg_addmem(msg, &self->stream_info, sizeof(stream_info_t*));
+    zmsg_addptr(msg, request);
+    zmsg_addptr(msg, self->stream_info);
     zmsg_send(&msg, pstate->push_socket);
 }
 

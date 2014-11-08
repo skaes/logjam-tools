@@ -12,18 +12,6 @@ void dump_json_object(FILE *f, json_object *jobj)
     // don't try to free the json string. it will crash.
 }
 
-void* my_zmsg_popptr(zmsg_t* msg)
-{
-    zframe_t *frame = zmsg_pop(msg);
-    assert(frame);
-    assert(zframe_size(frame) == sizeof(void*));
-    void *ptr;
-    memcpy(&ptr, zframe_data(frame), sizeof(void*));
-    zframe_destroy(&frame);
-    return ptr;
-}
-
-
 void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file)
 {
     assert (self);

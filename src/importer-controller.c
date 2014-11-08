@@ -204,8 +204,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "t");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addmem(stats_msg, &proc->stream_info, sizeof(proc->stream_info));
-        zmsg_addmem(stats_msg, &proc->totals, sizeof(proc->totals));
+        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addptr(stats_msg, proc->totals);
         proc->totals = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             fprintf(stderr, "[W] controller: updates push socket not ready\n");
@@ -216,8 +216,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "m");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addmem(stats_msg, &proc->stream_info, sizeof(proc->stream_info));
-        zmsg_addmem(stats_msg, &proc->minutes, sizeof(proc->minutes));
+        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addptr(stats_msg, proc->minutes);
         proc->minutes = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
@@ -228,8 +228,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "q");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addmem(stats_msg, &proc->stream_info, sizeof(proc->stream_info));
-        zmsg_addmem(stats_msg, &proc->quants, sizeof(proc->quants));
+        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addptr(stats_msg, proc->quants);
         proc->quants = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");

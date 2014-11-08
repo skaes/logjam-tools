@@ -152,7 +152,7 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
             zmsg_t *msg = zmsg_new();
             assert(msg);
             zmsg_addstr(msg, db_name);
-            zmsg_addmem(msg, &p->stream_info, sizeof(stream_info_t*));
+            zmsg_addptr(msg, p->stream_info);
             zmsg_send(&msg, parser_state->indexer_socket);
         }
     }
@@ -300,8 +300,8 @@ void parser(zsock_t *pipe, void *args)
                 if (state->parsed_msgs_count)
                     printf("[I] parser [%zu]: tick (%zu messages)\n", state->id, state->parsed_msgs_count);
                 zmsg_t *answer = zmsg_new();
-                zmsg_addmem(answer, &state->processors, sizeof(zhash_t*));
-                zmsg_addmem(answer, &state->parsed_msgs_count, sizeof(size_t));
+                zmsg_addptr(answer, state->processors);
+                zmsg_addmem(answer, &state->parsed_msgs_count, sizeof(state->parsed_msgs_count));
                 zmsg_send(&answer, state->controller_socket);
                 state->parsed_msgs_count = 0;
                 state->processors = processor_hash_new();
