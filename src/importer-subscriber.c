@@ -19,13 +19,14 @@
 
 #define MAX_DEVICES 256
 
+// actor state
 typedef struct {
-    zsock_t *controller_socket;
-    zsock_t *sub_socket;
-    zsock_t *push_socket;
-    zsock_t *pull_socket;
-    zsock_t *pub_socket;
-    uint64_t sequence_numbers[MAX_DEVICES];
+    zsock_t *pipe;                                // actor commands
+    zsock_t *sub_socket;                          // incoming data from logjam devices
+    zsock_t *push_socket;                         // outgoing data for parsers
+    zsock_t *pull_socket;                         // pull for direct connections (apps)
+    zsock_t *pub_socket;                          // republish all incoming messages (optional)
+    uint64_t sequence_numbers[MAX_DEVICES];       // last seen message sequence number for given device
 } subscriber_state_t;
 
 
@@ -143,6 +144,25 @@ void extract_meta(zmsg_t *msg, msg_meta_t *meta)
 }
 
 static
+void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
+{
+    msg_meta_t meta;
+    extract_meta(msg, &meta);
+    if (meta.device_number > MAX_DEVICES) {
+        fprintf(stderr, "[E] subscriber: received illegal device number\n");
+        return;
+    }
+    int64_t old_sequence_number = state->sequence_numbers[meta.device_number];
+    int64_t gap = meta.sequence_number - old_sequence_number - 1;
+    if (gap > 0 && old_sequence_number) {
+        fprintf(stderr, "[E] subscriber: lost %llu messages from device %d\n", gap, meta.device_number);
+    } else {
+        // printf("[D] subscriber: msg(device %d, sequence %llu)\n", meta.device_number, meta.sequence_number);
+    }
+    state->sequence_numbers[meta.device_number] = meta.sequence_number;
+}
+
+static
 int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
     subscriber_state_t *state = callback_data;
@@ -155,20 +175,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
             return 0;
         }
         if (n == 4) {
-            msg_meta_t meta;
-            extract_meta(msg, &meta);
-            if (meta.device_number > MAX_DEVICES) {
-                fprintf(stderr, "[E] subscriber: received illegal device number\n");
-                return 0;
-            }
-            int64_t old_sequence_number = state->sequence_numbers[meta.device_number];
-            int64_t gap = meta.sequence_number - old_sequence_number - 1;
-            if (gap > 0 && old_sequence_number) {
-                fprintf(stderr, "[E] subscriber: lost %llu messages from device %d\n", gap, meta.device_number);
-            } else {
-                // printf("[D] subscriber: msg(device %d, sequence %llu)\n", meta.device_number, meta.sequence_number);
-            }
-            state->sequence_numbers[meta.device_number] = meta.sequence_number;
+            check_and_update_sequence_number(state, msg);
         }
         if (PUBLISH_DUPLICATES) {
             subscriber_publish_duplicate(msg, state->pub_socket);
@@ -182,19 +189,21 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
 }
 
 static
-int terminate(zloop_t *loop, zsock_t *socket, void *callback_data)
+int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
+    int rc = 0;
     zmsg_t *msg = zmsg_recv(socket);
     if (msg) {
         char *cmd = zmsg_popstr(msg);
         if (streq(cmd, "$TERM")) {
             // fprintf(stderr, "[D] subscriber: received $TERM command\n");
-            return -1;
+            rc = -1;
         } else {
             fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
         }
+        free(cmd);
     }
-    return 0;
+    return rc;
 }
 
 
@@ -202,11 +211,12 @@ static
 subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config)
 {
     subscriber_state_t *state = zmalloc(sizeof(*state));
-    state->controller_socket = pipe;
-    state->sub_socket  = subscriber_sub_socket_new(config);
+    state->pipe = pipe;
+    state->sub_socket = subscriber_sub_socket_new(config);
     state->pull_socket = subscriber_pull_socket_new(config);
     state->push_socket = subscriber_push_socket_new(config);
-    state->pub_socket  = subscriber_pub_socket_new(config);
+    if (PUBLISH_DUPLICATES)
+        state->pub_socket  = subscriber_pub_socket_new(config);
     return state;
 }
 
@@ -217,7 +227,8 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
     zsock_destroy(&state->sub_socket);
     zsock_destroy(&state->pull_socket);
     zsock_destroy(&state->push_socket);
-    zsock_destroy(&state->pub_socket);
+    if (PUBLISH_DUPLICATES)
+        zsock_destroy(&state->pub_socket);
     *state_p = NULL;
 }
 
@@ -269,7 +280,7 @@ void subscriber(zsock_t *pipe, void *args)
     zloop_set_verbose(loop, 0);
 
     // setup handler for actor messages
-    rc = zloop_reader(loop, state->controller_socket, terminate, state);
+    rc = zloop_reader(loop, state->pipe, actor_command, state);
     assert(rc == 0);
 
      // setup handler for the sub socket
