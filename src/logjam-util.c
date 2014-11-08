@@ -54,9 +54,9 @@ int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta)
     zmsg_append(msg, &body_frame);
 
     // check frame size, tag and protocol version
-    int rc = zframe_size(meta_frame) == sizeof(meta);
+    int rc = zframe_size(meta_frame) == sizeof(msg_meta_t);
     if (rc) {
-        memcpy(meta, zframe_data(meta_frame), sizeof(*meta));
+        memcpy(meta, zframe_data(meta_frame), sizeof(msg_meta_t));
         meta_info_decode(meta);
         if (meta->tag != META_INFO_TAG || meta->version != META_INFO_VERSION)
             rc = 0;
