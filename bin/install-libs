@@ -42,7 +42,7 @@ $LSUDO make install
 $LSUDO $ldconfig
 cd ..
 
-d=zeromq-4.0.5
+d=zeromq-3.2.5
 f=${d}.tar.gz
 test -f $f || wget -nv http://download.zeromq.org/$f
 test -d $d || tar xzvf $f
