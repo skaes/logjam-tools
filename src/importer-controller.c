@@ -13,10 +13,12 @@
 /*
  * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, nu_= NUM_UPDATERS, "[<>^v]" = connect, "o" = bind
  *
+ *                 --- PIPE ---  indexer
  *                 --- PIPE ---  subscriber
  *                 --- PIPE ---  parsers(n_p)
  *  controller:    --- PIPE ---  writers(n_w)
  *                 --- PIPE ---  updaters(n_u)
+ *                 --- PIPE ---  tracker
  *
  *                 PUSH    PULL
  *                 o----------<  updaters(n_u)
