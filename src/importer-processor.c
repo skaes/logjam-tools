@@ -611,29 +611,178 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
 }
 
 static
+bool sorted_ascending(int64_t *a, int n)
+{
+    for (int i=1; i<n; i++) {
+        if (a[i] < a[i-1])
+            return false;
+    }
+    return true;
+}
+
+// correct negative values at the beginning of timestamps series
+// often, request_start and response_start are equal and negative
+// and everything before it is zero
+
+static
+void auto_correct_prefix(int64_t *a, int n)
+{
+    for (int i=0; i<n; i++) {
+        if (a[i]<0)
+            a[i] = 0;
+        else if (a[i]>0)
+            break;
+    }
+}
+
+static
+void make_relative(int64_t *a, int n, int j)
+{
+    int64_t start = a[j];
+    for (int i=0; i<n; i++) {
+        if (a[i] > 0)
+            a[i] -= start;
+    }
+}
+
+static
+int extract_frontend_timings(json_object *request, int64_t *timings, int num_timings, const char *type)
+{
+    json_object *rts_object = NULL;
+    const char *rts = NULL;
+    if (json_object_object_get_ex(request, "rts", &rts_object)) {
+        rts = json_object_get_string(rts_object);
+        // fprintf(stdout, "[D] RTS: %s\n", rts);
+    }
+    if (!rts) {
+        fprintf(stderr, "[E] processor: dropped %s request without timing information\n", type);
+        return 0;
+    }
+    int n = 0;
+    const char *p = rts;
+    char c;
+    int64_t *times = timings;
+    int64_t value = 0;
+    while (1) {
+        c = *p++;
+        if (c==',' || c==0) {
+            times[n] = value;
+            value = 0;
+            n++;
+            if (n == num_timings && c!=0) {
+                fprintf(stderr, "[E] processor: too many frontend timing values: %s\n", rts);
+                return 0;
+            } else if (!c)
+                break;
+        } else {
+            int x = c - '0';
+            if (x < 0 || x > 9) {
+                fprintf(stderr, "[E] processor: invalid character in frontend timing information: %s\n", p-1);
+                return 0;
+            } else {
+                value = value * 10 + x;
+            }
+        }
+    }
+    if (n < num_timings) {
+        fprintf(stderr, "[E] processor: not enough timings: expected %d, got %d\n", num_timings, n);
+        return 0;
+    } else {
+        // for (int i=0; i<num_timings; i++) {
+        //     printf("[D] processor: time[%d]=%" PRIi64 "\n", i, timings[i]);
+        // }
+        return 1;
+    }
+}
+
+#define NUM_TIMINGS 16
+#define navigationStart 0
+// #define unloadEventStart -1
+// #define unloadEventEnd -1
+// #define redirectStart -1
+// #define redirectEnd -1
+#define fetchStart 1
+#define domainLookupStart 2
+#define domainLookupEnd 3
+#define connectStart 4
+#define connectEnd 5
+// #define secureConnectionStart -1
+#define requestStart 6
+#define responseStart 7
+#define responseEnd 8
+#define domLoading 9
+#define domInteractive 10
+#define domContentLoadedEventStart 11
+#define domContentLoadedEventEnd 12
+#define domComplete 13
+#define loadEventStart 14
+#define loadEventEnd 15
+
+
+static
+int convert_frontend_timings_to_json(json_object *request, int64_t *timings)
+{
+    make_relative(timings, NUM_TIMINGS, fetchStart);
+    auto_correct_prefix(timings, NUM_TIMINGS);
+
+    int64_t utimes[] = {
+        timings[requestStart],
+        timings[responseStart],
+        timings[responseEnd],
+        timings[domComplete],
+        timings[loadEventEnd]
+    };
+
+    if (utimes[0] < 0 || !sorted_ascending(utimes, 5) ) {
+        fprintf(stderr,
+                "[W] processor: dropped frontend request due to invalid timings: "
+                "%" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %" PRIi64 "\n",
+                utimes[0], utimes[1], utimes[2], utimes[3], utimes[4]);
+        return 0;
+    }
+
+    int64_t connect_time = timings[requestStart];
+    int64_t request_time = timings[responseStart] - timings[requestStart];
+    int64_t response_time = timings[responseEnd] - timings[responseStart];
+    int64_t processing_time = timings[domComplete] - timings[responseEnd];
+    int64_t load_time = timings[loadEventEnd] - timings[loadEventEnd];
+    int64_t page_time = timings[loadEventEnd];
+
+    json_object_object_add(request, "connect_time", json_object_new_int64(connect_time));
+    json_object_object_add(request, "request_time", json_object_new_int64(request_time));
+    json_object_object_add(request, "response_time", json_object_new_int64(response_time));
+    json_object_object_add(request, "processing_time", json_object_new_int64(processing_time));
+    json_object_object_add(request, "load_time", json_object_new_int64(load_time));
+    json_object_object_add(request, "page_time", json_object_new_int64(page_time));
+
+    return 1;
+}
+
+static
 int check_frontend_request_validity(parser_state_t *pstate, json_object *request, const char* type, zmsg_t** msg)
 {
     json_object *request_id_obj;
-    if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
-        const char *uuid = json_object_get_string(request_id_obj);
-        if (uuid) {
-            if (tracker_delete_uuid(pstate->tracker, uuid, msg, type)) {
-                // fprintf(stderr, "[D] processor: tracker found %s request with request_id: %s\n", uuid, type);
-                // dump_json_object(stdout, request);
-                return 1;
-            } else {
-                // fprintf(stderr, "[D] processor: tracker could process %s request: request_id %s\n", type, uuid);
-                // dump_json_object(stderr, request);
-                return 0;
-            }
-        } else {
-            fprintf(stderr, "[E] processor: dropped %s request without request_id\n", type);
-            dump_json_object(stderr, request);
-            return 0;
-        }
+    const char *uuid = NULL;
+    if (json_object_object_get_ex(request, "logjam_request_id", &request_id_obj)
+        || json_object_object_get_ex(request, "request_id", &request_id_obj)) {
+        uuid = json_object_get_string(request_id_obj);
     }
-    return 0;
+    if (!uuid) {
+        fprintf(stderr, "[E] processor: dropped %s request without request_id\n", type);
+        dump_json_object(stderr, request);
+        return 0;
+    }
+    if (tracker_delete_uuid(pstate->tracker, uuid, msg, type)) {
+        // fprintf(stderr, "[D] processor: tracker found %s request with request_id: %s\n", uuid, type);
+        // dump_json_object(stdout, request);
+        return 1;
+    } else {
+        // fprintf(stderr, "[D] processor: tracker could process %s request: request_id %s\n", type, uuid);
+        // dump_json_object(stderr, request);
+        return 0;
+    }
 }
+
 
 void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t** msg)
 {
@@ -642,13 +791,14 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     //      processor_dump_state(self);
     // }
 
-    // json_object *rti_object = NULL;
-    // if (json_object_object_get_ex(request, "rti", &rti_object)) {
-    //     const char *rti = json_object_get_string(rti_object);
-    //     fprintf(stdout, "[D] RTI: %s\n", rti);
-    // }
-
+    int64_t timings[16];
+    if (!extract_frontend_timings(request, timings, 16, "frontend")) {
+        fprintf(stderr, "[E] processor: dropped request with invalid timing information\n");
+        return;
+    }
     if (!check_frontend_request_validity(pstate, request, "frontend", msg))
+        return;
+    if (!convert_frontend_timings_to_json(request, timings))
         return;
 
     request_data_t request_data;
@@ -687,6 +837,7 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     // TODO: store interesting requests
 }
 
+
 void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t **msg)
 {
     // dump_json_object(stdout, request);
@@ -694,8 +845,15 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     //     processor_dump_state(self);
     // }
 
+    int64_t timings[2];
+    if (!extract_frontend_timings(request, timings, 2, "ajax")) {
+        fprintf(stderr, "[E] processor: dropped request with invalid timing information\n");
+        return;
+    }
     if (!check_frontend_request_validity(pstate, request, "ajax", msg))
         return;
+
+    json_object_object_add(request, "ajax_time", json_object_new_int64(timings[1] - timings[0]));
 
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
@@ -704,7 +862,7 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     request_data.total_time = processor_setup_time(self, request, "ajax_time", "frontend_time");
 
     // TODO: revisit when switching to percentiles
-    if (request_data.total_time > 300000) {
+    if (request_data.total_time > 300000 || request_data.total_time < 0) {
         fprintf(stderr, "[W] dropped request data with nonsensical ajax_time\n");
         dump_json_object(stderr, request);
         return;
