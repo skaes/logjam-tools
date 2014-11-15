@@ -94,7 +94,7 @@ int main(int argc, char const * const *argv)
 
   int i = 0, queued = 0, rejected = 0;
   for (i=0; i<message_count; i++) {
-    if (zctx_interrupted)
+    if (zsys_interrupted)
       break;
     zmsg_t *message = zmsg_new();
     zmsg_addstr(message, exchanges[i%2]);

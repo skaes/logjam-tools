@@ -288,7 +288,7 @@ void parser(zsock_t *pipe, void *args)
     zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
     assert(poller);
 
-    while (!zctx_interrupted) {
+    while (!zsys_interrupted) {
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;

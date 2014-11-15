@@ -189,7 +189,7 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
     zlist_t *streams = zhash_keys(configured_streams);
     char *stream = zlist_first(streams);
     bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
-    while (stream && !zctx_interrupted) {
+    while (stream && !zsys_interrupted) {
         stream_info_t *info = zhash_lookup(configured_streams, stream);
         assert(info);
         if (!have_subscriptions || zhash_lookup(stream_subscriptions, stream)) {
@@ -323,7 +323,7 @@ void indexer(zsock_t *pipe, void *args)
     zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
     assert(poller);
 
-    while (!zctx_interrupted) {
+    while (!zsys_interrupted) {
         // printf("indexer[%zu]: polling\n", id);
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
@@ -368,7 +368,7 @@ void indexer(zsock_t *pipe, void *args)
             }
         } else {
             // interrupted
-            printf("[I] indexer[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
+            printf("[I] indexer[%zu]: no socket input. interrupted = %d\n", id, zsys_interrupted);
             break;
         }
     }

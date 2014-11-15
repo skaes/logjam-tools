@@ -47,7 +47,7 @@ int main(int argc, char const * const *argv)
 
   while (1) {
     msg = zmsg_recv(socket);
-    if (zctx_interrupted)
+    if (zsys_interrupted)
       break;
     assert(msg);
     received++;

@@ -203,7 +203,7 @@ int rabbitmq_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, vo
     res = amqp_consume_message(conn, &envelope, NULL, 0);
 
     if (AMQP_RESPONSE_NORMAL != res.reply_type) {
-        zctx_interrupted = 1;
+        zsys_interrupted = 1;
         log_amqp_error(res, "consuming from RabbitMQ");
         return -1;
     }
@@ -233,7 +233,7 @@ int rabbitmq_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, vo
     if (output_socket_ready(receiver)) {
         zmsg_send(&msg, receiver);
     } else {
-        if (!zctx_interrupted)
+        if (!zsys_interrupted)
             fprintf(stderr, "[E] dropped message because receiver socket wasn't ready\n");
         zmsg_destroy(&msg);
     }
@@ -258,7 +258,7 @@ int rabbitmq_setup_queues(amqp_connection_state_t conn, zconfig_t *config)
         char *stream = zconfig_name(stream_config);
         rabbitmq_add_queue(conn, &channel, stream);
         stream_config = zconfig_next(stream_config);
-    } while (stream_config && !zctx_interrupted);
+    } while (stream_config && !zsys_interrupted);
 
     return channel;
 }

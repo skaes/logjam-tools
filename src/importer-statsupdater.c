@@ -370,7 +370,7 @@ void stats_updater(zsock_t *pipe, void *args)
     zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
     assert(poller);
 
-    while (!zctx_interrupted) {
+    while (!zsys_interrupted) {
         // printf("[D] updater[%zu]: polling\n", id);
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
@@ -460,7 +460,7 @@ void stats_updater(zsock_t *pipe, void *args)
             // printf("[D] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, runtime/1000, db_name);
             zmsg_destroy(&msg);
         } else {
-            printf("[I] updater[%zu]: no socket input. interrupted = %d\n", id, zctx_interrupted);
+            printf("[I] updater[%zu]: no socket input. interrupted = %d\n", id, zsys_interrupted);
             break;
         }
     }

@@ -30,7 +30,7 @@ int timer_event(zloop_t *loop, int timer_id, void *pusher)
   zmsg_addstr(message, "routing-key");
   zmsg_addstrf(message, "message-body %d", message_count++);
   rc = zmsg_send(&message, pusher);
-  if (!zctx_interrupted) {
+  if (!zsys_interrupted) {
     assert(rc==0);
   }
   return 0;

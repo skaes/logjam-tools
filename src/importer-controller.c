@@ -314,7 +314,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     if (terminate) {
         printf("[I] controller: detected config change. terminating.\n");
-        zctx_interrupted = 1;
+        zsys_interrupted = 1;
     } else {
         int rc = zloop_timer(loop, next_tick, 1, collect_stats_and_forward, state);
         assert(rc != -1);
@@ -353,7 +353,7 @@ bool controller_create_actors(controller_state_t *state)
         state->parsers[i] = zactor_new(parser, (void*)i);
     }
 
-    return !zctx_interrupted;
+    return !zsys_interrupted;
 }
 
 static
@@ -402,7 +402,7 @@ int run_controller_loop(zconfig_t* config)
     rc = zloop_timer(loop, 1000, 1, collect_stats_and_forward, &state);
     assert(rc != -1);
 
-    if (!zctx_interrupted) {
+    if (!zsys_interrupted) {
         // run the loop
         zloop_start(loop);
         printf("[I] controller: shutting down\n");
