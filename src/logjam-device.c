@@ -123,7 +123,6 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     if (terminate) {
         printf("[I] detected config change. terminating.\n");
         zsys_interrupted = 1;
-        return -1;
     }
 
     return 0;
@@ -313,7 +312,6 @@ int main(int argc, char * const *argv)
     printf("starting main event loop\n");
     rc = zloop_start(loop);
     printf("main event zloop terminated with return code %d\n", rc);
-    assert(rc == 0);
 
     zloop_destroy(&loop);
     assert(loop == NULL);
