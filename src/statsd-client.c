@@ -110,7 +110,7 @@ int setup_statsd_udp_socket_and_sever_address(statsd_server_state_t* state,  zco
     int n = sscanf(connection_spec, "udp://%[^:]:%u", host_name, &port);
     if (n != 2) {
         fprintf(stderr, "[E] statsd[0]: could not parse connection spec: %s\n", connection_spec);
-        return(0);
+        return 0;
     }
 
     // get the host entry
@@ -236,7 +236,7 @@ int server_add_update(zloop_t *loop, zsock_t *socket, void *args)
 static
 void statsd_server_tick(statsd_server_state_t *state)
 {
-    printf("[D] statsd[%zu]: %zu updates, %zu bytes\n", state->id, state->update_count, state->update_bytes);
+    printf("[I] statsd[%zu]: %zu updates, %zu bytes\n", state->id, state->update_count, state->update_bytes);
     server_flush_buffer(state);
     state->update_count = 0;
     state->update_bytes = 0;
