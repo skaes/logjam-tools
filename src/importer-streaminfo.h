@@ -13,7 +13,8 @@ typedef struct {
 } module_threshold_t;
 
 typedef struct {
-    const char *key;
+    const char *key;      // [app,env].join('-')
+    const char *yek;      // [env,app].join('.')
     const char *app;
     const char *env;
     size_t key_len;

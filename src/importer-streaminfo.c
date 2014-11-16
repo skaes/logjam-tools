@@ -100,8 +100,8 @@ stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
     }
     info->key_len = strlen(info->key);
 
-    char app[256] = {'\0'};
-    char env[256] = {'\0'};;
+    char app[256] = {0};
+    char env[256] = {0};;
     int n = sscanf(info->key, "%[^-]-%[^-]", app, env);
     assert(n == 2);
 
@@ -112,6 +112,10 @@ stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
     info->env = strdup(env);
     info->env_len = strlen(env);
     assert(info->env_len > 0);
+
+    char yek[info->key_len+1];
+    snprintf(yek, info->key_len+1, "%s.%s", env, app);
+    info->yek = strdup(yek);
 
     info->db = 0;
     zconfig_t *db_setting = zconfig_locate(stream_config, "db");
@@ -135,6 +139,7 @@ static
 void dump_stream_info(stream_info_t *stream)
 {
     printf("[D] key: %s\n", stream->key);
+    printf("[D] yek: %s\n", stream->yek);
     printf("[D] app: %s\n", stream->app);
     printf("[D] env: %s\n", stream->env);
     printf("[D] ignored_request_uri: %s\n", stream->ignored_request_prefix);

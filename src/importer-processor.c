@@ -833,16 +833,32 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     processor_add_quants(self, request_data.page, increments);
 
     // send statsd updates
-    char buffer[124];
-    snprintf(buffer, sizeof(buffer), "page.%s", satisfaction);
+    const char* envapp = self->stream_info->yek;
+    char buffer[1024];
+    size_t n = sizeof(buffer);
+    snprintf(buffer, n, "%s.page.%s", envapp, satisfaction);
     statsd_client_increment(pstate->statsd_client, buffer);
-    statsd_client_increment(pstate->statsd_client, "page.sum");
-    statsd_client_timing(pstate->statsd_client, "page.connect_time", mtimes[0]);
-    statsd_client_timing(pstate->statsd_client, "page.request_time", mtimes[1]);
-    statsd_client_timing(pstate->statsd_client, "page.response_time", mtimes[2]);
-    statsd_client_timing(pstate->statsd_client, "page.processing_time", mtimes[3]);
-    statsd_client_timing(pstate->statsd_client, "page.load_time", mtimes[4]);
-    statsd_client_timing(pstate->statsd_client, "page.page_time", mtimes[5]);
+
+    snprintf(buffer, n, "%s.page.sum", envapp);
+    statsd_client_increment(pstate->statsd_client, buffer);
+
+    snprintf(buffer, n, "%s.page.connect_time", envapp);
+    statsd_client_timing(pstate->statsd_client, buffer, mtimes[0]);
+
+    snprintf(buffer, n, "%s.page.request_time", envapp);
+    statsd_client_timing(pstate->statsd_client, buffer, mtimes[1]);
+
+    snprintf(buffer, n, "%s.page.response_time", envapp);
+    statsd_client_timing(pstate->statsd_client, buffer, mtimes[2]);
+
+    snprintf(buffer, n, "%s.page.processing_time", envapp);
+    statsd_client_timing(pstate->statsd_client, buffer, mtimes[3]);
+
+    snprintf(buffer, n, "%s.page.load_time", envapp);
+    statsd_client_timing(pstate->statsd_client, buffer, mtimes[4]);
+
+    snprintf(buffer, n, "%s.page.page_time", envapp);
+    statsd_client_timing(pstate->statsd_client, buffer, mtimes[5]);
 
     // dump_increments("add_frontend_data", increments, NULL);
 
@@ -898,11 +914,17 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     processor_add_quants(self, request_data.page, increments);
 
     // send statsd updates
-    char buffer[124];
-    snprintf(buffer, sizeof(buffer), "ajax.%s", satisfaction);
+    const char* envapp = self->stream_info->yek;
+    char buffer[1024];
+    size_t n = sizeof(buffer);
+    snprintf(buffer, n, "%s.ajax.%s", envapp, satisfaction);
     statsd_client_increment(pstate->statsd_client, buffer);
-    statsd_client_increment(pstate->statsd_client, "ajax.sum");
-    statsd_client_timing(pstate->statsd_client, "ajax.ajax_time", request_data.total_time);
+
+    snprintf(buffer, n, "%s.ajax.sum", envapp);
+    statsd_client_increment(pstate->statsd_client, buffer);
+
+    snprintf(buffer, n, "%s.ajax.ajax_time", envapp);
+    statsd_client_timing(pstate->statsd_client, buffer, request_data.total_time);
 
     // dump_increments("add_ajax_data", increments, NULL);
 
