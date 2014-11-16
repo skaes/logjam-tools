@@ -129,6 +129,13 @@ int setup_statsd_udp_socket_and_sever_address(statsd_server_state_t* state,  zco
     memcpy(&state->servaddr.sin_addr, hostp->h_addr_list[0], hostp->h_length);
     // do not free hostp
 
+    // connect the socket to get ICMP errors
+    int rc = connect(state->statsd_socket, (struct sockaddr *)&state->servaddr, sizeof(state->servaddr));
+    if (rc < 0) {
+        fprintf(stderr, "[E] statsd[0]: error (%d) connecting socket to statsd server: %s\n", rc, strerror(errno));
+        return 0;
+    }
+
     return 1;
 }
 
@@ -186,10 +193,9 @@ static
 void server_flush_buffer(statsd_server_state_t *state)
 {
     if (0) server_print_buffer(state);
-    int rc = sendto(state->statsd_socket, state->buffer, state->buffer_used, 0,
-                    (struct sockaddr *)&state->servaddr, sizeof(state->servaddr));
+    int rc = send(state->statsd_socket, state->buffer, state->buffer_used, 0);
     if (rc < 0) {
-        fprintf(stderr, "[E] statsd[0]: cannot send updates: %s\n", strerror(errno));
+        fprintf(stderr, "[E] statsd[0]: error (%d) sending updates to statsd server: %s\n", rc, strerror(errno));
     }
     state->buffer_used = 0;
     memset(state->buffer, 0, sizeof(state->buffer));
