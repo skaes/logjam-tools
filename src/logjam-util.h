@@ -52,6 +52,8 @@ inline void msg_add_meta_info(zmq_msg_t *msg, msg_meta_t *meta)
 
 extern int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta);
 
+extern bool output_socket_ready(zsock_t *socket, int msecs);
+
 #ifdef __cplusplus
 }
 #endif

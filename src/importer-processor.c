@@ -720,7 +720,7 @@ int extract_frontend_timings(json_object *request, int64_t *timings, int num_tim
 
 
 static
-int convert_frontend_timings_to_json(json_object *request, int64_t *timings)
+int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t *mtimes)
 {
     make_relative(timings, NUM_TIMINGS, fetchStart);
     auto_correct_prefix(timings, NUM_TIMINGS);
@@ -741,12 +741,12 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings)
         return 0;
     }
 
-    int64_t connect_time = timings[requestStart];
-    int64_t request_time = timings[responseStart] - timings[requestStart];
-    int64_t response_time = timings[responseEnd] - timings[responseStart];
-    int64_t processing_time = timings[domComplete] - timings[responseEnd];
-    int64_t load_time = timings[loadEventEnd] - timings[loadEventEnd];
-    int64_t page_time = timings[loadEventEnd];
+    int64_t connect_time    = mtimes[0] = timings[requestStart];
+    int64_t request_time    = mtimes[1] = timings[responseStart] - timings[requestStart];
+    int64_t response_time   = mtimes[2] = timings[responseEnd] - timings[responseStart];
+    int64_t processing_time = mtimes[3] = timings[domComplete] - timings[responseEnd];
+    int64_t load_time       = mtimes[4] = timings[loadEventEnd] - timings[loadEventEnd];
+    int64_t page_time       = mtimes[5] = timings[loadEventEnd];
 
     json_object_object_add(request, "connect_time", json_object_new_int64(connect_time));
     json_object_object_add(request, "request_time", json_object_new_int64(request_time));
@@ -798,7 +798,9 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     }
     if (!check_frontend_request_validity(pstate, request, "frontend", msg))
         return;
-    if (!convert_frontend_timings_to_json(request, timings))
+
+    int64_t mtimes[6];
+    if (!convert_frontend_timings_to_json(request, timings, mtimes))
         return;
 
     request_data_t request_data;
@@ -818,7 +820,7 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     increments->page_request_count = 1;
     increments_fill_metrics(increments, request);
     increments_fill_frontend_apdex(increments, request_data.total_time);
-    increments_fill_page_apdex(increments, request_data.total_time);
+    const char* satisfaction = increments_fill_page_apdex(increments, request_data.total_time);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
@@ -830,13 +832,24 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
 
     processor_add_quants(self, request_data.page, increments);
 
+    // send statsd updates
+    char buffer[124];
+    snprintf(buffer, sizeof(buffer), "page.%s", satisfaction);
+    statsd_client_increment(pstate->statsd_client, buffer);
+    statsd_client_increment(pstate->statsd_client, "page.sum");
+    statsd_client_timing(pstate->statsd_client, "page.connect_time", mtimes[0]);
+    statsd_client_timing(pstate->statsd_client, "page.request_time", mtimes[1]);
+    statsd_client_timing(pstate->statsd_client, "page.response_time", mtimes[2]);
+    statsd_client_timing(pstate->statsd_client, "page.processing_time", mtimes[3]);
+    statsd_client_timing(pstate->statsd_client, "page.load_time", mtimes[4]);
+    statsd_client_timing(pstate->statsd_client, "page.page_time", mtimes[5]);
+
     // dump_increments("add_frontend_data", increments, NULL);
 
     increments_destroy(increments);
 
     // TODO: store interesting requests
 }
-
 
 void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t **msg)
 {
@@ -872,7 +885,7 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     increments->ajax_request_count = 1;
     increments_fill_metrics(increments, request);
     increments_fill_frontend_apdex(increments, request_data.total_time);
-    increments_fill_ajax_apdex(increments, request_data.total_time);
+    const char* satisfaction = increments_fill_ajax_apdex(increments, request_data.total_time);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
@@ -883,6 +896,13 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     processor_add_minutes(self, "all_pages", request_data.minute, increments);
 
     processor_add_quants(self, request_data.page, increments);
+
+    // send statsd updates
+    char buffer[124];
+    snprintf(buffer, sizeof(buffer), "ajax.%s", satisfaction);
+    statsd_client_increment(pstate->statsd_client, buffer);
+    statsd_client_increment(pstate->statsd_client, "ajax.sum");
+    statsd_client_timing(pstate->statsd_client, "ajax.ajax_time", request_data.total_time);
 
     // dump_increments("add_ajax_data", increments, NULL);
 

@@ -244,18 +244,20 @@ zhash_t* processor_hash_new()
 }
 
 static
-parser_state_t* parser_state_new(zsock_t *pipe, size_t id)
+parser_state_t* parser_state_new(zconfig_t* config, size_t id)
 {
-    parser_state_t *state = zmalloc(sizeof(parser_state_t));
+    parser_state_t *state = zmalloc(sizeof(*state));
+    state->config = config;
     state->id = id;
+    snprintf(state->me, 16, "parser[%zu]", id);
     state->parsed_msgs_count = 0;
-    state->controller_socket = pipe;
     state->pull_socket = parser_pull_socket_new();
     state->push_socket = parser_push_socket_new();
     state->indexer_socket = parser_indexer_socket_new();
     assert( state->tokener = json_tokener_new() );
     state->processors = processor_hash_new();
     state->tracker = tracker_new();
+    state->statsd_client = statsd_client_new(config, state->me);
     return state;
 }
 
@@ -269,40 +271,40 @@ void parser_state_destroy(parser_state_t **state_p)
     zsock_destroy(&state->indexer_socket);
     zhash_destroy(&state->processors);
     tracker_destroy(&state->tracker);
+    statsd_client_destroy(&state->statsd_client);
     free(state);
     *state_p = NULL;
 }
 
+static
 void parser(zsock_t *pipe, void *args)
 {
-    size_t id = (size_t)args;
-    char thread_name[16];
-    memset(thread_name, 0, 16);
-    snprintf(thread_name, 16, "parser[%zu]", id);
-    set_thread_name(thread_name);
+    parser_state_t *state = (parser_state_t*)args;
+    state->pipe = pipe;
+    set_thread_name(state->me);
+    size_t id = state->id;
 
-    parser_state_t *state = parser_state_new(pipe, id);
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);
 
-    zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
+    zpoller_t *poller = zpoller_new(state->pipe, state->pull_socket, NULL);
     assert(poller);
 
     while (!zsys_interrupted) {
         // -1 == block until something is readable
         void *socket = zpoller_wait(poller, -1);
         zmsg_t *msg = NULL;
-        if (socket == state->controller_socket) {
-            msg = zmsg_recv(state->controller_socket);
+        if (socket == state->pipe) {
+            msg = zmsg_recv(state->pipe);
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
                 if (state->parsed_msgs_count)
-                    printf("[I] parser [%zu]: tick (%zu messages)\n", state->id, state->parsed_msgs_count);
+                    printf("[I] parser [%zu]: tick (%zu messages)\n", id, state->parsed_msgs_count);
                 zmsg_t *answer = zmsg_new();
                 zmsg_addptr(answer, state->processors);
                 zmsg_addmem(answer, &state->parsed_msgs_count, sizeof(state->parsed_msgs_count));
-                zmsg_send(&answer, state->controller_socket);
+                zmsg_send(&answer, state->pipe);
                 state->parsed_msgs_count = 0;
                 state->processors = processor_hash_new();
                 free(cmd);
@@ -331,4 +333,15 @@ void parser(zsock_t *pipe, void *args)
     printf("[I] parser [%zu]: shutting down\n", id);
     parser_state_destroy(&state);
     printf("[I] parser [%zu]: terminated\n", id);
+}
+
+zactor_t* parser_new(zconfig_t *config, size_t id)
+{
+    parser_state_t *state = parser_state_new(config, id);
+    return zactor_new(parser, state);
+}
+
+void parser_destroy(zactor_t **parser_p)
+{
+    zactor_destroy(parser_p);
 }

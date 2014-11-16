@@ -12,6 +12,7 @@
 #include <json-c/json.h>
 #include <bson.h>
 #include <mongoc.h>
+#include "logjam-util.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -57,7 +58,6 @@ extern time_t time_last_tick;
 extern void dump_json_object(FILE *f, json_object *jobj);
 extern void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file);
 extern void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file);
-extern bool output_socket_ready(zsock_t* socket, int msecs);
 
 static inline int zmsg_addptr(zmsg_t* msg, void* ptr)
 {

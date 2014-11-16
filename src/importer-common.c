@@ -53,13 +53,6 @@ void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file)
 }
 
 
-bool output_socket_ready(zsock_t *socket, int msecs)
-{
-    zmq_pollitem_t items[] = { { zsock_resolve(socket), 0, ZMQ_POLLOUT, 0 } };
-    int rc = zmq_poll(items, 1, msecs);
-    return rc != -1 && (items[0].revents & ZMQ_POLLOUT) != 0;
-}
-
 // utf8 conversion
 static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
 static char UTF8_CURRENCY[3] = {0xC2, 0xA4, '\0'};

@@ -3,6 +3,13 @@
 #include <limits.h>
 #include "logjam-util.h"
 
+bool output_socket_ready(zsock_t *socket, int msecs)
+{
+    zmq_pollitem_t items[] = { { zsock_resolve(socket), 0, ZMQ_POLLOUT, 0 } };
+    int rc = zmq_poll(items, 1, msecs);
+    return rc != -1 && (items[0].revents & ZMQ_POLLOUT) != 0;
+}
+
 uint64_t htonll(uint64_t net_number)
 {
   uint64_t result = 0;

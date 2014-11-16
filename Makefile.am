@@ -5,14 +5,64 @@ AM_CPPFLAGS = $(OPTDIR_CPPFLAGS) $(DEPS_CFLAGS) -D_GNU_SOURCE
 AM_CFLAGS = --std=gnu99 -Wall -fno-fast-math
 LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS) -lm
 
-bin_PROGRAMS = logjam-device logjam-importer
-noinst_PROGRAMS = tester test_subscriber test_publisher test_puller
+bin_PROGRAMS = \
+    logjam-device \
+    logjam-importer
 
-logjam_device_SOURCES = src/logjam-device.c src/rabbitmq-listener.h src/rabbitmq-listener.c src/logjam-util.h src/logjam-util.c
-logjam_importer_SOURCES = src/logjam-importer.c src/importer-processor.c src/importer-processor.h src/importer-common.h src/importer-common.c src/importer-parser.h src/importer-parser.c src/importer-livestream.h  src/importer-livestream.c src/importer-increments.c src/importer-increments.h src/importer-subscriber.c src/importer-subscriber.h src/importer-statsupdater.h src/importer-statsupdater.c src/importer-requestwriter.c src/importer-requestwriter.h src/importer-indexer.c src/importer-indexer.h src/importer-controller.c src/importer-controller.h src/importer-streaminfo.c src/importer-streaminfo.h src/importer-resources.c src/importer-resources.h src/importer-mongoutils.c src/importer-mongoutils.h src/importer-tracker.c src/importer-tracker.h src/logjam-util.h src/logjam-util.c
+noinst_PROGRAMS = \
+    test_publisher \
+    test_puller \
+    test_subscriber \
+    tester
+
+logjam_device_SOURCES = \
+    src/logjam-device.c \
+    src/logjam-util.c \
+    src/logjam-util.h \
+    src/rabbitmq-listener.c \
+    src/rabbitmq-listener.h
+
+logjam_importer_SOURCES = \
+    src/importer-common.c \
+    src/importer-common.h \
+    src/importer-controller.c \
+    src/importer-controller.h \
+    src/importer-increments.c \
+    src/importer-increments.h \
+    src/importer-indexer.c \
+    src/importer-indexer.h \
+    src/importer-livestream.c \
+    src/importer-livestream.h  \
+    src/importer-mongoutils.c \
+    src/importer-mongoutils.h \
+    src/importer-parser.c \
+    src/importer-parser.h \
+    src/importer-processor.c \
+    src/importer-processor.h \
+    src/importer-requestwriter.c \
+    src/importer-requestwriter.h \
+    src/importer-resources.c \
+    src/importer-resources.h \
+    src/importer-statsupdater.c \
+    src/importer-statsupdater.h \
+    src/importer-streaminfo.c \
+    src/importer-streaminfo.h \
+    src/importer-subscriber.c \
+    src/importer-subscriber.h \
+    src/importer-tracker.c \
+    src/importer-tracker.h \
+    src/logjam-importer.c \
+    src/logjam-util.c \
+    src/logjam-util.h \
+    src/statsd-client.c \
+    src/statsd-client.h
+
 tester_SOURCES = src/tester.c
+
 test_publisher_SOURCES = src/test_publisher.c
+
 test_subscriber_SOURCES = src/test_subscriber.c
+
 test_puller_SOURCES = src/test_puller.c
 
 dist_noinst_SCRIPTS = autogen.sh

@@ -7,6 +7,7 @@
 #include "importer-requestwriter.h"
 #include "importer-indexer.h"
 #include "importer-subscriber.h"
+#include "statsd-client.h"
 #include "importer-resources.h"
 
 
@@ -34,6 +35,7 @@
 
 typedef struct {
     zconfig_t *config;
+    zactor_t *statsd_server;
     zactor_t *subscriber;
     zactor_t *indexer;
     zactor_t *tracker;
@@ -218,7 +220,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     state->ticks++;
 
-    // tell tracker and subscriber to tick
+    // tell tracker, subscriber and stats server to tick
+    zstr_send(state->statsd_server, "tick");
     zstr_send(state->subscriber, "tick");
     zstr_send(state->tracker, "tick");
 
@@ -326,12 +329,12 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 static
 bool controller_create_actors(controller_state_t *state)
 {
+    // start the statsd updater
+    state->statsd_server = zactor_new(statsd_actor_fn, state->config);
     // start the indexer
     state->indexer = zactor_new(indexer, NULL);
-
     // create subscriber
     state->subscriber = zactor_new(subscriber, state->config);
-
     //start the tracker
     state->tracker = zactor_new(tracker, NULL);
 
@@ -350,7 +353,7 @@ bool controller_create_actors(controller_state_t *state)
         state->updaters[i] = zactor_new(stats_updater, (void*)i);
     }
     for (size_t i=0; i<NUM_PARSERS; i++) {
-        state->parsers[i] = zactor_new(parser, (void*)i);
+        state->parsers[i] = parser_new(state->config, i);
     }
 
     return !zsys_interrupted;
@@ -359,11 +362,12 @@ bool controller_create_actors(controller_state_t *state)
 static
 void controller_destroy_actors(controller_state_t *state)
 {
+    zactor_destroy(&state->statsd_server);
     zactor_destroy(&state->subscriber);
     zactor_destroy(&state->indexer);
     zactor_destroy(&state->tracker);
     for (size_t i=0; i<NUM_PARSERS; i++) {
-        zactor_destroy(&state->parsers[i]);
+        parser_destroy(&state->parsers[i]);
     }
     for (size_t i=0; i<NUM_WRITERS; i++) {
         zactor_destroy(&state->writers[i]);
