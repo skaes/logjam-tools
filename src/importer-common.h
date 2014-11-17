@@ -36,7 +36,7 @@ extern "C" {
 #define NUM_UPDATERS 1
 #define NUM_WRITERS 1
 #else
-#define NUM_PARSERS 4
+#define NUM_PARSERS 5
 #define NUM_UPDATERS 10
 #define NUM_WRITERS 10
 #endif
