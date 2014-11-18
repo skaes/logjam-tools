@@ -7,7 +7,8 @@ LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS) -lm
 
 bin_PROGRAMS = \
     logjam-device \
-    logjam-importer
+    logjam-importer \
+    logjam-httpd
 
 noinst_PROGRAMS = \
     test_publisher \
@@ -56,6 +57,11 @@ logjam_importer_SOURCES = \
     src/logjam-util.h \
     src/statsd-client.c \
     src/statsd-client.h
+
+logjam_httpd_SOURCES = \
+    src/logjam-httpd.c \
+    src/logjam-util.c \
+    src/logjam-util.h
 
 tester_SOURCES = src/tester.c
 
