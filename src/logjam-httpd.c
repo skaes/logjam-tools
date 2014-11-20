@@ -40,6 +40,7 @@ static void *push_socket = NULL;
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
+static size_t http_failures = 0;
 
 static char path_prefix_ajax[] = "GET /tools/monitoring/ajax?";
 static char path_prefix_page[] = "GET /tools/monitoring/page?";
@@ -332,14 +333,16 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     valid = true;
 
  answer:
-    // sends the ID frame followed by the response
+    // send the ID frame followed by the response
     zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
-    if (valid)
+    if (valid) {
         zmq_send (http_socket, http_response_ok, ok_length, ZMQ_SNDMORE);
-    else
+    } else {
+        http_failures++;
         zmq_send (http_socket, http_response_fail, fail_length, ZMQ_SNDMORE);
+    }
 
-    // closes the connection by sending the ID frame followed by a zero response
+    // close the connection by sending the ID frame followed by a zero response
     zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
     zmq_send (http_socket, 0, 0, ZMQ_SNDMORE);
 
@@ -358,8 +361,11 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     size_t message_bytes = received_messages_bytes - last_received_bytes;
     double avg_msg_size = message_count ? (message_bytes / 1024.0) / message_count : 0;
     double max_msg_size = received_messages_max_bytes / 1024.0;
-    printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
-           message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
+
+    printf("[I] processed %zu messages (failed: %zu), size: %.2f KB, avg: %.2f KB, max: %.2f KB\n",
+           message_count, http_failures, message_bytes/1024.0, avg_msg_size, max_msg_size);
+
+    http_failures = 0;
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
