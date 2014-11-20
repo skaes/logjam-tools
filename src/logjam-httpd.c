@@ -33,9 +33,9 @@ static char http_response_fail [] =
 static size_t ok_length, fail_length;
 
 static zsock_t *http_socket_wrapper = NULL;
-static zsock_t *push_socket_wrapper = NULL;
+static zsock_t *pub_socket_wrapper = NULL;
 static void *http_socket = NULL;
-static void *push_socket = NULL;
+static void *pub_socket = NULL;
 
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
@@ -158,19 +158,19 @@ void init_globals()
     http_socket = zsock_resolve (http_socket_wrapper);
     assert (http_socket);
 
-    // bind
+    // bind http socket
     rc = zsock_bind (http_socket_wrapper, "tcp://*:9000");
     assert (rc == 9000);
 
-    // create ZMQ_PUSH socket
-    push_socket_wrapper = zsock_new (ZMQ_PUSH);
-    assert (push_socket_wrapper);
-    push_socket = zsock_resolve (push_socket_wrapper);
-    assert (push_socket);
+    // create ZMQ_PUB socket
+    pub_socket_wrapper = zsock_new (ZMQ_PUB);
+    assert (pub_socket_wrapper);
+    pub_socket = zsock_resolve (pub_socket_wrapper);
+    assert (pub_socket);
 
-    // connect to logjam device or logjam importer
-    rc = zsock_connect(push_socket_wrapper, "tcp://127.0.0.1:9605");
-    assert (rc == 0);
+    // bind for downstream devices / logjam importer
+    rc = zsock_bind(pub_socket_wrapper, "tcp://127.0.0.1:9606");
+    assert (rc == 9606);
 }
 
 static inline
@@ -251,7 +251,7 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
     zmq_msg_init_size(&message_parts[2], data->json_len);
     memcpy(zmq_msg_data(&message_parts[2]), data->json_str, data->json_len);
 
-    publish_on_zmq_transport(message_parts, push_socket, meta);
+    publish_on_zmq_transport(message_parts, pub_socket, meta);
 
     zmq_msg_close(&message_parts[0]);
     zmq_msg_close(&message_parts[1]);
@@ -412,7 +412,7 @@ int main(int argc, char * const *argv)
 
     printf("[I] received %zu messages\n", received_messages_count);
 
-    zsock_destroy(&push_socket_wrapper);
+    zsock_destroy(&pub_socket_wrapper);
     zsock_destroy(&http_socket_wrapper);
     zhash_destroy(&integer_conversions);
 
