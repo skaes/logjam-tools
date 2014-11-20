@@ -24,4 +24,4 @@ depcomp
 install-sh
 missing
 logjam-httpd
-urls.txt
+logjam-tools-cov.tgz
