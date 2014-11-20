@@ -103,14 +103,6 @@ extern int set_thread_name(const char* name);
 #define CONFIG_FILE_CHECK_INTERVAL 10
 
 
-static inline
-void log_zmq_error(int rc)
-{
-  if (rc != 0) {
-      fprintf(stderr, "[E] rc: %d, errno: %d (%s)\n", rc, errno, zmq_strerror(errno));
-  }
-}
-
 #ifdef __cplusplus
 }
 #endif

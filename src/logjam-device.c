@@ -36,13 +36,6 @@ typedef struct {
 } publisher_state_t;
 
 
-inline void log_zmq_error(int rc)
-{
-    if (rc != 0) {
-        fprintf(stderr, "[E] errno: %d: %s\n", errno, zmq_strerror(errno));
-    }
-}
-
 static void config_file_init()
 {
     config_file = zfile_new(NULL, config_file_name);
@@ -64,43 +57,6 @@ static bool config_file_has_changed()
     }
     return changed;
 }
-
-static int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher)
-{
-    int rc=0;
-    zmq_msg_t *app_env = &message_parts[0];
-    zmq_msg_t *key     = &message_parts[1];
-    zmq_msg_t *body    = &message_parts[2];
-
-    rc = zmq_msg_send(app_env, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
-    if (rc == -1) {
-        log_zmq_error(rc);
-        return rc;
-    }
-    rc = zmq_msg_send(key, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
-    if (rc == -1) {
-        log_zmq_error(rc);
-        return rc;
-    }
-    rc = zmq_msg_send(body, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
-    if (rc == -1) {
-        log_zmq_error(rc);
-        return rc;
-    }
-
-    msg_meta.sequence_number++;
-    zmq_msg_t meta;
-    msg_add_meta_info(&meta, &msg_meta);
-    if (0) dump_meta_info_network_format(zmq_msg_data(&meta));
-
-    rc = zmq_msg_send(&meta, publisher, ZMQ_DONTWAIT);
-    if (rc == -1) {
-        log_zmq_error(rc);
-    }
-    zmq_msg_close(&meta);
-    return rc;
-}
-
 
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
@@ -168,7 +124,8 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *_receiver, void 
     if (msg_bytes > received_messages_max_bytes)
         received_messages_max_bytes = msg_bytes;
 
-    publish_on_zmq_transport(&message_parts[0], publisher);
+    msg_meta.sequence_number++;
+    publish_on_zmq_transport(&message_parts[0], publisher, &msg_meta);
 
  cleanup:
     for (;i>=0;i--) {

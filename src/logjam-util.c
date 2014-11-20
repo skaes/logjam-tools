@@ -71,3 +71,38 @@ int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta)
     zframe_destroy(&meta_frame);
     return rc;
 }
+
+int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta_t *msg_meta)
+{
+    int rc=0;
+    zmq_msg_t *app_env = &message_parts[0];
+    zmq_msg_t *key     = &message_parts[1];
+    zmq_msg_t *body    = &message_parts[2];
+
+    rc = zmq_msg_send(app_env, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+    if (rc == -1) {
+        log_zmq_error(rc);
+        return rc;
+    }
+    rc = zmq_msg_send(key, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+    if (rc == -1) {
+        log_zmq_error(rc);
+        return rc;
+    }
+    rc = zmq_msg_send(body, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+    if (rc == -1) {
+        log_zmq_error(rc);
+        return rc;
+    }
+
+    zmq_msg_t meta;
+    msg_add_meta_info(&meta, msg_meta);
+    if (0) dump_meta_info_network_format(zmq_msg_data(&meta));
+
+    rc = zmq_msg_send(&meta, publisher, ZMQ_DONTWAIT);
+    if (rc == -1) {
+        log_zmq_error(rc);
+    }
+    zmq_msg_close(&meta);
+    return rc;
+}

@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+#include <stdio.h>
+
 #define META_INFO_VERSION 1
 #define META_INFO_TAG 0xcabd
 #define META_INFO_EMPTY {META_INFO_TAG, META_INFO_VERSION, 0U, 0ULL, 0ULL}
@@ -53,6 +55,15 @@ inline void msg_add_meta_info(zmq_msg_t *msg, msg_meta_t *meta)
 extern int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta);
 
 extern bool output_socket_ready(zsock_t *socket, int msecs);
+
+extern int publish_on_zmq_transport(zmq_msg_t *message_parts, void *socket, msg_meta_t *msg_meta);
+
+static inline void log_zmq_error(int rc)
+{
+    if (rc != 0) {
+        fprintf(stderr, "[E] errno: %d: %s\n", errno, zmq_strerror(errno));
+    }
+}
 
 #ifdef __cplusplus
 }
