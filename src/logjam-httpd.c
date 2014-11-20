@@ -67,6 +67,25 @@ static void set_started_at()
     strftime(current_time_as_string, sizeof(current_time_as_string), "%Y-%m-%dT%H:%M:%S%z", tm_now);
 }
 
+static zhash_t *integer_conversions = NULL;
+
+static void setup_integer_conversions()
+{
+    integer_conversions = zhash_new();
+    zhash_insert(integer_conversions, "viewport_height", (void*)1);
+    zhash_insert(integer_conversions, "viewport_width", (void*)1);
+    zhash_insert(integer_conversions, "html_nodes", (void*)1);
+    zhash_insert(integer_conversions, "script_nodes", (void*)1);
+    zhash_insert(integer_conversions, "style_nodes", (void*)1);
+    zhash_insert(integer_conversions, "v", (void*)1);
+}
+
+static inline
+bool convert_to_integer(const char* key)
+{
+    return zhash_lookup(integer_conversions, key);
+}
+
 static inline
 const char *json_get_value(json_object *json, const char* key)
 {
@@ -113,7 +132,12 @@ void parse(char *s, json_object *json)
     value[offset] = '\0';
     // printf("[D] %s=%s\n", key, value);
 
-    json_object_object_add(json, key, json_object_new_string_len(value, offset));
+    if (convert_to_integer(key)) {
+        int64_t val = atol(value);
+        json_object_object_add(json, key, json_object_new_int64(val));
+    } else {
+        json_object_object_add(json, key, json_object_new_string_len(value, offset));
+    }
 }
 
 static
@@ -121,6 +145,7 @@ void init_globals()
 {
     int rc;
     set_started_at();
+    setup_integer_conversions();
 
     ok_length = strlen (http_response_ok);
     fail_length = strlen (http_response_fail);
@@ -166,7 +191,7 @@ bool extract_msg_data_from_query_string(char *query_string, msg_data_t *msg_data
 
     msg_data->json_str = json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN);
     msg_data->json_len = strlen(msg_data->json_str);
-    printf("[D] json: %s\n", msg_data->json_str);
+    // printf("[D] json: %s\n", msg_data->json_str);
 
     // check version
     const char *version = json_get_value(json, "v");
@@ -383,6 +408,7 @@ int main(int argc, char * const *argv)
 
     zsock_destroy(&push_socket_wrapper);
     zsock_destroy(&http_socket_wrapper);
+    zhash_destroy(&integer_conversions);
 
     printf("[I] shutting down\n");
     zsys_shutdown();
