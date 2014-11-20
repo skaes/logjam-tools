@@ -32,18 +32,20 @@ static char http_response_fail [] =
 
 static size_t ok_length, fail_length;
 
-static zsock_t *http_socket_wrapper = NULL;
-static zsock_t *pub_socket_wrapper = NULL;
+static int http_port = 9000;
+static int pub_port = 9606;
 static void *http_socket = NULL;
 static void *pub_socket = NULL;
+static zsock_t *http_socket_wrapper = NULL;
+static zsock_t *pub_socket_wrapper = NULL;
 
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
 static size_t http_failures = 0;
 
-static char path_prefix_ajax[] = "GET /tools/monitoring/ajax?";
-static char path_prefix_page[] = "GET /tools/monitoring/page?";
+static char path_prefix_ajax[] = "GET /logjam/ajax?";
+static char path_prefix_page[] = "GET /logjam/page?";
 static int path_prefix_length;
 
 static msg_meta_t msg_meta = META_INFO_EMPTY;
@@ -159,8 +161,8 @@ void init_globals()
     assert (http_socket);
 
     // bind http socket
-    rc = zsock_bind (http_socket_wrapper, "tcp://*:9000");
-    assert (rc == 9000);
+    rc = zsock_bind (http_socket_wrapper, "tcp://*:%d", http_port);
+    assert (rc == http_port);
 
     // create ZMQ_PUB socket
     pub_socket_wrapper = zsock_new (ZMQ_PUB);
@@ -169,8 +171,8 @@ void init_globals()
     assert (pub_socket);
 
     // bind for downstream devices / logjam importer
-    rc = zsock_bind(pub_socket_wrapper, "tcp://127.0.0.1:9606");
-    assert (rc == 9606);
+    rc = zsock_bind(pub_socket_wrapper, "tcp://*:%d", pub_port);
+    assert (rc == pub_port);
 }
 
 static inline
@@ -301,7 +303,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
     // analyze request
     bool valid_size = raw_size < HTTP_BUFFER_SIZE && raw_size > path_prefix_length;
-    // printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid);
+    // printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid_size);
     if (!valid_size) goto answer;
 
     if (memcmp(raw, path_prefix_ajax, path_prefix_length) == 0) {
@@ -373,10 +375,47 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
+static void print_usage(char * const *argv)
+{
+    fprintf(stderr, "usage: %s [-d device number] [-t http-port] [-p pub-port]\n", argv[0]);
+}
+
+static void process_arguments(int argc, char * const *argv)
+{
+    char c;
+    opterr = 0;
+    while ((c = getopt(argc, argv, "d:p:t:")) != -1) {
+        switch (c) {
+        case 'd':
+            msg_meta.device_number = atoi(optarg);
+            break;
+        case 'p':
+            pub_port = atoi(optarg);
+            break;
+        case 't':
+            http_port = atoi(optarg);
+            break;
+        case '?':
+            if (optopt == 'd' || optopt == 'p' || optopt == 't')
+                fprintf(stderr, "option -%c requires an argument.\n", optopt);
+            else if (isprint (optopt))
+                fprintf(stderr, "unknown option `-%c'.\n", optopt);
+            else
+                fprintf(stderr, "unknown option character `\\x%x'.\n", optopt);
+            print_usage(argv);
+            exit(1);
+        default:
+            exit(1);
+        }
+    }
+}
+
 
 int main(int argc, char * const *argv)
 {
     int rc = 0;
+
+    process_arguments(argc, argv);
 
     // set global config
     zsys_init();
