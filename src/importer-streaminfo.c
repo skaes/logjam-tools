@@ -80,10 +80,45 @@ void add_ignored_request_settings(zconfig_t* config, stream_info_t* info)
 {
     info->ignored_request_prefix = global_ignored_request_prefix;
     zlist_t* settings = get_stream_settings(config, info, "ignored_request_uri");
-    zconfig_t *setting = zlist_first(settings);
-    while (setting) {
+    zconfig_t *setting = zlist_last(settings);
+    if (setting) {
         info->ignored_request_prefix = zconfig_value(setting);
-        setting = zlist_next(settings);
+    }
+    zlist_destroy(&settings);
+}
+
+static inline size_t str_count(const char* str, char c)
+{
+    size_t count = 0;
+    while (*str) if (*str++ == c) ++count;
+    return count;
+}
+
+static
+void add_backend_only_requests_settings(zconfig_t* config, stream_info_t* info)
+{
+    zlist_t* settings = get_stream_settings(config, info, "backend_only_requests");
+    zconfig_t *setting = zlist_last(settings);
+    if (setting) {
+        const char *value = zconfig_value(setting);
+        if (value) {
+            size_t len = strlen(value);
+            if (streq(value, "*")) {
+                info->all_requests_are_backend_only_requests = 1;
+            } else if (len>0) {
+                int n = str_count(value, ',') + 1;
+                info->backend_only_requests_size = n;
+                info->backend_only_requests = zmalloc(sizeof(char*)*n);
+                char *valdup = strdup(value);
+                char *prefix = strtok(valdup, ",");
+                int i = 0;
+                while (prefix) {
+                    info->backend_only_requests[i++] = strdup(prefix);
+                    prefix = strtok(NULL, ",");
+                }
+                free(valdup);
+            }
+        }
     }
     zlist_destroy(&settings);
 }
@@ -128,6 +163,7 @@ stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
     }
     add_threshold_settings(config, info);
     add_ignored_request_settings(config, info);
+    add_backend_only_requests_settings(config, info);
 
     info->known_modules = zhash_new();
     assert(info->known_modules);
@@ -138,6 +174,7 @@ stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
 static
 void dump_stream_info(stream_info_t *stream)
 {
+    printf("[D] ====================\n");
     printf("[D] key: %s\n", stream->key);
     printf("[D] yek: %s\n", stream->yek);
     printf("[D] app: %s\n", stream->app);
@@ -146,6 +183,16 @@ void dump_stream_info(stream_info_t *stream)
     printf("[D] import_threshold: %d\n", stream->import_threshold);
     for (int i = 0; i<stream->module_threshold_count; i++) {
         printf("[D] module_threshold: %s = %zu\n", stream->module_thresholds[i].name, stream->module_thresholds[i].value);
+    }
+    printf("[D] all requests are backend only requests: %d\n", stream->all_requests_are_backend_only_requests);
+    int n = stream->backend_only_requests_size;
+    printf("[D] backend only requests size: %d\n", n);
+    if (n > 0) {
+        printf("[D] backend only requests: ");
+        printf("%s", stream->backend_only_requests[0]);
+        for (int i=1; i<n; i++)
+            printf(",%s", stream->backend_only_requests[i]);
+        printf("\n");
     }
 }
 
@@ -178,7 +225,7 @@ void setup_stream_config(zconfig_t *config, const char *pattern)
     do {
         stream_info_t *stream_info = stream_info_new(config, stream);
         const char *key = stream_info->key;
-        if (0)  dump_stream_info(stream_info);
+        if (0) dump_stream_info(stream_info);
         zhash_insert(configured_streams, key, stream_info);
         if (have_subscription_pattern && strstr(key, pattern) != NULL) {
             int rc = zhash_insert(stream_subscriptions, key, stream_info);

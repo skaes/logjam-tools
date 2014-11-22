@@ -444,6 +444,25 @@ int ignore_request(json_object *request, stream_info_t* info)
     return rc;
 }
 
+static int
+backend_only_request(const char *action, stream_info_t *stream)
+{
+    assert(action);
+
+    if (stream->all_requests_are_backend_only_requests)
+        return 1;
+
+    if (stream->backend_only_requests_size == 0)
+        return 0;
+
+    int n = stream->backend_only_requests_size;
+    for (int i = 0; i < n; i++)
+        if (strstr(action, stream->backend_only_requests[i]) == action)
+            return 1;
+
+    return 0;
+}
+
 void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
     if (ignore_request(request, self->stream_info)) return;
@@ -483,14 +502,18 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
 
     increments_destroy(increments);
 
-    json_object *request_id_obj;
-    if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
-        const char *uuid = json_object_get_string(request_id_obj);
-        if (uuid) {
-            char app_env_uuid[1024] = {0};
-            snprintf(app_env_uuid, 1024, "%s-%s", self->stream_info->key, uuid);
-            tracker_add_uuid(pstate->tracker, app_env_uuid);
+    if (!backend_only_request(request_data.page, self->stream_info)) {
+        json_object *request_id_obj;
+        if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
+            const char *uuid = json_object_get_string(request_id_obj);
+            if (uuid) {
+                char app_env_uuid[1024] = {0};
+                snprintf(app_env_uuid, 1024, "%s-%s", self->stream_info->key, uuid);
+                tracker_add_uuid(pstate->tracker, app_env_uuid);
+            }
         }
+    } else {
+        // printf("[D] ignored tracking for backend only request: %s\n", request_data.page);
     }
 
     if (0) {

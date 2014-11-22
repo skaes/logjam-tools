@@ -12,6 +12,7 @@ typedef struct {
     size_t value;
 } module_threshold_t;
 
+
 typedef struct {
     const char *key;      // [app,env].join('-')
     const char *yek;      // [env,app].join('.')
@@ -25,6 +26,9 @@ typedef struct {
     int module_threshold_count;
     module_threshold_t *module_thresholds;
     const char *ignored_request_prefix;
+    const char **backend_only_requests;
+    int backend_only_requests_size;
+    int all_requests_are_backend_only_requests;
     zhash_t *known_modules;
 } stream_info_t;
 
