@@ -22,7 +22,7 @@ static char http_response_ok [] =
 
 static char http_response_fail [] =
     "HTTP/1.1 400 Bad Request\r\n"
-    "Cache-Control: private"
+    "Cache-Control: private\r\n"
     "Content-Disposition: inline\r\n"
     "Content-Transfer-Encoding: binary\r\n"
     "Content-Type: image/png\r\n"
