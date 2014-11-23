@@ -12,25 +12,34 @@
 
 static char http_response_ok [] =
     "HTTP/1.1 200 OK\r\n"
+    "Cache-Control: private\r\n"
     "Content-Disposition: inline\r\n"
     "Content-Transfer-Encoding: binary\r\n"
     "Content-Type: image/png\r\n"
-    "Cache-Control: private\r\n"
     "Content-Length: 0\r\n"
     "Connection: close\r\n"
     "\r\n";
 
 static char http_response_fail [] =
     "HTTP/1.1 400 Bad Request\r\n"
+    "Cache-Control: private"
     "Content-Disposition: inline\r\n"
     "Content-Transfer-Encoding: binary\r\n"
     "Content-Type: image/png\r\n"
-    "Cache-Control: private"
     "Content-Length: 0\r\n"
     "Connection: close\r\n"
     "\r\n";
 
-static size_t ok_length, fail_length;
+static char http_response_alive [] =
+    "HTTP/1.1 200 OK\r\n"
+    "Cache-Control: private\r\n"
+    "Content-Type: text/plain\r\n"
+    "Content-Length: 6\r\n"
+    "Connection: close\r\n"
+    "\r\n"
+    "ALIVE\n";
+
+static size_t ok_length, fail_length, alive_length;
 
 static int http_port = 9678;
 static int pub_port = 9679;
@@ -44,9 +53,11 @@ static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
 static size_t http_failures = 0;
 
-static char path_prefix_ajax[] = "GET /logjam/ajax?";
-static char path_prefix_page[] = "GET /logjam/page?";
+static char path_prefix_ajax[]  = "GET /logjam/ajax?";
+static char path_prefix_page[]  = "GET /logjam/page?";
+static char path_prefix_alive[] = "GET /alive.txt ";
 static int path_prefix_length;
+static int path_prefix_alive_length;
 
 static msg_meta_t msg_meta = META_INFO_EMPTY;
 
@@ -152,7 +163,9 @@ void init_globals()
 
     ok_length = strlen (http_response_ok);
     fail_length = strlen (http_response_fail);
+    alive_length = strlen (http_response_alive);
     path_prefix_length = strlen (path_prefix_ajax);
+    path_prefix_alive_length = strlen (path_prefix_alive);
 
     // create ZMQ_STREAM socket
     http_socket_wrapper = zsock_new (ZMQ_STREAM);
@@ -306,7 +319,11 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid_size);
     if (!valid_size) goto answer;
 
-    if (memcmp(raw, path_prefix_ajax, path_prefix_length) == 0) {
+    if (memcmp(raw, path_prefix_alive, path_prefix_alive_length) == 0) {
+        zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
+        zmq_send (http_socket, http_response_alive, alive_length, ZMQ_SNDMORE);
+        goto close_connection;
+    } else if (memcmp(raw, path_prefix_ajax, path_prefix_length) == 0) {
         msg_data.msg_type = "ajax";
     } else if (memcmp(raw, path_prefix_page, path_prefix_length) == 0) {
         msg_data.msg_type = "page";
@@ -344,13 +361,14 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         zmq_send (http_socket, http_response_fail, fail_length, ZMQ_SNDMORE);
     }
 
-    // close the connection by sending the ID frame followed by a zero response
-    zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
-    zmq_send (http_socket, 0, 0, ZMQ_SNDMORE);
-
     received_messages_bytes += message_size;
     if (message_size > received_messages_max_bytes)
         received_messages_max_bytes = message_size;
+
+ close_connection:
+    // close the connection by sending the ID frame followed by a zero response
+    zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
+    zmq_send (http_socket, 0, 0, ZMQ_SNDMORE);
 
     return 0;
 }
