@@ -32,8 +32,8 @@ static char http_response_fail [] =
 
 static size_t ok_length, fail_length;
 
-static int http_port = 9000;
-static int pub_port = 9606;
+static int http_port = 9678;
+static int pub_port = 9679;
 static void *http_socket = NULL;
 static void *pub_socket = NULL;
 static zsock_t *http_socket_wrapper = NULL;
