@@ -178,7 +178,7 @@ static void process_arguments(int argc, char * const *argv)
 
 int main(int argc, char * const *argv)
 {
-    int rc=0;
+    int rc = 0;
     process_arguments(argc, argv);
 
     setvbuf(stdout, NULL, _IOLBF, 0);

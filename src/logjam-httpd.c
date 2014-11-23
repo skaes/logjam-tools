@@ -432,8 +432,10 @@ static void process_arguments(int argc, char * const *argv)
 int main(int argc, char * const *argv)
 {
     int rc = 0;
-
     process_arguments(argc, argv);
+
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    setvbuf(stderr, NULL, _IOLBF, 0);
 
     // set global config
     zsys_init();
