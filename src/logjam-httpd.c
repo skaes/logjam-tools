@@ -41,8 +41,8 @@ static char http_response_alive [] =
 
 static size_t ok_length, fail_length, alive_length;
 
-static int http_port = 9678;
-static int pub_port = 9679;
+static int http_port = 9705;
+static int pub_port = 9706;
 static void *http_socket = NULL;
 static void *pub_socket = NULL;
 static zsock_t *http_socket_wrapper = NULL;
