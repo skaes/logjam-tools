@@ -8,22 +8,28 @@ infrastructure for logjam (see https://github.com/skaes/logjam_app).
        src="https://scan.coverity.com/projects/3357/badge.svg"/>
 </a>
 
-Currently only two daemons are provided:
+Currently three daemons are provided:
 
 ## logjam-device
 
-A daemon which offers a zeromq PULL socket endpoint for applications
-to connect to and a zeromq SUB socket for forwarding. It optionally
+A daemon which offers a ZeroMQ PULL socket endpoint for applications
+to connect to and a ZeroMQ SUB socket for forwarding. It optionally
 subscribes to a RabbitMQ server to collect application messages from
-there and republishes them on the PUB socket. You can place as many of
-those devices as needed to to scale the logging infrastructure.
+there and republishes them on the PUB socket. You can run as many of
+those devices as needed to scale the logging infrastructure.
 
 ## logjam-importer
 
-A daemon which is scheduled to replace all of the ruby importer code
-still in logjam. It's much less resource intensive than the ruby code
-and a _lot_ faster, while still very stable: it has been in production
-use since April 2014 and hasn't crashed once.
+A multithreaded daemon using CZMQ's actor framework which is scheduled
+to replace all of the ruby importer code still in logjam. It's much
+less resource intensive than the ruby code and a _lot_ faster, while
+still very stable: it has been in production use since April 2014 and
+hasn't crashed once.
+
+## logjam-httpd
+
+A daemon which takes frontend performance data via HTTP GET requests
+and publishes it on on ZeroMQ PUB socket for the importer to pick up.
 
 ## Speed
 
