@@ -331,7 +331,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
     // analyze request
     bool valid_size = raw_size < HTTP_BUFFER_SIZE && raw_size > path_prefix_length;
-    printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid_size);
+    // printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid_size);
     if (!valid_size) goto answer;
 
     if (memcmp(raw, path_prefix_alive, path_prefix_alive_length) == 0) {
@@ -369,7 +369,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
  answer:
     if (verbose) {
-        printf("[U] %0.3d %s\n", http_return_code, first_line);
+        printf("[U] %03d %s\n", http_return_code, first_line);
     }
     // send the ID frame followed by the response
     zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
