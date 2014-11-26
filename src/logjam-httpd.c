@@ -10,6 +10,8 @@
 #include <json-c/json.h>
 #include "logjam-util.h"
 
+static bool verbose = false;
+
 static char http_response_ok [] =
     "HTTP/1.1 200 OK\r\n"
     "Cache-Control: private\r\n"
@@ -23,9 +25,7 @@ static char http_response_ok [] =
 static char http_response_fail [] =
     "HTTP/1.1 400 Bad Request\r\n"
     "Cache-Control: private\r\n"
-    "Content-Disposition: inline\r\n"
-    "Content-Transfer-Encoding: binary\r\n"
-    "Content-Type: image/png\r\n"
+    "Content-Type: text/plain\r\n"
     "Content-Length: 0\r\n"
     "Connection: close\r\n"
     "\r\n";
@@ -281,6 +281,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
     // asume request is invalid
     bool valid = false;
+    int http_return_code = 400;
     size_t message_size = 0;
 
     // data structure to hold the ZMQ_STREAM ID
@@ -290,6 +291,8 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // data structure to hold the ZMQ_STREAM received data
     uint8_t raw [HTTP_BUFFER_SIZE];
     int raw_size = HTTP_BUFFER_SIZE;
+    uint8_t first_line [HTTP_BUFFER_SIZE+4];
+    int first_line_length = 0;
 
     msg_data_t msg_data = {};
     msg_meta.sequence_number++;
@@ -304,19 +307,31 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     assert (raw_size >= 0);
     message_size += raw_size;
     // printf("[D] >>> raw_size=%d, buffer '%.*s' <<<\n", raw_size, raw_size, raw);
+
+    // copy first line for logging purposes
+    uint8_t* end_of_first_line = (uint8_t*) strstr((char*)raw, "\r\n");
+    first_line_length = end_of_first_line ? end_of_first_line - raw : 0;
+    if (first_line_length) {
+        memcpy(first_line, raw, first_line_length);
+    } else {
+        first_line_length = raw_size < 80 ? raw_size : 80;
+        memcpy(first_line, raw, first_line_length);
+        first_line[first_line_length++] = ' ';
+        first_line[first_line_length++] = '.';
+        first_line[first_line_length++] = '.';
+        first_line[first_line_length++] = '.';
+    }
+    first_line[first_line_length] = 0;
+
     // if we get more than BUFFER_SIZE data, the request is invalid
-    if (raw_size == HTTP_BUFFER_SIZE) {
-        // read remaining bytes
-        do {
-            raw_size = zmq_recv (item->socket, raw, HTTP_BUFFER_SIZE, 0);
-            message_size += raw_size;
-        } while (raw_size == HTTP_BUFFER_SIZE);
+    if (raw_size >= HTTP_BUFFER_SIZE) {
+        // invalid request ignore anything larger than HTTP_BUFFER_SIZE-1
         goto answer;
     }
 
     // analyze request
     bool valid_size = raw_size < HTTP_BUFFER_SIZE && raw_size > path_prefix_length;
-    // printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid_size);
+    printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid_size);
     if (!valid_size) goto answer;
 
     if (memcmp(raw, path_prefix_alive, path_prefix_alive_length) == 0) {
@@ -350,8 +365,12 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         send_logjam_message(&msg_data, &msg_meta);
 
     valid = true;
+    http_return_code = 200;
 
  answer:
+    if (verbose) {
+        printf("[U] %0.3d %s\n", http_return_code, first_line);
+    }
     // send the ID frame followed by the response
     zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
     if (valid) {
@@ -402,7 +421,7 @@ static void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "d:p:t:")) != -1) {
+    while ((c = getopt(argc, argv, "d:p:t:v")) != -1) {
         switch (c) {
         case 'd':
             msg_meta.device_number = atoi(optarg);
@@ -412,6 +431,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 't':
             http_port = atoi(optarg);
+            break;
+        case 'v':
+            verbose = true;
             break;
         case '?':
             if (optopt == 'd' || optopt == 'p' || optopt == 't')

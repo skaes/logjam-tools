@@ -26,7 +26,7 @@ extern uint64_t ntohll(uint64_t native_number);
 extern void dump_meta_info(msg_meta_t *meta);
 extern void dump_meta_info_network_format(msg_meta_t *meta);
 
-inline void meta_info_encode(msg_meta_t *meta)
+static inline void meta_info_encode(msg_meta_t *meta)
 {
     meta->tag = htons(META_INFO_TAG);
     meta->version = htons(META_INFO_VERSION);
@@ -35,7 +35,7 @@ inline void meta_info_encode(msg_meta_t *meta)
     meta->sequence_number = htonll(meta->sequence_number);
 }
 
-inline void meta_info_decode(msg_meta_t *meta)
+static inline void meta_info_decode(msg_meta_t *meta)
 {
     meta->tag = ntohs(meta->tag);
     meta->version = ntohs(meta->version);
@@ -44,7 +44,7 @@ inline void meta_info_decode(msg_meta_t *meta)
     meta->sequence_number = ntohll(meta->sequence_number);
 }
 
-inline void msg_add_meta_info(zmq_msg_t *msg, msg_meta_t *meta)
+static inline void msg_add_meta_info(zmq_msg_t *msg, msg_meta_t *meta)
 {
     zmq_msg_init_size(msg, sizeof(*meta));
     void *data = zmq_msg_data(msg);
