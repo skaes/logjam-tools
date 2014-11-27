@@ -172,6 +172,8 @@ void init_globals()
     assert (http_socket_wrapper);
     http_socket = zsock_resolve (http_socket_wrapper);
     assert (http_socket);
+    // make sure the http_socket blocks for at most 10ms when sending answers
+    zsock_set_sndtimeo(http_socket_wrapper, 10);
 
     // bind http socket
     rc = zsock_bind (http_socket_wrapper, "tcp://*:%d", http_port);
@@ -279,6 +281,8 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
 
 int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
+    int rc;
+
     // asume request is invalid
     bool valid = false;
     int http_return_code = 400;
@@ -335,8 +339,16 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     if (!valid_size) goto answer;
 
     if (memcmp(raw, path_prefix_alive, path_prefix_alive_length) == 0) {
-        zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
-        zmq_send (http_socket, http_response_alive, alive_length, ZMQ_SNDMORE);
+        rc = zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
+        if (rc == -1) {
+            fprintf(stderr, "[E] (%s) could not send identity frame. committing suicide", zmq_strerror (errno));
+            abort();
+        }
+        rc = zmq_send (http_socket, http_response_alive, alive_length, ZMQ_SNDMORE);
+        if (rc == -1) {
+            fprintf(stderr, "[E] (%s) could not send http answer. committing suicide", zmq_strerror (errno));
+            abort();
+        }
         goto close_connection;
     } else if (memcmp(raw, path_prefix_ajax, path_prefix_length) == 0) {
         msg_data.msg_type = "ajax";
@@ -372,12 +384,24 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         printf("[U] %03d %s\n", http_return_code, first_line);
     }
     // send the ID frame followed by the response
-    zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
+    rc = zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
+    if (rc == -1) {
+        fprintf(stderr, "[E] (%s) could not send identity frame. committing suicide", zmq_strerror (errno));
+        abort();
+    }
     if (valid) {
         zmq_send (http_socket, http_response_ok, ok_length, ZMQ_SNDMORE);
+        if (rc == -1) {
+            fprintf(stderr, "[E] (%s) could not send http answer. committing suicide", zmq_strerror (errno));
+            abort();
+        }
     } else {
         http_failures++;
         zmq_send (http_socket, http_response_fail, fail_length, ZMQ_SNDMORE);
+        if (rc == -1) {
+            fprintf(stderr, "[E] (%s) could not send http answer. committing suicide", zmq_strerror (errno));
+            abort();
+        }
     }
 
     received_messages_bytes += message_size;
@@ -386,8 +410,17 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
  close_connection:
     // close the connection by sending the ID frame followed by a zero response
-    zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
-    zmq_send (http_socket, 0, 0, ZMQ_SNDMORE);
+    // if anything goes wrong here, die!
+    rc = zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
+    if (rc != (int)id_size) {
+        fprintf(stderr, "[E] (%s) could not send identity frame. committing suicide", zmq_strerror (errno));
+        abort();
+    }
+    rc = zmq_send (http_socket, 0, 0, ZMQ_SNDMORE);
+    if (rc == -1) {
+        fprintf(stderr, "[E] (%s) could not send identity frame. committing suicide", zmq_strerror (errno));
+        abort();
+    }
 
     return 0;
 }
