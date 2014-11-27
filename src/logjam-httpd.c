@@ -67,7 +67,7 @@ typedef struct {
     const char *msg_type;
     char routing_key[256+17];
     int routing_key_len;
-    const char *json_str;
+    char *json_str;
     int json_len;
 } msg_data_t;
 
@@ -207,8 +207,10 @@ bool extract_msg_data_from_query_string(char *query_string, msg_data_t *msg_data
     json_object_object_add(json, "started_ms", json_object_new_int64(msg_meta.created_ms));
     json_object_object_add(json, "started_at", json_object_new_string(current_time_as_string));
 
-    msg_data->json_str = json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN);
-    msg_data->json_len = strlen(msg_data->json_str);
+    const char *json_string = json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN);
+    assert(json_string);
+    msg_data->json_str = strdup(json_string);
+    msg_data->json_len = strlen(json_string);
     // printf("[D] json: %s\n", msg_data->json_str);
 
     // check version
@@ -274,6 +276,8 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
     zmq_msg_close(&message_parts[1]);
     zmq_msg_close(&message_parts[2]);
     zmq_msg_close(&message_parts[3]);
+    free(data->json_str);
+    data->json_str = NULL;
 }
 
 #define MAX_ID_SIZE 256
