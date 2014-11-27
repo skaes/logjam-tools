@@ -768,7 +768,7 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
     int64_t request_time    = mtimes[1] = timings[responseStart] - timings[requestStart];
     int64_t response_time   = mtimes[2] = timings[responseEnd] - timings[responseStart];
     int64_t processing_time = mtimes[3] = timings[domComplete] - timings[responseEnd];
-    int64_t load_time       = mtimes[4] = timings[loadEventEnd] - timings[loadEventEnd];
+    int64_t load_time       = mtimes[4] = timings[loadEventEnd] - timings[domComplete];
     int64_t page_time       = mtimes[5] = timings[loadEventEnd];
 
     json_object_object_add(request, "connect_time", json_object_new_int64(connect_time));
