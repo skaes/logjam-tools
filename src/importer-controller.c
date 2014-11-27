@@ -389,7 +389,7 @@ int run_controller_loop(zconfig_t* config)
     zsys_set_io_threads(1);
     zsys_set_rcvhwm(1000);
     zsys_set_sndhwm(1000);
-    zsys_set_linger(100);
+    zsys_set_linger(0);
 
     controller_state_t state = {.ticks = 0, .config = config};
     bool start_up_complete = controller_create_actors(&state);
