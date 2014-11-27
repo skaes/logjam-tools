@@ -105,6 +105,9 @@ const char* processor_setup_page(processor_state_t *self, json_object *request)
     if (json_object_object_get_ex(request, "action", &page_obj)) {
         json_object_get(page_obj);
         json_object_object_del(request, "action");
+    } else if (json_object_object_get_ex(request, "logjam_action", &page_obj)) {
+        json_object_get(page_obj);
+        json_object_object_del(request, "logjam_action");
     } else {
         page_obj = json_object_new_string("Unknown#unknown_method");
     }
@@ -777,6 +780,8 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
     json_object_object_add(request, "processing_time", json_object_new_int64(processing_time));
     json_object_object_add(request, "load_time", json_object_new_int64(load_time));
     json_object_object_add(request, "page_time", json_object_new_int64(page_time));
+
+    // dump_json_object(stdout, request);
 
     return 1;
 }
