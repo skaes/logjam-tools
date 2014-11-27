@@ -334,13 +334,13 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // if we get more than BUFFER_SIZE data, the request is invalid
     if (raw_size >= HTTP_BUFFER_SIZE) {
         // invalid request ignore anything larger than HTTP_BUFFER_SIZE-1
-        goto answer;
+        goto send_answer;
     }
 
     // analyze request
     bool valid_size = raw_size < HTTP_BUFFER_SIZE && raw_size > path_prefix_length;
     // printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid_size);
-    if (!valid_size) goto answer;
+    if (!valid_size) goto send_answer;
 
     if (memcmp(raw, path_prefix_alive, path_prefix_alive_length) == 0) {
         // invalid, send failure response
@@ -362,7 +362,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         msg_data.msg_type = "page";
     } else {
         // printf("[D] invalid prefix\n");
-        goto answer;
+        goto send_answer;
     }
 
     // search for first non blank character
@@ -374,7 +374,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // check protocol spec
     if (memcmp(raw+i, " HTTP/1.1\r\n", 11) != 0 && memcmp(raw+i, " HTTP/1.0\r\n", 11) != 0 ) {
         // printf("[D] invalid protocol spec\n");
-        goto answer;
+        goto send_answer;
     }
 
     char *query_string = (char*) &raw[path_prefix_length];
@@ -385,7 +385,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     valid = true;
     http_return_code = 200;
 
- answer:
+ send_answer:
     received_messages_bytes += message_size;
     if (message_size > received_messages_max_bytes)
         received_messages_max_bytes = message_size;
