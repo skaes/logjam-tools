@@ -179,6 +179,8 @@ void init_globals()
     zsock_set_sndtimeo(http_socket_wrapper, 10);
     // limit size of incoming messages to protect against malicious users
     zsock_set_maxmsgsize(http_socket_wrapper, MAX_REQUEST_SIZE);
+    // make max number of outstanding connections larger than the default 100
+    zsock_set_backlog(http_socket_wrapper, 4096);
 
     // bind http socket
     rc = zsock_bind (http_socket_wrapper, "tcp://*:%d", http_port);
