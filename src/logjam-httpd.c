@@ -281,7 +281,7 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
 }
 
 #define MAX_ID_SIZE 256
-#define HTTP_BUFFER_SIZE 8192
+#define MAX_REQUEST_BYTES_READ 4096
 
 int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
@@ -294,12 +294,12 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
     // data structure to hold the ZMQ_STREAM ID
     uint8_t id [MAX_ID_SIZE];
-    size_t id_size = MAX_ID_SIZE;
+    size_t id_size = 0;
 
     // data structure to hold the ZMQ_STREAM received data
-    uint8_t raw [HTTP_BUFFER_SIZE];
-    int raw_size = HTTP_BUFFER_SIZE;
-    uint8_t first_line [HTTP_BUFFER_SIZE+4];
+    uint8_t raw [MAX_REQUEST_BYTES_READ+1];  // +1 for terminating null character
+    int raw_size = 0;
+    uint8_t first_line [sizeof(raw)+4];
     int first_line_length = 0;
 
     msg_data_t msg_data = {};
@@ -309,14 +309,31 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // get HTTP request; ID frame and then request
     id_size = zmq_recv (item->socket, id, MAX_ID_SIZE, 0);
     assert (id_size > 0);
+    assert (id_size <= MAX_ID_SIZE);
     message_size += id_size;
 
-    raw_size = zmq_recv (item->socket, raw, HTTP_BUFFER_SIZE-1, 0);
-    assert (raw_size >= 0);
+    int msg_size = zmq_recv (item->socket, raw, MAX_REQUEST_BYTES_READ, 0);
+    assert (msg_size >= 0);
+    if (msg_size > MAX_REQUEST_BYTES_READ)
+        raw_size = MAX_REQUEST_BYTES_READ;
+    else
+        raw_size = msg_size;
+    // sizeof(raw) = MAX_REQUEST_BYTES_CONSIDERED +1, so this is safe:
+    raw[raw_size] = 0;
+
+    if (verbose)
+        printf("[D] msg_size: %d, raw size: %d\n", msg_size, raw_size);
+
     message_size += raw_size;
     // terminate buffer with 0 character, just in case
-    raw[raw_size] = 0;
-    // printf("[D] >>> raw_size=%d, buffer '%.*s' <<<\n", raw_size, raw_size, raw);
+
+    // update message stats
+    received_messages_bytes += message_size;
+    if (message_size > received_messages_max_bytes)
+        received_messages_max_bytes = message_size;
+
+    if (verbose)
+        printf("[D] raw_size=%d:\n>>>\n%.*s<<<\n", raw_size, raw_size, raw);
 
     // copy first line for logging purposes
     uint8_t* end_of_first_line = (uint8_t*) strstr((char*)raw, "\r\n");
@@ -395,10 +412,6 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     http_return_code = 200;
 
  send_answer:
-    received_messages_bytes += message_size;
-    if (message_size > received_messages_max_bytes)
-        received_messages_max_bytes = message_size;
-
     if (!valid) {
         fprintf(stderr, "[E] %03d %s\n", http_return_code, first_line);
     } else if (verbose) {
