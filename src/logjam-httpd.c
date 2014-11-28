@@ -281,7 +281,7 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
 }
 
 #define MAX_ID_SIZE 256
-#define HTTP_BUFFER_SIZE 4096
+#define HTTP_BUFFER_SIZE 8192
 
 int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
