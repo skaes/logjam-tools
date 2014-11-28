@@ -390,8 +390,10 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     if (message_size > received_messages_max_bytes)
         received_messages_max_bytes = message_size;
 
-    if (verbose) {
-        printf("[U] %03d %s\n", http_return_code, first_line);
+    if (!valid) {
+        printf("[E] %03d %s\n", http_return_code, first_line);
+    } else if (verbose) {
+        printf("[D] %03d %s\n", http_return_code, first_line);
     }
 
     // send the ID frame followed by the response
