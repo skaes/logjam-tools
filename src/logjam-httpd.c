@@ -293,8 +293,8 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     size_t message_size = 0;
 
     // data structure to hold the ZMQ_STREAM ID
-    uint8_t id [256];
-    size_t id_size = 256;
+    uint8_t id [MAX_ID_SIZE];
+    size_t id_size = MAX_ID_SIZE;
 
     // data structure to hold the ZMQ_STREAM received data
     uint8_t raw [HTTP_BUFFER_SIZE];
@@ -311,9 +311,11 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     assert (id_size > 0);
     message_size += id_size;
 
-    raw_size = zmq_recv (item->socket, raw, HTTP_BUFFER_SIZE, 0);
+    raw_size = zmq_recv (item->socket, raw, HTTP_BUFFER_SIZE-1, 0);
     assert (raw_size >= 0);
     message_size += raw_size;
+    // terminate buffer with 0 character, just in case
+    raw[raw_size] = 0;
     // printf("[D] >>> raw_size=%d, buffer '%.*s' <<<\n", raw_size, raw_size, raw);
 
     // copy first line for logging purposes
@@ -331,17 +333,20 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     }
     first_line[first_line_length] = 0;
 
-    // if we get more than BUFFER_SIZE data, the request is invalid
-    if (raw_size >= HTTP_BUFFER_SIZE) {
-        // invalid request ignore anything larger than HTTP_BUFFER_SIZE-1
-        fprintf(stderr, "[E] %s:%d request larger than %d bytes\n", __FILE__, __LINE__, HTTP_BUFFER_SIZE);
+    // if the data obtained with a single read does not include the
+    // end of the first line, then we consider the request invalid
+    if (!end_of_first_line) {
+        fprintf(stderr, "[E] %s:%d first %d bytes of request did not include CR/LF pair\n", __FILE__, __LINE__, raw_size);
         goto send_answer;
     }
 
     // analyze request
-    bool valid_size = raw_size < HTTP_BUFFER_SIZE && raw_size > path_prefix_length;
+    bool valid_size = raw_size > path_prefix_length;
     // printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid_size);
-    if (!valid_size) goto send_answer;
+    if (!valid_size) {
+        fprintf(stderr, "[E] %s:%d invalid path (too short).\n", __FILE__, __LINE__);
+        goto send_answer;
+    }
 
     if (memcmp(raw, path_prefix_alive, path_prefix_alive_length) == 0) {
         // confirm liveness
@@ -353,7 +358,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         }
         rc = zmq_send (http_socket, http_response_alive, alive_length, ZMQ_SNDMORE);
         if (rc == -1) {
-            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s.\n",
+            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s\n",
                     __FILE__, __LINE__, zmq_strerror (errno), first_line);
             return 0;
         }
