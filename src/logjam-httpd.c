@@ -41,6 +41,9 @@ static char http_response_alive [] =
 
 static size_t ok_length, fail_length, alive_length;
 
+#define MAX_ID_SIZE 256
+#define MAX_REQUEST_SIZE 8192
+
 static int http_port = 9705;
 static int pub_port = 9706;
 static void *http_socket = NULL;
@@ -116,7 +119,7 @@ void parse(char *s, json_object *json)
     int c;
     char buf[3];
     // we know the value can't be longer than the whole request
-    char value[4096];
+    char value[MAX_REQUEST_SIZE];
     int offset = 0;
 
     key = s;
@@ -174,6 +177,8 @@ void init_globals()
     assert (http_socket);
     // make sure the http_socket blocks for at most 10ms when sending answers
     zsock_set_sndtimeo(http_socket_wrapper, 10);
+    // limit size of incoming messages to protect against malicious users
+    zsock_set_maxmsgsize(http_socket_wrapper, MAX_REQUEST_SIZE);
 
     // bind http socket
     rc = zsock_bind (http_socket_wrapper, "tcp://*:%d", http_port);
@@ -280,9 +285,6 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
     data->json_str = NULL;
 }
 
-#define MAX_ID_SIZE 256
-#define MAX_REQUEST_BYTES_READ 4096
-
 int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 {
     int rc;
@@ -297,7 +299,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     size_t id_size = 0;
 
     // data structure to hold the ZMQ_STREAM received data
-    uint8_t raw [MAX_REQUEST_BYTES_READ+1];  // +1 for terminating null character
+    uint8_t raw [MAX_REQUEST_SIZE+1];  // +1 for terminating null character
     int raw_size = 0;
     uint8_t first_line [sizeof(raw)+4];
     int first_line_length = 0;
@@ -312,13 +314,13 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     assert (id_size <= MAX_ID_SIZE);
     message_size += id_size;
 
-    int msg_size = zmq_recv (item->socket, raw, MAX_REQUEST_BYTES_READ, 0);
+    int msg_size = zmq_recv (item->socket, raw, MAX_REQUEST_SIZE, 0);
     assert (msg_size >= 0);
-    if (msg_size > MAX_REQUEST_BYTES_READ)
-        raw_size = MAX_REQUEST_BYTES_READ;
+    if (msg_size > MAX_REQUEST_SIZE)
+        raw_size = MAX_REQUEST_SIZE;
     else
         raw_size = msg_size;
-    // sizeof(raw) = MAX_REQUEST_BYTES_CONSIDERED +1, so this is safe:
+    // sizeof(raw) = MAX_REQUEST_SIZE + 1, so this is safe:
     raw[raw_size] = 0;
 
     if (verbose)
