@@ -347,14 +347,15 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         // confirm liveness
         rc = zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
         if (rc == -1) {
-            fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request.\n",
-                    __FILE__, __LINE__, zmq_strerror (errno));
+            fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request: %s\n",
+                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
             return 0;
         }
         rc = zmq_send (http_socket, http_response_alive, alive_length, ZMQ_SNDMORE);
         if (rc == -1) {
-            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. trying to close client connection.\n",
-                    __FILE__, __LINE__, zmq_strerror (errno));
+            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s.\n",
+                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
+            return 0;
         }
         goto close_connection;
     } else if (memcmp(raw, path_prefix_ajax, path_prefix_length) == 0) {
@@ -402,22 +403,22 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // send the ID frame followed by the response
     rc = zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
     if (rc == -1) {
-        fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request.\n",
-                __FILE__, __LINE__, zmq_strerror (errno));
+        fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request: %s\n",
+                __FILE__, __LINE__, zmq_strerror (errno), first_line);
         return 0;
     }
     if (valid) {
         zmq_send (http_socket, http_response_ok, ok_length, ZMQ_SNDMORE);
         if (rc == -1) {
-            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. trying to close client connection.\n",
-                    __FILE__, __LINE__, zmq_strerror (errno));
+            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s\n",
+                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
         }
     } else {
         http_failures++;
         zmq_send (http_socket, http_response_fail, fail_length, ZMQ_SNDMORE);
         if (rc == -1) {
-            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. trying to close client connection.\n",
-                    __FILE__, __LINE__, zmq_strerror (errno));
+            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s\n",
+                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
         }
     }
 
@@ -426,14 +427,14 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // if anything goes wrong here, die!
     rc = zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
     if (rc != (int)id_size) {
-        fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request.\n",
-                __FILE__, __LINE__, zmq_strerror (errno));
+        fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request: %s\n",
+                __FILE__, __LINE__, zmq_strerror (errno), first_line);
         return 0;
     }
     rc = zmq_send (http_socket, 0, 0, ZMQ_SNDMORE);
     if (rc == -1) {
-        fprintf(stderr, "[E] %s:%d: %s. failed to send delimiter frame. aborting request.\n",
-                __FILE__, __LINE__, zmq_strerror (errno));
+        fprintf(stderr, "[E] %s:%d: %s. failed to send delimiter frame. aborting request: %s\n",
+                __FILE__, __LINE__, zmq_strerror (errno), first_line);
     }
 
     return 0;
