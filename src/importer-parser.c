@@ -323,9 +323,12 @@ void parser(zsock_t *pipe, void *args)
                 state->parsed_msgs_count++;
                 parse_msg_and_forward_interesting_requests(msg, state);
                 zmsg_destroy(&msg);
+            } else {
+                // msg == NULL, probably interrupted by signal handler
+                break;
             }
         } else {
-            // msg == NULL, probably interrupted by signal handler
+            // socket == NULL, probably interrupted by signal handler
             break;
         }
     }
