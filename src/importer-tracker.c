@@ -86,15 +86,14 @@ int tracker_add_uuid(uuid_tracker_t *tracker, const char* uuid)
 
 // client interface to send uuid deletion requests to server (synchronously)
 // returns whether request has been successfull
-int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** original_msg, const char* request_type)
+int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t* original_msg, const char* request_type)
 {
     zmsg_t *msg = zmsg_new();
     assert(msg);
     zmsg_addstr(msg, uuid);
-    zmsg_addptr(msg, *original_msg);
+    zmsg_addptr(msg, original_msg);
     zmsg_addstr(msg, request_type);
     zmsg_send(&msg, tracker->deletions);
-    *original_msg = NULL;
 
     msg = zmsg_recv(tracker->deletions);
     int deleted = 0;
@@ -178,7 +177,7 @@ void clean_expired_uuids(tracker_state_t *state, uint64_t age_threshold)
             // const char *uuid = zring_key(uuids);
             // printf("[D] tracker[%zu]: expired uuid: %s\n", state->id, uuid);
             state->expired++;
-            zring_remove(uuids, (void*)item);
+            zring_remove(uuids, NULL);
         } else {
             break;
         }
@@ -196,8 +195,8 @@ void clean_expired_failures(tracker_state_t *state, uint64_t age_threshold)
             // const char *uuid = zring_key(failures);
             // printf("[D] tracker[%zu]: failed uuid: %s\n", state->id, uuid);
             state->failed++;
+            zring_remove(failures, NULL);
             zmsg_destroy(&failure->msg);
-            zring_remove(failures, failure);
             free(failure);
         } else {
             break;
@@ -215,7 +214,7 @@ void clean_expired_successes(tracker_state_t *state, uint64_t age_threshold)
         if (item < age_threshold) {
             // const char *uuid = zring_key(successes);
             // printf("[D] tracker[%zu]: success uuid: %s\n", state->id, uuid);
-            zring_remove(successes, (void*)item);
+            zring_remove(successes, NULL);
         } else {
             break;
         }
@@ -244,7 +243,7 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
     failure_t *failure = zring_lookup(state->failures, uuid);
     if (failure) {
         // printf("[D] tracker[%zu]: forwarding late backend uuid: %s\n", state->id, uuid);
-        zring_delete(state->failures, uuid);
+        zring_remove(state->failures, NULL);
         zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
         state->added++;
         zmsg_send(&failure->msg, state->subscriber);
@@ -284,18 +283,17 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
     if ( (seen = (uint64_t)zring_lookup(state->uuids, uuid)) ) {
         // printf("[D] tracker[%zu]: found uuid: %s\n", state->id, uuid);
         rc = 1;
-        zring_delete(state->uuids, uuid);
+        zring_remove(state->uuids, NULL);
         zring_insert(state->successes, uuid, (void*)seen);
         state->deleted++;
-        zmsg_destroy(&original_msg);
-    } else if ( (seen = (uint64_t)zring_lookup(state->successes, uuid)) ) {
+    } else if ( zring_lookup(state->successes, uuid) || zring_lookup(state->failures, uuid) ) {
         // fprintf(stderr, "[W] tracker[%zu]: duplicate %s uuid: %s\n", state->id, request_type, uuid);
         state->duplicates++;
     } else {
         // printf("[D] tracker[%zu]: missing uuid: %s\n", state->id, uuid);
         failure_t *failure = zmalloc(sizeof(*failure));
         failure->created_time_ms = state->current_time_ms;
-        failure->msg = original_msg;
+        failure->msg = zmsg_dup(original_msg);
         zring_insert(state->failures, uuid, failure);
     }
     free(uuid);

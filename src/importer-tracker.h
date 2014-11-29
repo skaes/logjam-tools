@@ -12,7 +12,7 @@ typedef struct _uuid_tracker_t uuid_tracker_t;
 extern uuid_tracker_t* tracker_new();
 extern void tracker_destroy(uuid_tracker_t **tracker);
 extern int tracker_add_uuid(uuid_tracker_t *tracker, const char* uuid);
-extern int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t** data, const char* request_type);
+extern int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t* original_msg, const char* request_type);
 
 extern void tracker(zsock_t *pipe, void *args);
 

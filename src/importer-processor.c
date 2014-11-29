@@ -787,7 +787,7 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
 }
 
 static
-int check_frontend_request_validity(parser_state_t *pstate, json_object *request, const char* type, zmsg_t** msg)
+int check_frontend_request_validity(parser_state_t *pstate, json_object *request, const char* type, zmsg_t* msg)
 {
     json_object *request_id_obj;
     const char *uuid = NULL;
@@ -812,7 +812,7 @@ int check_frontend_request_validity(parser_state_t *pstate, json_object *request
 }
 
 
-void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t** msg)
+void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg)
 {
     // dump_json_object(stderr, request);
     // if (self->request_count % 100 == 0) {
@@ -895,7 +895,7 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     // TODO: store interesting requests
 }
 
-void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t **msg)
+void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg)
 {
     // dump_json_object(stdout, request);
     // if (self->request_count % 100 == 0) {
