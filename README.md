@@ -62,6 +62,13 @@ cd logjam-tools
 
 Then, run `./bin/install-libs` to install all dependecies in `/usr/local`.
 
+If you want to install everything into a separate hierarchy, you can
+use the `--prefix` like so:
+
+```
+./bin/install-libs --prefix /opt/logjam
+```
+
 Or install them manually:
 * Download and install rabbitmq-c from https://github.com/alanxz/rabbitmq-c/releases/tag/v0.5.2
 * Download and install zmq 4.0.5 from http://zeromq.org/intro:get-the-software
@@ -81,11 +88,21 @@ sudo make install
 
 The generated `./configure` script will try to use `pkg-config` to find the
 required libraries. If `pkg-config` is not installed, it assumes the
-headers and libraries are installed under `/usr/local` or
+headers and libraries are installed under `/opt/logjam`, `/usr/local` or
 `/opt/local`. If they're somewhere else, you can specify
 `--with-opt-dir=dir1:dir2:dir3` as argument to `sh autogen.sh` (or
 `./configure`).
 
+`autogen.sh` accepts the usual configure arguments, such as
+`--prefix`. Thus, if you have installed the libraries under
+`/opt/logjam`, and want to install the logjam tools in the same place,
+run `sh autogen.sh --with-opt-dir=/opt/logjam --prefix=/opt/logjam `
+
+If you want to get rid of the installed software, run
+```
+sudo make uninstall
+./bin/install-libs uninstall
+```
 
 ## License
 

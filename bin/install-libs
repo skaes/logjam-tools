@@ -1,6 +1,30 @@
 #!/bin/bash
 set -e
 
+if [ "$1" == "--force" ]; then
+    forced=1
+    shift
+else
+    forced=0
+fi
+
+if [ "$1" == "--prefix" ]; then
+    shift
+    prefix=$1
+    shift
+else
+    prefix=/usr/local
+fi
+
+if [ "$1" == "" ]; then
+    cmd=install
+else
+    cmd=$1
+    shift
+fi
+
+echo "library dependencies go into $prefix, forced=$forced, cmd=$cmd"
+
 cd builds
 
 case $OSTYPE in
@@ -20,75 +44,135 @@ test -z "$LSUDO" && LSUDO="sudo"
 
 export CC CXX
 
-d=rabbitmq-c-0.5.2
-f=${d}.tar.gz
-test -f $f || wget -nv https://github.com/alanxz/rabbitmq-c/releases/download/v0.5.2/$f
-test -d $d || tar xzvf $f
-cd $d
-test -f config.status || ./configure
-make
-$LSUDO make install
-$LSUDO $ldconfig
-cd ..
 
-d=libsodium-1.0.0
-f=${d}.tar.gz
-test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.0/$f
-test -d $d || tar xzvf $f
-cd $d
-test -f config.status || ./configure
-make
-$LSUDO make install
-$LSUDO $ldconfig
-cd ..
+function handle_rabbitmq()
+{
+    d=rabbitmq-c-0.5.2
+    f=${d}.tar.gz
+    test -f $f || wget -nv https://github.com/alanxz/rabbitmq-c/releases/download/v0.5.2/$f
+    test -d $d || tar xzvf $f
+    cd $d
+    [ $forced == "1" ] && rm -f config.status
+    test -f config.status || ./configure --prefix=$prefix
+    [ $forced == "1" ] && make clean
+    make
+    $LSUDO make $cmd
+    $LSUDO $ldconfig
+    cd ..
+}
 
-d=zeromq-4.0.5
-f=${d}.tar.gz
-test -f $f || wget -nv http://download.zeromq.org/$f
-test -d $d || tar xzvf $f
-cd $d
-test -f config.status || ./configure
-make
-$LSUDO make install
-$LSUDO $ldconfig
-cd ..
+function handle_mongoc()
+{
+    d=mongo-c-driver
+    test -d $d || git clone https://github.com/mongodb/${d}.git
+    cd $d
+    revision=$(git rev-parse HEAD)
+    if [ "$revision" != "048c851919dc32c98b5f8a9a0270e69af9385db3" ]; then
+        git reset --hard
+        git fetch
+        git checkout 048c851919dc32c98b5f8a9a0270e69af9385db3
+    fi
+    [ $forced == "1" ] && rm -f config.status
+    test -f config.status || (sh autogen.sh && ./configure  --prefix=$prefix --with-libbson=bundled)
+    [ $forced == "1" ] && make clean
+    make
+    $LSUDO make $cmd
+    $LSUDO $ldconfig
+    cd ..
+}
 
-d=czmq
-test -d $d || git clone https://github.com/zeromq/${d}.git
-cd $d
-git reset --hard
-git fetch
-git checkout d7f4da8945b8bb022034c5ada3c6f1da5b9af351
-test -f config.status || (sh autogen.sh && ./configure)
-make
-$LSUDO make install
-$LSUDO $ldconfig
-cd ..
+function handle_json_c()
+{
+    # json-c configure fails if it's not put in another sub dir. go figure.
+    test -d murks || mkdir murks
+    cd murks
 
-d=mongo-c-driver
-test -d $d || git clone https://github.com/mongodb/${d}.git
-cd $d
-git reset --hard
-git fetch
-git checkout 048c851919dc32c98b5f8a9a0270e69af9385db3
-test -f config.status || (sh autogen.sh && ./configure --with-libbson=bundled)
-make
-$LSUDO make install
-$LSUDO $ldconfig
-cd ..
+    d=json-c
+    test -d $d || git clone https://github.com/skaes/${d}.git
+    cd $d
+    revision=$(git rev-parse HEAD)
+    if [ "$revision" != "36be1c4c7ade78fae8ef67280cd4f98ff9f81016" ]; then
+        git reset --hard
+        git fetch
+        git checkout 36be1c4c7ade78fae8ef67280cd4f98ff9f81016
+    fi
+    [ $forced == "1" ] && rm -f config.status
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
+    [ $forced == "1" ] && make clean
+    make
+    $LSUDO make $cmd
+    $LSUDO $ldconfig
+    cd ../..
+}
 
-# json-c configure fails if it's not put in another sub dir. go figure.
-test -d murks || mkdir murks
-cd murks
 
-d=json-c
-test -d $d || git clone https://github.com/skaes/${d}.git
-cd $d
-git reset --hard
-git fetch
-git checkout 36be1c4c7ade78fae8ef67280cd4f98ff9f81016
-test -f config.status || (sh autogen.sh && ./configure)
-make
-$LSUDO make install
-$LSUDO $ldconfig
-cd ../..
+function handle_sodium()
+{
+    d=libsodium-1.0.0
+    f=${d}.tar.gz
+    test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.0/$f
+    test -d $d || tar xzvf $f
+    cd $d
+    [ $forced == "1" ] && rm -f config.status
+    test -f config.status || ./configure --prefix=$prefix
+    [ $forced == "1" ] && make clean
+    make
+    $LSUDO make $cmd
+    $LSUDO $ldconfig
+    cd ..
+}
+
+function handle_zeromq()
+{
+    d=zeromq-4.0.5
+    f=${d}.tar.gz
+    test -f $f || wget -nv http://download.zeromq.org/$f
+    test -d $d || tar xzvf $f
+    cd $d
+    [ $forced == "1" ] && rm -f config.status
+    test -f config.status || ./configure --prefix=$prefix
+    [ $forced == "1" ] && make clean
+    make
+    $LSUDO make $cmd
+    $LSUDO $ldconfig
+    cd ..
+}
+
+function handle_czmq()
+{
+    d=czmq
+    test -d $d || git clone https://github.com/zeromq/${d}.git
+    cd $d
+    revision=$(git rev-parse HEAD)
+    if [ "$revision" != "d7f4da8945b8bb022034c5ada3c6f1da5b9af351" ]; then
+        git reset --hard
+        git fetch
+        git checkout d7f4da8945b8bb022034c5ada3c6f1da5b9af351
+    fi
+    [ $forced == "1" ] && rm -f config.status
+    test -f config.status || (sh autogen.sh && zmq_CFLAGS=-I$prefix/include zmq_LIBS=-L$prefix/lib ./configure --prefix=$prefix)
+    [ $forced == "1" ] && make clean
+    make
+    $LSUDO make $cmd
+    $LSUDO $ldconfig
+    cd ..
+}
+
+case $cmd in
+    uninstall|clean)
+        handle_czmq
+        handle_zeromq
+        handle_sodium
+        handle_json_c
+        handle_mongoc
+        handle_rabbitmq
+        ;;
+    *)
+        handle_rabbitmq
+        handle_mongoc
+        handle_json_c
+        handle_sodium
+        handle_zeromq
+        handle_czmq
+        ;;
+esac
