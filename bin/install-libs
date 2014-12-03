@@ -73,7 +73,7 @@ function handle_mongoc()
         git checkout 048c851919dc32c98b5f8a9a0270e69af9385db3
     fi
     [ $forced == "1" ] && rm -f config.status
-    test -f config.status || (sh autogen.sh && ./configure  --prefix=$prefix --with-libbson=bundled)
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --with-libbson=bundled)
     [ $forced == "1" ] && make clean
     make
     $LSUDO make $cmd
@@ -130,7 +130,7 @@ function handle_zeromq()
     test -d $d || tar xzvf $f
     cd $d
     [ $forced == "1" ] && rm -f config.status
-    test -f config.status || ./configure --prefix=$prefix
+    test -f config.status || ./configure --prefix=$prefix CPPFLAGS=-I$prefix/include LDFLAGS=-L$prefix/lib
     [ $forced == "1" ] && make clean
     make
     $LSUDO make $cmd
@@ -150,7 +150,7 @@ function handle_czmq()
         git checkout d7f4da8945b8bb022034c5ada3c6f1da5b9af351
     fi
     [ $forced == "1" ] && rm -f config.status
-    test -f config.status || (sh autogen.sh && zmq_CFLAGS=-I$prefix/include zmq_LIBS=-L$prefix/lib ./configure --prefix=$prefix)
+    test -f config.status || (sh autogen.sh && zmq_CFLAGS=-I$prefix/include zmq_LIBS=-L$prefix/lib ./configure --prefix=$prefix CPPFLAGS=-I$prefix/include LDFLAGS=-L$prefix/lib)
     [ $forced == "1" ] && make clean
     make
     $LSUDO make $cmd

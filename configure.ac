@@ -38,11 +38,11 @@ AC_ARG_WITH(opt-dir,
 	[
 		val=`echo "$PATH_SEPARATOR$withval" | sed "s|$PATH_SEPARATOR\([[^$PATH_SEPARATOR]*]\)| -I\1/include -I\1/include/libbson-1.0 -I\1/include/libmongoc-1.0|g;s/^ //"`
 		OPTDIR_CPPFLAGS="$val"
-		val=`echo "$PATH_SEPARATOR$withval" | sed "s|$PATH_SEPARATOR\([[^$PATH_SEPARATOR]*]\)| -L\1/lib|g;s/^ //"`
+		val=`echo "$PATH_SEPARATOR$withval" | sed "s|$PATH_SEPARATOR\([[^$PATH_SEPARATOR]*]\)| -L\1/lib -Wl,-rpath -Wl,\1/lib|g;s/^ //"`
 		OPTDIR_LDFLAGS="$val"
                 AC_SUBST([OPTDIR_CPPFLAGS])
 		AC_SUBST([OPTDIR_LDFLAGS])
-                AC_SUBST([DEPS_LIBS],["-lrabbitmq -lzmq -lczmq -ljson-c -lbson-1.0 -lmongoc-1.0"])
+                AC_SUBST([DEPS_LIBS],["-lrabbitmq -lczmq -lzmq -ljson-c -lmongoc-1.0 -lbson-1.0"])
 	])
 
 AS_IF([test "x$with_opt_dir" == "x"],
@@ -51,7 +51,7 @@ AS_IF([test "x$with_opt_dir" == "x"],
                             echo "checking modules failed. using builtin default directories."
                             AC_SUBST([OPTDIR_CPPFLAGS],["-I/opt/logjam/include -I/opt/logjam/include/libbson-1.0 -I/opt/logjam/include/libmongoc-1.0 -I/usr/local/include -I/usr/local/include/libbson-1.0 -I/usr/local/include/libmongoc-1.0 -I/opt/local/include -I/opt/local/include/libbson-1.0 -I/opt/local/include/libmongoc-1.0"])
                             AC_SUBST([OPTDIR_LDFLAGS],["-L/opt/logjam/lib -L/usr/local/lib -L/opt/local/lib"])
-                            AC_SUBST([DEPS_LIBS],["-lrabbitmq -lzmq -lczmq -ljson-c -lbson-1.0 -lmongoc-1.0"])]
+                            AC_SUBST([DEPS_LIBS],["-lrabbitmq -lczmq -lzmq -ljson-c -lmongoc-1.0 -lbson-1.0"])]
                          )
       ])
 
