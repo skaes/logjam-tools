@@ -14,7 +14,8 @@ noinst_PROGRAMS = \
     test_publisher \
     test_puller \
     test_subscriber \
-    tester
+    tester \
+    checker
 
 logjam_device_SOURCES = \
     src/logjam-device.c \
@@ -56,7 +57,9 @@ logjam_importer_SOURCES = \
     src/logjam-util.c \
     src/logjam-util.h \
     src/statsd-client.c \
-    src/statsd-client.h
+    src/statsd-client.h \
+    src/zring.c \
+    src/zring.h
 
 logjam_httpd_SOURCES = \
     src/logjam-httpd.c \
@@ -73,12 +76,18 @@ test_puller_SOURCES = src/test_puller.c
 
 dist_noinst_SCRIPTS = autogen.sh
 
+checker_SOURCES = \
+    src/checker.c \
+    src/zring.c \
+    src/zring.h
+
+
 #local rules
 #TEST_PUBLISHERS=1 2 3 4 5
 TEST_PUBLISHERS=1
 ULIMIT=20000
 
-.PHONY: test run cov-build analyze
+.PHONY: test run cov-build analyze check
 
 test: tester
 	for i in $(TEST_PUBLISHERS); do (ulimit -n $(ULIMIT); ./tester 200 100000&); done
@@ -93,3 +102,6 @@ analyze: clean
 	scan-build ./configure
 	report=`scan-build make | egrep -e '^scan-build: Run'`; echo $$report;\
         scan-view `echo $$report | sed -e "s/scan-build: Run 'scan-view \(.*\)' to examine bug reports./\1/"`
+
+check: checker
+	./checker

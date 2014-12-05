@@ -25,3 +25,5 @@ install-sh
 missing
 logjam-httpd
 logjam-tools-cov.tgz
+checker
+.DS_Store

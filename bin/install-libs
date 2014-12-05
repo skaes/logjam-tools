@@ -25,7 +25,7 @@ fi
 
 echo "library dependencies go into $prefix, forced=$forced, cmd=$cmd"
 
-cd builds
+cd builds/repos
 
 case $OSTYPE in
     darwin*)
@@ -47,13 +47,17 @@ export CC CXX
 
 function handle_rabbitmq()
 {
-    d=rabbitmq-c-0.5.2
-    f=${d}.tar.gz
-    test -f $f || wget -nv https://github.com/alanxz/rabbitmq-c/releases/download/v0.5.2/$f
-    test -d $d || tar xzvf $f
+    d=rabbitmq-c
+    test -d $d || git clone https://github.com/alanxz/rabbitmq-c.git
     cd $d
+    revision=$(git rev-parse HEAD)
+    if [ "$revision" != "2b5d606bca429deed616339f460897aa41819a63" ]; then
+        git reset --hard
+        git fetch
+        git checkout 2b5d606bca429deed616339f460897aa41819a63
+    fi
     [ $forced == "1" ] && rm -f config.status
-    test -f config.status || ./configure --prefix=$prefix
+    test -f config.status || (autoreconf -i && ./configure --prefix=$prefix)
     [ $forced == "1" ] && make clean
     make
     $LSUDO make $cmd
@@ -83,10 +87,6 @@ function handle_mongoc()
 
 function handle_json_c()
 {
-    # json-c configure fails if it's not put in another sub dir. go figure.
-    test -d murks || mkdir murks
-    cd murks
-
     d=json-c
     test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
@@ -102,7 +102,7 @@ function handle_json_c()
     make
     $LSUDO make $cmd
     $LSUDO $ldconfig
-    cd ../..
+    cd ..
 }
 
 
@@ -141,13 +141,13 @@ function handle_zeromq()
 function handle_czmq()
 {
     d=czmq
-    test -d $d || git clone https://github.com/zeromq/${d}.git
+    test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    if [ "$revision" != "d7f4da8945b8bb022034c5ada3c6f1da5b9af351" ]; then
+    if [ "$revision" != "bf993aabb88a19f6e7c6c9d0a376dd16a66b743d" ]; then
         git reset --hard
         git fetch
-        git checkout d7f4da8945b8bb022034c5ada3c6f1da5b9af351
+        git checkout bf993aabb88a19f6e7c6c9d0a376dd16a66b743d
     fi
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (sh autogen.sh && zmq_CFLAGS=-I$prefix/include zmq_LIBS=-L$prefix/lib ./configure --prefix=$prefix CPPFLAGS=-I$prefix/include LDFLAGS=-L$prefix/lib)
