@@ -23,7 +23,7 @@ static char http_response_ok [] =
     "\r\n";
 
 static char http_response_fail [] =
-    "HTTP/1.1 400 Bad Request\r\n"
+    "HTTP/1.1 400 RTFM\r\n"
     "Cache-Control: private\r\n"
     "Content-Type: text/plain\r\n"
     "Content-Length: 0\r\n"
