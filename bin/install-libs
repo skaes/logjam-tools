@@ -144,10 +144,10 @@ function handle_czmq()
     test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    if [ "$revision" != "bf993aabb88a19f6e7c6c9d0a376dd16a66b743d" ]; then
+    if [ "$revision" != "90452e730ddb9329998c82dfc692c4de64a6bb54" ]; then
         git reset --hard
         git fetch
-        git checkout bf993aabb88a19f6e7c6c9d0a376dd16a66b743d
+        git checkout 90452e730ddb9329998c82dfc692c4de64a6bb54
     fi
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (sh autogen.sh && zmq_CFLAGS=-I$prefix/include zmq_LIBS=-L$prefix/lib ./configure --prefix=$prefix CPPFLAGS=-I$prefix/include LDFLAGS=-L$prefix/lib)
