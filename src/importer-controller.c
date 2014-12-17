@@ -7,6 +7,7 @@
 #include "importer-requestwriter.h"
 #include "importer-indexer.h"
 #include "importer-subscriber.h"
+#include "importer-watchdog.h"
 #include "statsd-client.h"
 #include "importer-resources.h"
 
@@ -20,6 +21,7 @@
  *  controller:    --- PIPE ---  writers(n_w)
  *                 --- PIPE ---  updaters(n_u)
  *                 --- PIPE ---  tracker
+ *                 --- PIPE ---  watchdog
  *
  *                 PUSH    PULL
  *                 o----------<  updaters(n_u)
@@ -30,8 +32,9 @@
 
 // The controller creates all other threads, collects data from the parsers every second,
 // combines the data, sends db update requests to the updaters and also feeds the live stream.
-// The data from the pasrers is collected using the pipes, but maybe we should have an
-// independent socket for this.
+// The data from the parsers is collected using the pipes, but maybe we should have an
+// independent socket for this. The controller send ticks to the watchdog, which aborts
+// the whole process if it doesn't receive ticks for ten consecutive seconds.
 
 typedef struct {
     zconfig_t *config;
@@ -39,6 +42,7 @@ typedef struct {
     zactor_t *subscriber;
     zactor_t *indexer;
     zactor_t *tracker;
+    zactor_t *watchdog;
     zactor_t *parsers[NUM_PARSERS];
     zactor_t *writers[NUM_WRITERS];
     zactor_t *updaters[NUM_UPDATERS];
@@ -190,8 +194,10 @@ void publish_totals(stream_info_t *stream_info, zhash_t *totals, zsock_t *live_s
 static
 void publish_totals_for_every_known_stream(controller_state_t *state, zhash_t *processors)
 {
-    processor_state_t* processor = zhash_first(processors);
     zhash_t *published_streams= zhash_new();
+
+    // publish updates for all streams where we received some data
+    processor_state_t* processor = zhash_first(processors);
     while (processor) {
         stream_info_t *stream_info = processor->stream_info;
         update_known_modules(stream_info, processor->modules);
@@ -200,6 +206,7 @@ void publish_totals_for_every_known_stream(controller_state_t *state, zhash_t *p
         processor = zhash_next(processors);
     }
 
+    // publish updates for all streams where we didn't receive anything
     stream_info_t *stream_info = zhash_first(configured_streams);
     while (stream_info) {
         if (!zhash_lookup(published_streams, stream_info->key)) {
@@ -207,6 +214,7 @@ void publish_totals_for_every_known_stream(controller_state_t *state, zhash_t *p
         }
         stream_info = zhash_next(configured_streams);
     }
+
     zhash_destroy(&published_streams);
 }
 
@@ -219,6 +227,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     size_t parsed_msgs_counts[NUM_PARSERS];
 
     state->ticks++;
+    // signal liveness to watchdog
+    zstr_send(state->watchdog, "tick");
 
     // tell tracker, subscriber and stats server to tick
     zstr_send(state->statsd_server, "tick");
@@ -356,12 +366,16 @@ bool controller_create_actors(controller_state_t *state)
         state->parsers[i] = parser_new(state->config, i);
     }
 
+    // create watchdog
+    state->watchdog = zactor_new(watchdog, state->config);
+
     return !zsys_interrupted;
 }
 
 static
 void controller_destroy_actors(controller_state_t *state)
 {
+    zactor_destroy(&state->watchdog);
     zactor_destroy(&state->statsd_server);
     zactor_destroy(&state->subscriber);
     zactor_destroy(&state->indexer);

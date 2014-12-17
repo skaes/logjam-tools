@@ -52,6 +52,8 @@ logjam_importer_SOURCES = \
     src/importer-subscriber.h \
     src/importer-tracker.c \
     src/importer-tracker.h \
+    src/importer-watchdog.c \
+    src/importer-watchdog.h \
     src/logjam-importer.c \
     src/logjam-util.c \
     src/logjam-util.h \
