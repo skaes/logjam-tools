@@ -125,7 +125,7 @@ void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, cons
         bson_append_double(b, safe_key, len, json_object_get_double(val));
         break;
     case json_type_int:
-        bson_append_int32(b, safe_key, len, json_object_get_int(val));
+        bson_append_int64(b, safe_key, len, json_object_get_int64(val));
         break;
     case json_type_object: {
         bson_t *sub = bson_new();
