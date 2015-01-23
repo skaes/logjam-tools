@@ -55,4 +55,7 @@ AS_IF([test "x$with_opt_dir" == "x"],
                          )
       ])
 
+
+AC_CHECK_FUNCS(htonll ntohll)
+
 AC_OUTPUT

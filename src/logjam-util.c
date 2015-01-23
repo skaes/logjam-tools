@@ -10,6 +10,7 @@ bool output_socket_ready(zsock_t *socket, int msecs)
     return rc != -1 && (items[0].revents & ZMQ_POLLOUT) != 0;
 }
 
+#ifndef HAVE_HTONLL
 uint64_t htonll(uint64_t net_number)
 {
   uint64_t result = 0;
@@ -19,7 +20,9 @@ uint64_t htonll(uint64_t net_number)
   }
   return result;
 }
+#endif
 
+#ifndef HAVE_NTOHLL
 uint64_t ntohll(uint64_t native_number)
 {
   uint64_t result = 0;
@@ -29,6 +32,7 @@ uint64_t ntohll(uint64_t native_number)
   }
   return result;
 }
+#endif
 
 void dump_meta_info(msg_meta_t *meta)
 {

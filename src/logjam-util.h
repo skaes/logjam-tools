@@ -20,8 +20,13 @@ typedef struct {
     uint64_t sequence_number;
 } msg_meta_t;
 
+#ifndef HAVE_HTONLL
 extern uint64_t htonll(uint64_t net_number);
+#endif
+
+#ifndef HAVE_NTOHLL
 extern uint64_t ntohll(uint64_t native_number);
+#endif
 
 extern void dump_meta_info(msg_meta_t *meta);
 extern void dump_meta_info_network_format(msg_meta_t *meta);
