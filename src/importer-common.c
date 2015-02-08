@@ -315,7 +315,7 @@ bool config_file_has_changed()
     bool changed = false;
     zfile_restat(config_file);
     if (config_file_last_modified != zfile_modified(config_file)) {
-        char *new_digest = zfile_digest(config_file);
+        const char *new_digest = zfile_digest(config_file);
         // printf("[D] old digest: %s\n[D] new digest: %s\n", config_file_digest, new_digest);
         changed = strcmp(config_file_digest, new_digest) != 0;
     }
