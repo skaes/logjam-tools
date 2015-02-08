@@ -15,12 +15,12 @@
  */
 
 // The parsers send index creation requests as soon as they see a new date in their input stream.
-// The indexer keeps track of indexes it has already created to avoid repeared mongodb calls.
+// The indexer keeps track of indexes it has already created to avoid repeated mongodb calls.
 // Creating an index on a collection while it is being written to, slows down the writers considerably.
 // The indexer therefore creates databases along with all their indexes one day in advance.
 // On startup, databases and indexes for the current day are created synchronously. The completion
 // of this is signalled to the controller by sending a started message to the controller.
-// Databases and indexs for dates in the future are alaways created via a fresh background
+// Databases and indexes for dates in the future are alaways created via a fresh background
 // thread, spawned from the indexer.
 
 typedef struct {
