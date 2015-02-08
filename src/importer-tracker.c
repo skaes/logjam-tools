@@ -1,4 +1,5 @@
 #include "importer-tracker.h"
+#include "zring.h"
 
 /*
  * connections:  n_p = NUM_PARSERS, "[<>^v]" = connect, "o" = bind
@@ -177,7 +178,7 @@ void clean_expired_uuids(tracker_state_t *state, uint64_t age_threshold)
             // const char *uuid = zring_key(uuids);
             // printf("[D] tracker[%zu]: expired uuid: %s\n", state->id, uuid);
             state->expired++;
-            zring_remove(uuids, NULL);
+            zring_shift(uuids);
         } else {
             break;
         }
@@ -195,7 +196,7 @@ void clean_expired_failures(tracker_state_t *state, uint64_t age_threshold)
             // const char *uuid = zring_key(failures);
             // printf("[D] tracker[%zu]: failed uuid: %s\n", state->id, uuid);
             state->failed++;
-            zring_remove(failures, NULL);
+            zring_shift(failures);
             zmsg_destroy(&failure->msg);
             free(failure);
         } else {
@@ -214,7 +215,7 @@ void clean_expired_successes(tracker_state_t *state, uint64_t age_threshold)
         if (item < age_threshold) {
             // const char *uuid = zring_key(successes);
             // printf("[D] tracker[%zu]: success uuid: %s\n", state->id, uuid);
-            zring_remove(successes, NULL);
+            zring_shift(successes);
         } else {
             break;
         }
@@ -243,7 +244,7 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
     failure_t *failure = zring_lookup(state->failures, uuid);
     if (failure) {
         // printf("[D] tracker[%zu]: forwarding late backend uuid: %s\n", state->id, uuid);
-        zring_remove(state->failures, NULL);
+        zring_delete(state->failures, uuid);
         zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
         state->added++;
         zmsg_send(&failure->msg, state->subscriber);
@@ -283,7 +284,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
     if ( (seen = (uint64_t)zring_lookup(state->uuids, uuid)) ) {
         // printf("[D] tracker[%zu]: found uuid: %s\n", state->id, uuid);
         rc = 1;
-        zring_remove(state->uuids, NULL);
+        zring_delete(state->uuids, uuid);
         zring_insert(state->successes, uuid, (void*)seen);
         state->deleted++;
     } else if ( zring_lookup(state->successes, uuid) || zring_lookup(state->failures, uuid) ) {

@@ -315,12 +315,9 @@ bool config_file_has_changed()
     bool changed = false;
     zfile_restat(config_file);
     if (config_file_last_modified != zfile_modified(config_file)) {
-        // bug in czmq: does not reset digest on restat
-        zfile_t *tmp = zfile_new(NULL, config_file_name);
-        char *new_digest = zfile_digest(tmp);
+        char *new_digest = zfile_digest(config_file);
         // printf("[D] old digest: %s\n[D] new digest: %s\n", config_file_digest, new_digest);
         changed = strcmp(config_file_digest, new_digest) != 0;
-        zfile_destroy(&tmp);
     }
     return changed;
 }
