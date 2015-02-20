@@ -69,8 +69,7 @@ static inline void* zmsg_popptr(zmsg_t* msg)
     zframe_t *frame = zmsg_pop(msg);
     assert(frame);
     assert(zframe_size(frame) == sizeof(void*));
-    void *ptr;
-    memcpy(&ptr, zframe_data(frame), sizeof(void*));
+    void *ptr = *((void **) zframe_data(frame));
     zframe_destroy(&frame);
     return ptr;
 }
