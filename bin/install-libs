@@ -1,20 +1,24 @@
 #!/bin/bash
 set -e
 
-if [ "$1" == "--force" ]; then
-    forced=1
-    shift
-else
-    forced=0
-fi
+build_dir="builds/repos"
+forced=0
+prefix=/usr/local
 
-if [ "$1" == "--prefix" ]; then
-    shift
-    prefix=$1
-    shift
-else
-    prefix=/usr/local
-fi
+test -z "$LSUDO" && LSUDO="sudo"
+test "$(whoami)" = "root" && LSUDO=""
+
+while (( $# > 1 )); do
+    case "$1" in
+        --force)
+            forced=1; shift;;
+        --build-dir)
+            build_dir="$2"; shift 2;;
+        --prefix )
+            prefix="$2"; shift 2;;
+        *) break ;;
+    esac
+done
 
 if [ "$1" == "" ]; then
     cmd=install
@@ -23,9 +27,10 @@ else
     shift
 fi
 
-echo "library dependencies go into $prefix, forced=$forced, cmd=$cmd"
+echo "library dependencies go into $prefix, forced=$forced, cmd=$cmd, build_dir=$build_dir"
 
-cd builds/repos
+mkdir -p $build_dir
+cd $build_dir
 
 case $OSTYPE in
     darwin*)
@@ -39,8 +44,6 @@ case $OSTYPE in
         ldconfig=ldconfig
         ;;
 esac
-
-test -z "$LSUDO" && LSUDO="sudo"
 
 export CC CXX
 
