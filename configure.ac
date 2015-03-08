@@ -55,6 +55,7 @@ AS_IF([test "x$with_opt_dir" == "x"],
                          )
       ])
 
+AS_IF([test `uname -s` == "Linux"], AC_SUBST([OPT_PTHREAD_FLAGS], ["-pthread"]), AC_SUBST([OPT_PTHREAD_FLAGS]))
 
 AC_CHECK_FUNCS(htonll ntohll)
 
