@@ -8,8 +8,10 @@ prefix=/usr/local
 test -z "$LSUDO" && LSUDO="sudo"
 test "$(whoami)" = "root" && LSUDO=""
 
-while (( $# > 1 )); do
+while (( $# > 0 )); do
     case "$1" in
+        --help)
+            echo "$0 [--force] [--build-dir dir] [--prefix dir] [install|uninstall]"; exit 0;;
         --force)
             forced=1; shift;;
         --build-dir)
