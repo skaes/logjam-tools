@@ -1,15 +1,6 @@
 #ifndef __LOGJAM_IMPORTER_COMMON_H_INCLUDED__
 #define __LOGJAM_IMPORTER_COMMON_H_INCLUDED__
 
-#include <zmq.h>
-#include <czmq.h>
-#include <stdio.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <string.h>
-#include <ctype.h>
-#include <stdint.h>
-#include <json-c/json.h>
 #include <bson.h>
 #include <mongoc.h>
 #include "logjam-util.h"
@@ -54,25 +45,6 @@ extern bool dryrun;
 extern char iso_date_today[ISO_DATE_STR_LEN];
 extern char iso_date_tomorrow[ISO_DATE_STR_LEN];
 extern time_t time_last_tick;
-
-extern void dump_json_object(FILE *f, json_object *jobj);
-extern void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file);
-extern void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file);
-
-static inline int zmsg_addptr(zmsg_t* msg, void* ptr)
-{
-    return zmsg_addmem(msg, &ptr, sizeof(void*));
-}
-
-static inline void* zmsg_popptr(zmsg_t* msg)
-{
-    zframe_t *frame = zmsg_pop(msg);
-    assert(frame);
-    assert(zframe_size(frame) == sizeof(void*));
-    void *ptr = *((void **) zframe_data(frame));
-    zframe_destroy(&frame);
-    return ptr;
-}
 
 extern int replace_dots_and_dollars(char *s);
 extern int copy_replace_dots_and_dollars(char* buffer, const char *s);

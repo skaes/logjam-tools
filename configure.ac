@@ -3,6 +3,8 @@ AC_INIT([logjam-tools], [0.1], [skaes@railsexpress.de],
 AC_PREREQ([2.59])
 AM_INIT_AUTOMAKE([1.10 -Wall no-define foreign])
 
+AC_CONFIG_MACRO_DIR([m4])
+
 # Check for pkg-config program, used for configuring some libraries.
 #
 
@@ -57,6 +59,8 @@ AS_IF([test "x$with_opt_dir" == "x"],
 
 AS_IF([test `uname -s` == "Linux"], AC_SUBST([OPT_PTHREAD_FLAGS], ["-pthread"]), AC_SUBST([OPT_PTHREAD_FLAGS]))
 
-AC_CHECK_FUNCS(htonll ntohll)
+AC_CHECK_DECLS([htonll, ntohll])
+
+AX_CHECK_ZLIB
 
 AC_OUTPUT

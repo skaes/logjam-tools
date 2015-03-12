@@ -8,7 +8,7 @@ infrastructure for logjam (see https://github.com/skaes/logjam_app).
        src="https://scan.coverity.com/projects/3357/badge.svg"/>
 </a>
 
-Currently three daemons are provided:
+Currently the following daemons are provided:
 
 ## logjam-device
 
@@ -30,6 +30,12 @@ hasn't crashed once.
 
 A daemon which takes frontend performance data via HTTP GET requests
 and publishes it on on ZeroMQ PUB socket for the importer to pick up.
+
+## logjam-graylog-forwarder
+
+A daemon which subscribes to PUB sockets of logjam-devices and
+forwards GELF messages to a graylog GELF socket endpoint.
+
 
 ## Speed
 

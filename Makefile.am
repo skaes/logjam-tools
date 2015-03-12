@@ -1,5 +1,5 @@
 AUTOMAKE_OPTIONS = subdir-objects
-ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS}
+ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 
 AM_CPPFLAGS = $(OPTDIR_CPPFLAGS) $(DEPS_CFLAGS) -D_GNU_SOURCE
 AM_CFLAGS = --std=gnu99 -Wall -fno-fast-math
@@ -9,7 +9,8 @@ LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS) -lm
 bin_PROGRAMS = \
     logjam-device \
     logjam-importer \
-    logjam-httpd
+    logjam-httpd \
+    logjam-graylog-forwarder
 
 noinst_PROGRAMS = \
     test_publisher \
@@ -68,6 +69,27 @@ logjam_httpd_SOURCES = \
     src/logjam-httpd.c \
     src/logjam-util.c \
     src/logjam-util.h
+
+logjam_graylog_forwarder_SOURCES = \
+    src/logjam-graylog-forwarder.c \
+    src/graylog-forwarder-common.c \
+    src/graylog-forwarder-common.h \
+    src/graylog-forwarder-controller.c \
+    src/graylog-forwarder-controller.h \
+    src/graylog-forwarder-parser.c \
+    src/graylog-forwarder-parser.h \
+    src/graylog-forwarder-subscriber.c \
+    src/graylog-forwarder-subscriber.h \
+    src/graylog-forwarder-writer.c \
+    src/graylog-forwarder-writer.h \
+    src/logjam-util.c \
+    src/logjam-util.h \
+    src/gelf-message.c \
+    src/gelf-message.h \
+    src/logjam-message.c \
+    src/logjam-message.h \
+    src/str-builder.c \
+    src/str-builder.h
 
 tester_SOURCES = src/tester.c
 

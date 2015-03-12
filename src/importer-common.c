@@ -2,57 +2,6 @@
 
 bool dryrun = false;
 
-void dump_json_object(FILE *f, json_object *jobj)
-{
-    const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PLAIN);
-    if (f == stderr)
-        fprintf(f, "[E] %s\n", json_str);
-    else
-        fprintf(f, "[I] %s\n", json_str);
-    // don't try to free the json string. it will crash.
-}
-
-void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file)
-{
-    assert (self);
-    if (prefix)
-        fprintf (file, "%s", prefix);
-    byte *data = zframe_data (self);
-    size_t size = zframe_size (self);
-
-    int is_bin = 0;
-    uint char_nbr;
-    for (char_nbr = 0; char_nbr < size; char_nbr++)
-        if (data [char_nbr] < 9 || data [char_nbr] > 127)
-            is_bin = 1;
-
-    fprintf (file, "[%03d] ", (int) size);
-    size_t max_size = is_bin? 2048: 4096;
-    const char *ellipsis = "";
-    if (size > max_size) {
-        size = max_size;
-        ellipsis = "...";
-    }
-    for (char_nbr = 0; char_nbr < size; char_nbr++) {
-        if (is_bin)
-            fprintf (file, "%02X", (unsigned char) data [char_nbr]);
-        else
-            fprintf (file, "%c", data [char_nbr]);
-    }
-    fprintf (file, "%s\n", ellipsis);
-}
-
-void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file)
-{
-    zframe_t *frame = zmsg_first(self);
-    int frame_nbr = 0;
-    while (frame && frame_nbr++ < 10) {
-        my_zframe_fprint(frame, prefix, file);
-        frame = zmsg_next(self);
-    }
-}
-
-
 // utf8 conversion
 static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
 static char UTF8_CURRENCY[3] = {0xC2, 0xA4, '\0'};
@@ -344,16 +293,4 @@ bool config_update_date_info()
     // printf("[D] tomorrow's ISO date is %s\n", iso_date_tomorrow);
     bool changed = strcmp(old_date, iso_date_today);
     return changed;
-}
-
-int set_thread_name(const char* name)
-{
-#if defined(__linux__)
-    pthread_t self = pthread_self();
-    return pthread_setname_np(self, name);
-#elif defined(__APPLE__)
-    return pthread_setname_np(name);
-#else
-    return 0;
-#endif
 }

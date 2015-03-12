@@ -1,6 +1,7 @@
 *#
 *~
 *.o
+*.log
 logjam-device
 logjam-proxy
 tester
@@ -25,5 +26,7 @@ install-sh
 missing
 logjam-httpd
 logjam-tools-cov.tgz
+logjam-graylog-forwarder
 checker
 .DS_Store
+compile

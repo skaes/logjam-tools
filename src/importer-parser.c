@@ -159,37 +159,6 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
     return p;
 }
 
-
-static
-json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
-{
-    char* json_data = (char*)zframe_data(body);
-    int json_data_len = (int)zframe_size(body);
-    json_tokener_reset(tokener);
-    json_object *jobj = json_tokener_parse_ex(tokener, json_data, json_data_len);
-    enum json_tokener_error jerr = json_tokener_get_error(tokener);
-    if (jerr != json_tokener_success) {
-        fprintf(stderr, "[E] parse_json_body: %s\n", json_tokener_error_desc(jerr));
-    } else {
-        // const char *json_str_orig = zframe_strdup(body);
-        // printf("[D] %s\n", json_str_orig);
-        // free(json_str_orig);
-        // dump_json_object(stdout, jobj);
-    }
-    if (tokener->char_offset < json_data_len) // XXX shouldn't access internal fields
-    {
-        // Handle extra characters after parsed object as desired.
-        fprintf(stderr, "[W] parse_json_body: %s\n", "extranoeus data in message payload");
-        my_zframe_fprint(body, "[W] MSGBODY=", stderr);
-    }
-    // if (strnlen(json_data, json_data_len) < json_data_len) {
-    //     fprintf(stderr, "[W] parse_json_body: json payload has null bytes\ndata: %*s\n", json_data_len, json_data);
-    //     dump_json_object(stdout, jobj);
-    //     return NULL;
-    // }
-    return jobj;
-}
-
 static
 void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
 {
