@@ -130,3 +130,7 @@ analyze: clean
 
 check: checker
 	./checker
+
+TAGS: src/*.h src/*.c
+	etags $^
+
