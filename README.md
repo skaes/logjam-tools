@@ -110,6 +110,27 @@ sudo make uninstall
 ./bin/install-libs uninstall
 ```
 
-## License
+# Profiling with gperftools
+
+Install Google perftools on your machine (https://code.google.com/p/gperftools/).
+
+Set environment variable CPUPROFILE to the name of the profile data
+file you want to use. Reconfigure and recompile everything:
+
+```
+CPUPROFILE=logjam.prof sh autogen.sh
+make clean
+make
+```
+
+Then invoke the command you want to profile. For example:
+
+```
+CPUPROFILE=logjam.prof ./logjam-device -c logjam.conf
+pprof --web ./logjam-device logjam.prof
+```
+
+
+# License
 
 GPL v3. See LICENSE.txt.
