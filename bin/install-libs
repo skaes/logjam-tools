@@ -80,7 +80,7 @@ function handle_mongoc()
     if [ "$revision" != "$expected_revision" ]; then
         git reset --hard
         git fetch
-        git checkout 048c851919dc32c98b5f8a9a0270e69af9385db3
+        git checkout $expected_revision
     fi
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --with-libbson=bundled)
