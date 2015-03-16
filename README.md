@@ -54,7 +54,7 @@ See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
 * librabbitmq (0.5.2)
 * libzmq (4.0.5)
 * libczmq (3.0.0rc1)
-* mongo-c-driver (git master, 1.0.2 has a memory leak)
+* mongo-c-driver (1.1.2)
 * libbson (included in mongo-c-driver as a submodule)
 * json-c (0.12 patched)
 

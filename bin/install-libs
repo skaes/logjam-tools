@@ -76,7 +76,8 @@ function handle_mongoc()
     test -d $d || git clone https://github.com/mongodb/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    if [ "$revision" != "048c851919dc32c98b5f8a9a0270e69af9385db3" ]; then
+    expected_revision="2991dfb2ae62045fbb48d009448b86a6b2e54463"
+    if [ "$revision" != "$expected_revision" ]; then
         git reset --hard
         git fetch
         git checkout 048c851919dc32c98b5f8a9a0270e69af9385db3
