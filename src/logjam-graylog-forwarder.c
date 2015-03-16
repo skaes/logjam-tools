@@ -19,20 +19,23 @@ static char *config_file_digest = "";
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-c config-file]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-n] [-z] [-c config-file]\n", argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "c:n")) != -1) {
+    while ((c = getopt(argc, argv, "c:nz")) != -1) {
         switch (c) {
         case 'c':
             config_file_name = optarg;
             break;
         case 'n':
             dryrun = true;
+            break;
+        case 'z':
+            compress_gelf = true;
             break;
         case '?':
             if (optopt == 'c' )

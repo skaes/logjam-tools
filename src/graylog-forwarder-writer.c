@@ -11,20 +11,28 @@ typedef struct {
 
 static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
 {
-    compressed_gelf_t *compressed_gelf = zmsg_popptr(msg);
-    assert(compressed_gelf);
-
     if (dryrun) {
-        compressed_gelf_destroy(&compressed_gelf);
         return;
     }
 
     zmsg_t *out_msg = zmsg_new();
     assert(out_msg);
-    int rc = zmsg_addmem(out_msg, compressed_gelf->data, compressed_gelf->len);
-    assert(rc == 0);
 
-    compressed_gelf_destroy(&compressed_gelf);
+    if (compress_gelf) {
+        compressed_gelf_t *compressed_gelf = zmsg_popptr(msg);
+        assert(compressed_gelf);
+
+        int rc = zmsg_addmem(out_msg, compressed_gelf->data, compressed_gelf->len);
+        assert(rc == 0);
+        compressed_gelf_destroy(&compressed_gelf);
+    } else {
+        char *gelf_data = zmsg_popstr(msg);
+        assert(gelf_data);
+
+        int rc = zmsg_addstr(out_msg, gelf_data);
+        assert(rc == 0);
+        free(gelf_data);
+    }
 
     if (!output_socket_ready(state->push_socket, 0)) {
         fprintf(stderr, "[W] graylog-forwarder-writer: push socket not ready. blocking!\n");

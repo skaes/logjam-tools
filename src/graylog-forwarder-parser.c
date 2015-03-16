@@ -13,36 +13,39 @@ typedef struct {
 
 static int process_logjam_message(parser_state_t *state)
 {
+    // printf("[I] graylog-forwarder-parser [%zu]: process_logjam_message\n", state->id);
+
     logjam_message *logjam_msg = logjam_message_read(state->pull_socket);
 
     if (logjam_msg && !zsys_interrupted) {
-        // printf("[I] graylog-forwarder-parser [%zu]: process_logjam_message\n", state->id);
-
         gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg);
         const char *gelf_data = gelf_message_to_string (gelf_msg);
 
         // printf("[D] GELF Format: %s\n", gelf_data);
 
-        // compress GELF data
-        const Bytef *raw_data = (Bytef *)gelf_data;
-        uLong raw_len = strlen(gelf_data);
-        uLongf compressed_len = compressBound(raw_len);
-        Bytef *compressed_data = zmalloc(compressed_len);
-        int rc = compress(compressed_data, &compressed_len, raw_data, raw_len);
-        assert(rc == Z_OK);
-
-        // printf("[D] GELF bytes uncompressed/compressed: %ld/%ld\n", raw_len, compressed_len);
-
-        compressed_gelf_t *compressed_gelf = compressed_gelf_new(compressed_data, compressed_len);
-
         zmsg_t *msg = zmsg_new();
         assert(msg);
-        zmsg_addptr(msg, compressed_gelf);
+
+        if (compress_gelf) {
+            const Bytef *raw_data = (Bytef *)gelf_data;
+            uLong raw_len = strlen(gelf_data);
+            uLongf compressed_len = compressBound(raw_len);
+            Bytef *compressed_data = zmalloc(compressed_len);
+            int rc = compress(compressed_data, &compressed_len, raw_data, raw_len);
+            assert(rc == Z_OK);
+
+            // printf("[D] GELF bytes uncompressed/compressed: %ld/%ld\n", raw_len, compressed_len);
+
+            compressed_gelf_t *compressed_gelf = compressed_gelf_new(compressed_data, compressed_len);
+            zmsg_addptr(msg, compressed_gelf);
+        } else {
+            zmsg_addstr(msg, gelf_data);
+        }
+
         zmsg_send(&msg, state->push_socket);
 
         gelf_message_destroy(&gelf_msg);
         logjam_message_destroy (&logjam_msg);
-
         // we don't free gelf_data because it's owned by the json library
     }
 
