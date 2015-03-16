@@ -81,6 +81,7 @@ function handle_mongoc()
         git reset --hard
         git fetch
         git checkout $expected_revision
+        git submodule update
     fi
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --with-libbson=bundled)
