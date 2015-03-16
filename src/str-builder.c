@@ -37,7 +37,7 @@ void sb_append(str_builder *sb, const char* str, size_t length)
         // printf("[D] increasing string builder size from %d to %d\n", size, new_size);
         sb->str = realloc(sb->str, new_size);
         assert(sb->str);
-        memset (sb->str + size, '\0', size);
+        memset (sb->str + size, '\0', new_size - size);
         sb->size = new_size;
     }
     assert (new_pos < sb->size);
