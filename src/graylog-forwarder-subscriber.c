@@ -85,9 +85,11 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
             zmsg_destroy(&msg);
             return 0;
         }
-        if (!output_socket_ready(state->push_socket, 0)) {
-            fprintf(stderr, "[W] graylog-forwarder-subscriber: push socket not ready. blocking!\n");
+
+        while (!zsys_interrupted && !output_socket_ready(state->push_socket, 1000)) {
+            fprintf(stderr, "[W] graylog-forwarder-subscriber: push socket not ready (parser queues are full). blocking!\n");
         }
+
         if (!zsys_interrupted) {
             zmsg_send(&msg, state->push_socket);
         } else {

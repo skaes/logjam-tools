@@ -34,12 +34,16 @@ static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
         free(gelf_data);
     }
 
-    if (!output_socket_ready(state->push_socket, 0)) {
-        fprintf(stderr, "[W] graylog-forwarder-writer: push socket not ready. blocking!\n");
+    while (!zsys_interrupted && !output_socket_ready(state->push_socket, 1000)) {
+        fprintf(stderr, "[W] graylog-forwarder-writer: push socket not ready (graylog not connected?). blocking!\n");
     }
 
-    zmsg_send(&out_msg, state->push_socket);
-    state->message_count++;
+    if (!zsys_interrupted) {
+        zmsg_send(&out_msg, state->push_socket);
+        state->message_count++;
+    } else {
+        zmsg_destroy(&out_msg);
+    }
 }
 
 static

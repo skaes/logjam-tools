@@ -42,7 +42,15 @@ static int process_logjam_message(parser_state_t *state)
             zmsg_addstr(msg, gelf_data);
         }
 
-        zmsg_send(&msg, state->push_socket);
+        while (!zsys_interrupted && !output_socket_ready(state->push_socket, 1000)) {
+            fprintf(stderr, "[W] graylog-forwarder-parser [%zu]: push socket not ready (writer queue is full). blocking!\n", state->id);
+        }
+
+        if (!zsys_interrupted) {
+            zmsg_send(&msg, state->push_socket);
+        } else {
+            zmsg_destroy(&msg);
+        }
 
         gelf_message_destroy(&gelf_msg);
         logjam_message_destroy (&logjam_msg);
