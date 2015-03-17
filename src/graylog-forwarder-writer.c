@@ -68,6 +68,11 @@ zsock_t* writer_push_socket_new(zconfig_t* config)
         exit(1);
     }
 
+    // set outbound high-water-mark
+    int high_water_mark = atoi(zconfig_resolve(config, "/graylog/high_water_mark", "10000"));
+    printf("[I] graylog-forwarder-writer: setting high-water-mark for outbound messages to %d\n", high_water_mark);
+    zsock_set_sndhwm(socket, high_water_mark);
+
     // bind socket, taking thread startup time into account
     // TODO: this is a hack. better let controller coordinate this
     for (int i=0; i<10; i++) {
@@ -78,11 +83,6 @@ zsock_t* writer_push_socket_new(zconfig_t* config)
         }
         zclock_sleep(100);
     }
-
-    // set outbound high-water-mark
-    int high_water_mark = atoi(zconfig_resolve(config, "/graylog/high_water_mark", "10000"));
-    printf("[I] graylog-forwarder-writer: setting high-water-mark for outbound messages to %d\n", high_water_mark);
-    zsock_set_sndhwm(socket, high_water_mark);
 
     return socket;
 }
