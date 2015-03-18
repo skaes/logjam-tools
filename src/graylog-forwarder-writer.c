@@ -11,10 +11,6 @@ typedef struct {
 
 static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
 {
-    if (dryrun) {
-        return;
-    }
-
     zmsg_t *out_msg = zmsg_new();
     assert(out_msg);
 
@@ -32,6 +28,11 @@ static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
         int rc = zmsg_addstr(out_msg, gelf_data);
         assert(rc == 0);
         free(gelf_data);
+    }
+
+    if (dryrun) {
+        zmsg_destroy(&out_msg);
+        return;
     }
 
     while (!zsys_interrupted && !output_socket_ready(state->push_socket, 1000)) {
