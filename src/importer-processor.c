@@ -784,7 +784,7 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
     json_object_object_add(request, "load_time", json_object_new_int64(load_time));
     json_object_object_add(request, "page_time", json_object_new_int64(page_time));
 
-    fprintf(stderr, "[D] SPEEDUP %.2lld \n", timings[domComplete] - timings[domInteractive]);
+    // fprintf(stderr, "[D] SPEEDUP %.2lld \n", timings[domComplete] - timings[domInteractive]);
     // dump_json_object(stdout, request);
 
     return 1;
