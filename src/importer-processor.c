@@ -773,7 +773,7 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
     int64_t processing_time = mtimes[3] = timings[domComplete] - timings[responseEnd];
     int64_t load_time       = mtimes[4] = timings[loadEventEnd] - timings[domComplete];
     int64_t page_time       = mtimes[5] = timings[loadEventEnd];
-    *dom_interactive        = timings[domInteractive] - connect_time;
+    *dom_interactive        = timings[domContentLoadedEventEnd] - connect_time;
     if (*dom_interactive < 0)
         *dom_interactive = page_time;
 
