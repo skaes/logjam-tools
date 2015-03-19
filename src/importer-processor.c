@@ -746,7 +746,7 @@ int extract_frontend_timings(json_object *request, int64_t *timings, int num_tim
 
 
 static
-int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t *mtimes)
+int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t  *mtimes, int64_t* dom_interactive)
 {
     make_relative(timings, NUM_TIMINGS, fetchStart);
     auto_correct_prefix(timings, NUM_TIMINGS);
@@ -773,6 +773,9 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
     int64_t processing_time = mtimes[3] = timings[domComplete] - timings[responseEnd];
     int64_t load_time       = mtimes[4] = timings[loadEventEnd] - timings[domComplete];
     int64_t page_time       = mtimes[5] = timings[loadEventEnd];
+    *dom_interactive        = timings[domInteractive] - connect_time;
+    if (*dom_interactive < 0)
+        *dom_interactive = page_time;
 
     json_object_object_add(request, "connect_time", json_object_new_int64(connect_time));
     json_object_object_add(request, "request_time", json_object_new_int64(request_time));
@@ -781,6 +784,7 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
     json_object_object_add(request, "load_time", json_object_new_int64(load_time));
     json_object_object_add(request, "page_time", json_object_new_int64(page_time));
 
+    fprintf(stderr, "[D] SPEEDUP %.2lld \n", timings[domComplete] - timings[domInteractive]);
     // dump_json_object(stdout, request);
 
     return 1;
@@ -828,7 +832,8 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
         return;
 
     int64_t mtimes[6];
-    if (!convert_frontend_timings_to_json(request, timings, mtimes))
+    int64_t dom_interactive;
+    if (!convert_frontend_timings_to_json(request, timings, mtimes, &dom_interactive))
         return;
 
     request_data_t request_data;
@@ -848,7 +853,7 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     increments->page_request_count = 1;
     increments_fill_metrics(increments, request);
     increments_fill_frontend_apdex(increments, request_data.total_time);
-    const char* satisfaction = increments_fill_page_apdex(increments, request_data.total_time);
+    const char* satisfaction = increments_fill_page_apdex(increments, dom_interactive);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
