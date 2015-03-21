@@ -115,7 +115,7 @@ const char *json_get_value(json_object *json, const char* key)
 }
 
 static
-void parse(char *s, json_object *json)
+void parse_query(char *s, json_object *json)
 {
     char *key;
     char *val;
@@ -161,6 +161,18 @@ void parse(char *s, json_object *json)
 }
 
 static
+void parse_header_line(char *s, json_object *json)
+{
+    // printf("[D] HEADERLINE: %s\n", s);
+    if (!strncasecmp(s, "User-Agent:", 11)) {
+        char *agent = s+11;
+        while (*agent == ' ') agent++;
+        // json_object_new_string makes a copy of its parameter
+        json_object_object_add(json, "user_agent", json_object_new_string(agent));
+    }
+}
+
+static
 void init_globals()
 {
     int rc;
@@ -201,15 +213,25 @@ void init_globals()
 }
 
 static inline
-bool extract_msg_data_from_query_string(char *query_string, msg_data_t *msg_data)
+bool extract_msg_data(char *query_string, char* headers, msg_data_t *msg_data)
 {
     bool valid = false;
     json_object *json = json_object_new_object();
 
+    // parse query string and extract parameters
     char *phrase = strtok(query_string, "&");
     while (phrase) {
-        parse(phrase, json);
+        parse_query(phrase, json);
         phrase = strtok(NULL, "&");
+    }
+
+    // parse headers and extract user agent
+    if (headers) {
+        phrase = strtok(headers, "\r\n");
+        while (phrase) {
+            parse_header_line(phrase, json);
+            phrase = strtok(NULL, "\r\n");
+        }
     }
 
     // add time info
@@ -419,7 +441,11 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
     char *query_string = (char*) &raw[path_prefix_length];
     query_string[query_length] = 0;
-    if (extract_msg_data_from_query_string(query_string, &msg_data)) {
+
+    char *headers = strchr(&query_string[query_length+1], '\n');
+    if (headers) headers++;
+
+    if (extract_msg_data(query_string, headers, &msg_data)) {
         send_logjam_message(&msg_data, &msg_meta);
     } else
         fprintf(stderr, "[E] %s:%d: invalid query string\n", __FILE__, __LINE__);
