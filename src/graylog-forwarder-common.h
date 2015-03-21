@@ -10,6 +10,7 @@ extern "C" {
 #endif
 
 extern bool dryrun;
+extern bool compress_gelf;
 
 typedef struct {
     Bytef *data;

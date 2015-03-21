@@ -16,11 +16,12 @@ static char http_response_ok [] =
     "HTTP/1.1 200 OK\r\n"
     "Cache-Control: private\r\n"
     "Content-Disposition: inline\r\n"
-    "Content-Transfer-Encoding: binary\r\n"
-    "Content-Type: image/png\r\n"
-    "Content-Length: 0\r\n"
+    "Content-Transfer-Encoding: base64\r\n"
+    "Content-Type: image/gif\r\n"
+    "Content-Length: 60\r\n"
     "Connection: close\r\n"
-    "\r\n";
+    "\r\n"
+    "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
 
 static char http_response_fail [] =
     "HTTP/1.1 400 RTFM\r\n"
@@ -46,6 +47,9 @@ static size_t ok_length, fail_length, alive_length;
 
 static int http_port = 9705;
 static int pub_port = 9706;
+static char* capture_file_name = NULL;
+static FILE* capture_file = NULL;
+
 static void *http_socket = NULL;
 static void *pub_socket = NULL;
 static zsock_t *http_socket_wrapper = NULL;
@@ -112,7 +116,7 @@ const char *json_get_value(json_object *json, const char* key)
 }
 
 static
-void parse(char *s, json_object *json)
+void parse_query(char *s, json_object *json)
 {
     char *key;
     char *val;
@@ -158,6 +162,18 @@ void parse(char *s, json_object *json)
 }
 
 static
+void parse_header_line(char *s, json_object *json)
+{
+    // printf("[D] HEADERLINE: %s\n", s);
+    if (!strncasecmp(s, "User-Agent:", 11)) {
+        char *agent = s+11;
+        while (*agent == ' ') agent++;
+        // json_object_new_string makes a copy of its parameter
+        json_object_object_add(json, "user_agent", json_object_new_string(agent));
+    }
+}
+
+static
 void init_globals()
 {
     int rc;
@@ -198,15 +214,25 @@ void init_globals()
 }
 
 static inline
-bool extract_msg_data_from_query_string(char *query_string, msg_data_t *msg_data)
+bool extract_msg_data(char *query_string, char* headers, msg_data_t *msg_data)
 {
     bool valid = false;
     json_object *json = json_object_new_object();
 
+    // parse query string and extract parameters
     char *phrase = strtok(query_string, "&");
     while (phrase) {
-        parse(phrase, json);
+        parse_query(phrase, json);
         phrase = strtok(NULL, "&");
+    }
+
+    // parse headers and extract user agent
+    if (headers) {
+        phrase = strtok(headers, "\r\n");
+        while (phrase) {
+            parse_header_line(phrase, json);
+            phrase = strtok(NULL, "\r\n");
+        }
     }
 
     // add time info
@@ -322,14 +348,23 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         raw_size = MAX_REQUEST_SIZE;
     else
         raw_size = msg_size;
+
+    // terminate buffer with 0 character, just in case
     // sizeof(raw) = MAX_REQUEST_SIZE + 1, so this is safe:
     raw[raw_size] = 0;
+
+    if (capture_file) {
+        // dump message in binary format, compatible with czmq library zmsg_save()
+        if (fwrite (&raw_size, sizeof (raw_size), 1, capture_file) != 1)
+            fprintf(stderr, "[E] could not write message size to capture file\n");
+        if (fwrite (raw, raw_size, 1, capture_file) != 1)
+            fprintf(stderr, "[E] could not write message body to capture file\n");
+    }
 
     if (verbose)
         printf("[D] msg_size: %d, raw size: %d\n", msg_size, raw_size);
 
     message_size += raw_size;
-    // terminate buffer with 0 character, just in case
 
     // update message stats
     received_messages_bytes += message_size;
@@ -407,9 +442,13 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
     char *query_string = (char*) &raw[path_prefix_length];
     query_string[query_length] = 0;
-    if (extract_msg_data_from_query_string(query_string, &msg_data))
+
+    char *headers = strchr(&query_string[query_length+1], '\n');
+    if (headers) headers++;
+
+    if (extract_msg_data(query_string, headers, &msg_data)) {
         send_logjam_message(&msg_data, &msg_meta);
-    else
+    } else
         fprintf(stderr, "[E] %s:%d: invalid query string\n", __FILE__, __LINE__);
 
     valid = true;
@@ -484,14 +523,14 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-d device number] [-t http-port] [-p pub-port]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-d device number] [-t http-port] [-p pub-port] [-c capture file name]\n", argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "d:p:t:v")) != -1) {
+    while ((c = getopt(argc, argv, "d:p:t:c:v")) != -1) {
         switch (c) {
         case 'd':
             msg_meta.device_number = atoi(optarg);
@@ -501,6 +540,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 't':
             http_port = atoi(optarg);
+            break;
+        case 'c':
+            capture_file_name = strdup(optarg);
             break;
         case 'v':
             verbose = true;
@@ -539,6 +581,15 @@ int main(int argc, char * const *argv)
 
     init_globals();
 
+    // open capture file, if requested
+    if (capture_file_name) {
+        capture_file = fopen(capture_file_name, "a+");
+        if (capture_file)
+            printf("[I] saving request stream to capture file: %s\n", capture_file_name);
+        else
+            printf("[I] could not open cpature file for writing: %s\n", capture_file_name);
+    }
+
     // set up event loop
     zloop_t *loop = zloop_new();
     assert(loop);
@@ -566,6 +617,9 @@ int main(int argc, char * const *argv)
     zsock_destroy(&pub_socket_wrapper);
     zsock_destroy(&http_socket_wrapper);
     zhash_destroy(&integer_conversions);
+
+    if (capture_file)
+        fclose(capture_file);
 
     printf("[I] shutting down\n");
     zsys_shutdown();

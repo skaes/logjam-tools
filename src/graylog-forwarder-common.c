@@ -1,6 +1,7 @@
 #include "graylog-forwarder-common.h"
 
-bool dryrun = false;
+bool dryrun        = false;
+bool compress_gelf = false;
 
 compressed_gelf_t *
 compressed_gelf_new(Bytef *data, uLongf len)

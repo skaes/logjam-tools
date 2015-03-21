@@ -11,27 +11,39 @@ typedef struct {
 
 static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
 {
-    compressed_gelf_t *compressed_gelf = zmsg_popptr(msg);
-    assert(compressed_gelf);
+    zmsg_t *out_msg = zmsg_new();
+    assert(out_msg);
+
+    if (compress_gelf) {
+        compressed_gelf_t *compressed_gelf = zmsg_popptr(msg);
+        assert(compressed_gelf);
+
+        int rc = zmsg_addmem(out_msg, compressed_gelf->data, compressed_gelf->len);
+        assert(rc == 0);
+        compressed_gelf_destroy(&compressed_gelf);
+    } else {
+        zframe_t *gelf_data = zmsg_pop(msg);
+        assert(gelf_data);
+
+        int rc = zmsg_append(out_msg, &gelf_data);
+        assert(rc == 0);
+    }
 
     if (dryrun) {
-        compressed_gelf_destroy(&compressed_gelf);
+        zmsg_destroy(&out_msg);
         return;
     }
 
-    zmsg_t *out_msg = zmsg_new();
-    assert(out_msg);
-    int rc = zmsg_addmem(out_msg, compressed_gelf->data, compressed_gelf->len);
-    assert(rc == 0);
-
-    compressed_gelf_destroy(&compressed_gelf);
-
-    if (!output_socket_ready(state->push_socket, 0)) {
-        fprintf(stderr, "[W] graylog-forwarder-writer: push socket not ready. blocking!\n");
+    while (!zsys_interrupted && !output_socket_ready(state->push_socket, 1000)) {
+        fprintf(stderr, "[W] graylog-forwarder-writer: push socket not ready (graylog not connected?). blocking!\n");
     }
 
-    zmsg_send(&out_msg, state->push_socket);
-    state->message_count++;
+    if (!zsys_interrupted) {
+        zmsg_send(&out_msg, state->push_socket);
+        state->message_count++;
+    } else {
+        zmsg_destroy(&out_msg);
+    }
 }
 
 static
@@ -56,6 +68,11 @@ zsock_t* writer_push_socket_new(zconfig_t* config)
         exit(1);
     }
 
+    // set outbound high-water-mark
+    int high_water_mark = atoi(zconfig_resolve(config, "/graylog/high_water_mark", "10000"));
+    printf("[I] graylog-forwarder-writer: setting high-water-mark for outbound messages to %d\n", high_water_mark);
+    zsock_set_sndhwm(socket, high_water_mark);
+
     // bind socket, taking thread startup time into account
     // TODO: this is a hack. better let controller coordinate this
     for (int i=0; i<10; i++) {
@@ -66,11 +83,6 @@ zsock_t* writer_push_socket_new(zconfig_t* config)
         }
         zclock_sleep(100);
     }
-
-    // set outbound high-water-mark
-    int high_water_mark = atoi(zconfig_resolve(config, "/graylog/high_water_mark", "10000"));
-    printf("[I] graylog-forwarder-writer: setting high-water-mark for outbound messages to %d\n", high_water_mark);
-    zsock_set_sndhwm(socket, high_water_mark);
 
     return socket;
 }
