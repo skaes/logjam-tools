@@ -22,12 +22,11 @@ static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
         assert(rc == 0);
         compressed_gelf_destroy(&compressed_gelf);
     } else {
-        char *gelf_data = zmsg_popstr(msg);
+        zframe_t *gelf_data = zmsg_pop(msg);
         assert(gelf_data);
 
-        int rc = zmsg_addstr(out_msg, gelf_data);
+        int rc = zmsg_append(out_msg, &gelf_data);
         assert(rc == 0);
-        free(gelf_data);
     }
 
     if (dryrun) {
