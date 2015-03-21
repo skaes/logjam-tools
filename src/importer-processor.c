@@ -746,7 +746,7 @@ int extract_frontend_timings(json_object *request, int64_t *timings, int num_tim
 
 
 static
-int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t  *mtimes, int64_t* dom_interactive)
+int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t *mtimes)
 {
     make_relative(timings, NUM_TIMINGS, fetchStart);
     auto_correct_prefix(timings, NUM_TIMINGS);
@@ -759,7 +759,7 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
         timings[loadEventEnd]
     };
 
-    if (utimes[0] < 0 || !sorted_ascending(utimes, 5) ) {
+    if (utimes[0] < 0 || !sorted_ascending(utimes, 5)) {
         fprintf(stderr,
                 "[W] processor: dropped frontend request due to invalid timings: "
                 "%" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %" PRIi64 "\n",
@@ -773,9 +773,14 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
     int64_t processing_time = mtimes[3] = timings[domComplete] - timings[responseEnd];
     int64_t load_time       = mtimes[4] = timings[loadEventEnd] - timings[domComplete];
     int64_t page_time       = mtimes[5] = timings[loadEventEnd];
-    *dom_interactive        = timings[domContentLoadedEventEnd] - connect_time;
-    if (*dom_interactive < 0)
-        *dom_interactive = page_time;
+    int64_t dom_interactive = mtimes[6] = timings[domInteractive] - timings[requestStart];
+
+    if (dom_interactive <= 0) {
+        fprintf(stderr,
+                "[W] processor: dropped frontend request due to invalid dom_interactive time:"
+                "%" PRIi64 "\n", dom_interactive
+                );
+    }
 
     json_object_object_add(request, "connect_time", json_object_new_int64(connect_time));
     json_object_object_add(request, "request_time", json_object_new_int64(request_time));
@@ -783,8 +788,8 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
     json_object_object_add(request, "processing_time", json_object_new_int64(processing_time));
     json_object_object_add(request, "load_time", json_object_new_int64(load_time));
     json_object_object_add(request, "page_time", json_object_new_int64(page_time));
+    json_object_object_add(request, "dom_interactive", json_object_new_int64(dom_interactive));
 
-    // fprintf(stderr, "[D] SPEEDUP %.2lld \n", timings[domComplete] - timings[domInteractive]);
     // dump_json_object(stdout, request);
 
     return 1;
@@ -815,6 +820,39 @@ int check_frontend_request_validity(parser_state_t *pstate, json_object *request
     }
 }
 
+static
+void send_statsd_updates_for_page(const char* envapp, statsd_client_t *client, const int64_t *mtimes, const char* satisfaction)
+{
+    char buffer[1024];
+    size_t n = sizeof(buffer);
+
+    snprintf(buffer, n, "%s.page.%s", envapp, satisfaction);
+    statsd_client_increment(client, buffer);
+
+    snprintf(buffer, n, "%s.page.sum", envapp);
+    statsd_client_increment(client, buffer);
+
+    snprintf(buffer, n, "%s.page.connect_time", envapp);
+    statsd_client_timing(client, buffer, mtimes[0]);
+
+    snprintf(buffer, n, "%s.page.request_time", envapp);
+    statsd_client_timing(client, buffer, mtimes[1]);
+
+    snprintf(buffer, n, "%s.page.response_time", envapp);
+    statsd_client_timing(client, buffer, mtimes[2]);
+
+    snprintf(buffer, n, "%s.page.processing_time", envapp);
+    statsd_client_timing(client, buffer, mtimes[3]);
+
+    snprintf(buffer, n, "%s.page.load_time", envapp);
+    statsd_client_timing(client, buffer, mtimes[4]);
+
+    snprintf(buffer, n, "%s.page.page_time", envapp);
+    statsd_client_timing(client, buffer, mtimes[5]);
+
+    snprintf(buffer, n, "%s.page.dom_interactive", envapp);
+    statsd_client_timing(client, buffer, mtimes[6]);
+}
 
 void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg)
 {
@@ -831,11 +869,12 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     if (!check_frontend_request_validity(pstate, request, "frontend", msg))
         return;
 
-    int64_t mtimes[6];
+    int64_t mtimes[7];
     int64_t dom_interactive;
-    if (!convert_frontend_timings_to_json(request, timings, mtimes, &dom_interactive))
+    if (!convert_frontend_timings_to_json(request, timings, mtimes))
         return;
 
+    dom_interactive = mtimes[6];
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
@@ -852,7 +891,7 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     increments_t* increments = increments_new();
     increments->page_request_count = 1;
     increments_fill_metrics(increments, request);
-    increments_fill_frontend_apdex(increments, request_data.total_time);
+    increments_fill_frontend_apdex(increments, dom_interactive);
     const char* satisfaction = increments_fill_page_apdex(increments, dom_interactive);
 
     processor_add_totals(self, request_data.page, increments);
@@ -865,39 +904,29 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
 
     processor_add_quants(self, request_data.page, increments);
 
-    // send statsd updates
-    const char* envapp = self->stream_info->yek;
-    char buffer[1024];
-    size_t n = sizeof(buffer);
-    snprintf(buffer, n, "%s.page.%s", envapp, satisfaction);
-    statsd_client_increment(pstate->statsd_client, buffer);
-
-    snprintf(buffer, n, "%s.page.sum", envapp);
-    statsd_client_increment(pstate->statsd_client, buffer);
-
-    snprintf(buffer, n, "%s.page.connect_time", envapp);
-    statsd_client_timing(pstate->statsd_client, buffer, mtimes[0]);
-
-    snprintf(buffer, n, "%s.page.request_time", envapp);
-    statsd_client_timing(pstate->statsd_client, buffer, mtimes[1]);
-
-    snprintf(buffer, n, "%s.page.response_time", envapp);
-    statsd_client_timing(pstate->statsd_client, buffer, mtimes[2]);
-
-    snprintf(buffer, n, "%s.page.processing_time", envapp);
-    statsd_client_timing(pstate->statsd_client, buffer, mtimes[3]);
-
-    snprintf(buffer, n, "%s.page.load_time", envapp);
-    statsd_client_timing(pstate->statsd_client, buffer, mtimes[4]);
-
-    snprintf(buffer, n, "%s.page.page_time", envapp);
-    statsd_client_timing(pstate->statsd_client, buffer, mtimes[5]);
-
     // dump_increments("add_frontend_data", increments, NULL);
+
+    send_statsd_updates_for_page(self->stream_info->yek, pstate->statsd_client, mtimes, satisfaction);
 
     increments_destroy(increments);
 
     // TODO: store interesting requests
+}
+
+static
+void send_statsd_updates_for_ajax(const char* envapp, statsd_client_t *client, int64_t ajax_time, const char* satisfaction)
+{
+    char buffer[1024];
+    size_t n = sizeof(buffer);
+
+    snprintf(buffer, n, "%s.ajax.%s", envapp, satisfaction);
+    statsd_client_increment(client, buffer);
+
+    snprintf(buffer, n, "%s.ajax.sum", envapp);
+    statsd_client_increment(client, buffer);
+
+    snprintf(buffer, n, "%s.ajax.ajax_time", envapp);
+    statsd_client_timing(client, buffer, ajax_time);
 }
 
 void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg)
@@ -946,18 +975,7 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
 
     processor_add_quants(self, request_data.page, increments);
 
-    // send statsd updates
-    const char* envapp = self->stream_info->yek;
-    char buffer[1024];
-    size_t n = sizeof(buffer);
-    snprintf(buffer, n, "%s.ajax.%s", envapp, satisfaction);
-    statsd_client_increment(pstate->statsd_client, buffer);
-
-    snprintf(buffer, n, "%s.ajax.sum", envapp);
-    statsd_client_increment(pstate->statsd_client, buffer);
-
-    snprintf(buffer, n, "%s.ajax.ajax_time", envapp);
-    statsd_client_timing(pstate->statsd_client, buffer, request_data.total_time);
+    send_statsd_updates_for_ajax(self->stream_info->yek, pstate->statsd_client, request_data.total_time, satisfaction);
 
     // dump_increments("add_ajax_data", increments, NULL);
 
