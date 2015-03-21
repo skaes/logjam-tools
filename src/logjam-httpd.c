@@ -16,11 +16,12 @@ static char http_response_ok [] =
     "HTTP/1.1 200 OK\r\n"
     "Cache-Control: private\r\n"
     "Content-Disposition: inline\r\n"
-    "Content-Transfer-Encoding: binary\r\n"
-    "Content-Type: image/png\r\n"
-    "Content-Length: 0\r\n"
+    "Content-Transfer-Encoding: base64\r\n"
+    "Content-Type: image/gif\r\n"
+    "Content-Length: 60\r\n"
     "Connection: close\r\n"
-    "\r\n";
+    "\r\n"
+    "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==";
 
 static char http_response_fail [] =
     "HTTP/1.1 400 RTFM\r\n"
