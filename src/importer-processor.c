@@ -870,11 +870,9 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
         return;
 
     int64_t mtimes[7];
-    int64_t dom_interactive;
     if (!convert_frontend_timings_to_json(request, timings, mtimes))
         return;
 
-    dom_interactive = mtimes[6];
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
@@ -891,8 +889,8 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     increments_t* increments = increments_new();
     increments->page_request_count = 1;
     increments_fill_metrics(increments, request);
-    increments_fill_frontend_apdex(increments, dom_interactive);
-    const char* satisfaction = increments_fill_page_apdex(increments, dom_interactive);
+    increments_fill_frontend_apdex(increments, request_data.total_time);
+    const char* satisfaction = increments_fill_page_apdex(increments, request_data.total_time);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
