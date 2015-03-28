@@ -1041,6 +1041,8 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
 
     increments_destroy(increments);
 
+    processor_add_user_agent(self, request);
+
     // TODO: store interesting requests
 }
 
