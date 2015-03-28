@@ -16,6 +16,7 @@ typedef struct {
     zhash_t *totals;
     zhash_t *minutes;
     zhash_t *quants;
+    zhash_t *agents;
 } processor_state_t;
 
 extern processor_state_t* processor_new(char *db_name);

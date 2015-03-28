@@ -123,6 +123,24 @@ void merge_increments(zhash_t* target, zhash_t *source)
     }
 }
 
+static
+void merge_agents(zhash_t* target, zhash_t *source)
+{
+    int64_t source_agent_count;
+
+    while ( (source_agent_count = (int64_t) zhash_first(source)) ) {
+        const char* agent = zhash_cursor(source);
+        assert(agent);
+        int64_t dest_agent_count = (int64_t) zhash_lookup(target, agent);
+        if (dest_agent_count) {
+            int64_t count = source_agent_count + dest_agent_count;
+            zhash_update(target, agent, (void*) count);
+        } else {
+            zhash_insert(target, agent, (void*) source_agent_count);
+        }
+        zhash_delete(source, agent);
+    }
+}
 
 static
 void merge_processors(zhash_t *target, zhash_t *source)
@@ -142,6 +160,7 @@ void merge_processors(zhash_t *target, zhash_t *source)
             merge_increments(dest_processor->totals, source_processor->totals);
             merge_increments(dest_processor->minutes, source_processor->minutes);
             merge_quants(dest_processor->quants, source_processor->quants);
+            merge_agents(dest_processor->agents, source_processor->agents);
         } else {
             zhash_insert(target, db_name, source_processor);
             zhash_freefn(target, db_name, processor_destroy);
@@ -304,6 +323,18 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_addptr(stats_msg, proc->stream_info);
         zmsg_addptr(stats_msg, proc->quants);
         proc->quants = NULL;
+        if (!output_socket_ready(state->updates_socket, 0)) {
+            fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
+        }
+        zmsg_send(&stats_msg, state->updates_socket);
+
+        // send agents updates
+        stats_msg = zmsg_new();
+        zmsg_addstr(stats_msg, "a");
+        zmsg_addstr(stats_msg, proc->db_name);
+        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addptr(stats_msg, proc->agents);
+        proc->agents = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }

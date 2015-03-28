@@ -33,6 +33,7 @@ processor_state_t* processor_new(char *db_name)
     p->totals = zhash_new();
     p->minutes = zhash_new();
     p->quants = zhash_new();
+    p->agents = zhash_new();
     return p;
 }
 
@@ -46,6 +47,7 @@ void processor_destroy(void* processor)
     zhash_destroy(&p->totals);
     zhash_destroy(&p->minutes);
     zhash_destroy(&p->quants);
+    zhash_destroy(&p->agents);
     free(p);
 }
 
@@ -337,6 +339,62 @@ void processor_add_totals(processor_state_t *self, const char* namespace, increm
 }
 
 static
+const char *extract_agent_from_request(json_object *request)
+{
+    json_object *request_info;
+    if (!json_object_object_get_ex(request, "request_info", &request_info))
+        return NULL;
+
+    json_object *headers;
+    if (!json_object_object_get_ex(request_info, "headers", &headers))
+        return NULL;
+
+    json_object *user_agent;
+    if (!json_object_object_get_ex(headers, "User-Agent", &user_agent))
+        return NULL;
+
+    return json_object_get_string(user_agent);
+}
+
+static
+void processor_add_agent(processor_state_t *self, json_object *request)
+{
+    const char* agent = extract_agent_from_request(request);
+
+    if (agent) {
+        int64_t agent_count = (int64_t) zhash_lookup(self->agents, agent);
+        if (agent_count > 0)
+            zhash_update(self->agents, agent, (void*) (agent_count + 1));
+        else
+            zhash_insert(self->agents, agent, (void*) 1);
+    }
+}
+
+static
+const char *extract_user_agent_from_request(json_object *request)
+{
+    json_object *user_agent;
+    if (!json_object_object_get_ex(request, "user_agent", &user_agent))
+        return NULL;
+
+    return json_object_get_string(user_agent);
+}
+
+static
+void processor_add_user_agent(processor_state_t *self, json_object *request)
+{
+    const char* agent = extract_user_agent_from_request(request);
+
+    if (agent) {
+        int64_t agent_count = (int64_t) zhash_lookup(self->agents, agent);
+        if (agent_count > 0)
+            zhash_update(self->agents, agent, (void*) (agent_count + (1L<<32)));
+        else
+            zhash_insert(self->agents, agent, (void*) (1L<<32));
+    }
+}
+
+static
 void processor_add_minutes(processor_state_t *self, const char* namespace, size_t minute, increments_t *increments)
 {
     char key[2000];
@@ -504,6 +562,8 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     processor_add_quants(self, request_data.page, increments);
 
     increments_destroy(increments);
+
+    processor_add_agent(self, request);
 
     if (!backend_only_request(request_data.page, self->stream_info)) {
         json_object *request_id_obj;
@@ -907,6 +967,8 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     send_statsd_updates_for_page(self->stream_info->yek, pstate->statsd_client, mtimes, satisfaction);
 
     increments_destroy(increments);
+
+    processor_add_user_agent(self, request);
 
     // TODO: store interesting requests
 }

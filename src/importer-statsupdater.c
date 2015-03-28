@@ -36,6 +36,7 @@ typedef struct {
     mongoc_collection_t *totals;
     mongoc_collection_t *minutes;
     mongoc_collection_t *quants;
+    mongoc_collection_t *agents;
 } stats_collections_t;
 
 typedef struct {
@@ -269,6 +270,73 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 }
 
 static
+int agents_add_agent(const char* agent, void* data, void* arg)
+{
+    collection_update_callback_t *cb = arg;
+    mongoc_collection_t *collection = cb->collection;
+    const char *db_name = cb->db_name;
+    int64_t counts = (int64_t) data;
+    int64_t backend_count = counts & 0xFFFFFFFF;
+    int64_t frontend_count = (counts >> 32);
+
+    const char* agent_ptr;
+    size_t agent_len = strlen(agent);
+    char safe_agent[6*agent_len+1];
+
+    if (bson_utf8_validate(agent, agent_len, false)) {
+        agent_ptr = agent;
+    } else {
+        agent_ptr = safe_agent;
+        agent_len = convert_to_win1252(agent, agent_len, safe_agent);
+    }
+    // printf("[D] agent_ptr: %s\n", agent_ptr);
+
+    bson_t *selector = bson_new();
+    assert( bson_append_utf8(selector, "agent", 5, agent_ptr, agent_len) );
+
+    // size_t n;
+    // char* bs = bson_as_json(selector, &n);
+    // printf("[D] selector. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
+
+    bson_t *incs = bson_new();
+    assert( bson_append_int64(incs, "backend", 7, backend_count) );
+    assert( bson_append_int64(incs, "frontend", 8, frontend_count) );
+
+    bson_t *document = bson_new();
+    bson_append_document(document, "$inc", 4, incs);
+    bson_destroy(incs);
+
+    // size_t n;
+    // char* bs = bson_as_json(document, &n);
+    // printf("[D] document. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
+
+    if (!dryrun) {
+        bson_error_t error;
+        int tries = TOKU_TX_RETRIES;
+    retry:
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
+            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
+                fprintf(stderr, "[W] retrying agents update operation on %s\n", db_name);
+                goto retry;
+            } else {
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr,
+                        "[E] update failed for %s on agents: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
+            }
+        }
+    }
+    bson_destroy(selector);
+    bson_destroy(document);
+    return 0;
+}
+
+static
 stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* db_name)
 {
     stats_collections_t *collections = zmalloc(sizeof(stats_collections_t));
@@ -278,6 +346,7 @@ stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* 
     collections->totals = mongoc_client_get_collection(client, db_name, "totals");
     collections->minutes = mongoc_client_get_collection(client, db_name, "minutes");
     collections->quants = mongoc_client_get_collection(client, db_name, "quants");
+    collections->agents = mongoc_client_get_collection(client, db_name, "agents");
 
     return collections;
 }
@@ -291,6 +360,8 @@ void destroy_stats_collections(stats_collections_t* collections)
         mongoc_collection_destroy(collections->minutes);
     if (collections->quants != NULL)
         mongoc_collection_destroy(collections->quants);
+    if (collections->agents != NULL)
+        mongoc_collection_destroy(collections->agents);
     free(collections);
 }
 
@@ -447,6 +518,10 @@ void stats_updater(zsock_t *pipe, void *args)
             case 'q':
                 cb.collection = collections->quants;
                 update_collection(updates, quants_add_quants, &cb);
+                break;
+            case 'a':
+                cb.collection = collections->agents;
+                update_collection(updates, agents_add_agent, &cb);
                 break;
             default:
                 fprintf(stderr, "[E] updater[%zu]: unknown task type: %c\n", id, task_type);

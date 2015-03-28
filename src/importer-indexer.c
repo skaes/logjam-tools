@@ -175,6 +175,15 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
 
+    collection = mongoc_client_get_collection(client, db_name, "agents");
+    keys = bson_new();
+    assert(bson_append_int32(keys, "agent", 5, 1));
+    if (!mongoc_collection_create_index(collection, keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
+    }
+    bson_destroy(keys);
+    mongoc_collection_destroy(collection);
+
     collection = mongoc_client_get_collection(client, db_name, "requests");
     add_request_collection_indexes(db_name, collection);
     mongoc_collection_destroy(collection);
