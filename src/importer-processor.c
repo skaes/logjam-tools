@@ -914,7 +914,7 @@ void send_statsd_updates_for_page(const char* envapp, statsd_client_t *client, c
     statsd_client_timing(client, buffer, mtimes[6]);
 }
 
-void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg)
+bool processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg)
 {
     // dump_json_object(stderr, request);
     // if (self->request_count % 100 == 0) {
@@ -924,14 +924,14 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     int64_t timings[16];
     if (!extract_frontend_timings(request, timings, 16, "frontend")) {
         fprintf(stderr, "[E] processor: dropped request with invalid timing information\n");
-        return;
+        return false;
     }
     if (!check_frontend_request_validity(pstate, request, "frontend", msg))
-        return;
+        return false;
 
     int64_t mtimes[7];
     if (!convert_frontend_timings_to_json(request, timings, mtimes))
-        return;
+        return false;
 
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
@@ -943,7 +943,7 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     if (request_data.total_time > 300000) {
         fprintf(stderr, "[W] dropped request data with nonsensical page_time\n");
         dump_json_object(stderr, request);
-        return;
+        return false;
     }
 
     increments_t* increments = increments_new();
@@ -970,6 +970,7 @@ void processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
 
     processor_add_user_agent(self, request);
 
+    return true;
     // TODO: store interesting requests
 }
 

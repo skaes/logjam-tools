@@ -14,6 +14,8 @@ typedef struct {
     char me[16];
     zconfig_t *config;
     size_t parsed_msgs_count;
+    size_t fe_msgs_received;
+    size_t fe_msgs_dropped;
     zsock_t *pipe;
     zsock_t *pull_socket;
     zsock_t *push_socket;
