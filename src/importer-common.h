@@ -16,6 +16,8 @@ extern "C" {
 #define DEBUG 0
 #endif
 
+extern FILE* frontend_timings;
+
 #define INVALID_DATE -1
 
 #if DEBUG == 1

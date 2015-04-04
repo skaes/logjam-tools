@@ -6,22 +6,28 @@
 static char *subscription_pattern = "";
 static const char *config_file_name = "logjam.conf";
 
+FILE* frontend_timings = NULL;
+static char *frontend_timings_file_name = NULL;
+
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-n] [-p stream-pattern] [-c config-file]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-n] [-p stream-pattern] [-c config-file] [-f frontend-timings-log-file]\n", argv[0]);
 }
 
 void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "nc:p:")) != -1) {
+    while ((c = getopt(argc, argv, "nf:c:p:")) != -1) {
         switch (c) {
         case 'n':
-            dryrun = true;;
+            dryrun = true;
             break;
         case 'c':
             config_file_name = optarg;
+            break;
+        case 'f':
+            frontend_timings_file_name = optarg;
             break;
         case 'p':
             subscription_pattern = optarg;
@@ -43,8 +49,22 @@ void process_arguments(int argc, char * const *argv)
 
 int main(int argc, char * const *argv)
 {
+    // don't buffer stdout and stderr
+    setvbuf(stdout, NULL, _IOLBF, 0);
+    setvbuf(stderr, NULL, _IOLBF, 0);
+
     process_arguments(argc, argv);
 
+    // setup frontend debug logging if requested
+    if (frontend_timings_file_name) {
+        frontend_timings = fopen(frontend_timings_file_name, "a");
+        if (!frontend_timings) {
+            fprintf(stderr, "[E] could not open frontend timings logfile: %s\n", strerror(errno));
+            exit(1);
+        }
+    }
+
+    // verify config file exists
     if (!zsys_file_exists(config_file_name)) {
         fprintf(stderr, "[E] missing config file: %s\n", config_file_name);
         exit(1);
@@ -61,9 +81,6 @@ int main(int argc, char * const *argv)
 
     setup_resource_maps(config);
     setup_stream_config(config, subscription_pattern);
-
-    setvbuf(stdout, NULL, _IOLBF, 0);
-    setvbuf(stderr, NULL, _IOLBF, 0);
 
     return run_controller_loop(config);
 }
