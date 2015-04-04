@@ -18,7 +18,7 @@ void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "nf:c:p:")) != -1) {
+    while ((c = getopt(argc, argv, "nc:f:p:")) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;

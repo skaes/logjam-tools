@@ -381,10 +381,8 @@ const char *extract_user_agent_from_request(json_object *request)
 }
 
 static
-void processor_add_user_agent(processor_state_t *self, json_object *request)
+void processor_add_user_agent(processor_state_t *self, const char* agent)
 {
-    const char* agent = extract_user_agent_from_request(request);
-
     if (agent) {
         int64_t agent_count = (int64_t) zhash_lookup(self->agents, agent);
         if (agent_count > 0)
@@ -706,6 +704,7 @@ bool sorted_ascending(int64_t *a, int n)
     return true;
 }
 
+#if 0
 // correct negative values at the beginning of timestamps series
 // often, request_start and response_start are equal and negative
 // and everything before it is zero
@@ -720,32 +719,31 @@ void auto_correct_prefix(int64_t *a, int n)
             break;
     }
 }
+#endif
 
 static
-void make_relative(int64_t *a, int n, int j)
+void make_relative(int64_t *a, int n, int64_t base)
 {
-    int64_t start = a[j];
     for (int i=0; i<n; i++) {
         if (a[i] > 0)
-            a[i] -= start;
+            a[i] -= base;
     }
 }
 
 static
-int extract_frontend_timings(json_object *request, int64_t *timings, int num_timings, const char *type)
+int extract_frontend_timings(json_object *request, int64_t *timings, int num_timings, const char *type, const char **rts)
 {
     json_object *rts_object = NULL;
-    const char *rts = NULL;
     if (json_object_object_get_ex(request, "rts", &rts_object)) {
-        rts = json_object_get_string(rts_object);
+        *rts = json_object_get_string(rts_object);
         // fprintf(stdout, "[D] RTS: %s\n", rts);
-    }
-    if (!rts) {
+    } else {
+        *rts = NULL;
         fprintf(stderr, "[E] processor: dropped %s request without timing information\n", type);
         return 0;
     }
     int n = 0;
-    const char *p = rts;
+    const char *p = *rts;
     char c;
     int64_t *times = timings;
     int64_t value = 0;
@@ -756,7 +754,7 @@ int extract_frontend_timings(json_object *request, int64_t *timings, int num_tim
             value = 0;
             n++;
             if (n == num_timings && c!=0) {
-                fprintf(stderr, "[E] processor: too many frontend timing values: %s\n", rts);
+                fprintf(stderr, "[E] processor: too many frontend timing values: %s\n", *rts);
                 return 0;
             } else if (!c)
                 break;
@@ -806,24 +804,35 @@ int extract_frontend_timings(json_object *request, int64_t *timings, int num_tim
 
 
 static
-int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t *mtimes)
+int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t *mtimes, const char* user_agent, const char* rts)
 {
-    make_relative(timings, NUM_TIMINGS, fetchStart);
-    auto_correct_prefix(timings, NUM_TIMINGS);
+    int64_t base = timings[navigationStart];
+    if (base == 0) base = timings[fetchStart];
+    make_relative(timings, NUM_TIMINGS, base);
+    // auto_correct_prefix(timings, NUM_TIMINGS);
 
     int64_t utimes[] = {
         timings[requestStart],
         timings[responseStart],
         timings[responseEnd],
         timings[domComplete],
-        timings[loadEventEnd]
+        timings[loadEventEnd],
+        timings[domInteractive]
     };
 
-    if (utimes[0] < 0 || !sorted_ascending(utimes, 5)) {
-        fprintf(stderr,
-                "[W] processor: dropped frontend request due to invalid timings: "
-                "%" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %" PRIi64 ", %" PRIi64 "\n",
-                utimes[0], utimes[1], utimes[2], utimes[3], utimes[4]);
+    if (frontend_timings) {
+        fprintf(frontend_timings,
+            "%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",\"%s\",%s\n",
+            utimes[0], utimes[1], utimes[2], utimes[3], utimes[4], utimes[5], user_agent, rts);
+    }
+
+    if (utimes[0] < 0 || utimes[5] <= 0 || !sorted_ascending(utimes, 5)) {
+        // if (!frontend_timings) {
+        //     fprintf(stderr,
+        //             "[W] processor: dropped frontend request due to invalid timings: "
+        //             "%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",\"%s\"\n",
+        //             utimes[0], utimes[1], utimes[2], utimes[3], utimes[4], utimes[5], user_agent);
+        // }
         return 0;
     }
 
@@ -833,14 +842,7 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
     int64_t processing_time = mtimes[3] = timings[domComplete] - timings[responseEnd];
     int64_t load_time       = mtimes[4] = timings[loadEventEnd] - timings[domComplete];
     int64_t page_time       = mtimes[5] = timings[loadEventEnd];
-    int64_t dom_interactive = mtimes[6] = timings[domInteractive] - timings[requestStart];
-
-    if (dom_interactive <= 0) {
-        fprintf(stderr,
-                "[W] processor: dropped frontend request due to invalid dom_interactive time:"
-                "%" PRIi64 "\n", dom_interactive
-                );
-    }
+    int64_t dom_interactive = mtimes[6] = timings[domInteractive];
 
     json_object_object_add(request, "connect_time", json_object_new_int64(connect_time));
     json_object_object_add(request, "request_time", json_object_new_int64(request_time));
@@ -921,16 +923,22 @@ bool processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     //      processor_dump_state(self);
     // }
 
+    const char* agent = extract_user_agent_from_request(request);
+
     int64_t timings[16];
-    if (!extract_frontend_timings(request, timings, 16, "frontend")) {
+    const char *rts;
+    if (!extract_frontend_timings(request, timings, 16, "frontend", &rts)) {
         fprintf(stderr, "[E] processor: dropped request with invalid timing information\n");
         return false;
     }
-    if (!check_frontend_request_validity(pstate, request, "frontend", msg))
+
+    if (!check_frontend_request_validity(pstate, request, "frontend", msg)) {
+        fprintf(stderr, "[E] processor: dropped request without backend timing information\n");
         return false;
+    }
 
     int64_t mtimes[7];
-    if (!convert_frontend_timings_to_json(request, timings, mtimes))
+    if (!convert_frontend_timings_to_json(request, timings, mtimes, agent, rts))
         return false;
 
     request_data_t request_data;
@@ -968,7 +976,7 @@ bool processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
 
     increments_destroy(increments);
 
-    processor_add_user_agent(self, request);
+    processor_add_user_agent(self, agent);
 
     return true;
     // TODO: store interesting requests
@@ -997,13 +1005,19 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     //     processor_dump_state(self);
     // }
 
+    const char* agent = extract_user_agent_from_request(request);
+
     int64_t timings[2];
-    if (!extract_frontend_timings(request, timings, 2, "ajax")) {
+    const char *rts;
+    if (!extract_frontend_timings(request, timings, 2, "ajax", &rts)) {
         fprintf(stderr, "[E] processor: dropped request with invalid timing information\n");
         return;
     }
-    if (!check_frontend_request_validity(pstate, request, "ajax", msg))
+
+    if (!check_frontend_request_validity(pstate, request, "ajax", msg)) {
+        fprintf(stderr, "[E] processor: dropped request without backend timing information\n");
         return;
+    }
 
     json_object_object_add(request, "ajax_time", json_object_new_int64(timings[1] - timings[0]));
 
@@ -1042,7 +1056,7 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
 
     increments_destroy(increments);
 
-    processor_add_user_agent(self, request);
+    processor_add_user_agent(self, agent);
 
     // TODO: store interesting requests
 }
