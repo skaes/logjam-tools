@@ -2,23 +2,25 @@
 #include "importer-streaminfo.h"
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
+#include "importer-processor.h"
 
 static char *subscription_pattern = "";
 static const char *config_file_name = "logjam.conf";
 
 FILE* frontend_timings = NULL;
 static char *frontend_timings_file_name = NULL;
+static char *frontend_timings_apdex_attr = NULL;
 
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-n] [-p stream-pattern] [-c config-file] [-f frontend-timings-log-file]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-n] [-p stream-pattern] [-c config-file] [-f frontend-timings-log-file] [-a frontend-apdex-attribute]\n", argv[0]);
 }
 
 void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "nc:f:p:")) != -1) {
+    while ((c = getopt(argc, argv, "nc:f:p:a:")) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -31,6 +33,9 @@ void process_arguments(int argc, char * const *argv)
             break;
         case 'p':
             subscription_pattern = optarg;
+            break;
+        case 'a':
+            frontend_timings_apdex_attr = optarg;
             break;
         case '?':
             if (optopt == 'c')
@@ -60,6 +65,12 @@ int main(int argc, char * const *argv)
         frontend_timings = fopen(frontend_timings_file_name, "a");
         if (!frontend_timings) {
             fprintf(stderr, "[E] could not open frontend timings logfile: %s\n", strerror(errno));
+            exit(1);
+        }
+    }
+    if (frontend_timings_apdex_attr) {
+        if (!processor_set_frontend_apdex_attribute(frontend_timings_apdex_attr)) {
+            fprintf(stderr, "[E] invalid frontend apdex attribite name: %s\n", frontend_timings_apdex_attr);
             exit(1);
         }
     }

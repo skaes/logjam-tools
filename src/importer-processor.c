@@ -51,7 +51,6 @@ void processor_destroy(void* processor)
     free(p);
 }
 
-
 static
 void dump_modules_hash(zhash_t *modules)
 {
@@ -802,6 +801,19 @@ int extract_frontend_timings(json_object *request, int64_t *timings, int num_tim
 #define loadEventStart 14
 #define loadEventEnd 15
 
+static int fe_apdex_attr_index = loadEventEnd;
+int processor_set_frontend_apdex_attribute(const char *attr)
+{
+    if (streq(attr, "domInteractive")) {
+        fe_apdex_attr_index = domInteractive;
+        return 1;
+    }
+    if (streq(attr, "loadEventEnd")) {
+        fe_apdex_attr_index = loadEventEnd;
+        return 1;
+    }
+    return 0;
+}
 
 static
 int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t *mtimes, const char* user_agent, const char* rts)
@@ -958,7 +970,7 @@ bool processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     increments->page_request_count = 1;
     increments_fill_metrics(increments, request);
     increments_fill_frontend_apdex(increments, request_data.total_time);
-    const char* satisfaction = increments_fill_page_apdex(increments, request_data.total_time);
+    const char* satisfaction = increments_fill_page_apdex(increments, timings[fe_apdex_attr_index]);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
