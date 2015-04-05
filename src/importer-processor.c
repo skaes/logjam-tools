@@ -954,6 +954,7 @@ static const char* str_fe_reason(enum fe_msg_drop_reason reason)
     case FE_MSG_ILLEGAL:    return "FE_MSG_ILLEGAL";
     case FE_MSG_CORRUPTED:  return "FE_MSG_CORRUPTED";
     case FE_MSG_INVALID:    return "FE_MSG_INVALID";
+    default:                return "FE_MSG_UNKNOWN";
     }
 }
 
