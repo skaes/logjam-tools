@@ -693,11 +693,21 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
     zmsg_send(&msg, pstate->push_socket);
 }
 
-static
+static inline
 bool sorted_ascending(int64_t *a, int n)
 {
     for (int i=1; i<n; i++) {
         if (a[i] < a[i-1])
+            return false;
+    }
+    return true;
+}
+
+static inline
+bool all_zero(int64_t *a, int n)
+{
+    for (int i=0; i<n; i++) {
+        if (a[i])
             return false;
     }
     return true;
@@ -816,10 +826,17 @@ int processor_set_frontend_apdex_attribute(const char *attr)
 }
 
 static
-int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t *mtimes, const char* user_agent, const char* rts)
+enum fe_msg_drop_reason convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t *mtimes, const char* user_agent, const char* rts)
 {
     int64_t base = timings[navigationStart];
-    if (base == 0) base = timings[fetchStart];
+    if (base == 0)
+        base = timings[fetchStart];
+    if (base == 0) {
+        if (all_zero(timings, NUM_TIMINGS))
+            return FE_MSG_NAV_TIMING;
+        else
+            return FE_MSG_INVALID;
+    }
     make_relative(timings, NUM_TIMINGS, base);
     // auto_correct_prefix(timings, NUM_TIMINGS);
 
@@ -845,7 +862,7 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
         //             "%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",\"%s\"\n",
         //             utimes[0], utimes[1], utimes[2], utimes[3], utimes[4], utimes[5], user_agent);
         // }
-        return 0;
+        return FE_MSG_INVALID;
     }
 
     int64_t connect_time    = mtimes[0] = timings[requestStart];
@@ -866,7 +883,7 @@ int convert_frontend_timings_to_json(json_object *request, int64_t *timings, int
 
     // dump_json_object(stdout, request);
 
-    return 1;
+    return FE_MSG_ACCEPTED;
 }
 
 static
@@ -928,7 +945,25 @@ void send_statsd_updates_for_page(const char* envapp, statsd_client_t *client, c
     statsd_client_timing(client, buffer, mtimes[6]);
 }
 
-bool processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg)
+static const char* str_fe_reason(enum fe_msg_drop_reason reason)
+{
+    switch (reason){
+    case FE_MSG_ACCEPTED:   return "FE_MSG_ACCEPTED";
+    case FE_MSG_OUTLIER:    return "FE_MSG_OUTLIER";
+    case FE_MSG_NAV_TIMING: return "FE_MSG_NAV_TIMING";
+    case FE_MSG_ILLEGAL:    return "FE_MSG_ILLEGAL";
+    case FE_MSG_CORRUPTED:  return "FE_MSG_CORRUPTED";
+    case FE_MSG_INVALID:    return "FE_MSG_INVALID";
+    }
+}
+
+static
+void print_fe_drop_reason(const char* type, enum fe_msg_drop_reason reason)
+{
+    fprintf(stderr, "[E] processor: dropped %s request (%s)\n", type, str_fe_reason(reason));
+}
+
+enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg)
 {
     // dump_json_object(stderr, request);
     // if (self->request_count % 100 == 0) {
@@ -936,22 +971,26 @@ bool processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     // }
 
     const char* agent = extract_user_agent_from_request(request);
+    processor_add_user_agent(self, agent);
 
     int64_t timings[16];
     const char *rts;
     if (!extract_frontend_timings(request, timings, 16, "frontend", &rts)) {
-        fprintf(stderr, "[E] processor: dropped request with invalid timing information\n");
-        return false;
+        print_fe_drop_reason("frontend", FE_MSG_CORRUPTED);
+        return FE_MSG_CORRUPTED;
     }
 
     if (!check_frontend_request_validity(pstate, request, "frontend", msg)) {
-        fprintf(stderr, "[E] processor: dropped request without backend timing information\n");
-        return false;
+        print_fe_drop_reason("frontend", FE_MSG_INVALID);
+        return FE_MSG_INVALID;
     }
 
     int64_t mtimes[7];
-    if (!convert_frontend_timings_to_json(request, timings, mtimes, agent, rts))
-        return false;
+    enum fe_msg_drop_reason reason = convert_frontend_timings_to_json(request, timings, mtimes, agent, rts);
+    if (reason) {
+        print_fe_drop_reason("frontend", reason);
+        return reason;
+    }
 
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
@@ -960,10 +999,10 @@ bool processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
     request_data.total_time = processor_setup_time(self, request, "page_time", "frontend_time");
 
     // TODO: revisit when switching to percentiles
-    if (request_data.total_time > 300000) {
-        fprintf(stderr, "[W] dropped request data with nonsensical page_time\n");
-        dump_json_object(stderr, request);
-        return false;
+    if (request_data.total_time > FE_MSG_OUTLIER_THRESHOLD_MS) {
+        print_fe_drop_reason("frontend", FE_MSG_OUTLIER);
+        // dump_json_object(stderr, request);
+        return FE_MSG_OUTLIER;
     }
 
     increments_t* increments = increments_new();
@@ -988,9 +1027,7 @@ bool processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate
 
     increments_destroy(increments);
 
-    processor_add_user_agent(self, agent);
-
-    return true;
+    return FE_MSG_ACCEPTED;
     // TODO: store interesting requests
 }
 
@@ -1010,7 +1047,7 @@ void send_statsd_updates_for_ajax(const char* envapp, statsd_client_t *client, i
     statsd_client_timing(client, buffer, ajax_time);
 }
 
-void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg)
+enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg)
 {
     // dump_json_object(stdout, request);
     // if (self->request_count % 100 == 0) {
@@ -1018,20 +1055,27 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     // }
 
     const char* agent = extract_user_agent_from_request(request);
+    processor_add_user_agent(self, agent);
 
     int64_t timings[2];
     const char *rts;
     if (!extract_frontend_timings(request, timings, 2, "ajax", &rts)) {
-        fprintf(stderr, "[E] processor: dropped request with invalid timing information\n");
-        return;
+        print_fe_drop_reason("ajax", FE_MSG_CORRUPTED);
+        return FE_MSG_CORRUPTED;
     }
 
     if (!check_frontend_request_validity(pstate, request, "ajax", msg)) {
-        fprintf(stderr, "[E] processor: dropped request without backend timing information\n");
-        return;
+        print_fe_drop_reason("ajax", FE_MSG_ILLEGAL);
+        return FE_MSG_ILLEGAL;
     }
 
-    json_object_object_add(request, "ajax_time", json_object_new_int64(timings[1] - timings[0]));
+    int64_t ajax_time = timings[1] - timings[0];
+    if (ajax_time < 0) {
+        print_fe_drop_reason("ajax", FE_MSG_INVALID);
+        return FE_MSG_INVALID;
+    }
+
+    json_object_object_add(request, "ajax_time", json_object_new_int64(ajax_time));
 
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
@@ -1040,10 +1084,10 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
     request_data.total_time = processor_setup_time(self, request, "ajax_time", "frontend_time");
 
     // TODO: revisit when switching to percentiles
-    if (request_data.total_time > 300000 || request_data.total_time < 0) {
-        fprintf(stderr, "[W] dropped request data with nonsensical ajax_time\n");
-        dump_json_object(stderr, request);
-        return;
+    if (request_data.total_time > FE_MSG_OUTLIER_THRESHOLD_MS) {
+        print_fe_drop_reason("ajax", FE_MSG_OUTLIER);
+        // dump_json_object(stderr, request);
+        return FE_MSG_OUTLIER;
     }
 
     increments_t* increments = increments_new();
@@ -1068,8 +1112,7 @@ void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, js
 
     increments_destroy(increments);
 
-    processor_add_user_agent(self, agent);
-
     // TODO: store interesting requests
+    return FE_MSG_ACCEPTED;
 }
 

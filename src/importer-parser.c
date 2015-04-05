@@ -190,12 +190,18 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         else if (n >= 6 && !strncmp("events", topic_str, 6))
             processor_add_event(processor, parser_state, request);
         else if (n >= 13 && !strncmp("frontend.page", topic_str, 13)) {
-            parser_state->fe_msgs_received++;
-            if (!processor_add_frontend_data(processor, parser_state, request, msg))
-                parser_state->fe_msgs_dropped++;
-        } else if (n >= 13 && !strncmp("frontend.ajax", topic_str, 13))
-            processor_add_ajax_data(processor, parser_state, request, msg);
-        else {
+            parser_state->fe_stats.received++;
+            enum fe_msg_drop_reason reason = processor_add_frontend_data(processor, parser_state, request, msg);
+            if (reason)
+                parser_state->fe_stats.dropped++;
+            parser_state->fe_stats.drop_reasons[reason]++;
+        } else if (n >= 13 && !strncmp("frontend.ajax", topic_str, 13)) {
+            parser_state->fe_stats.received++;
+            enum fe_msg_drop_reason reason = processor_add_ajax_data(processor, parser_state, request, msg);
+            if (reason)
+                parser_state->fe_stats.dropped++;
+            parser_state->fe_stats.drop_reasons[reason]++;
+        } else {
             fprintf(stderr, "[W] unknown topic key\n");
             my_zmsg_fprint(msg, "[E] FRAME=", stderr);
         }
@@ -270,16 +276,14 @@ void parser(zsock_t *pipe, void *args)
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
                 if (state->parsed_msgs_count)
-                    printf("[I] parser [%zu]: tick (%zu messages, %zu fe_rcv, %zu fe_drop [=%5.2f %%])\n", id,
-                           state->parsed_msgs_count, state->fe_msgs_received, state->fe_msgs_dropped,
-                           ((float)state->fe_msgs_dropped/state->fe_msgs_received)*100);
+                    printf("[I] parser [%zu]: tick (%zu messages, %zu frontend)\n", id, state->parsed_msgs_count, state->fe_stats.received);
                 zmsg_t *answer = zmsg_new();
                 zmsg_addptr(answer, state->processors);
                 zmsg_addmem(answer, &state->parsed_msgs_count, sizeof(state->parsed_msgs_count));
+                zmsg_addmem(answer, &state->fe_stats, sizeof(state->fe_stats));
                 zmsg_send(&answer, state->pipe);
                 state->parsed_msgs_count = 0;
-                state->fe_msgs_received = 0;
-                state->fe_msgs_dropped = 0;
+                memset(&state->fe_stats, 0 , sizeof(state->fe_stats));
                 state->processors = processor_hash_new();
                 free(cmd);
             } else if (streq(cmd, "$TERM")) {

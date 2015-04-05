@@ -53,14 +53,17 @@ typedef struct {
 
 
 static
-void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs_count)
+void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs_count, frontend_stats_t *fe_stats)
 {
     zframe_t *first = zmsg_first(msg);
     zframe_t *second = zmsg_next(msg);
+    zframe_t *third = zmsg_next(msg);
     assert(zframe_size(first) == sizeof(zhash_t*));
     memcpy(&*processors, zframe_data(first), sizeof(zhash_t*));
     assert(zframe_size(second) == sizeof(size_t));
     memcpy(parsed_msgs_count, zframe_data(second), sizeof(size_t));
+    assert(zframe_size(third) == sizeof(frontend_stats_t));
+    memcpy(fe_stats, zframe_data(third), sizeof(frontend_stats_t));
 }
 
 static
@@ -244,6 +247,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     controller_state_t *state = arg;
     zhash_t *processors[NUM_PARSERS];
     size_t parsed_msgs_counts[NUM_PARSERS];
+    frontend_stats_t fe_stats[NUM_PARSERS];
 
     state->ticks++;
     // signal liveness to watchdog
@@ -259,14 +263,19 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zactor_t* parser = state->parsers[i];
         zstr_send(parser, "tick");
         zmsg_t *response = zmsg_recv(parser);
-        extract_parser_state(response, &processors[i], &parsed_msgs_counts[i]);
+        extract_parser_state(response, &processors[i], &parsed_msgs_counts[i], &fe_stats[i]);
         zmsg_destroy(&response);
     }
 
     // printf("[D] controller: combining processors states\n");
     size_t parsed_msgs_count = parsed_msgs_counts[0];
-    for (size_t i=1; i<NUM_PARSERS; i++) {
+    frontend_stats_t front_stats = fe_stats[0];
+    for (int i=1; i<NUM_PARSERS; i++) {
         parsed_msgs_count += parsed_msgs_counts[i];
+        front_stats.received += fe_stats[i].received;
+        front_stats.dropped += fe_stats[i].dropped;
+        for (int j=0; j<FE_MSG_NUM_REASONS; j++)
+            front_stats.drop_reasons[j] += fe_stats[i].drop_reasons[j];
         merge_processors(processors[0], processors[i]);
         zhash_destroy(&processors[i]);
     }
@@ -354,7 +363,10 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     int64_t end_time_ms = zclock_mono();
     int runtime = end_time_ms - start_time_ms;
     int next_tick = runtime > 999 ? 1 : 1000 - runtime;
-    printf("[I] controller: %5zu messages (%d ms)\n", parsed_msgs_count, runtime);
+    printf("[I] controller: %5zu messages (%d ms); frontend: %zu [%4.1f%%] (dropped %zu [%4.1f%%])\n",
+           parsed_msgs_count, runtime,
+           front_stats.received, ((double) front_stats.received / parsed_msgs_count) * 100,
+           front_stats.dropped, ((double) front_stats.dropped / front_stats.received) * 100) ;
 
     if (terminate) {
         printf("[I] controller: detected config change. terminating.\n");

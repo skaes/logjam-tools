@@ -24,8 +24,8 @@ extern void processor_destroy(void* processor);
 extern void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request);
 extern void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request);
 extern void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request);
-extern bool processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
-extern void processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
+extern enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
+extern enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
 extern int processor_set_frontend_apdex_attribute(const char *attr);
 
 #ifdef __cplusplus
