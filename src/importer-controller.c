@@ -363,7 +363,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     int64_t end_time_ms = zclock_mono();
     int runtime = end_time_ms - start_time_ms;
     int next_tick = runtime > 999 ? 1 : 1000 - runtime;
-    printf("[I] controller: %5zu messages (%d ms); frontend: %zu [%4.1f%%] (dropped %zu [%4.1f%%])\n",
+    printf("[I] controller: %5zu messages (%d ms); frontend: %zu [%.1f%%] (dropped %zu [%.1f%%])\n",
            parsed_msgs_count, runtime,
            front_stats.received, ((double) front_stats.received / parsed_msgs_count) * 100,
            front_stats.dropped, ((double) front_stats.dropped / front_stats.received) * 100) ;
