@@ -24,10 +24,17 @@ enum fe_msg_drop_reason {
 #define FE_MSG_NUM_REASONS 6
 
 typedef struct {
-    size_t received;          // how many messages we got
-    size_t dropped;           // how many we dropped
-    size_t drop_reasons[6];   // how many we dropped for a specific reason
+    size_t received;                          // how many messages we got
+    size_t dropped;                           // how many we dropped
+    size_t drop_reasons[FE_MSG_NUM_REASONS];  // how many we dropped for a specific reason
 } frontend_stats_t;
+
+typedef struct {
+    size_t received_backend;                     // how many messages we got
+    size_t received_frontend;                    // how many messages we got
+    size_t fe_dropped;                           // how many we dropped
+    size_t fe_drop_reasons[FE_MSG_NUM_REASONS];  // how many we dropped for a specific reason
+} user_agent_stats_t;
 
 typedef struct {
     size_t id;

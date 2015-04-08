@@ -129,17 +129,22 @@ void merge_increments(zhash_t* target, zhash_t *source)
 static
 void merge_agents(zhash_t* target, zhash_t *source)
 {
-    int64_t source_agent_count;
+    user_agent_stats_t *source_agent_stats;
 
-    while ( (source_agent_count = (int64_t) zhash_first(source)) ) {
+    while ( (source_agent_stats = zhash_first(source)) ) {
         const char* agent = zhash_cursor(source);
         assert(agent);
-        int64_t dest_agent_count = (int64_t) zhash_lookup(target, agent);
-        if (dest_agent_count) {
-            int64_t count = source_agent_count + dest_agent_count;
-            zhash_update(target, agent, (void*) count);
+        user_agent_stats_t *dest_agent_stats = zhash_lookup(target, agent);
+        if (dest_agent_stats) {
+            dest_agent_stats->received_backend += source_agent_stats->received_backend;
+            dest_agent_stats->received_frontend += source_agent_stats->received_frontend;
+            dest_agent_stats->fe_dropped += source_agent_stats->fe_dropped;
+            for (int i=0; i<FE_MSG_NUM_REASONS; i++)
+                dest_agent_stats->fe_drop_reasons[i] += source_agent_stats->fe_drop_reasons[i];
         } else {
-            zhash_insert(target, agent, (void*) source_agent_count);
+            zhash_insert(target, agent, source_agent_stats);
+            zhash_freefn(target, agent, free);
+            zhash_freefn(source, agent, NULL);
         }
         zhash_delete(source, agent);
     }

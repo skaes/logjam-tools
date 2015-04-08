@@ -361,11 +361,14 @@ void processor_add_agent(processor_state_t *self, json_object *request)
     const char* agent = extract_agent_from_request(request);
 
     if (agent) {
-        int64_t agent_count = (int64_t) zhash_lookup(self->agents, agent);
-        if (agent_count > 0)
-            zhash_update(self->agents, agent, (void*) (agent_count + 1));
-        else
-            zhash_insert(self->agents, agent, (void*) 1);
+        user_agent_stats_t *agent_stats = zhash_lookup(self->agents, agent);
+        if (agent_stats == NULL) {
+            agent_stats = zmalloc(sizeof(user_agent_stats_t));
+            assert(agent_stats);
+            zhash_insert(self->agents, agent, agent_stats);
+            zhash_freefn(self->agents, agent, free);
+        }
+        agent_stats->received_backend++;
     }
 }
 
@@ -380,14 +383,20 @@ const char *extract_user_agent_from_request(json_object *request)
 }
 
 static
-void processor_add_user_agent(processor_state_t *self, const char* agent)
+void processor_add_user_agent(processor_state_t *self, const char* agent, enum fe_msg_drop_reason reason)
 {
     if (agent) {
-        int64_t agent_count = (int64_t) zhash_lookup(self->agents, agent);
-        if (agent_count > 0)
-            zhash_update(self->agents, agent, (void*) (agent_count + (1L<<32)));
-        else
-            zhash_insert(self->agents, agent, (void*) (1L<<32));
+        user_agent_stats_t *agent_stats = zhash_lookup(self->agents, agent);
+        if (agent_stats == NULL) {
+            agent_stats = zmalloc(sizeof(user_agent_stats_t));
+            assert(agent_stats);
+            zhash_insert(self->agents, agent, agent_stats);
+            zhash_freefn(self->agents, agent, free);
+        }
+        agent_stats->received_frontend++;
+        agent_stats->fe_drop_reasons[reason]++;
+        if (reason != FE_MSG_ACCEPTED)
+            agent_stats->fe_dropped++;
     }
 }
 
@@ -972,24 +981,29 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
     // }
 
     const char* agent = extract_user_agent_from_request(request);
-    processor_add_user_agent(self, agent);
+    enum fe_msg_drop_reason reason;
 
     int64_t timings[16];
     const char *rts;
     if (!extract_frontend_timings(request, timings, 16, "frontend", &rts)) {
-        print_fe_drop_reason("frontend", FE_MSG_CORRUPTED);
-        return FE_MSG_CORRUPTED;
+        reason = FE_MSG_CORRUPTED;
+        print_fe_drop_reason("frontend", reason);
+        processor_add_user_agent(self, agent, reason);
+        return reason;
     }
 
     if (!check_frontend_request_validity(pstate, request, "frontend", msg)) {
+        reason = FE_MSG_INVALID;
         print_fe_drop_reason("frontend", FE_MSG_INVALID);
-        return FE_MSG_INVALID;
+        processor_add_user_agent(self, agent, reason);
+        return reason;
     }
 
     int64_t mtimes[7];
-    enum fe_msg_drop_reason reason = convert_frontend_timings_to_json(request, timings, mtimes, agent, rts);
+    reason = convert_frontend_timings_to_json(request, timings, mtimes, agent, rts);
     if (reason) {
         print_fe_drop_reason("frontend", reason);
+        processor_add_user_agent(self, agent, reason);
         return reason;
     }
 
@@ -1001,9 +1015,11 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
 
     // TODO: revisit when switching to percentiles
     if (request_data.total_time > FE_MSG_OUTLIER_THRESHOLD_MS) {
-        print_fe_drop_reason("frontend", FE_MSG_OUTLIER);
+        reason = FE_MSG_OUTLIER;
+        print_fe_drop_reason("frontend", reason);
         // dump_json_object(stderr, request);
-        return FE_MSG_OUTLIER;
+        processor_add_user_agent(self, agent, reason);
+        return reason;
     }
 
     increments_t* increments = increments_new();
@@ -1028,8 +1044,10 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
 
     increments_destroy(increments);
 
-    return FE_MSG_ACCEPTED;
     // TODO: store interesting requests
+    reason = FE_MSG_ACCEPTED;
+    processor_add_user_agent(self, agent, reason);
+    return reason;
 }
 
 static
@@ -1056,24 +1074,30 @@ enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_
     // }
 
     const char* agent = extract_user_agent_from_request(request);
-    processor_add_user_agent(self, agent);
+    enum fe_msg_drop_reason reason;
 
     int64_t timings[2];
     const char *rts;
     if (!extract_frontend_timings(request, timings, 2, "ajax", &rts)) {
-        print_fe_drop_reason("ajax", FE_MSG_CORRUPTED);
-        return FE_MSG_CORRUPTED;
+        reason = FE_MSG_CORRUPTED;
+        print_fe_drop_reason("ajax", reason);
+        processor_add_user_agent(self, agent, reason);
+        return reason;
     }
 
     if (!check_frontend_request_validity(pstate, request, "ajax", msg)) {
-        print_fe_drop_reason("ajax", FE_MSG_ILLEGAL);
-        return FE_MSG_ILLEGAL;
+        reason = FE_MSG_ILLEGAL;
+        print_fe_drop_reason("ajax", reason);
+        processor_add_user_agent(self, agent, reason);
+        return reason;
     }
 
     int64_t ajax_time = timings[1] - timings[0];
     if (ajax_time < 0) {
-        print_fe_drop_reason("ajax", FE_MSG_INVALID);
-        return FE_MSG_INVALID;
+        reason = FE_MSG_INVALID;
+        print_fe_drop_reason("ajax", reason);
+        processor_add_user_agent(self, agent, reason);
+        return reason;
     }
 
     json_object_object_add(request, "ajax_time", json_object_new_int64(ajax_time));
@@ -1086,9 +1110,11 @@ enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_
 
     // TODO: revisit when switching to percentiles
     if (request_data.total_time > FE_MSG_OUTLIER_THRESHOLD_MS) {
-        print_fe_drop_reason("ajax", FE_MSG_OUTLIER);
+        reason = FE_MSG_OUTLIER;
+        print_fe_drop_reason("ajax", reason);
         // dump_json_object(stderr, request);
-        return FE_MSG_OUTLIER;
+        processor_add_user_agent(self, agent, reason);
+        return reason;
     }
 
     increments_t* increments = increments_new();
@@ -1114,6 +1140,8 @@ enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_
     increments_destroy(increments);
 
     // TODO: store interesting requests
-    return FE_MSG_ACCEPTED;
+    reason = FE_MSG_ACCEPTED;
+    processor_add_user_agent(self, agent, reason);
+    return reason;
 }
 

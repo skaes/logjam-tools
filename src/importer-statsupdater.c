@@ -4,7 +4,7 @@
 #include "importer-indexer.h"
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
-
+#include "importer-parser.h"
 
 /*
  * connections: n_u = NUM_UPDATERS, "o" = bind, "[<>v^]" = connect
@@ -275,9 +275,7 @@ int agents_add_agent(const char* agent, void* data, void* arg)
     collection_update_callback_t *cb = arg;
     mongoc_collection_t *collection = cb->collection;
     const char *db_name = cb->db_name;
-    int64_t counts = (int64_t) data;
-    int64_t backend_count = counts & 0xFFFFFFFF;
-    int64_t frontend_count = (counts >> 32);
+    user_agent_stats_t *stats = data;
 
     const char* agent_ptr;
     size_t agent_len = strlen(agent);
@@ -300,8 +298,20 @@ int agents_add_agent(const char* agent, void* data, void* arg)
     // bson_free(bs);
 
     bson_t *incs = bson_new();
-    assert( bson_append_int64(incs, "backend", 7, backend_count) );
-    assert( bson_append_int64(incs, "frontend", 8, frontend_count) );
+    assert( bson_append_int64(incs, "backend", 7, stats->received_backend) );
+    assert( bson_append_int64(incs, "frontend", 8, stats->received_frontend) );
+    assert( bson_append_int64(incs, "dropped", 7, stats->fe_dropped) );
+    size_t count;
+    if ( (count = stats->fe_drop_reasons[FE_MSG_OUTLIER]) )
+        assert( bson_append_int64(incs, "drop_reasons.outlier", 20, count) );
+    if ( (count = stats->fe_drop_reasons[FE_MSG_NAV_TIMING]) )
+        assert( bson_append_int64(incs, "drop_reasons.nav_timing", 23, count) );
+    if ( (count = stats->fe_drop_reasons[FE_MSG_ILLEGAL]) )
+        assert( bson_append_int64(incs, "drop_reasons.illegal", 20, count) );
+    if ( (count = stats->fe_drop_reasons[FE_MSG_CORRUPTED]) )
+        assert( bson_append_int64(incs, "drop_reasons.corrupted", 22, count) );
+    if ( (count = stats->fe_drop_reasons[FE_MSG_INVALID]) )
+        assert( bson_append_int64(incs, "drop_reasons.invalid", 20, count) );
 
     bson_t *document = bson_new();
     bson_append_document(document, "$inc", 4, incs);
