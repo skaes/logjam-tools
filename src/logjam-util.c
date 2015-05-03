@@ -36,10 +36,10 @@ uint64_t ntohll(uint64_t native_number)
 
 int set_thread_name(const char* name)
 {
-#if defined(__linux__)
+#if defined(HAVE_PTHREAD_SETNAME_NP) && defined(__linux__)
     pthread_t self = pthread_self();
     return pthread_setname_np(self, name);
-#elif defined(__APPLE__)
+#elif defined(HAVE_PTHREAD_SETNAME_NP) && defined(__APPLE__)
     return pthread_setname_np(name);
 #else
     return 0;
