@@ -18,6 +18,7 @@ typedef struct {
     int buffer_used;                // buffer fullness
     int statsd_socket;              // udp socket for statsd
     struct sockaddr_in servaddr;    // statsd server address
+    bool connected;                 // whether we could connect
 } statsd_server_state_t;
 
 
@@ -94,15 +95,15 @@ int statsd_client_timing(statsd_client_t *self, char *name, size_t ms)
 
 // TODO: ipv6!!!
 static
-int setup_statsd_udp_socket_and_sever_address(statsd_server_state_t* state,  zconfig_t *config)
+void setup_statsd_udp_socket_and_sever_address(statsd_server_state_t* state,  zconfig_t *config)
 {
     if ((state->statsd_socket = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         fprintf(stderr, "[E] statsd[0]: cannot create statsd UDP socket");
-        return 0;
+        return;
     }
 
     // parse specification
-    const char* connection_spec = zconfig_resolve(config, "statsd/endpoint", "localhost");
+    const char* connection_spec = zconfig_resolve(config, "statsd/endpoint", "udp://localhost:8125");
     assert(strlen(connection_spec) < 256);
 
     char host_name[256];
@@ -110,14 +111,14 @@ int setup_statsd_udp_socket_and_sever_address(statsd_server_state_t* state,  zco
     int n = sscanf(connection_spec, "udp://%[^:]:%u", host_name, &port);
     if (n != 2) {
         fprintf(stderr, "[E] statsd[0]: could not parse connection spec: %s\n", connection_spec);
-        return 0;
+        return;
     }
 
     // get the host entry
     struct hostent *hostp = gethostbyname(host_name);
     if (!hostp || !hostp->h_addr_list[0]) {
         fprintf(stderr, "[E] statsd[0]: could not obtain address of %s\n", host_name);
-        return 0;
+        return;
     }
     char *ip = hostp->h_addr_list[0];
     printf("[I] statsd[0]: statsd host = %s, ip = %d.%d.%d.%d\n", host_name, ip[0], ip[1], ip[2], ip[3]);
@@ -133,10 +134,10 @@ int setup_statsd_udp_socket_and_sever_address(statsd_server_state_t* state,  zco
     int rc = connect(state->statsd_socket, (struct sockaddr *)&state->servaddr, sizeof(state->servaddr));
     if (rc < 0) {
         fprintf(stderr, "[E] statsd[0]: error (%d) connecting socket to statsd server: %s\n", rc, strerror(errno));
-        return 0;
+        return;
     }
 
-    return 1;
+    state->connected = true;
 }
 
 static
@@ -144,6 +145,7 @@ statsd_server_state_t* statsd_server_state_new(zsock_t *pipe, size_t id, zconfig
 {
     statsd_server_state_t* state = zmalloc(sizeof(*state));
     state->pipe = pipe;
+    state->connected = false;
 
     state->updates = zsock_new(ZMQ_PULL);
     assert(state->updates);
@@ -151,8 +153,7 @@ statsd_server_state_t* statsd_server_state_new(zsock_t *pipe, size_t id, zconfig
     int rc = zsock_bind(state->updates, "inproc://statsd-updates");
     assert(rc == 0);
 
-    rc = setup_statsd_udp_socket_and_sever_address(state, config);
-    assert(rc > 0);
+    setup_statsd_udp_socket_and_sever_address(state, config);
 
     return state;
 }
@@ -193,9 +194,11 @@ static
 void server_flush_buffer(statsd_server_state_t *state)
 {
     if (0) server_print_buffer(state);
-    int rc = send(state->statsd_socket, state->buffer, state->buffer_used, 0);
-    if (rc < 0) {
-        fprintf(stderr, "[E] statsd[0]: error (%d) sending updates to statsd server: %s\n", rc, strerror(errno));
+    if (state->connected) {
+        int rc = send(state->statsd_socket, state->buffer, state->buffer_used, 0);
+        if (rc < 0) {
+            fprintf(stderr, "[E] statsd[0]: error (%d) sending updates to statsd server: %s\n", rc, strerror(errno));
+        }
     }
     state->buffer_used = 0;
     memset(state->buffer, 0, sizeof(state->buffer));
