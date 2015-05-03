@@ -64,7 +64,8 @@ AS_IF([test "x$CPUPROFILE" == "x"], AC_SUBST([OPT_PROFILER_FLAGS]), AC_SUBST([OP
 AC_CHECK_DECLS([htonll, ntohll])
 
 AC_CHECK_FUNC([pthread_setname_np],
-              [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1], [Define if pthread_setname_np exists.])])
+              [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1])],
+              [AC_CHECK_LIB(pthread, pthread_setname_np, [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1])])])
 
 AX_CHECK_ZLIB
 
