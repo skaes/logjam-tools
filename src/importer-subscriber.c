@@ -48,10 +48,14 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
     zconfig_t *binding = zconfig_child(bindings);
     while (binding) {
         char *spec = zconfig_value(binding);
-        printf("[I] subscriber: connecting SUB socket to %s\n", spec);
-        int rc = zsock_connect(socket, "%s", spec);
-        log_zmq_error(rc);
-        assert(rc == 0);
+        if (streq(spec, ""))
+            printf("[I] subscriber: ignoring empty SUB socket binding\n");
+        else {
+            printf("[I] subscriber: connecting SUB socket to %s\n", spec);
+            int rc = zsock_connect(socket, "%s", spec);
+            log_zmq_error(rc);
+            assert(rc == 0);
+        }
         binding = zconfig_next(binding);
     }
 
