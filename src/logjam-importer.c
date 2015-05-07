@@ -13,17 +13,23 @@ static char *frontend_timings_apdex_attr = NULL;
 
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-n] [-p stream-pattern] [-c config-file] [-f frontend-timings-log-file] [-a frontend-apdex-attribute]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-n] [-v] [-q] [-p stream-pattern] [-c config-file] [-f frontend-timings-log-file] [-a frontend-apdex-attribute]\n", argv[0]);
 }
 
 void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "nc:f:p:a:")) != -1) {
+    while ((c = getopt(argc, argv, "nvqc:f:p:a:")) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
+            break;
+        case 'v':
+            verbose = true;
+            break;
+        case 'q':
+            quiet = true;
             break;
         case 'c':
             config_file_name = optarg;

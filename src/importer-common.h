@@ -42,6 +42,8 @@ extern FILE* frontend_timings;
 #define DEFAULT_MONGO_URI "mongodb://127.0.0.1:27017/"
 
 extern bool dryrun;
+extern bool verbose;
+extern bool quiet;
 
 #define ISO_DATE_STR_LEN 11
 extern char iso_date_today[ISO_DATE_STR_LEN];

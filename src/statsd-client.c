@@ -121,7 +121,8 @@ void setup_statsd_udp_socket_and_sever_address(statsd_server_state_t* state,  zc
         return;
     }
     char *ip = hostp->h_addr_list[0];
-    printf("[I] statsd[0]: statsd host = %s, ip = %d.%d.%d.%d\n", host_name, ip[0], ip[1], ip[2], ip[3]);
+    if (!quiet)
+        printf("[I] statsd[0]: statsd host = %s, ip = %d.%d.%d.%d\n", host_name, ip[0], ip[1], ip[2], ip[3]);
 
     // fill in the server's address and data
     state->servaddr.sin_family = AF_INET;
@@ -208,7 +209,7 @@ static
 int server_append_to_buffer(statsd_server_state_t *state, const char* data, size_t len)
 {
     if (len + 1 > BUFFER_SIZE) {
-        fprintf(stderr, "[E] statsd[0]: dropped data packet larger than bufffer: %zu\n", len);
+        fprintf(stderr, "[W] statsd[0]: dropped data packet larger than bufffer: %zu\n", len);
         return 0;
     }
     if (state->buffer_used + len + 1 > BUFFER_SIZE) {
@@ -245,7 +246,9 @@ int server_add_update(zloop_t *loop, zsock_t *socket, void *args)
 static
 void statsd_server_tick(statsd_server_state_t *state)
 {
-    printf("[I] statsd[%zu]: %zu updates, %zu bytes\n", state->id, state->update_count, state->update_bytes);
+    if (verbose) {
+        printf("[I] statsd[%zu]: %zu updates, %zu bytes\n", state->id, state->update_count, state->update_bytes);
+    }
     server_flush_buffer(state);
     state->update_count = 0;
     state->update_bytes = 0;
@@ -301,14 +304,20 @@ void statsd_actor_fn(zsock_t *pipe, void *args)
     assert(rc == 0);
 
     // run the loop
-    fprintf(stdout, "[I] statsd[%zu]: listening\n", id);
+    if (!quiet)
+        printf("[I] statsd[%zu]: listening\n", id);
+
     rc = zloop_start(loop);
     log_zmq_error(rc);
 
     // shutdown
-    fprintf(stdout, "[I] statsd[%zu]: shutting down\n", id);
+    if (!quiet)
+        printf("[I] statsd[%zu]: shutting down\n", id);
+
     zloop_destroy(&loop);
     assert(loop == NULL);
     statsd_server_state_destroy(&state);
-    fprintf(stdout, "[I] statsd[%zu]: terminated\n", id);
+
+    if (!quiet)
+        printf("[I] statsd[%zu]: terminated\n", id);
 }

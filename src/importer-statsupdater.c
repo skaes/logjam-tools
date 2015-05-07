@@ -461,7 +461,7 @@ void stats_updater(zsock_t *pipe, void *args)
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
-                if (state->updates_count || state->update_time) {
+                if (verbose && (state->updates_count || state->update_time)) {
                     printf("[I] updater[%zu]: tick (%d updates, %d ms)\n", id, state->updates_count, state->update_time/1000);
                 }
                 // ping the server
@@ -550,7 +550,11 @@ void stats_updater(zsock_t *pipe, void *args)
         }
     }
 
-    printf("[I] updater[%zu]: shutting down\n", id);
+    if (!quiet)
+        printf("[I] updater[%zu]: shutting down\n", id);
+
     stats_updater_state_destroy(&state);
-    printf("[I] updater[%zu]: terminated\n", id);
+
+    if (!quiet)
+        printf("[I] updater[%zu]: terminated\n", id);
 }

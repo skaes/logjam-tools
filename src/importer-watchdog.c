@@ -14,7 +14,9 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
     watchdog_state_t *state = arg;
     state->credit--;
-    printf("[I] watchdog: credit: %d\n", state->credit);
+    if (verbose) {
+        printf("[I] watchdog: credit: %d\n", state->credit);
+    }
     if (state->credit == 0) {
         fflush(stdout);
         fprintf(stderr, "[E] watchdog: no credit left, aborting process\n");
@@ -36,7 +38,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
             rc = -1;
         }
         else if (streq(cmd, "tick")) {
-            printf("[I] watchdog: credit: %d\n", state->credit);
+            if (verbose)
+                printf("[I] watchdog: credit: %d\n", state->credit);
             state->credit = CREDIT;
         } else {
             fprintf(stderr, "[E] watchdog[0]: received unknown actor command: %s\n", cmd);
@@ -74,12 +77,14 @@ void watchdog(zsock_t *pipe, void *args)
     // run the loop
     if (!zsys_interrupted) {
         zloop_start(loop);
-        printf("[I] watchdog[0]: shutting down\n");
+        if (!quiet)
+            printf("[I] watchdog[0]: shutting down\n");
     }
 
     // shutdown
     zloop_destroy(&loop);
     assert(loop == NULL);
 
-    printf("[I] watchdog[0]: terminated\n");
+    if (!quiet)
+        printf("[I] watchdog[0]: terminated\n");
 }

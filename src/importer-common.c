@@ -1,6 +1,8 @@
 #include "importer-common.h"
 
 bool dryrun = false;
+bool verbose = false;
+bool quiet = false;
 
 // utf8 conversion
 static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };

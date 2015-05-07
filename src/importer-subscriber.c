@@ -48,10 +48,11 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
     zconfig_t *binding = zconfig_child(bindings);
     while (binding) {
         char *spec = zconfig_value(binding);
-        if (streq(spec, ""))
+        if (streq(spec, "") && verbose)
             printf("[I] subscriber: ignoring empty SUB socket binding\n");
         else {
-            printf("[I] subscriber: connecting SUB socket to %s\n", spec);
+            if (!quiet)
+                printf("[I] subscriber: connecting SUB socket to %s\n", spec);
             int rc = zsock_connect(socket, "%s", spec);
             log_zmq_error(rc);
             assert(rc == 0);
@@ -73,12 +74,14 @@ zsock_t* subscriber_pull_socket_new(zconfig_t* config)
     zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
     char *pull_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pull", "tcp://127.0.0.1:9605");
-    printf("[I] subscriber: binding PULL socket to %s\n", pull_spec);
+    if (!quiet)
+        printf("[I] subscriber: binding PULL socket to %s\n", pull_spec);
     int rc = zsock_bind(socket, "%s", pull_spec);
     assert(rc != -1);
 
     const char *inproc_binding = "inproc://subscriber-pull";
-    printf("[I] subscriber: binding PULL socket to %s\n", inproc_binding);
+    if (!quiet)
+        printf("[I] subscriber: binding PULL socket to %s\n", inproc_binding);
     rc = zsock_bind(socket, "%s", inproc_binding);
     assert(rc != -1);
 
@@ -102,7 +105,8 @@ zsock_t* subscriber_pub_socket_new(zconfig_t* config)
     assert(socket);
     zsock_set_sndhwm(socket, 200000);
     char *pub_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pub", "tcp://127.0.0.1:9651");
-    printf("[I] subscriber: binding PUB socket to %s\n", pub_spec);
+    if (!quiet)
+        printf("[I] subscriber: binding PUB socket to %s\n", pub_spec);
     int rc = zsock_bind(socket, "%s", pub_spec);
     assert(rc != -1);
     return socket;
@@ -141,7 +145,7 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
     int rc = msg_extract_meta_info(msg, &meta);
     if (!rc) {
         if (!state->meta_info_failures++) {
-            fprintf(stderr, "[W] subscriber: received invalid meta info\n");
+            fprintf(stderr, "[E] subscriber: received invalid meta info\n");
         }
         return;
     }
@@ -156,7 +160,7 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
     int64_t old_sequence_number = state->sequence_numbers[meta.device_number];
     int64_t gap = meta.sequence_number - old_sequence_number - 1;
     if (gap > 0 && old_sequence_number) {
-        fprintf(stderr, "[E] subscriber: lost %" PRIi64 " messages from device %" PRIu32 "\n",
+        fprintf(stderr, "[W] subscriber: lost %" PRIi64 " messages from device %" PRIu32 "\n",
                 gap, meta.device_number);
     } else {
         // printf("[D] subscriber: msg(device %d, sequence %llu)\n", meta.device_number, meta.sequence_number);
@@ -204,8 +208,10 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             rc = -1;
         }
         else if (streq(cmd, "tick")) {
-            printf("[I] subscriber: %zu messages, %zu meta info failures\n",
-                   state->message_count, state->meta_info_failures);
+            if (verbose) {
+                printf("[I] subscriber: %zu messages, %zu meta info failures\n",
+                       state->message_count, state->meta_info_failures);
+            }
             state->message_count = 0;
             state->meta_info_failures = 0;
         } else {
@@ -303,14 +309,19 @@ void subscriber(zsock_t *pipe, void *args)
     assert(rc == 0);
 
     // run the loop
-    fprintf(stdout, "[I] subscriber: listening\n");
+    if (!quiet)
+        fprintf(stdout, "[I] subscriber: listening\n");
+
     zloop_start(loop);
-    fprintf(stdout, "[I] subscriber: shutting down\n");
+
+    if (!quiet)
+        fprintf(stdout, "[I] subscriber: shutting down\n");
 
     // shutdown
     subscriber_state_destroy(&state);
     zloop_destroy(&loop);
     assert(loop == NULL);
 
-    fprintf(stdout, "[I] subscriber: terminated\n");
+    if (!quiet)
+        fprintf(stdout, "[I] subscriber: terminated\n");
 }

@@ -275,7 +275,7 @@ void parser(zsock_t *pipe, void *args)
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
-                if (state->parsed_msgs_count)
+                if (state->parsed_msgs_count && verbose)
                     printf("[I] parser [%zu]: tick (%zu messages, %zu frontend)\n", id, state->parsed_msgs_count, state->fe_stats.received);
                 zmsg_t *answer = zmsg_new();
                 zmsg_addptr(answer, state->processors);
@@ -311,9 +311,13 @@ void parser(zsock_t *pipe, void *args)
         }
     }
 
-    printf("[I] parser [%zu]: shutting down\n", id);
+    if (!quiet)
+        printf("[I] parser [%zu]: shutting down\n", id);
+
     parser_state_destroy(&state);
-    printf("[I] parser [%zu]: terminated\n", id);
+
+    if (!quiet)
+        printf("[I] parser [%zu]: terminated\n", id);
 }
 
 zactor_t* parser_new(zconfig_t *config, size_t id)

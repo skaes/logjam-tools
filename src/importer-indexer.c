@@ -383,7 +383,11 @@ void indexer(zsock_t *pipe, void *args)
         }
     }
 
-    printf("[I] indexer[%zu]: shutting down\n", id);
+    if (!quiet)
+        printf("[I] indexer[%zu]: shutting down\n", id);
+
     indexer_state_destroy(&state);
-    printf("[I] indexer[%zu]: terminated\n", id);
+
+    if (!quiet)
+        printf("[I] indexer[%zu]: terminated\n", id);
 }

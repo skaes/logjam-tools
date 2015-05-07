@@ -649,7 +649,8 @@ void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate,
     char *js_exception = exctract_key_from_jse_description(request);
 
     if (strlen(js_exception) == 0) {
-        fprintf(stderr, "[E] could not extract js_exception from request. ignoring.\n");
+        if (!quiet)
+            fprintf(stderr, "[W] could not extract js_exception from request. ignoring.\n");
         dump_json_object(stderr, request);
         free(page);
         free(js_exception);
@@ -757,7 +758,8 @@ int extract_frontend_timings(json_object *request, int64_t *timings, int num_tim
         // fprintf(stdout, "[D] RTS: %s\n", rts);
     } else {
         *rts = NULL;
-        fprintf(stderr, "[E] processor: dropped %s request without timing information\n", type);
+        if (verbose)
+            fprintf(stderr, "[W] processor: dropped %s request without timing information\n", type);
         return 0;
     }
     int n = 0;
@@ -772,14 +774,16 @@ int extract_frontend_timings(json_object *request, int64_t *timings, int num_tim
             value = 0;
             n++;
             if (n == num_timings && c!=0) {
-                fprintf(stderr, "[E] processor: too many frontend timing values: %s\n", *rts);
+                if (verbose)
+                    fprintf(stderr, "[W] processor: too many frontend timing values: %s\n", *rts);
                 return 0;
             } else if (!c)
                 break;
         } else {
             int x = c - '0';
             if (x < 0 || x > 9) {
-                fprintf(stderr, "[E] processor: invalid character in frontend timing information: %s\n", p-1);
+                if (verbose)
+                    fprintf(stderr, "[W] processor: invalid character in frontend timing information: %s\n", p-1);
                 return 0;
             } else {
                 value = value * 10 + x;
@@ -787,7 +791,8 @@ int extract_frontend_timings(json_object *request, int64_t *timings, int num_tim
         }
     }
     if (n < num_timings) {
-        fprintf(stderr, "[E] processor: not enough timings: expected %d, got %d\n", num_timings, n);
+        if (verbose)
+            fprintf(stderr, "[W] processor: not enough timings: expected %d, got %d\n", num_timings, n);
         return 0;
     } else {
         // for (int i=0; i<num_timings; i++) {
@@ -905,8 +910,10 @@ int check_frontend_request_validity(parser_state_t *pstate, json_object *request
         uuid = json_object_get_string(request_id_obj);
     }
     if (!uuid) {
-        fprintf(stderr, "[E] processor: dropped %s request without request_id\n", type);
-        dump_json_object(stderr, request);
+        if (verbose) {
+            fprintf(stderr, "[W] processor: dropped %s request without request_id\n", type);
+            dump_json_object(stderr, request);
+        }
         return 0;
     }
     if (tracker_delete_uuid(pstate->tracker, uuid, msg, type)) {
@@ -970,7 +977,8 @@ static const char* str_fe_reason(enum fe_msg_drop_reason reason)
 static
 void print_fe_drop_reason(const char* type, enum fe_msg_drop_reason reason)
 {
-    fprintf(stderr, "[E] processor: dropped %s request (%s)\n", type, str_fe_reason(reason));
+    if (verbose)
+        fprintf(stderr, "[W] processor: dropped %s request (%s)\n", type, str_fe_reason(reason));
 }
 
 enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg)

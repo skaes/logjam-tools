@@ -529,7 +529,7 @@ void request_writer(zsock_t *pipe, void *args)
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
-                if (state->updates_count || state->update_time)
+                if (verbose && (state->updates_count || state->update_time))
                     printf("[I] writer [%zu]: tick (%d requests, %d ms)\n", id, state->updates_count, state->update_time/1000);
                 if (ticks++ % PING_INTERVAL == 0) {
                     // ping mongodb to reestablish connection if it got lost
@@ -574,7 +574,11 @@ void request_writer(zsock_t *pipe, void *args)
         }
     }
 
-    printf("[I] writer [%zu]: shutting down\n", id);
+    if (!quiet)
+        printf("[I] writer [%zu]: shutting down\n", id);
+
     request_writer_state_destroy(&state);
-    printf("[I] writer [%zu]: terminated\n", id);
+
+    if (!quiet)
+        printf("[I] writer [%zu]: terminated\n", id);
 }

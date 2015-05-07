@@ -309,10 +309,12 @@ static
 void tracker_tick(tracker_state_t *state)
 {
     server_clean_expired_items(state);
-    printf("[I] tracker[%zu]: uuid hash size %zu"
-           "(added=%zu, deleted=%zu, expired=%zu, failed=%zu, delayed=%zu, duplicates=%zu)\n",
-           state->id, zring_size(state->uuids), state->added, state->deleted, state->expired,
-           state->failed, zring_size(state->failures), state->duplicates);
+    if (verbose) {
+        printf("[I] tracker[%zu]: uuid hash size %zu"
+               "(added=%zu, deleted=%zu, expired=%zu, failed=%zu, delayed=%zu, duplicates=%zu)\n",
+               state->id, zring_size(state->uuids), state->added, state->deleted, state->expired,
+               state->failed, zring_size(state->failures), state->duplicates);
+    }
     state->added = 0;
     state->deleted = 0;
     state->expired = 0;
@@ -386,14 +388,20 @@ void tracker(zsock_t *pipe, void *args)
     assert(rc == 0);
 
     // run the loop
-    fprintf(stdout, "[I] tracker[%zu]: listening\n", id);
+    if (!quiet)
+        printf("[I] tracker[%zu]: listening\n", id);
+
     rc = zloop_start(loop);
     log_zmq_error(rc);
 
     // shutdown
-    fprintf(stdout, "[I] tracker[%zu]: shutting down\n", id);
+    if (!quiet)
+        printf("[I] tracker[%zu]: shutting down\n", id);
+
     zloop_destroy(&loop);
     assert(loop == NULL);
     tracker_state_destroy(&state);
-    fprintf(stdout, "[I] tracker[%zu]: terminated\n", id);
+
+    if (!quiet)
+        printf("[I] tracker[%zu]: terminated\n", id);
 }
