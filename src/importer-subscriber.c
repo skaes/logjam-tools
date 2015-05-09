@@ -27,8 +27,10 @@ typedef struct {
     zsock_t *pull_socket;                         // pull for direct connections (apps)
     zsock_t *pub_socket;                          // republish all incoming messages (optional)
     uint64_t sequence_numbers[MAX_DEVICES];       // last seen message sequence number for given device
-    size_t message_count;                         // how many messages we have processed since last tick
-    size_t meta_info_failures;                    // how many messages had invalid meta info since last tickk
+    size_t message_count;                         // how many messages we have processed (since last tick)
+    size_t messages_dev_zero;                     // how many messages arrived with device 0 (since last tick)
+    size_t meta_info_failures;                    // how many messages had invalid meta info (since last tick)
+    size_t message_gap_size;                      // how many messages were missed due to gaps in the stream (since last tick)
 } subscriber_state_t;
 
 
@@ -151,6 +153,7 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
     }
     if (meta.device_number == 0) {
         // ignore device number 0
+        state->messages_dev_zero++;
         return;
     }
     if (meta.device_number > MAX_DEVICES && !state->meta_info_failures++) {
@@ -160,8 +163,8 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
     int64_t old_sequence_number = state->sequence_numbers[meta.device_number];
     int64_t gap = meta.sequence_number - old_sequence_number - 1;
     if (gap > 0 && old_sequence_number) {
-        fprintf(stderr, "[W] subscriber: lost %" PRIi64 " messages from device %" PRIu32 "\n",
-                gap, meta.device_number);
+        // fprintf(stderr, "[W] subscriber: lost %" PRIi64 " messages from device %" PRIu32 "\n", gap, meta.device_number);
+        state->message_gap_size += gap;
     } else {
         // printf("[D] subscriber: msg(device %d, sequence %llu)\n", meta.device_number, meta.sequence_number);
     }
@@ -208,12 +211,14 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             rc = -1;
         }
         else if (streq(cmd, "tick")) {
-            if (verbose) {
-                printf("[I] subscriber: %zu messages, %zu meta info failures\n",
-                       state->message_count, state->meta_info_failures);
+            if (verbose || state->message_gap_size > 0) {
+                printf("[I] subscriber: %5zu messages (gap_size: %zu, no_info: %zu, dev_zero: %zu)\n",
+                       state->message_count, state->message_gap_size, state->meta_info_failures, state->messages_dev_zero);
             }
             state->message_count = 0;
+            state->message_gap_size = 0;
             state->meta_info_failures = 0;
+            state->messages_dev_zero = 0;
         } else {
             fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
         }
