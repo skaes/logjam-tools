@@ -303,6 +303,7 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
     zmq_msg_init_size(&message_parts[2], data->json_len);
     memcpy(zmq_msg_data(&message_parts[2]), data->json_str, data->json_len);
 
+    msg_meta.sequence_number++;
     publish_on_zmq_transport(message_parts, pub_socket, meta);
 
     zmq_msg_close(&message_parts[0]);
@@ -333,7 +334,6 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     int first_line_length = 0;
 
     msg_data_t msg_data = {};
-    msg_meta.sequence_number++;
     received_messages_count++;
 
     // get HTTP request; ID frame and then request
