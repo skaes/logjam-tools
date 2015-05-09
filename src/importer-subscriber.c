@@ -217,12 +217,10 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             rc = -1;
         }
         else if (streq(cmd, "tick")) {
-            if (verbose || state->message_gap_size > 0) {
-                printf("[I] subscriber: %5zu messages "
-                       "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
-                       state->message_count, state->message_gap_size, state->meta_info_failures,
-                       state->messages_dev_zero, state->message_blocks, state->message_drops);
-            }
+            printf("[I] subscriber: %5zu messages "
+                   "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
+                   state->message_count, state->message_gap_size, state->meta_info_failures,
+                   state->messages_dev_zero, state->message_blocks, state->message_drops);
             state->message_count = 0;
             state->message_gap_size = 0;
             state->meta_info_failures = 0;
