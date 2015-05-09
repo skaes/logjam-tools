@@ -21,16 +21,18 @@
 
 // actor state
 typedef struct {
-    zsock_t *pipe;                                // actor commands
-    zsock_t *sub_socket;                          // incoming data from logjam devices
-    zsock_t *push_socket;                         // outgoing data for parsers
-    zsock_t *pull_socket;                         // pull for direct connections (apps)
-    zsock_t *pub_socket;                          // republish all incoming messages (optional)
-    uint64_t sequence_numbers[MAX_DEVICES];       // last seen message sequence number for given device
-    size_t message_count;                         // how many messages we have processed (since last tick)
-    size_t messages_dev_zero;                     // how many messages arrived with device 0 (since last tick)
-    size_t meta_info_failures;                    // how many messages had invalid meta info (since last tick)
-    size_t message_gap_size;                      // how many messages were missed due to gaps in the stream (since last tick)
+    zsock_t *pipe;                            // actor commands
+    zsock_t *sub_socket;                      // incoming data from logjam devices
+    zsock_t *push_socket;                     // outgoing data for parsers
+    zsock_t *pull_socket;                     // pull for direct connections (apps)
+    zsock_t *pub_socket;                      // republish all incoming messages (optional)
+    uint64_t sequence_numbers[MAX_DEVICES];   // last seen message sequence number for given device
+    size_t message_count;                     // messages processed (since last tick)
+    size_t messages_dev_zero;                 // messages arrived from device 0 (since last tick)
+    size_t meta_info_failures;                // messages with invalid meta info (since last tick)
+    size_t message_gap_size;                  // messages missed due to gaps in the stream (since last tick)
+    size_t message_drops;                     // messages dropped because push_socket wasn't ready (since last tick)
+    size_t message_blocks;                    // how often the subscriber blocked on the push_socket (since last tick)
 } subscriber_state_t;
 
 
@@ -95,6 +97,7 @@ zsock_t* subscriber_push_socket_new(zconfig_t* config)
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
+    zsock_set_sndtimeo(socket, 10);
     int rc = zsock_bind(socket, "inproc://subscriber");
     assert(rc == 0);
     return socket;
@@ -105,7 +108,7 @@ zsock_t* subscriber_pub_socket_new(zconfig_t* config)
 {
     zsock_t *socket = zsock_new(ZMQ_PUB);
     assert(socket);
-    zsock_set_sndhwm(socket, 200000);
+    zsock_set_sndhwm(socket, 10000);
     char *pub_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pub", "tcp://127.0.0.1:9651");
     if (!quiet)
         printf("[I] subscriber: binding PUB socket to %s\n", pub_spec);
@@ -125,14 +128,12 @@ static
 void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
 {
     static size_t seq = 0;
-    // zmsg_send(&msg_copy, state->pub_socket);
     zmsg_t *msg_copy = zmsg_dup(msg);
     zmsg_addstrf(msg_copy, "%zu", ++seq);
     zframe_t *frame = zmsg_pop(msg_copy);
     while (frame != NULL) {
         zframe_t *next_frame = zmsg_pop(msg_copy);
         int more = next_frame ? ZFRAME_MORE : 0;
-        // zframe_print(frame, "DUP");
         if (zframe_send(&frame, socket, ZFRAME_DONTWAIT|more) == -1)
             break;
         frame = next_frame;
@@ -190,10 +191,14 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
         if (PUBLISH_DUPLICATES) {
             subscriber_publish_duplicate(msg, state->pub_socket);
         }
-        if (!output_socket_ready(state->push_socket, 0)) {
+        if (!output_socket_ready(state->push_socket, 0) && !state->message_blocks++) {
             fprintf(stderr, "[W] subscriber: push socket not ready. blocking!\n");
         }
-        zmsg_send(&msg, state->push_socket);
+        int rc = zmsg_send_and_destroy(&msg, state->push_socket);
+        if (rc) {
+            if (!state->message_drops++)
+                fprintf(stderr, "[E] subscriber: dropped message on push socket (%d: %s)\n", errno, zmq_strerror(errno));
+        }
     }
     return 0;
 }
@@ -212,13 +217,17 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
         }
         else if (streq(cmd, "tick")) {
             if (verbose || state->message_gap_size > 0) {
-                printf("[I] subscriber: %5zu messages (gap_size: %zu, no_info: %zu, dev_zero: %zu)\n",
-                       state->message_count, state->message_gap_size, state->meta_info_failures, state->messages_dev_zero);
+                printf("[I] subscriber: %5zu messages "
+                       "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
+                       state->message_count, state->message_gap_size, state->meta_info_failures,
+                       state->messages_dev_zero, state->message_blocks, state->message_drops);
             }
             state->message_count = 0;
             state->message_gap_size = 0;
             state->meta_info_failures = 0;
             state->messages_dev_zero = 0;
+            state->message_drops = 0;
+            state->message_blocks = 0;
         } else {
             fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
         }

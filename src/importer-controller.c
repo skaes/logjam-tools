@@ -272,8 +272,10 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zactor_t* parser = state->parsers[i];
         zstr_send(parser, "tick");
         zmsg_t *response = zmsg_recv(parser);
-        extract_parser_state(response, &processors[i], &parsed_msgs_counts[i], &fe_stats[i]);
-        zmsg_destroy(&response);
+        if (response) {
+            extract_parser_state(response, &processors[i], &parsed_msgs_counts[i], &fe_stats[i]);
+            zmsg_destroy(&response);
+        }
     }
 
     // printf("[D] controller: combining processors states\n");
@@ -320,7 +322,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         if (!output_socket_ready(state->updates_socket, 0)) {
             fprintf(stderr, "[W] controller: updates push socket not ready\n");
         }
-        zmsg_send(&stats_msg, state->updates_socket);
+        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
 
         // send minutes updates
         stats_msg = zmsg_new();
@@ -332,7 +334,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         if (!output_socket_ready(state->updates_socket, 0)) {
             fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
-        zmsg_send(&stats_msg, state->updates_socket);
+        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
 
         // send quants updates
         stats_msg = zmsg_new();
@@ -344,7 +346,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         if (!output_socket_ready(state->updates_socket, 0)) {
             fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
-        zmsg_send(&stats_msg, state->updates_socket);
+        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
 
         // send agents updates
         stats_msg = zmsg_new();
@@ -356,7 +358,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         if (!output_socket_ready(state->updates_socket, 0)) {
             fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
-        zmsg_send(&stats_msg, state->updates_socket);
+        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
 
         db_name = zlist_next(db_names);
     }
@@ -402,6 +404,8 @@ bool controller_create_actors(controller_state_t *state)
 
     // create socket for stats updates
     state->updates_socket = zsock_new(ZMQ_PUSH);
+    assert(state->updates_socket);
+    zsock_set_sndtimeo(state->updates_socket, 10);
     int rc = zsock_bind(state->updates_socket, "inproc://stats-updates");
     assert(rc == 0);
 
@@ -427,21 +431,40 @@ bool controller_create_actors(controller_state_t *state)
 static
 void controller_destroy_actors(controller_state_t *state)
 {
+    if (verbose) printf("[D] controller: destroying watchdog\n");
     zactor_destroy(&state->watchdog);
-    zactor_destroy(&state->statsd_server);
+
+    if (verbose) printf("[D] controller: destroying subscriber\n");
     zactor_destroy(&state->subscriber);
-    zactor_destroy(&state->indexer);
-    zactor_destroy(&state->tracker);
+
     for (size_t i=0; i<num_parsers; i++) {
+        if (verbose) printf("[D] controller: destroying parser[%zu]\n", i);
         parser_destroy(&state->parsers[i]);
     }
+
     for (size_t i=0; i<num_writers; i++) {
+        if (verbose) printf("[D] controller: destroying writer[%zu]\n", i);
         zactor_destroy(&state->writers[i]);
     }
+
     for (size_t i=0; i<num_updaters; i++) {
+        if (verbose) printf("[D] controller: destroying updater[%zu]\n", i);
         zactor_destroy(&state->updaters[i]);
     }
+
+    if (verbose) printf("[D] controller: destroying tracker\n");
+    zactor_destroy(&state->tracker);
+
+    if (verbose) printf("[D] controller: destroying statsd\n");
+    zactor_destroy(&state->statsd_server);
+
+    if (verbose) printf("[D] controller: destroying indexer\n");
+    zactor_destroy(&state->indexer);
+
+    if (verbose) printf("[D] controller: destroying \n");
     zsock_destroy(&state->live_stream_socket);
+
+    if (verbose) printf("[D] controller: destroying \n");
     zsock_destroy(&state->updates_socket);
 }
 

@@ -60,6 +60,7 @@ zsock_t* parser_push_socket_new()
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
+    zsock_set_sndtimeo(socket, 10);
     connect_multiple(socket, "request-writer", num_writers);
     return socket;
 }
@@ -69,6 +70,7 @@ zsock_t* parser_indexer_socket_new()
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
+    zsock_set_sndtimeo(socket, 10);
     int rc = zsock_connect(socket, "inproc://indexer");
     assert (rc == 0);
     return socket;
@@ -153,7 +155,7 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
             assert(msg);
             zmsg_addstr(msg, db_name);
             zmsg_addptr(msg, p->stream_info);
-            zmsg_send(&msg, parser_state->indexer_socket);
+            zmsg_send_with_retry(&msg, parser_state->indexer_socket);
         }
     }
     return p;
@@ -163,6 +165,9 @@ static
 void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
 {
     // zmsg_dump(msg);
+    // slow down parser for testing
+    // zclock_sleep(100);
+
     if (zmsg_size(msg) < 3) {
         fprintf(stderr, "[E] parser received incomplete message\n");
         my_zmsg_fprint(msg, "[E] FRAME=", stderr);
@@ -270,8 +275,8 @@ void parser(zsock_t *pipe, void *args)
     assert(poller);
 
     while (!zsys_interrupted) {
-        // -1 == block until something is readable
-        void *socket = zpoller_wait(poller, -1);
+        // wait at most one second
+        void *socket = zpoller_wait(poller, 1000);
         zmsg_t *msg = NULL;
         if (socket == state->pipe) {
             msg = zmsg_recv(state->pipe);
@@ -284,7 +289,7 @@ void parser(zsock_t *pipe, void *args)
                 zmsg_addptr(answer, state->processors);
                 zmsg_addmem(answer, &state->parsed_msgs_count, sizeof(state->parsed_msgs_count));
                 zmsg_addmem(answer, &state->fe_stats, sizeof(state->fe_stats));
-                zmsg_send(&answer, state->pipe);
+                zmsg_send_with_retry(&answer, state->pipe);
                 state->parsed_msgs_count = 0;
                 memset(&state->fe_stats, 0 , sizeof(state->fe_stats));
                 state->processors = processor_hash_new();
@@ -308,9 +313,13 @@ void parser(zsock_t *pipe, void *args)
                 // msg == NULL, probably interrupted by signal handler
                 break;
             }
+        } else if (socket) {
+            // if socket is not null, something is horribly broken
+            printf("[E] parser [%zu]: broken poller. committing suicide.\n", id);
+            assert(false);
         } else {
-            // socket == NULL, probably interrupted by signal handler
-            break;
+            // probably interrupted by signal handler
+            // if so, loop will terminate on condition !zsys_interrupted
         }
     }
 

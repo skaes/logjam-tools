@@ -58,11 +58,14 @@ uuid_tracker_t* tracker_new()
 
     tracker->additions = zsock_new(ZMQ_PUSH);
     assert(tracker->additions);
+    zsock_set_sndtimeo(tracker->additions, 10);
     rc = zsock_connect(tracker->additions, "inproc://tracker-additions");
     assert(rc != -1);
 
     tracker->deletions = zsock_new(ZMQ_REQ);
     assert(tracker->deletions);
+    zsock_set_sndtimeo(tracker->deletions, 10);
+    zsock_set_rcvtimeo(tracker->deletions, 1000);
     zsock_connect(tracker->deletions, "inproc://tracker-deletions");
     assert(rc != -1);
 
@@ -94,7 +97,11 @@ int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t* origi
     zmsg_addstr(msg, uuid);
     zmsg_addptr(msg, original_msg);
     zmsg_addstr(msg, request_type);
-    zmsg_send(&msg, tracker->deletions);
+
+    if (zmsg_send_with_retry(&msg, tracker->deletions)) {
+        // we got interrupted
+        return 0;
+    }
 
     msg = zmsg_recv(tracker->deletions);
     int deleted = 0;
@@ -247,7 +254,7 @@ int server_add_uuid(zloop_t *loop, zsock_t *socket, void *args)
         zring_delete(state->failures, uuid);
         zring_insert(state->uuids, uuid, (void*)state->current_time_ms);
         state->added++;
-        zmsg_send(&failure->msg, state->subscriber);
+        zmsg_send_with_retry(&failure->msg, state->subscriber);
         free(failure);
     } else {
         uint64_t seen = (uint64_t)zring_lookup(state->successes, uuid) || (uint64_t)zring_lookup(state->uuids, uuid);
@@ -300,7 +307,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
     free(uuid);
     free(request_type);
     zmsg_addmem(msg, &rc, sizeof(rc));
-    zmsg_send(&msg, socket);
+    zmsg_send_with_retry(&msg, socket);
     return 0;
 }
 

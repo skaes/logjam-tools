@@ -4,6 +4,7 @@ zsock_t* live_stream_socket_new()
 {
     zsock_t *live_stream_socket = zsock_new(ZMQ_PUSH);
     assert(live_stream_socket);
+    zsock_set_sndtimeo(live_stream_socket, 10);
     int rc = zsock_connect(live_stream_socket, "tcp://localhost:9607");
     assert(rc == 0);
     return live_stream_socket;

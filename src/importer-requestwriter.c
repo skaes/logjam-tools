@@ -524,8 +524,8 @@ void request_writer(zsock_t *pipe, void *args)
 
     while (!zsys_interrupted) {
         // printf("[D] writer [%zu]: polling\n", id);
-        // -1 == block until something is readable
-        void *socket = zpoller_wait(poller, -1);
+        // we wait for at most one second
+        void *socket = zpoller_wait(poller, 1000);
         zmsg_t *msg = NULL;
         if (socket == state->controller_socket) {
             msg = zmsg_recv(state->controller_socket);
@@ -571,9 +571,14 @@ void request_writer(zsock_t *pipe, void *args)
                 state->updates_count++;
                 state->update_time += end_time_us - start_time_us;
             }
-        } else {
-            // msg == NULL, probably interrupted by signal handler
-            break;
+        } else if (socket) {
+            // if socket is not null, something is horribly broken
+            printf("[E] writer [%zu]: broken poller. committing suicide.\n", id);
+            assert(false);
+        }
+        else {
+            // probably interrupted by signal handler
+            // if so, loop will terminate on condition !zsys_interrupted
         }
     }
 

@@ -103,6 +103,27 @@ static inline void* zmsg_popptr(zmsg_t* msg)
     return ptr;
 }
 
+static inline int zmsg_send_and_destroy(zmsg_t** msg, zsock_t *socket)
+{
+    int rc = zmsg_send(msg, socket);
+    if (rc) zmsg_destroy(msg);
+    return rc;
+}
+
+static inline int zmsg_send_with_retry(zmsg_t** msg, zsock_t *socket)
+{
+    int rc;
+    do {
+        assert(msg);
+        rc = zmsg_send(msg, socket);
+    } while (rc && errno == EAGAIN && !zsys_interrupted);
+    // czmq does not destroy the message in case of error (so a send can be retried)
+    // but it also means we have to destroy it if the send fails
+    if (rc)
+        zmsg_destroy(msg);
+    return rc;
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -603,7 +603,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         if (!output_socket_ready(pstate->push_socket, 0)) {
             fprintf(stderr, "[W] parser [%zu]: push socket not ready\n", pstate->id);
         }
-        zmsg_send(&msg, pstate->push_socket);
+        zmsg_send_with_retry(&msg, pstate->push_socket);
     }
 }
 
@@ -687,7 +687,7 @@ void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate,
     zmsg_addstr(msg, module);
     zmsg_addptr(msg, request);
     zmsg_addptr(msg, self->stream_info);
-    zmsg_send(&msg, pstate->push_socket);
+    zmsg_send_with_retry(&msg, pstate->push_socket);
 }
 
 void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request)
@@ -700,7 +700,7 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
     zmsg_addstr(msg, "");
     zmsg_addptr(msg, request);
     zmsg_addptr(msg, self->stream_info);
-    zmsg_send(&msg, pstate->push_socket);
+    zmsg_send_with_retry(&msg, pstate->push_socket);
 }
 
 static inline

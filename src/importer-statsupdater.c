@@ -456,8 +456,8 @@ void stats_updater(zsock_t *pipe, void *args)
 
     while (!zsys_interrupted) {
         // printf("[D] updater[%zu]: polling\n", id);
-        // -1 == block until something is readable
-        void *socket = zpoller_wait(poller, -1);
+        // wait at most one second
+        void *socket = zpoller_wait(poller, 1000);
         zmsg_t *msg = NULL;
         if (socket == state->controller_socket) {
             msg = zmsg_recv(state->controller_socket);
@@ -547,9 +547,14 @@ void stats_updater(zsock_t *pipe, void *args)
             state->update_time += runtime;
             // printf("[D] updater[%zu]: task[%c]: (%3d ms) %s\n", id, task_type, runtime/1000, db_name);
             zmsg_destroy(&msg);
-        } else {
-            printf("[I] updater[%zu]: no socket input. interrupted = %d\n", id, zsys_interrupted);
-            break;
+        } else if (socket) {
+            // if socket is not null, something is horribly broken
+            printf("[E] updater[%zu]: broken poller. committing suicide.\n", id);
+            assert(false);
+        }
+        else {
+            // probably interrupted by signal handler
+            // if so, loop will terminate on condition !zsys_interrupted
         }
     }
 
