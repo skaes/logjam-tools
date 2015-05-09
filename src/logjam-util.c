@@ -48,7 +48,7 @@ int set_thread_name(const char* name)
 
 void dump_meta_info(msg_meta_t *meta)
 {
-    printf("[D] meta(tag%hx version%hu device %u sequence: %" PRIu64 " created: %" PRIu64 ")\n",
+    printf("[D] meta(tag:%hx version:%hu device:%u sequence:%" PRIu64 " created:%" PRIu64 ")\n",
            meta->tag, meta->version, meta->device_number, meta->sequence_number, meta->created_ms);
 }
 
@@ -112,8 +112,9 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
     }
 
     zmq_msg_t meta;
+    // dump_meta_info(msg_meta);
     msg_add_meta_info(&meta, msg_meta);
-    if (0) dump_meta_info_network_format(zmq_msg_data(&meta));
+    // dump_meta_info_network_format(zmq_msg_data(&meta));
 
     rc = zmq_msg_send(&meta, publisher, ZMQ_DONTWAIT);
     if (rc == -1) {

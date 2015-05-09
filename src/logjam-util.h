@@ -63,7 +63,7 @@ static inline void msg_add_meta_info(zmq_msg_t *msg, msg_meta_t *meta)
 {
     zmq_msg_init_size(msg, sizeof(*meta));
     void *data = zmq_msg_data(msg);
-    memcpy(data, &meta, sizeof(*meta));
+    memcpy(data, meta, sizeof(*meta));
     meta_info_encode(data);
 }
 
