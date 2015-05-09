@@ -12,6 +12,9 @@ extern "C" {
 extern bool dryrun;
 extern bool compress_gelf;
 
+#define MAX_PARSERS 20
+extern unsigned int num_parsers;
+
 typedef struct {
     Bytef *data;
     uLongf len;

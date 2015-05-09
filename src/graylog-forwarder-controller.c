@@ -11,12 +11,12 @@
 
 // The controller creates all other threads/actors.
 
-#define NUM_PARSERS 8
+unsigned int num_parsers = 8;
 
 typedef struct {
     zconfig_t *config;
     zactor_t *subscriber;
-    zactor_t *parsers[NUM_PARSERS];
+    zactor_t *parsers[MAX_PARSERS];
     zactor_t *writer;
 } controller_state_t;
 
@@ -28,7 +28,7 @@ bool controller_create_actors(controller_state_t *state)
     state->subscriber = zactor_new(graylog_forwarder_subscriber, state->config);
 
     // create the parsers
-    for (size_t i=0; i<NUM_PARSERS; i++) {
+    for (size_t i=0; i<num_parsers; i++) {
         state->parsers[i] = graylog_forwarder_parser_new(state->config, i);
     }
 
@@ -43,7 +43,7 @@ void controller_destroy_actors(controller_state_t *state)
 {
     zactor_destroy(&state->subscriber);
     zactor_destroy(&state->writer);
-    for (size_t i=0; i<NUM_PARSERS; i++) {
+    for (size_t i=0; i<num_parsers; i++) {
         graylog_forwarder_parser_destroy(&state->parsers[i]);
     }
 }

@@ -6,7 +6,7 @@
 
 
 /*
- * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, "o" = bind, "[<>v^]" = connect
+ * connections: n_w = num_writers, n_p = num_parsers, "o" = bind, "[<>v^]" = connect
  *
  *                              controller
  *                                  |
@@ -510,6 +510,9 @@ void request_writer(zsock_t *pipe, void *args)
     memset(thread_name, 0, 16);
     snprintf(thread_name, 16, "writer[%zu]", id);
     set_thread_name(thread_name);
+
+    if (!quiet)
+        printf("[I] writer [%zu]: starting\n", id);
 
     size_t ticks = 0;
     request_writer_state_t *state = request_writer_state_new(pipe, id);

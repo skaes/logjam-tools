@@ -4,7 +4,7 @@
 
 
 /*
- * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, "o" = bind, "[<>v^]" = connect
+ * connections: n_w = num_writers, n_p = num_parsers, "o" = bind, "[<>v^]" = connect
  *
  *                            controller
  *                                |
@@ -315,6 +315,9 @@ void indexer(zsock_t *pipe, void *args)
     memset(thread_name, 0, 16);
     snprintf(thread_name, 16, "indexer[%zu]", id);
     set_thread_name(thread_name);
+
+    if (!quiet)
+        printf("[I] indexer[%zu]: starting\n", id);
 
     size_t ticks = 0;
     size_t bg_indexer_runs = 0;

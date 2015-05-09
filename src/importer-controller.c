@@ -13,7 +13,7 @@
 
 
 /*
- * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, nu_= NUM_UPDATERS, "[<>^v]" = connect, "o" = bind
+ * connections: n_w = num_writers, n_p = num_parsers, nu_= num_updaters, "[<>^v]" = connect, "o" = bind
  *
  *                 --- PIPE ---  indexer
  *                 --- PIPE ---  subscriber
@@ -36,6 +36,10 @@
 // independent socket for this. The controller send ticks to the watchdog, which aborts
 // the whole process if it doesn't receive ticks for ten consecutive seconds.
 
+unsigned long num_parsers = 10;
+unsigned long num_writers = 10;
+unsigned long num_updaters = 10;
+
 typedef struct {
     zconfig_t *config;
     zactor_t *statsd_server;
@@ -43,9 +47,9 @@ typedef struct {
     zactor_t *indexer;
     zactor_t *tracker;
     zactor_t *watchdog;
-    zactor_t *parsers[NUM_PARSERS];
-    zactor_t *writers[NUM_WRITERS];
-    zactor_t *updaters[NUM_UPDATERS];
+    zactor_t *parsers[MAX_PARSERS];
+    zactor_t *writers[MAX_WRITERS];
+    zactor_t *updaters[MAX_UPDATERS];
     zsock_t *updates_socket;
     zsock_t *live_stream_socket;
     size_t ticks;
@@ -250,9 +254,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 {
     int64_t start_time_ms = zclock_mono();
     controller_state_t *state = arg;
-    zhash_t *processors[NUM_PARSERS];
-    size_t parsed_msgs_counts[NUM_PARSERS];
-    frontend_stats_t fe_stats[NUM_PARSERS];
+    zhash_t *processors[num_parsers];
+    size_t parsed_msgs_counts[num_parsers];
+    frontend_stats_t fe_stats[num_parsers];
 
     state->ticks++;
     // signal liveness to watchdog
@@ -264,7 +268,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     zstr_send(state->tracker, "tick");
 
     // printf("[D] controller: collecting data from parsers: tick[%zu]\n", state->ticks);
-    for (size_t i=0; i<NUM_PARSERS; i++) {
+    for (size_t i=0; i<num_parsers; i++) {
         zactor_t* parser = state->parsers[i];
         zstr_send(parser, "tick");
         zmsg_t *response = zmsg_recv(parser);
@@ -275,7 +279,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     // printf("[D] controller: combining processors states\n");
     size_t parsed_msgs_count = parsed_msgs_counts[0];
     frontend_stats_t front_stats = fe_stats[0];
-    for (int i=1; i<NUM_PARSERS; i++) {
+    for (int i=1; i<num_parsers; i++) {
         parsed_msgs_count += parsed_msgs_counts[i];
         front_stats.received += fe_stats[i].received;
         front_stats.dropped += fe_stats[i].dropped;
@@ -293,7 +297,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     zstr_send(state->indexer, "tick");
 
     // tell stats updaters to tick
-    for (int i=0; i<NUM_UPDATERS; i++) {
+    for (int i=0; i<num_updaters; i++) {
         zstr_send(state->updaters[i], "tick");
     }
 
@@ -360,7 +364,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     zhash_destroy(&processors[0]);
 
     // tell request writers to tick
-    for (int i=0; i<NUM_WRITERS; i++) {
+    for (int i=0; i<num_writers; i++) {
         zstr_send(state->writers[i], "tick");
     }
 
@@ -404,13 +408,13 @@ bool controller_create_actors(controller_state_t *state)
     // connect to live stream
     state->live_stream_socket = live_stream_socket_new();
 
-    for (size_t i=0; i<NUM_WRITERS; i++) {
+    for (size_t i=0; i<num_writers; i++) {
         state->writers[i] = zactor_new(request_writer, (void*)i);
     }
-    for (size_t i=0; i<NUM_UPDATERS; i++) {
+    for (size_t i=0; i<num_updaters; i++) {
         state->updaters[i] = zactor_new(stats_updater, (void*)i);
     }
-    for (size_t i=0; i<NUM_PARSERS; i++) {
+    for (size_t i=0; i<num_parsers; i++) {
         state->parsers[i] = parser_new(state->config, i);
     }
 
@@ -428,13 +432,13 @@ void controller_destroy_actors(controller_state_t *state)
     zactor_destroy(&state->subscriber);
     zactor_destroy(&state->indexer);
     zactor_destroy(&state->tracker);
-    for (size_t i=0; i<NUM_PARSERS; i++) {
+    for (size_t i=0; i<num_parsers; i++) {
         parser_destroy(&state->parsers[i]);
     }
-    for (size_t i=0; i<NUM_WRITERS; i++) {
+    for (size_t i=0; i<num_writers; i++) {
         zactor_destroy(&state->writers[i]);
     }
-    for (size_t i=0; i<NUM_UPDATERS; i++) {
+    for (size_t i=0; i<num_updaters; i++) {
         zactor_destroy(&state->updaters[i]);
     }
     zsock_destroy(&state->live_stream_socket);

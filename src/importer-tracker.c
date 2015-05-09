@@ -2,7 +2,7 @@
 #include "zring.h"
 
 /*
- * connections:  n_p = NUM_PARSERS, "[<>^v]" = connect, "o" = bind
+ * connections:  n_p = num_parsers, "[<>^v]" = connect, "o" = bind
  *
  *                               controller
  *                                   |

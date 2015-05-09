@@ -4,7 +4,7 @@
 #include "importer-parser.h"
 
 /*
- * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, "[<>^v]" = connect, "o" = bind
+ * connections: n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
  *
  *                            controller
  *                                |
@@ -60,7 +60,7 @@ zsock_t* parser_push_socket_new()
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
-    connect_multiple(socket, "request-writer", NUM_WRITERS);
+    connect_multiple(socket, "request-writer", num_writers);
     return socket;
 }
 
@@ -259,6 +259,9 @@ void parser(zsock_t *pipe, void *args)
     state->pipe = pipe;
     set_thread_name(state->me);
     size_t id = state->id;
+
+    if (!quiet)
+        printf("[I] parser [%zu]: starting\n", id);
 
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);

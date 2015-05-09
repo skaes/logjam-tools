@@ -16,23 +16,17 @@ extern "C" {
 #define DEBUG 0
 #endif
 
+#define MAX_PARSERS 20
+#define MAX_WRITERS 20
+#define MAX_UPDATERS 20
+
+extern unsigned long num_parsers;
+extern unsigned long num_writers;
+extern unsigned long num_updaters;
+
 extern FILE* frontend_timings;
 
 #define INVALID_DATE -1
-
-#if DEBUG == 1
-#define ONLY_ONE_THREAD_EACH
-#endif
-
-#ifdef ONLY_ONE_THREAD_EACH
-#define NUM_PARSERS 1
-#define NUM_UPDATERS 1
-#define NUM_WRITERS 1
-#else
-#define NUM_PARSERS 10
-#define NUM_UPDATERS 10
-#define NUM_WRITERS 10
-#endif
 
 // discard all messages which differ by more than 1 hour from the current time
 // if we have larger clockdrift: tough luck

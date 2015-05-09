@@ -443,6 +443,9 @@ void stats_updater(zsock_t *pipe, void *args)
     snprintf(thread_name, 16, "updater[%zu]", id);
     set_thread_name(thread_name);
 
+    if (!quiet)
+        printf("[I] updater[%zu]: starting\n", id);
+
     size_t ticks = 0;
     stats_updater_state_t *state = stats_updater_state_new(pipe, id);
     // signal readyiness after sockets have been created

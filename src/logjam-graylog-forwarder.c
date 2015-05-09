@@ -19,14 +19,14 @@ static char *config_file_digest = "";
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-n] [-z] [-c config-file]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-n] [-z] [-p num-parsers] [-c config-file]\n", argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "c:nz")) != -1) {
+    while ((c = getopt(argc, argv, "c:np:z")) != -1) {
         switch (c) {
         case 'c':
             config_file_name = optarg;
@@ -37,8 +37,16 @@ static void process_arguments(int argc, char * const *argv)
         case 'z':
             compress_gelf = true;
             break;
+        case 'p': {
+            unsigned int n = strtoul(optarg, NULL, 0);
+            if (n <= MAX_PARSERS)
+                num_parsers = n;
+            else
+                fprintf(stderr, "parameter value 'num_parsers' can not be greater than %d\n", MAX_PARSERS);
+            break;
+        }
         case '?':
-            if (optopt == 'c' )
+            if (optopt == 'c' || optopt == 'p')
                 fprintf(stderr, "option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "unknown option `-%c'.\n", optopt);

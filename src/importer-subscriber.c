@@ -3,7 +3,7 @@
 #include "logjam-util.h"
 
 /*
- * connections: n_w = NUM_WRITERS, n_p = NUM_PARSERS, "[<>^v]" = connect, "o" = bind
+ * connections: n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
  *
  *                               controller
  *                                   |

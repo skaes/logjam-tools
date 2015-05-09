@@ -13,14 +13,14 @@ static char *frontend_timings_apdex_attr = NULL;
 
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-n] [-v] [-q] [-p stream-pattern] [-c config-file] [-f frontend-timings-log-file] [-a frontend-apdex-attribute]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-n] [-v] [-q] [-p num-parsers] [-u num-updaters] [-w num_writers] [-s stream-pattern] [-c config-file] [-f frontend-timings-log-file] [-a frontend-apdex-attribute]\n", argv[0]);
 }
 
 void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "nvqc:f:p:a:")) != -1) {
+    while ((c = getopt(argc, argv, "a:c:f:np:qs:u:vw:")) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -37,14 +37,38 @@ void process_arguments(int argc, char * const *argv)
         case 'f':
             frontend_timings_file_name = optarg;
             break;
-        case 'p':
+        case 's':
             subscription_pattern = optarg;
             break;
         case 'a':
             frontend_timings_apdex_attr = optarg;
             break;
+        case 'p': {
+            unsigned long n = strtoul(optarg, NULL, 0);
+            if (n <= MAX_PARSERS)
+                num_parsers = n;
+            else
+                fprintf(stderr, "parameter value 'p' cannot be larger than %d\n", MAX_PARSERS);
+            break;
+        }
+        case 'u': {
+            unsigned long n = strtoul(optarg, NULL, 0);
+            if (n <= MAX_UPDATERS)
+                num_updaters = n;
+            else
+                fprintf(stderr, "parameter value 'u' cannot be larger than %d\n", MAX_UPDATERS);
+            break;
+        }
+        case 'w': {
+            unsigned long n = strtoul(optarg, NULL, 0);
+            if (n <= MAX_UPDATERS)
+                num_writers = n;
+            else
+                fprintf(stderr, "parameter value 'w' cannot be larger than %d\n", MAX_UPDATERS);
+            break;
+        }
         case '?':
-            if (optopt == 'c')
+            if (optopt == 'a' || optopt == 'c' || optopt == 'f' || optopt == 'p' || optopt == 's' || optopt == 'u' || optopt == 'w')
                 fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);
