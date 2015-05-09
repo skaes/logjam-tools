@@ -41,8 +41,10 @@ static void process_arguments(int argc, char * const *argv)
             unsigned int n = strtoul(optarg, NULL, 0);
             if (n <= MAX_PARSERS)
                 num_parsers = n;
-            else
-                fprintf(stderr, "parameter value 'num_parsers' can not be greater than %d\n", MAX_PARSERS);
+            else {
+                fprintf(stderr, "parameter value 'p' can not be greater than %d\n", MAX_PARSERS);
+                exit(1);
+            }
             break;
         }
         case '?':

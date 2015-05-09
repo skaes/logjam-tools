@@ -47,24 +47,30 @@ void process_arguments(int argc, char * const *argv)
             unsigned long n = strtoul(optarg, NULL, 0);
             if (n <= MAX_PARSERS)
                 num_parsers = n;
-            else
-                fprintf(stderr, "parameter value 'p' cannot be larger than %d\n", MAX_PARSERS);
+            else {
+                fprintf(stderr, "[E] parameter value 'p' cannot be larger than %d\n", MAX_PARSERS);
+                exit(1);
+            }
             break;
         }
         case 'u': {
             unsigned long n = strtoul(optarg, NULL, 0);
             if (n <= MAX_UPDATERS)
                 num_updaters = n;
-            else
-                fprintf(stderr, "parameter value 'u' cannot be larger than %d\n", MAX_UPDATERS);
+            else {
+                fprintf(stderr, "[E] parameter value 'u' cannot be larger than %d\n", MAX_UPDATERS);
+                exit(1);
+            }
             break;
         }
         case 'w': {
             unsigned long n = strtoul(optarg, NULL, 0);
             if (n <= MAX_UPDATERS)
                 num_writers = n;
-            else
-                fprintf(stderr, "parameter value 'w' cannot be larger than %d\n", MAX_UPDATERS);
+            else {
+                fprintf(stderr, "[E] parameter value 'w' cannot be larger than %d\n", MAX_UPDATERS);
+                exit(1);
+            }
             break;
         }
         case '?':
