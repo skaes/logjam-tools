@@ -52,9 +52,10 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
     zconfig_t *binding = zconfig_child(bindings);
     while (binding) {
         char *spec = zconfig_value(binding);
-        if (streq(spec, "") && verbose)
-            printf("[I] subscriber: ignoring empty SUB socket binding\n");
-        else {
+        if (streq(spec, "")) {
+            if (verbose)
+                printf("[I] subscriber: ignoring empty SUB socket binding\n");
+        } else {
             if (!quiet)
                 printf("[I] subscriber: connecting SUB socket to %s\n", spec);
             int rc = zsock_connect(socket, "%s", spec);
