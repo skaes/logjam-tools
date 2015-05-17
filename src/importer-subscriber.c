@@ -59,7 +59,7 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
             if (!quiet)
                 printf("[I] subscriber: connecting SUB socket to %s\n", spec);
             int rc = zsock_connect(socket, "%s", spec);
-            log_zmq_error(rc);
+            log_zmq_error(rc, __FILE__, __LINE__);
             assert(rc == 0);
         }
         binding = zconfig_next(binding);
@@ -325,7 +325,8 @@ void subscriber(zsock_t *pipe, void *args)
     if (!quiet)
         fprintf(stdout, "[I] subscriber: listening\n");
 
-    zloop_start(loop);
+    rc = zloop_start(loop);
+    log_zmq_error(rc, __FILE__, __LINE__);
 
     if (!quiet)
         fprintf(stdout, "[I] subscriber: shutting down\n");

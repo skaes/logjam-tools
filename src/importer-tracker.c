@@ -399,7 +399,7 @@ void tracker(zsock_t *pipe, void *args)
         printf("[I] tracker[%zu]: listening\n", id);
 
     rc = zloop_start(loop);
-    log_zmq_error(rc);
+    log_zmq_error(rc, __FILE__, __LINE__);
 
     // shutdown
     if (!quiet)

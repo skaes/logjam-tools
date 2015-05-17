@@ -75,11 +75,11 @@ void watchdog(zsock_t *pipe, void *args)
     assert(rc == 0);
 
     // run the loop
-    if (!zsys_interrupted) {
-        zloop_start(loop);
-        if (!quiet)
-            printf("[I] watchdog[0]: shutting down\n");
-    }
+    rc = zloop_start(loop);
+    log_zmq_error(rc, __FILE__, __LINE__);
+
+    if (!quiet)
+        printf("[I] watchdog[0]: shutting down\n");
 
     // shutdown
     zloop_destroy(&loop);

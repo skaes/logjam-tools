@@ -81,10 +81,11 @@ extern void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file);
 
 extern void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file);
 
-static inline void log_zmq_error(int rc)
+static inline void log_zmq_error(int rc, const char* file, const int line)
 {
     if (rc != 0) {
-        fprintf(stderr, "[E] errno: %d: %s\n", errno, zmq_strerror(errno));
+        fprintf(stderr, "[E] %s:%d: errno(%d): %s, interrupted=%d\n",
+                file, line, errno, zmq_strerror(errno), zsys_interrupted);
     }
 }
 

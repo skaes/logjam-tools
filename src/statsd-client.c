@@ -308,7 +308,7 @@ void statsd_actor_fn(zsock_t *pipe, void *args)
         printf("[I] statsd[%zu]: listening\n", id);
 
     rc = zloop_start(loop);
-    log_zmq_error(rc);
+    log_zmq_error(rc, __FILE__, __LINE__);
 
     // shutdown
     if (!quiet)

@@ -263,9 +263,17 @@ int main(int argc, char * const *argv)
     // initialize clock
     msg_meta.created_ms = zclock_time();
 
-    printf("starting main event loop\n");
-    rc = zloop_start(loop);
-    printf("main event zloop terminated with return code %d\n", rc);
+    // run the loop
+    if (!zsys_interrupted) {
+        printf("starting main event loop\n");
+        bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
+        do {
+            rc = zloop_start(loop);
+            should_continue_to_run &= errno == EINTR && !zsys_interrupted;
+            log_zmq_error(rc, __FILE__, __LINE__);
+        } while (should_continue_to_run);
+        printf("main event zloop terminated with return code %d\n", rc);
+    }
 
     zloop_destroy(&loop);
     assert(loop == NULL);

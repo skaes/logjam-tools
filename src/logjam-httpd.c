@@ -605,9 +605,16 @@ int main(int argc, char * const *argv)
     assert(rc == 0);
     zloop_set_tolerant(loop, &http_poll_item);
 
-    printf("[I] starting main event loop\n");
-    rc = zloop_start(loop);
-    printf("[I] main event zloop terminated with return code %d\n", rc);
+    if (!zsys_interrupted) {
+        printf("[I] starting main event loop\n");
+        bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
+        do {
+            rc = zloop_start(loop);
+            should_continue_to_run &= errno == EINTR && !zsys_interrupted;
+            log_zmq_error(rc, __FILE__, __LINE__);
+        } while (should_continue_to_run);
+        printf("[I] main event zloop terminated with return code %d\n", rc);
+    }
 
     zloop_destroy(&loop);
     assert(loop == NULL);

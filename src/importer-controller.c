@@ -496,13 +496,20 @@ int run_controller_loop(zconfig_t* config)
     rc = zloop_timer(loop, 1000, 1, collect_stats_and_forward, &state);
     assert(rc != -1);
 
+    // run the loop
+    // when running under the google profiler, zmq_poll terminates with EINTR
+    // so we keep the loop running in this case
     if (!zsys_interrupted) {
-        // run the loop
-        zloop_start(loop);
-        printf("[I] controller: shutting down\n");
+        bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
+        do {
+            rc = zloop_start(loop);
+            should_continue_to_run &= errno == EINTR && !zsys_interrupted;
+            log_zmq_error(rc, __FILE__, __LINE__);
+        } while (should_continue_to_run);
     }
 
     // shutdown
+    printf("[I] controller: shutting down\n");
     zloop_destroy(&loop);
     assert(loop == NULL);
 

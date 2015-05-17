@@ -32,7 +32,7 @@ void connect_multiple(zsock_t* socket, const char* name, int which)
             if (rc == 0) break;
             zclock_sleep(100); // ms
         }
-        log_zmq_error(rc);
+        log_zmq_error(rc, __FILE__, __LINE__);
         assert(rc == 0);
     }
 }
@@ -50,7 +50,7 @@ zsock_t* parser_pull_socket_new()
         if (rc == 0) break;
         zclock_sleep(100);
     }
-    log_zmq_error(rc);
+    log_zmq_error(rc, __FILE__, __LINE__);
     assert(rc == 0);
     return socket;
 }

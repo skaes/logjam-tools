@@ -33,7 +33,7 @@ zsock_t* subscriber_sub_socket_new(zconfig_t * config)
         char *spec = zconfig_value(endpoint);
         printf("[I] graylog-forwarder-subscriber: connecting SUB socket to logjam-device via %s\n", spec);
         int rc = zsock_connect(socket, "%s", spec);
-        log_zmq_error(rc);
+        log_zmq_error(rc, __FILE__, __LINE__);
         assert(rc == 0);
         endpoint = zconfig_next(endpoint);
     }

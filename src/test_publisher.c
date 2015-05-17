@@ -14,13 +14,6 @@ void assert_x(int rc, const char* error_text) {
   }
 }
 
-void log_zmq_error(int rc)
-{
-  if (rc != 0) {
-    printf("rc: %d, errno: %d(%s)\n", rc, errno, zmq_strerror(errno));
-  }
-}
-
 int timer_event(zloop_t *loop, int timer_id, void *pusher)
 {
   int rc;

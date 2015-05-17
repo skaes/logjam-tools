@@ -97,17 +97,17 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
 
     rc = zmq_msg_send(app_env, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
     if (rc == -1) {
-        log_zmq_error(rc);
+        log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
     rc = zmq_msg_send(key, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
     if (rc == -1) {
-        log_zmq_error(rc);
+        log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
     rc = zmq_msg_send(body, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
     if (rc == -1) {
-        log_zmq_error(rc);
+        log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
 
@@ -118,7 +118,7 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
 
     rc = zmq_msg_send(&meta, publisher, ZMQ_DONTWAIT);
     if (rc == -1) {
-        log_zmq_error(rc);
+        log_zmq_error(rc, __FILE__, __LINE__);
     }
     zmq_msg_close(&meta);
     return rc;
