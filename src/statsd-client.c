@@ -294,6 +294,8 @@ void statsd_actor_fn(zsock_t *pipe, void *args)
     zloop_t *loop = zloop_new();
     assert(loop);
     zloop_set_verbose(loop, 0);
+    // we rely on the controller shutting us down
+    zloop_ignore_interrupts(loop);
 
     // setup handler for actor messages
     rc = zloop_reader(loop, state->pipe, actor_command, state);

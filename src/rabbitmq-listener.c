@@ -300,6 +300,7 @@ void rabbitmq_listener(zsock_t *pipe, void* args)
     zloop_t *loop = zloop_new();
     assert(loop);
     zloop_set_verbose(loop, 0);
+    zloop_ignore_interrupts(loop);
 
     // register actor command handler
     int rc = zloop_reader(loop, pipe, pipe_command, NULL);

@@ -377,6 +377,8 @@ void tracker(zsock_t *pipe, void *args)
     zloop_t *loop = zloop_new();
     assert(loop);
     zloop_set_verbose(loop, 0);
+    // we rely on the controller shutting us down
+    zloop_ignore_interrupts(loop);
 
     // setup timer to track current time using 10ms resolution
     int timer_id = zloop_timer(loop, 10, 0, timer_event, state);
