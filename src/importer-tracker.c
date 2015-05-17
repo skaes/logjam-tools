@@ -400,8 +400,12 @@ void tracker(zsock_t *pipe, void *args)
     if (!quiet)
         printf("[I] tracker[%zu]: listening\n", id);
 
-    rc = zloop_start(loop);
-    log_zmq_error(rc, __FILE__, __LINE__);
+    bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
+    do {
+        rc = zloop_start(loop);
+        should_continue_to_run &= errno == EINTR;
+        log_zmq_error(rc, __FILE__, __LINE__);
+    } while (should_continue_to_run);
 
     // shutdown
     if (!quiet)

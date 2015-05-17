@@ -151,7 +151,14 @@ void graylog_forwarder_subscriber(zsock_t *pipe, void *args)
 
     // run the loop
     fprintf(stdout, "[I] graylog-forwarder-subscriber: listening\n");
-    zloop_start(loop);
+
+    bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
+    do {
+        rc = zloop_start(loop);
+        should_continue_to_run &= errno == EINTR;
+        log_zmq_error(rc, __FILE__, __LINE__);
+    } while (should_continue_to_run);
+
     fprintf(stdout, "[I] graylog-forwarder-subscriber: shutting down\n");
 
     // shutdown
