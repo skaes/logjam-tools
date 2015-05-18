@@ -130,6 +130,8 @@ CPUPROFILE=logjam.prof ./logjam-device -c logjam.conf
 pprof --web ./logjam-device logjam.prof
 ```
 
+On Ubuntu, you will likely need to add `LD_PRELOAD=<path to libprofile.so>`
+to make this work.
 
 # License
 
