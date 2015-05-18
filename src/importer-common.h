@@ -28,9 +28,9 @@ extern FILE* frontend_timings;
 
 #define INVALID_DATE -1
 
-// discard all messages which differ by more than 1 hour from the current time
-// if we have larger clockdrift: tough luck
-#define INVALID_MSG_AGE_THRESHOLD 3600
+// discard all messages which differ by more than 3 hours from the current time
+// if we have longer running jios : tough luck
+#define INVALID_MSG_AGE_THRESHOLD 10800
 
 #define MAX_DATABASES 100
 #define DEFAULT_MONGO_URI "mongodb://127.0.0.1:27017/"
