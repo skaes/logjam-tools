@@ -259,8 +259,6 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     frontend_stats_t fe_stats[num_parsers];
 
     state->ticks++;
-    // signal liveness to watchdog
-    zstr_send(state->watchdog, "tick");
 
     // tell tracker, subscriber and stats server to tick
     zstr_send(state->statsd_server, "tick");
@@ -378,6 +376,11 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
            parsed_msgs_count, runtime,
            front_stats.received, ((double) front_stats.received / parsed_msgs_count) * 100,
            front_stats.dropped, ((double) front_stats.dropped / front_stats.received) * 100) ;
+
+    // signal liveness to watchdog, unless we're dropping all frontend requests
+    if (front_stats.received == 0 || front_stats.dropped < front_stats.received) {
+        zstr_send(state->watchdog, "tick");
+    }
 
     if (terminate) {
         printf("[I] controller: detected config change. terminating.\n");
