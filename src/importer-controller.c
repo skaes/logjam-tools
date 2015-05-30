@@ -205,7 +205,10 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
             assert(reply);
             // discard empty reply envelope
             char *empty = zmsg_popstr(reply);
-            assert( empty == NULL || streq(empty, "") );
+            if (empty) {
+                assert( streq(empty, "") );
+                free(empty);
+            }
             zhash_t *p = zmsg_popptr(reply);
             zlist_append(additions, p);
             zmsg_destroy(&reply);
