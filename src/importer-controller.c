@@ -1,6 +1,7 @@
 #include "importer-controller.h"
 #include "importer-increments.h"
 #include "importer-parser.h"
+#include "importer-adder.h"
 #include "importer-processor.h"
 #include "importer-livestream.h"
 #include "importer-statsupdater.h"
@@ -9,15 +10,14 @@
 #include "importer-subscriber.h"
 #include "importer-watchdog.h"
 #include "statsd-client.h"
-#include "importer-resources.h"
-
 
 /*
- * connections: n_w = num_writers, n_p = num_parsers, nu_= num_updaters, "[<>^v]" = connect, "o" = bind
+ * connections: n_w = num_writers, n_p = num_parsers, n_u= num_updaters, n_a = num_adders "[<>^v]" = connect, "o" = bind
  *
  *                 --- PIPE ---  indexer
  *                 --- PIPE ---  subscriber
  *                 --- PIPE ---  parsers(n_p)
+ *                 --- PIPE ---  adders(n_s)
  *  controller:    --- PIPE ---  writers(n_w)
  *                 --- PIPE ---  updaters(n_u)
  *                 --- PIPE ---  tracker
@@ -25,6 +25,9 @@
  *
  *                 PUSH    PULL
  *                 o----------<  updaters(n_u)
+ *
+ *                 REQ      REP
+ *                 o----------<  adders(n_a)
  *
  *                 PUSH    PULL
  *                 >----------o  live stream server
@@ -39,6 +42,7 @@
 unsigned long num_parsers = 6;
 unsigned long num_writers = 10;
 unsigned long num_updaters = 10;
+unsigned long num_adders = 3;
 
 typedef struct {
     zconfig_t *config;
@@ -48,9 +52,11 @@ typedef struct {
     zactor_t *tracker;
     zactor_t *watchdog;
     zactor_t *parsers[MAX_PARSERS];
+    zactor_t *adders[MAX_ADDERS];
     zactor_t *writers[MAX_WRITERS];
     zactor_t *updaters[MAX_UPDATERS];
     zsock_t *updates_socket;
+    zsock_t *adder_socket;
     zsock_t *live_stream_socket;
     size_t ticks;
 } controller_state_t;
@@ -70,117 +76,6 @@ void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs
     memcpy(fe_stats, zframe_data(third), sizeof(frontend_stats_t));
 }
 
-static
-void merge_quants(zhash_t *target, zhash_t *source)
-{
-    size_t *source_quants = NULL;
-
-    while ( (source_quants = zhash_first(source)) ) {
-        const char* key = zhash_cursor(source);
-        assert(key);
-        size_t *dest = zhash_lookup(target, key);
-        if (dest) {
-            for (int i=0; i <= last_resource_offset; i++) {
-                dest[i] += source_quants[i];
-            }
-        } else {
-            zhash_insert(target, key, source_quants);
-            zhash_freefn(target, key, free);
-            zhash_freefn(source, key, NULL);
-        }
-        zhash_delete(source, key);
-    }
-}
-
-static
-void merge_modules(zhash_t* target, zhash_t *source)
-{
-    char *source_module = NULL;
-
-    while ( (source_module = zhash_first(source)) ) {
-        const char* module = zhash_cursor(source);
-        assert(module);
-        char *dest_module = zhash_lookup(target, module);
-        if (!dest_module) {
-            zhash_insert(target, module, source_module);
-            zhash_freefn(target, module, free);
-            zhash_freefn(source, module, NULL);
-        }
-        zhash_delete(source, module);
-    }
-}
-
-static
-void merge_increments(zhash_t* target, zhash_t *source)
-{
-    increments_t *source_increments = NULL;
-
-    while ( (source_increments = zhash_first(source)) ) {
-        const char* namespace = zhash_cursor(source);
-        assert(namespace);
-        increments_t *dest_increments = zhash_lookup(target, namespace);
-        if (dest_increments) {
-            increments_add(dest_increments, source_increments);
-        } else {
-            zhash_insert(target, namespace, source_increments);
-            zhash_freefn(target, namespace, increments_destroy);
-            zhash_freefn(source, namespace, NULL);
-        }
-        zhash_delete(source, namespace);
-    }
-}
-
-static
-void merge_agents(zhash_t* target, zhash_t *source)
-{
-    user_agent_stats_t *source_agent_stats;
-
-    while ( (source_agent_stats = zhash_first(source)) ) {
-        const char* agent = zhash_cursor(source);
-        assert(agent);
-        user_agent_stats_t *dest_agent_stats = zhash_lookup(target, agent);
-        if (dest_agent_stats) {
-            dest_agent_stats->received_backend += source_agent_stats->received_backend;
-            dest_agent_stats->received_frontend += source_agent_stats->received_frontend;
-            dest_agent_stats->fe_dropped += source_agent_stats->fe_dropped;
-            for (int i=0; i<FE_MSG_NUM_REASONS; i++)
-                dest_agent_stats->fe_drop_reasons[i] += source_agent_stats->fe_drop_reasons[i];
-        } else {
-            zhash_insert(target, agent, source_agent_stats);
-            zhash_freefn(target, agent, free);
-            zhash_freefn(source, agent, NULL);
-        }
-        zhash_delete(source, agent);
-    }
-}
-
-static
-void merge_processors(zhash_t *target, zhash_t *source)
-{
-    processor_state_t* source_processor = NULL;
-
-    while ( (source_processor = zhash_first(source)) ) {
-        const char *db_name = zhash_cursor(source);
-        assert(db_name);
-        processor_state_t *dest_processor = zhash_lookup(target, db_name);
-
-        if (dest_processor) {
-            // printf("[D] combining %s\n", dest_processor->db_name);
-            assert( streq(dest_processor->db_name, source_processor->db_name) );
-            dest_processor->request_count += source_processor->request_count;
-            merge_modules(dest_processor->modules, source_processor->modules);
-            merge_increments(dest_processor->totals, source_processor->totals);
-            merge_increments(dest_processor->minutes, source_processor->minutes);
-            merge_quants(dest_processor->quants, source_processor->quants);
-            merge_agents(dest_processor->agents, source_processor->agents);
-        } else {
-            zhash_insert(target, db_name, source_processor);
-            zhash_freefn(target, db_name, processor_destroy);
-            zhash_freefn(source, db_name, NULL);
-        }
-        zhash_delete(source, db_name);
-    }
-}
 
 static
 void publish_totals(stream_info_t *stream_info, zhash_t *totals, zsock_t *live_stream_socket)
@@ -276,6 +171,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         }
     }
 
+    zlist_t *additions = zlist_new();
+    zlist_append(additions, processors[0]);
+
     // printf("[D] controller: combining processors states\n");
     size_t parsed_msgs_count = parsed_msgs_counts[0];
     frontend_stats_t front_stats = fe_stats[0];
@@ -285,9 +183,33 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         front_stats.dropped += fe_stats[i].dropped;
         for (int j=0; j<FE_MSG_NUM_REASONS; j++)
             front_stats.drop_reasons[j] += fe_stats[i].drop_reasons[j];
-        merge_processors(processors[0], processors[i]);
-        zhash_destroy(&processors[i]);
+        zlist_append(additions, processors[i]);
     }
+
+    // merge processors
+    int l = zlist_size(additions);
+    while (l>1) {
+        int n = l / 2;
+        for (int i = 0; i < n; i++ ) {
+            zhash_t *p1 = zlist_pop(additions);
+            zhash_t *p2 = zlist_pop(additions);
+            zmsg_t *request = zmsg_new();
+            zmsg_addptr(request, p1);
+            zmsg_addptr(request, p2);
+            zmsg_send_and_destroy(&request, state->adder_socket);
+        }
+        for (int i = 0; i < n; i++ ) {
+            zmsg_t *reply = zmsg_recv(state->adder_socket);
+            assert(reply);
+            zhash_t *p = zmsg_popptr(reply);
+            zlist_append(additions, p);
+            zmsg_destroy(&reply);
+        }
+        l = zlist_size(additions);
+    }
+
+    processors[0] = zlist_pop(additions);
+    zlist_destroy(&additions);
 
     // publish on live stream (need to do this while we still own the processors)
     // printf("[D] controller: publishing live streams\n");
@@ -412,6 +334,13 @@ bool controller_create_actors(controller_state_t *state)
     int rc = zsock_bind(state->updates_socket, "inproc://stats-updates");
     assert(rc == 0);
 
+    // create socket for adders
+    state->adder_socket = zsock_new(ZMQ_REQ);
+    assert(state->adder_socket);
+    zsock_set_sndtimeo(state->adder_socket, 10);
+    rc = zsock_bind(state->adder_socket, "inproc://adders");
+    assert(rc == 0);
+
     // connect to live stream
     state->live_stream_socket = live_stream_socket_new();
 
@@ -423,6 +352,10 @@ bool controller_create_actors(controller_state_t *state)
     }
     for (size_t i=0; i<num_parsers; i++) {
         state->parsers[i] = parser_new(state->config, i);
+    }
+    num_adders = num_parsers / 2;
+    for (size_t i=0; i<num_adders; i++) {
+        state->adders[i] = zactor_new(adder, (void*)i);
     }
 
     // create watchdog
@@ -455,6 +388,11 @@ void controller_destroy_actors(controller_state_t *state)
         zactor_destroy(&state->updaters[i]);
     }
 
+    for (size_t i=0; i<num_adders; i++) {
+        if (verbose) printf("[D] controller: destroying adder[%zu]\n", i);
+        zactor_destroy(&state->adders[i]);
+    }
+
     if (verbose) printf("[D] controller: destroying tracker\n");
     zactor_destroy(&state->tracker);
 
@@ -464,11 +402,14 @@ void controller_destroy_actors(controller_state_t *state)
     if (verbose) printf("[D] controller: destroying indexer\n");
     zactor_destroy(&state->indexer);
 
-    if (verbose) printf("[D] controller: destroying \n");
+    if (verbose) printf("[D] controller: destroying live stream socket\n");
     zsock_destroy(&state->live_stream_socket);
 
-    if (verbose) printf("[D] controller: destroying \n");
+    if (verbose) printf("[D] controller: destroying updates socket\n");
     zsock_destroy(&state->updates_socket);
+
+    if (verbose) printf("[D] controller: destroying adder socket\n");
+    zsock_destroy(&state->adder_socket);
 }
 
 int run_controller_loop(zconfig_t* config)
