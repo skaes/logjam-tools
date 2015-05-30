@@ -11,7 +11,7 @@
  *                            controller
  *                                |
  *                               PIPE
- *                  REQ     REP   |
+ *                  DEALER  REP   |
  *      controller  o---------< adder
  */
 

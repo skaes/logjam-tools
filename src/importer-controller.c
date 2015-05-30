@@ -26,7 +26,7 @@
  *                 PUSH    PULL
  *                 o----------<  updaters(n_u)
  *
- *                 REQ      REP
+ *                 DEALER   REP
  *                 o----------<  adders(n_a)
  *
  *                 PUSH    PULL
@@ -194,6 +194,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
             zhash_t *p1 = zlist_pop(additions);
             zhash_t *p2 = zlist_pop(additions);
             zmsg_t *request = zmsg_new();
+            // empty envelope REP socket
+            zmsg_addstr(request, "");
             zmsg_addptr(request, p1);
             zmsg_addptr(request, p2);
             zmsg_send_and_destroy(&request, state->adder_socket);
@@ -201,6 +203,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         for (int i = 0; i < n; i++ ) {
             zmsg_t *reply = zmsg_recv(state->adder_socket);
             assert(reply);
+            // discard empty reply envelope
+            char *empty = zmsg_popstr(reply);
+            assert( empty == NULL || streq(empty, "") );
             zhash_t *p = zmsg_popptr(reply);
             zlist_append(additions, p);
             zmsg_destroy(&reply);
@@ -335,7 +340,7 @@ bool controller_create_actors(controller_state_t *state)
     assert(rc == 0);
 
     // create socket for adders
-    state->adder_socket = zsock_new(ZMQ_REQ);
+    state->adder_socket = zsock_new(ZMQ_DEALER);
     assert(state->adder_socket);
     zsock_set_sndtimeo(state->adder_socket, 10);
     rc = zsock_bind(state->adder_socket, "inproc://adders");
