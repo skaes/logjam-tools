@@ -198,10 +198,11 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
             zmsg_addstr(request, "");
             zmsg_addptr(request, p1);
             zmsg_addptr(request, p2);
-            zmsg_send_and_destroy(&request, state->adder_socket);
+            int rc = zmsg_send_with_retry(&request, state->adder_socket);
+            assert(rc==0);
         }
         for (int i = 0; i < n; i++ ) {
-            zmsg_t *reply = zmsg_recv(state->adder_socket);
+            zmsg_t *reply = zmsg_recv_with_retry(state->adder_socket);
             assert(reply);
             // discard empty reply envelope
             char *empty = zmsg_popstr(reply);

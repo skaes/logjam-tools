@@ -125,6 +125,15 @@ static inline int zmsg_send_with_retry(zmsg_t** msg, zsock_t *socket)
     return rc;
 }
 
+static inline zmsg_t* zmsg_recv_with_retry(zsock_t *socket)
+{
+    zmsg_t *msg;
+    do {
+        msg = zmsg_recv(socket);
+    } while (msg == NULL && errno == EAGAIN && !zsys_interrupted);
+    return msg;
+}
+
 #ifdef __cplusplus
 }
 #endif
