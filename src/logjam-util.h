@@ -116,8 +116,9 @@ static inline int zmsg_send_with_retry(zmsg_t** msg, zsock_t *socket)
     int rc;
     do {
         assert(msg);
+        errno = 0;
         rc = zmsg_send(msg, socket);
-    } while (rc && errno == EAGAIN && !zsys_interrupted);
+    } while (rc && (errno == EINTR || errno == EAGAIN) && !zsys_interrupted);
     // czmq does not destroy the message in case of error (so a send can be retried)
     // but it also means we have to destroy it if the send fails
     if (rc)
@@ -130,7 +131,7 @@ static inline zmsg_t* zmsg_recv_with_retry(zsock_t *socket)
     zmsg_t *msg;
     do {
         msg = zmsg_recv(socket);
-    } while (msg == NULL && errno == EAGAIN && !zsys_interrupted);
+    } while (msg == NULL && (errno == EINTR || errno == EAGAIN) && !zsys_interrupted);
     return msg;
 }
 
