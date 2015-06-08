@@ -45,9 +45,9 @@ Example
 ```json
 {
   "version": "1.1",
-  "host": "jobs-3.api.fra1.xing.com",
+  "host": "api.example.com",
   "short_message": "Rest::Jobs::PostingsController#show",
-  "full_message": "INFO 2013-05-24T09:22:33.789958 Started GET \"/rest/jobs/postings/2196851?fields=created_at%2Cfunction%2Clinks&rid=internal\" for 10.4.9.24 at 2013-05-24 09:22:33 +0200\nINFO 2013-05-24T09:22:33.792732 Processing by Rest::Jobs::PostingsController#show as JSON\nINFO 2013-05-24T09:22:33.799331 Completed 404 Not Found in 10.8ms (Views: 0.313ms | ActiveRecord: 1.057ms(1q,0h) | API: 0.000(0) | Dalli: 0.000ms(0r,0m,0w,0c) | GC: 0.403(0) | HP: 0(2498680,2558,114017,591464) | REST: 0.000(0))",
+  "full_message": "INFO 2013-05-24T09:22:33.789958 Started GET \"/rest/jobs/postings/2196851\" for 10.4.9.24 at 2013-05-24 09:22:33 +0200\nINFO 2013-05-24T09:22:33.792732 Processing by Rest::Jobs::PostingsController#show as JSON\nINFO 2013-05-24T09:22:33.799331 Completed 404 Not Found in 10.8ms (Views: 0.313ms | ActiveRecord: 1.057ms(1q,0h) | API: 0.000(0) | Dalli: 0.000ms(0r,0m,0w,0c) | GC: 0.403(0) | HP: 0(2498680,2558,114017,591464) | REST: 0.000(0))",
   "timestamp": 1369380153,
   "level": 6,
   "_app": "jobs-production",
@@ -60,8 +60,8 @@ Example
   "_ip": "10.4.9.24",
   "_process_id": 7057,
   "_http_method": "GET",
-  "_http_url": "/rest/jobs/postings/2196851?fields=created_at%2Cfunction%2Clinks&rid=internal",
-  "_http_header_user_agent": "XING AG - RestCake/0.10.6",
+  "_http_url": "/rest/jobs/postings/2196851",
+  "_http_header_user_agent": "RestCake/0.10.6",
   "_http_header_accept_encoding": "deflate, gzip",
   "_http_header_accept": "application/json",
 }
