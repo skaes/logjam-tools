@@ -1,9 +1,6 @@
 Logjam Request GELF Mapping
 ===========================
 
-Logjam Request Message:
-<https://confluence.xing.hh/confluence/display/ARCH/Logjam+Integration>
-
 GELF Specification:
 <http://www.graylog2.org/resources/gelf/specification>
 
