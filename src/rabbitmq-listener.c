@@ -158,9 +158,10 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_re
     }
 
     // amqp_exchange_declare(amqp_connection_state_t state, amqp_channel_t channel, amqp_bytes_t exchange,
-    //                       amqp_bytes_t type, amqp_boolean_t passive, amqp_boolean_t durable, amqp_table_t arguments);
+    //                       amqp_bytes_t type, amqp_boolean_t passive, amqp_boolean_t durable,
+    //                       amqp_boolean_t auto_delete, amqp_boolean_t internal, amqp_table_t arguments);
     amqp_exchange_declare(conn, channel, amqp_cstring_bytes(exchange), amqp_cstring_bytes("topic"),
-                          0, 1, amqp_empty_table);
+                          0, 1, 0, 0, amqp_empty_table);
     die_on_amqp_error(amqp_get_rpc_reply(conn), "declaring exchange");
 
     amqp_bytes_t queuename = amqp_cstring_bytes(queue);

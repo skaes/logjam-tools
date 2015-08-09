@@ -53,13 +53,14 @@ export CC CXX
 function handle_rabbitmq()
 {
     d=rabbitmq-c
-    test -d $d || git clone https://github.com/alanxz/rabbitmq-c.git
+    test -d $d || git clone https://github.com/skaes/rabbitmq-c.git
     cd $d
     revision=$(git rev-parse HEAD)
-    if [ "$revision" != "2b5d606bca429deed616339f460897aa41819a63" ]; then
+    expected_revision="4a33bd4602740a88a4f00e7cad094fe736b3f38d" # use-std-gnu99
+    if [ "$revision" != $expected_revision ]; then
         git reset --hard
         git fetch
-        git checkout 2b5d606bca429deed616339f460897aa41819a63
+        git checkout $expected_revision
     fi
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (autoreconf -i && ./configure --prefix=$prefix)
@@ -76,7 +77,7 @@ function handle_mongoc()
     test -d $d || git clone https://github.com/mongodb/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="2991dfb2ae62045fbb48d009448b86a6b2e54463"
+    expected_revision="89d779efd5a82e42ac2604f7af97c9acf2bcb8d0" # 1.1.10
     if [ "$revision" != "$expected_revision" ]; then
         git reset --hard
         git fetch
@@ -98,10 +99,11 @@ function handle_json_c()
     test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    if [ "$revision" != "36be1c4c7ade78fae8ef67280cd4f98ff9f81016" ]; then
+    expected_revision="36be1c4c7ade78fae8ef67280cd4f98ff9f81016"
+    if [ "$revision" != $expected_revision ]; then
         git reset --hard
         git fetch
-        git checkout 36be1c4c7ade78fae8ef67280cd4f98ff9f81016
+        git checkout $expected_revision
     fi
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
@@ -115,9 +117,9 @@ function handle_json_c()
 
 function handle_sodium()
 {
-    d=libsodium-1.0.0
+    d=libsodium-1.0.3
     f=${d}.tar.gz
-    test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.0/$f
+    test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.3/$f
     test -d $d || tar xzvf $f
     cd $d
     [ $forced == "1" ] && rm -f config.status
@@ -131,7 +133,7 @@ function handle_sodium()
 
 function handle_zeromq()
 {
-    d=zeromq-4.0.5
+    d=zeromq-4.1.2
     f=${d}.tar.gz
     test -f $f || wget -nv http://download.zeromq.org/$f
     test -d $d || tar xzvf $f
@@ -151,7 +153,7 @@ function handle_czmq()
     test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="84129c76ab11c0b2c65c580c517b37ac10b9ca22"
+    expected_revision="e4af2e7850ad0cdb74429bb57b6fc9bd63869045" # 3.0.2
     if [ "$revision" != "" ]; then
         git reset --hard
         git fetch

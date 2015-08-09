@@ -51,9 +51,9 @@ See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
 
 # Dependencies
 
-* librabbitmq (0.5.2)
-* libzmq (4.0.5)
-* libczmq (3.0.0rc1)
+* librabbitmq (0.7.0)
+* libzmq (4.1.2)
+* libczmq (3.0.2)
 * mongo-c-driver (1.1.2)
 * libbson (included in mongo-c-driver as a submodule)
 * json-c (0.12 patched)
@@ -76,9 +76,9 @@ use the `--prefix` like so:
 ```
 
 Or install them manually:
-* Download and install rabbitmq-c from https://github.com/alanxz/rabbitmq-c/releases/tag/v0.5.2
-* Download and install zmq 4.0.5 from http://zeromq.org/intro:get-the-software
-* Dowmload and install czmq 3.0.0rc1 from http://czmq.zeromq.org/page:get-the-software
+* Download and install rabbitmq-c 0.7.0 from https://github.com/alanxz/rabbitmq-c/releases/tag/v0.7.0
+* Download and install zmq 4.1.2 from http://zeromq.org/intro:get-the-software
+* Dowmload and install czmq 3.0.2 from http://czmq.zeromq.org/page:get-the-software
 * Clone https://github.com/skaes/json-c.git checkout
   36be1c4c7ade78fae8ef67280cd4f98ff9f81016, build and install
 * Clone https://github.com/mongodb/mongo-c-driver, checkout
