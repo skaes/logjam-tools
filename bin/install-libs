@@ -36,19 +36,20 @@ cd $build_dir
 
 case $OSTYPE in
     darwin*)
-        CC=clang
-        CXX=clang++
+        export CC=clang
+        export CXX=clang++
         ldconfig=/usr/bin/true
         ;;
     *)
-        CC=gcc
-        CXX=g++
+        export CC=gcc
+        export CXX=g++
         ldconfig=ldconfig
         ;;
 esac
 
-export CC CXX
-
+# setup pkgconfig path so that libzmq can find libsodium
+# and libczmq can find libzmq
+export PKG_CONFIG_PATH="$prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
 
 function handle_rabbitmq()
 {
@@ -139,7 +140,7 @@ function handle_zeromq()
     test -d $d || tar xzvf $f
     cd $d
     [ $forced == "1" ] && rm -f config.status
-    test -f config.status || ./configure --prefix=$prefix CPPFLAGS=-I$prefix/include LDFLAGS=-L$prefix/lib
+    test -f config.status || ./configure
     [ $forced == "1" ] && make clean
     make
     $LSUDO make $cmd
@@ -160,7 +161,7 @@ function handle_czmq()
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && rm -f config.status
-    test -f config.status || (sh autogen.sh && CPPFLAGS=-I$prefix/include LDFLAGS=-L$prefix/lib ./configure --prefix=$prefix)
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
     [ $forced == "1" ] && make clean
     make
     $LSUDO make $cmd
