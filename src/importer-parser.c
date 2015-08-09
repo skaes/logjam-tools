@@ -100,8 +100,8 @@ time_t valid_database_date(const char *date)
     // ctime_r(&res, b);
     // puts(b);
 
-    int drift = abs( difftime (res,time_last_tick) );
-    if ( drift > INVALID_MSG_AGE_THRESHOLD) {
+    int drift = abs((int) difftime(res, time_last_tick) );
+    if (drift > INVALID_MSG_AGE_THRESHOLD) {
         fprintf(stderr, "[E] detected intolerable clock drift: %d seconds\n", drift);
         return INVALID_DATE;
     }
