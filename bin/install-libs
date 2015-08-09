@@ -70,7 +70,7 @@ function handle_rabbitmq()
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (autoreconf -i && ./configure --prefix=$prefix)
     [ $forced == "1" ] && make clean
-    make
+    make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
     cd ..
@@ -92,7 +92,7 @@ function handle_mongoc()
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --with-libbson=bundled)
     [ $forced == "1" ] && make clean
-    make
+    make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
     cd ..
@@ -113,7 +113,7 @@ function handle_json_c()
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
     [ $forced == "1" ] && make clean
-    make
+    make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
     cd ..
@@ -130,7 +130,7 @@ function handle_sodium()
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || ./configure --prefix=$prefix
     [ $forced == "1" ] && make clean
-    make
+    make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
     cd ..
@@ -146,7 +146,7 @@ function handle_zeromq()
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || ./configure
     [ $forced == "1" ] && make clean
-    make
+    make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
     cd ..
@@ -167,7 +167,7 @@ function handle_czmq()
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
     [ $forced == "1" ] && make clean
-    make
+    make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
     cd ..
