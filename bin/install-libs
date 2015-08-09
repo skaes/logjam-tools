@@ -16,8 +16,12 @@ while (( $# > 0 )); do
             forced=1; shift;;
         --build-dir)
             build_dir="$2"; shift 2;;
-        --prefix )
+        --build-dir=*)
+            build_dir="${1#--build-dir=}"; shift;;
+        --prefix)
             prefix="$2"; shift 2;;
+        --prefix=*)
+            prefix="${1#--prefix=}"; shift;;
         *) break ;;
     esac
 done

@@ -69,10 +69,10 @@ cd logjam-tools
 Then, run `./bin/install-libs` to install all dependecies in `/usr/local`.
 
 If you want to install everything into a separate hierarchy, you can
-use the `--prefix` like so:
+use the `--prefix` argument like so:
 
 ```
-./bin/install-libs --prefix /opt/logjam
+./bin/install-libs --prefix=/opt/logjam
 ```
 
 Or install them manually:
