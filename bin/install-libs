@@ -138,7 +138,7 @@ function handle_sodium()
 
 function handle_zeromq()
 {
-    d=zeromq-4.1.2
+    d=zeromq-4.0.7
     f=${d}.tar.gz
     test -f $f || wget -nv http://download.zeromq.org/$f
     test -d $d || tar xzvf $f
