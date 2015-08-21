@@ -843,8 +843,10 @@ static
 enum fe_msg_drop_reason convert_frontend_timings_to_json(json_object *request, int64_t *timings, int64_t *mtimes, const char* user_agent, const char* rts)
 {
     int64_t base = timings[navigationStart];
-    if (base == 0)
+    if (base == 0) {
         base = timings[fetchStart];
+        timings[navigationStart] = base;
+    }
     if (base == 0) {
         if (all_zero(timings, NUM_TIMINGS))
             return FE_MSG_NAV_TIMING;
@@ -855,6 +857,7 @@ enum fe_msg_drop_reason convert_frontend_timings_to_json(json_object *request, i
     // auto_correct_prefix(timings, NUM_TIMINGS);
 
     int64_t utimes[] = {
+        timings[navigationStart],
         timings[requestStart],
         timings[responseStart],
         timings[responseEnd],
@@ -865,28 +868,30 @@ enum fe_msg_drop_reason convert_frontend_timings_to_json(json_object *request, i
 
     if (frontend_timings) {
         fprintf(frontend_timings,
-            "%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",\"%s\",%s\n",
-            utimes[0], utimes[1], utimes[2], utimes[3], utimes[4], utimes[5], user_agent, rts);
+                "%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",\"%s\",%s\n",
+                utimes[0], utimes[1], utimes[2], utimes[3], utimes[4], utimes[5], utimes[6], user_agent, rts);
     }
 
-    if (utimes[0] < 0 || utimes[5] <= 0 || !sorted_ascending(utimes, 5)) {
+    if (utimes[0] < 0 || utimes[6] <= 0 || !sorted_ascending(utimes, 5)) {
         // if (!frontend_timings) {
         //     fprintf(stderr,
         //             "[W] processor: dropped frontend request due to invalid timings: "
-        //             "%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",\"%s\"\n",
-        //             utimes[0], utimes[1], utimes[2], utimes[3], utimes[4], utimes[5], user_agent);
+        //             "%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",%" PRIi64 ",\"%s\"\n",
+        //             utimes[0], utimes[1], utimes[2], utimes[3], utimes[4], utimes[5], utimes[6], user_agent);
         // }
         return FE_MSG_INVALID;
     }
 
-    int64_t connect_time    = mtimes[0] = timings[requestStart];
-    int64_t request_time    = mtimes[1] = timings[responseStart] - timings[requestStart];
-    int64_t response_time   = mtimes[2] = timings[responseEnd] - timings[responseStart];
-    int64_t processing_time = mtimes[3] = timings[domComplete] - timings[responseEnd];
-    int64_t load_time       = mtimes[4] = timings[loadEventEnd] - timings[domComplete];
-    int64_t page_time       = mtimes[5] = timings[loadEventEnd];
-    int64_t dom_interactive = mtimes[6] = timings[domInteractive];
+    int64_t navigation_time = mtimes[0] = timings[fetchStart];
+    int64_t connect_time    = mtimes[1] = timings[requestStart] - timings[fetchStart];
+    int64_t request_time    = mtimes[2] = timings[responseStart] - timings[requestStart];
+    int64_t response_time   = mtimes[3] = timings[responseEnd] - timings[responseStart];
+    int64_t processing_time = mtimes[4] = timings[domComplete] - timings[responseEnd];
+    int64_t load_time       = mtimes[5] = timings[loadEventEnd] - timings[domComplete];
+    int64_t page_time       = mtimes[6] = timings[loadEventEnd];
+    int64_t dom_interactive = mtimes[7] = timings[domInteractive];
 
+    json_object_object_add(request, "navigation_time", json_object_new_int64(navigation_time));
     json_object_object_add(request, "connect_time", json_object_new_int64(connect_time));
     json_object_object_add(request, "request_time", json_object_new_int64(request_time));
     json_object_object_add(request, "response_time", json_object_new_int64(response_time));
@@ -939,26 +944,29 @@ void send_statsd_updates_for_page(const char* envapp, statsd_client_t *client, c
     snprintf(buffer, n, "%s.page.sum", envapp);
     statsd_client_increment(client, buffer);
 
-    snprintf(buffer, n, "%s.page.connect_time", envapp);
+    snprintf(buffer, n, "%s.page.navigation_time", envapp);
     statsd_client_timing(client, buffer, mtimes[0]);
 
-    snprintf(buffer, n, "%s.page.request_time", envapp);
+    snprintf(buffer, n, "%s.page.connect_time", envapp);
     statsd_client_timing(client, buffer, mtimes[1]);
 
-    snprintf(buffer, n, "%s.page.response_time", envapp);
+    snprintf(buffer, n, "%s.page.request_time", envapp);
     statsd_client_timing(client, buffer, mtimes[2]);
 
-    snprintf(buffer, n, "%s.page.processing_time", envapp);
+    snprintf(buffer, n, "%s.page.response_time", envapp);
     statsd_client_timing(client, buffer, mtimes[3]);
 
-    snprintf(buffer, n, "%s.page.load_time", envapp);
+    snprintf(buffer, n, "%s.page.processing_time", envapp);
     statsd_client_timing(client, buffer, mtimes[4]);
 
-    snprintf(buffer, n, "%s.page.page_time", envapp);
+    snprintf(buffer, n, "%s.page.load_time", envapp);
     statsd_client_timing(client, buffer, mtimes[5]);
 
-    snprintf(buffer, n, "%s.page.dom_interactive", envapp);
+    snprintf(buffer, n, "%s.page.page_time", envapp);
     statsd_client_timing(client, buffer, mtimes[6]);
+
+    snprintf(buffer, n, "%s.page.dom_interactive", envapp);
+    statsd_client_timing(client, buffer, mtimes[7]);
 }
 
 static const char* str_fe_reason(enum fe_msg_drop_reason reason)
@@ -1007,7 +1015,7 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
         return reason;
     }
 
-    int64_t mtimes[7];
+    int64_t mtimes[8];
     reason = convert_frontend_timings_to_json(request, timings, mtimes, agent, rts);
     if (reason) {
         print_fe_drop_reason("frontend", reason);
