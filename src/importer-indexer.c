@@ -37,6 +37,9 @@ typedef struct {
     char iso_date[ISO_DATE_STR_LEN];
 } bg_indexer_args_t;
 
+// sleep 5 seconds in between each step when iterating over all
+// databases to create tomorrow's indexes
+#define INDEXER_DELAY 5
 
 static
 zsock_t *indexer_pull_socket_new()
@@ -234,7 +237,7 @@ void* create_indexes_for_date(void* args)
     }
     state.databases = zhash_new();
 
-    indexer_create_all_indexes(&state, indexer_args->iso_date, 10);
+    indexer_create_all_indexes(&state, indexer_args->iso_date, INDEXER_DELAY);
 
     zhash_destroy(&state.databases);
     for (int i=0; i<num_databases; i++) {
