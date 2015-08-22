@@ -39,10 +39,10 @@
 // independent socket for this. The controller send ticks to the watchdog, which aborts
 // the whole process if it doesn't receive ticks for ten consecutive seconds.
 
-unsigned long num_parsers = 6;
+unsigned long num_parsers = 8;
 unsigned long num_writers = 10;
 unsigned long num_updaters = 10;
-unsigned long num_adders = 3;
+unsigned long num_adders = 4;
 
 typedef struct {
     zconfig_t *config;
