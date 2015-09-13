@@ -60,6 +60,22 @@ See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
 
 # Installation
 
+## Ubuntu packages
+
+Ubuntu packages are available from
+<a href="https://packagecloud.io/stkaes/logjam">
+<img src="doc/packagecloud-logo-med-dark.png" height="16">
+</a>.
+
+Installation instructions how to add the package cloud apt repository
+can be found [here](https://packagecloud.io/stkaes/logjam/install).
+
+The final step is then `apt-get install logjam-tools`.
+
+Currently, only 14.04 LTS ist supported.
+
+## From source
+
 Start by cloning the repository:
 ```
 git clone git://github.com/skaes/logjam-tools.git
