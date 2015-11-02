@@ -229,7 +229,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         int len = strlen(request_id);
         if (len != 32) {
             // this can't be a UUID
-            fprintf(stderr, "[W] not a valid uuid: %s\n", request_id);
+            fprintf(stderr, "[W] invalid request_id: %s (stream: %s)\n", request_id, stream_info->key);
             request_id = NULL;
             request_id_obj = NULL;
         } else {
@@ -558,7 +558,7 @@ void request_writer(zsock_t *pipe, void *args)
                 free(cmd);
                 break;
             } else {
-                printf("[E] writer [%zu]: received unknnown command: %s\n", id, cmd);
+                printf("[E] writer [%zu]: received unknown command: %s\n", id, cmd);
                 assert(false);
             }
         } else if (socket == state->pull_socket) {
