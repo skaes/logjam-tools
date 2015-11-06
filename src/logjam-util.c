@@ -157,7 +157,7 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
 void dump_json_object(FILE *f, const char* prefix, json_object *jobj)
 {
     const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PLAIN);
-    fprintf(f, "[%s] %s\n", prefix, json_str);
+    fprintf(f, "%s %s\n", prefix, json_str);
     // don't try to free the json string. it will crash.
 }
 
