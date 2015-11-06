@@ -534,7 +534,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
 {
     if (ignore_request(request, self->stream_info)) return;
 
-    // dump_json_object(stdout, request);
+    // dump_json_object(stdout, "[D]", request);
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
@@ -586,7 +586,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     }
 
     if (0) {
-        dump_json_object(stdout, request);
+        dump_json_object(stdout, "[D]", request);
         if (self->request_count % 100 == 0) {
             processor_dump_state(self);
         }
@@ -651,7 +651,7 @@ void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate,
     if (strlen(js_exception) == 0) {
         if (!quiet)
             fprintf(stderr, "[W] could not extract js_exception from request. ignoring.\n");
-        dump_json_object(stderr, request);
+        dump_json_object(stderr, "[W]", request);
         free(page);
         free(js_exception);
         return;
@@ -900,7 +900,7 @@ enum fe_msg_drop_reason convert_frontend_timings_to_json(json_object *request, i
     json_object_object_add(request, "page_time", json_object_new_int64(page_time));
     json_object_object_add(request, "dom_interactive", json_object_new_int64(dom_interactive));
 
-    // dump_json_object(stdout, request);
+    // dump_json_object(stdout, "[D]", request);
 
     return FE_MSG_ACCEPTED;
 }
@@ -917,17 +917,17 @@ int check_frontend_request_validity(parser_state_t *pstate, json_object *request
     if (!uuid) {
         if (verbose) {
             fprintf(stderr, "[W] processor: dropped %s request without request_id\n", type);
-            dump_json_object(stderr, request);
+            dump_json_object(stderr, "[W]", request);
         }
         return 0;
     }
     if (tracker_delete_uuid(pstate->tracker, uuid, msg, type)) {
         // fprintf(stderr, "[D] processor: tracker found %s request with request_id: %s\n", uuid, type);
-        // dump_json_object(stdout, request);
+        // dump_json_object(stdout, "[D]", request);
         return 1;
     } else {
         // fprintf(stderr, "[D] processor: tracker could process %s request: request_id %s\n", type, uuid);
-        // dump_json_object(stderr, request);
+        // dump_json_object(stderr, "[D]", request);
         return 0;
     }
 }
@@ -991,7 +991,7 @@ void print_fe_drop_reason(const char* type, enum fe_msg_drop_reason reason)
 
 enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg)
 {
-    // dump_json_object(stderr, request);
+    // dump_json_object(stderr, "[D]", request);
     // if (self->request_count % 100 == 0) {
     //      processor_dump_state(self);
     // }
@@ -1033,7 +1033,7 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
     if (request_data.total_time > FE_MSG_OUTLIER_THRESHOLD_MS) {
         reason = FE_MSG_OUTLIER;
         print_fe_drop_reason("frontend", reason);
-        // dump_json_object(stderr, request);
+        // dump_json_object(stderr, "[W]", request);
         processor_add_user_agent(self, agent, reason);
         return reason;
     }
@@ -1084,7 +1084,7 @@ void send_statsd_updates_for_ajax(const char* envapp, statsd_client_t *client, i
 
 enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg)
 {
-    // dump_json_object(stdout, request);
+    // dump_json_object(stdout, "[D]", request);
     // if (self->request_count % 100 == 0) {
     //     processor_dump_state(self);
     // }

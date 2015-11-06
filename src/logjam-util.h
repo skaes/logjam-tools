@@ -75,7 +75,7 @@ extern int publish_on_zmq_transport(zmq_msg_t *message_parts, void *socket, msg_
 
 extern json_object* parse_json_body(zframe_t *body, json_tokener* tokener);
 
-extern void dump_json_object(FILE *f, json_object *jobj);
+extern void dump_json_object(FILE *f, const char* prefix, json_object *jobj);
 
 extern void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file);
 

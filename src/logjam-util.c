@@ -138,7 +138,7 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
         // const char *json_str_orig = zframe_strdup(body);
         // printf("[D] %s\n", json_str_orig);
         // free(json_str_orig);
-        // dump_json_object(stdout, jobj);
+        // dump_json_object(stdout, "[D]", jobj);
     }
     if (tokener->char_offset < json_data_len) // XXX shouldn't access internal fields
     {
@@ -148,19 +148,16 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
     }
     // if (strnlen(json_data, json_data_len) < json_data_len) {
     //     fprintf(stderr, "[W] parse_json_body: json payload has null bytes\ndata: %*s\n", json_data_len, json_data);
-    //     dump_json_object(stdout, jobj);
+    //     dump_json_object(stderr, "[W]", jobj);
     //     return NULL;
     // }
     return jobj;
 }
 
-void dump_json_object(FILE *f, json_object *jobj)
+void dump_json_object(FILE *f, const char* prefix, json_object *jobj)
 {
     const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PLAIN);
-    if (f == stderr)
-        fprintf(f, "[E] %s\n", json_str);
-    else
-        fprintf(f, "[I] %s\n", json_str);
+    fprintf(f, "[%s] %s\n", prefix, json_str);
     // don't try to free the json string. it will crash.
 }
 

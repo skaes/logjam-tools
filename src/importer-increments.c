@@ -20,7 +20,7 @@ void dump_increments(const char *action, increments_t *increments)
     printf("[D] page requests: %zu\n", increments->page_request_count);
     printf("[D] ajax requests: %zu\n", increments->ajax_request_count);
     dump_metrics(increments->metrics);
-    dump_json_object(stdout, increments->others);
+    dump_json_object(stdout, "[D]", increments->others);
 }
 
 #define METRICS_ARRAY_SIZE (sizeof(metric_pair_t) * (last_resource_offset + 1))
@@ -290,7 +290,7 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
         }
         default:
             fprintf(stderr, "[E] unknown increment type: %s, for key: %s\n", json_type_to_name(type), key);
-            dump_json_object(stderr, increments->others);
+            dump_json_object(stderr, "[E]", increments->others);
         }
         if (new_obj) {
             json_object_object_add(stored_increments->others, key, new_obj);

@@ -216,7 +216,7 @@ void convert_metrics_for_indexing(json_object *request)
 static
 json_object* store_request(const char* db_name, stream_info_t* stream_info, json_object* request, request_writer_state_t* state)
 {
-    // dump_json_object(stdout, request);
+    // dump_json_object(stdout, "[D]", request);
     convert_metrics_for_indexing(request);
 
     mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, db_name, stream_info);
@@ -230,6 +230,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         if (len != 32) {
             // this can't be a UUID
             fprintf(stderr, "[W] invalid request_id: %s (stream: %s)\n", request_id, stream_info->key);
+            dump_json_object(stderr, "[W]", request);
             request_id = NULL;
             request_id_obj = NULL;
         } else {
@@ -286,7 +287,7 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
 {
     mongoc_collection_t *jse_collection = request_writer_get_jse_collection(state, db_name, stream_info);
     bson_t *document = bson_sized_new(1024);
-    json_object_to_bson("js_excpetion", request, document);
+    json_object_to_bson("js_exception", request, document);
 
     if (!dryrun) {
         bson_error_t error;
@@ -444,7 +445,7 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     json_object *request, *request_id;
     assert(zframe_size(body_frame) == sizeof(json_object*));
     memcpy(&request, zframe_data(body_frame), sizeof(json_object*));
-    // dump_json_object(stdout, request);
+    // dump_json_object(stdout, "[D]", request);
 
     assert(zframe_size(type_frame) == 1);
     char task_type = *((char*)zframe_data(type_frame));

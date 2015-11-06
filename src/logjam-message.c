@@ -104,7 +104,7 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg)
         return NULL;
     }
 
-    // dump_json_object(stdout, request);
+    // dump_json_object(stdout, "[D]", request);
 
     if (json_object_object_get_ex (request, "host", &obj)) {
         host = json_object_get_string (obj);
@@ -181,7 +181,7 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg)
                         app_env,
                         action
                         );
-                // dump_json_object(stderr, request);
+                // dump_json_object(stderr, "[W]", request);
             } else {
                 char header[1024] = "_http_header_";
                 json_object_object_foreach (obj, key, value) {
