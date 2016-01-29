@@ -56,6 +56,7 @@ typedef struct {
     zactor_t *writers[MAX_WRITERS];
     zactor_t *updaters[MAX_UPDATERS];
     zsock_t *updates_socket;
+    size_t updates_blocked;
     zsock_t *adder_socket;
     zsock_t *live_stream_socket;
     size_t ticks;
@@ -249,7 +250,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_addptr(stats_msg, proc->totals);
         proc->totals = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
-            fprintf(stderr, "[W] controller: updates push socket not ready\n");
+            if (!state->updates_blocked++)
+                fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
 
@@ -261,7 +263,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_addptr(stats_msg, proc->minutes);
         proc->minutes = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
-            fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
+            if (!state->updates_blocked++)
+                fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
 
@@ -273,7 +276,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_addptr(stats_msg, proc->quants);
         proc->quants = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
-            fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
+            if (!state->updates_blocked++)
+                fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
 
@@ -285,7 +289,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_addptr(stats_msg, proc->agents);
         proc->agents = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
-            fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
+            if (!state->updates_blocked++)
+                fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
 
@@ -307,6 +312,12 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
            parsed_msgs_count, runtime,
            front_stats.received, ((double) front_stats.received / parsed_msgs_count) * 100,
            front_stats.dropped, ((double) front_stats.dropped / front_stats.received) * 100) ;
+
+    // log a warning about the number of blocked updates
+    if (state->updates_blocked) {
+        fprintf(stderr, "[W] controller: updates blocked: %zu\n", state->updates_blocked);
+        state->updates_blocked = 0;
+    }
 
     // signal liveness to watchdog, unless we're dropping all frontend requests
     if (front_stats.received == 0 || front_stats.dropped < front_stats.received) {
@@ -434,7 +445,7 @@ int run_controller_loop(zconfig_t* config)
     zsys_set_sndhwm(1000);
     zsys_set_linger(0);
 
-    controller_state_t state = {.ticks = 0, .config = config};
+    controller_state_t state = {.ticks = 0, .config = config, .updates_blocked = 0};
     bool start_up_complete = controller_create_actors(&state);
 
     if (!start_up_complete)
