@@ -397,6 +397,7 @@ stats_updater_state_t* stats_updater_state_new(zsock_t *pipe, size_t id)
     state->id = id;
     state->controller_socket = pipe;
     state->pull_socket = zsock_new(ZMQ_PULL);
+    zsock_set_rcvhwm(state->pull_socket, 5000);
     assert(state->pull_socket);
 
     int rc = zsock_connect(state->pull_socket, "inproc://stats-updates");
