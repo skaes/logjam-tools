@@ -16,6 +16,28 @@ void print_usage(char * const *argv)
     fprintf(stderr, "usage: %s [-n] [-v] [-q] [-p num-parsers] [-u num-updaters] [-w num_writers] [-s stream-pattern] [-c config-file] [-f frontend-timings-log-file] [-a frontend-apdex-attribute]\n", argv[0]);
 }
 
+static char* num_parsers_arg_value = NULL;
+static char* num_updaters_arg_value = NULL;
+static char* num_writers_arg_value = NULL;
+
+static void setup_thread_counts(zconfig_t* config)
+{
+    if (!num_parsers_arg_value)
+        num_parsers_arg_value = zconfig_resolve(config, "frontend/threads/parsers", NULL);
+    if (num_parsers_arg_value)
+        num_parsers = strtoul(num_parsers_arg_value, NULL, 0);
+
+    if (!num_updaters_arg_value)
+        num_updaters_arg_value = zconfig_resolve(config, "frontend/threads/updaters", NULL);
+    if (num_updaters_arg_value)
+        num_updaters = strtoul(num_updaters_arg_value, NULL, 0);
+
+    if (!num_writers_arg_value)
+        num_writers_arg_value = zconfig_resolve(config, "frontend/threads/writers", NULL);
+    if (num_writers_arg_value)
+        num_writers = strtoul(num_writers_arg_value, NULL, 0);
+}
+
 void process_arguments(int argc, char * const *argv)
 {
     char c;
@@ -46,7 +68,7 @@ void process_arguments(int argc, char * const *argv)
         case 'p': {
             unsigned long n = strtoul(optarg, NULL, 0);
             if (n <= MAX_PARSERS)
-                num_parsers = n;
+                num_parsers_arg_value = strdup(optarg);
             else {
                 fprintf(stderr, "[E] parameter value 'p' cannot be larger than %d\n", MAX_PARSERS);
                 exit(1);
@@ -56,7 +78,7 @@ void process_arguments(int argc, char * const *argv)
         case 'u': {
             unsigned long n = strtoul(optarg, NULL, 0);
             if (n <= MAX_UPDATERS)
-                num_updaters = n;
+                num_updaters_arg_value = strdup(optarg);
             else {
                 fprintf(stderr, "[E] parameter value 'u' cannot be larger than %d\n", MAX_UPDATERS);
                 exit(1);
@@ -66,7 +88,7 @@ void process_arguments(int argc, char * const *argv)
         case 'w': {
             unsigned long n = strtoul(optarg, NULL, 0);
             if (n <= MAX_UPDATERS)
-                num_writers = n;
+                num_writers_arg_value = strdup(optarg);
             else {
                 fprintf(stderr, "[E] parameter value 'w' cannot be larger than %d\n", MAX_UPDATERS);
                 exit(1);
@@ -128,6 +150,7 @@ int main(int argc, char * const *argv)
 
     setup_resource_maps(config);
     setup_stream_config(config, subscription_pattern);
+    setup_thread_counts(config);
 
     return run_controller_loop(config);
 }
