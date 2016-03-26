@@ -84,8 +84,8 @@ extern void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file);
 static inline void log_zmq_error(int rc, const char* file, const int line)
 {
     if (rc != 0) {
-        fprintf(stderr, "[E] %s:%d: errno(%d): %s, interrupted=%d\n",
-                file, line, errno, zmq_strerror(errno), zsys_interrupted);
+        fprintf(stderr, "[E] %s:%d: errno(%d): %s, interrupted=%d, rc=%d\n",
+                file, line, errno, zmq_strerror(errno), zsys_interrupted, rc);
     }
 }
 

@@ -41,6 +41,7 @@ typedef struct {
     zring_t *uuids;               // inserted backend request uuids    [uuid --> insertion time]
     zring_t *failures;            // failed frontend request deletions [uuid --> {insertion time, original zmq message}]
     zring_t *successes;           // successfully processed deletions  [uuid --> insertion time]
+    bool received_term_cmd;       // whether we have received a TERM command
 } tracker_state_t;
 
 // see ^^^failures^^^
@@ -341,6 +342,7 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *args)
         assert(cmd);
         zmsg_destroy(&msg);
         if (streq(cmd, "$TERM")) {
+            state->received_term_cmd = true;
             // printf("[D] tracker[%d]: received $TERM command\n", state->id);
             rc = -1;
         } else if (streq(cmd, "tick")) {
@@ -404,7 +406,8 @@ void tracker(zsock_t *pipe, void *args)
     do {
         rc = zloop_start(loop);
         should_continue_to_run &= errno == EINTR;
-        log_zmq_error(rc, __FILE__, __LINE__);
+        if (!state->received_term_cmd)
+            log_zmq_error(rc, __FILE__, __LINE__);
     } while (should_continue_to_run);
 
     // shutdown

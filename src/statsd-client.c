@@ -19,6 +19,7 @@ typedef struct {
     int statsd_socket;              // udp socket for statsd
     struct sockaddr_in servaddr;    // statsd server address
     bool connected;                 // whether we could connect
+    bool received_term_cmd;         // whether we have received a TERM command
 } statsd_server_state_t;
 
 
@@ -266,7 +267,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *args)
         assert(cmd);
         zmsg_destroy(&msg);
         if (streq(cmd, "$TERM")) {
-            // printf("[D] statsd[%d]: received $TERM command\n", state->id);
+            state->received_term_cmd = true;
+            // printf("[D] statsd[%zu]: received $TERM command\n", state->id);
             rc = -1;
         } else if (streq(cmd, "tick")) {
             statsd_server_tick(state);
@@ -313,7 +315,8 @@ void statsd_actor_fn(zsock_t *pipe, void *args)
     do {
         rc = zloop_start(loop);
         should_continue_to_run &= errno == EINTR;
-        log_zmq_error(rc, __FILE__, __LINE__);
+        if (!state->received_term_cmd)
+            log_zmq_error(rc, __FILE__, __LINE__);
     } while (should_continue_to_run);
 
     // shutdown

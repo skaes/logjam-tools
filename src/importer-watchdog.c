@@ -6,7 +6,8 @@
 #define CREDIT 10
 
 typedef struct {
-    int credit;
+    int credit;                     // number of ticks left before we shut down
+    bool received_term_cmd;         // whether we have received a TERM command
 } watchdog_state_t;
 
 
@@ -34,6 +35,7 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
     if (msg) {
         char *cmd = zmsg_popstr(msg);
         if (streq(cmd, "$TERM")) {
+            state->received_term_cmd = true;
             // fprintf(stderr, "[D] watchdog[0]: received $TERM command\n");
             rc = -1;
         }
@@ -56,7 +58,7 @@ void watchdog(zsock_t *pipe, void *args)
     set_thread_name("watchdog[0]");
 
     int rc;
-    watchdog_state_t state = { .credit = CREDIT };
+    watchdog_state_t state = { .credit = CREDIT, .received_term_cmd = false };
 
     // signal readyiness
     zsock_signal(pipe, 0);
@@ -81,7 +83,8 @@ void watchdog(zsock_t *pipe, void *args)
     do {
         rc = zloop_start(loop);
         should_continue_to_run &= errno == EINTR;
-        log_zmq_error(rc, __FILE__, __LINE__);
+        if (!state.received_term_cmd)
+            log_zmq_error(rc, __FILE__, __LINE__);
     } while (should_continue_to_run);
 
     if (!quiet)
