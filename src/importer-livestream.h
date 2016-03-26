@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-extern zsock_t* live_stream_socket_new();
+extern zsock_t* live_stream_socket_new(zconfig_t* config);
 extern void live_stream_publish(zsock_t *live_stream_socket, const char* key, const char* json_str);
 extern void publish_error_for_module(stream_info_t *stream_info, const char* module, const char* json_str, zsock_t* live_stream_socket);
 

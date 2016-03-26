@@ -363,10 +363,10 @@ bool controller_create_actors(controller_state_t *state)
     assert(rc == 0);
 
     // connect to live stream
-    state->live_stream_socket = live_stream_socket_new();
+    state->live_stream_socket = live_stream_socket_new(state->config);
 
     for (size_t i=0; i<num_writers; i++) {
-        state->writers[i] = zactor_new(request_writer, (void*)i);
+        state->writers[i] = request_writer_new(state->config, i);
     }
     for (size_t i=0; i<num_updaters; i++) {
         state->updaters[i] = zactor_new(stats_updater, (void*)i);

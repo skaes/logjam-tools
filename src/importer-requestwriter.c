@@ -19,12 +19,14 @@
 // It might be better to insert a load balancer device between parsers and requests writers.
 
 typedef struct {
+    zconfig_t* config;
+    char me[16];
     size_t id;
     mongoc_client_t* mongo_clients[MAX_DATABASES];
     zhash_t *request_collections;
     zhash_t *jse_collections;
     zhash_t *events_collections;
-    zsock_t *controller_socket;
+    zsock_t *pipe;         // actor command pipe
     zsock_t *pull_socket;
     zsock_t *live_stream_socket;
     int updates_count;     // updates performend since last tick
@@ -470,13 +472,14 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
 }
 
 static
-request_writer_state_t* request_writer_state_new(zsock_t *pipe, size_t id)
+request_writer_state_t* request_writer_state_new(zconfig_t *config, size_t id)
 {
     request_writer_state_t *state = zmalloc(sizeof(request_writer_state_t));
+    state->config = config;
     state->id = id;
-    state->controller_socket = pipe;
+    snprintf(state->me, 16, "writer[%zu]", id);
     state->pull_socket = request_writer_pull_socket_new(id);
-    state->live_stream_socket = live_stream_socket_new();
+    state->live_stream_socket = live_stream_socket_new(config);
     for (int i=0; i<num_databases; i++) {
         state->mongo_clients[i] = mongoc_client_new(databases[i]);
         assert(state->mongo_clients[i]);
@@ -504,23 +507,21 @@ void request_writer_state_destroy(request_writer_state_t **state_p)
     *state_p = NULL;
 }
 
-void request_writer(zsock_t *pipe, void *args)
+static void request_writer(zsock_t *pipe, void *args)
 {
-    size_t id = (size_t)args;
-    char thread_name[16];
-    memset(thread_name, 0, 16);
-    snprintf(thread_name, 16, "writer[%zu]", id);
-    set_thread_name(thread_name);
+    request_writer_state_t *state = (request_writer_state_t*)args;
+    state->pipe = pipe;
+    set_thread_name(state->me);
+    size_t id = state->id;
 
     if (!quiet)
         printf("[I] writer [%zu]: starting\n", id);
 
     size_t ticks = 0;
-    request_writer_state_t *state = request_writer_state_new(pipe, id);
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);
 
-    zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
+    zpoller_t *poller = zpoller_new(state->pipe, state->pull_socket, NULL);
     assert(poller);
 
     while (!zsys_interrupted) {
@@ -528,8 +529,8 @@ void request_writer(zsock_t *pipe, void *args)
         // we wait for at most one second
         void *socket = zpoller_wait(poller, 1000);
         zmsg_t *msg = NULL;
-        if (socket == state->controller_socket) {
-            msg = zmsg_recv(state->controller_socket);
+        if (socket == state->pipe) {
+            msg = zmsg_recv(state->pipe);
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
@@ -590,4 +591,10 @@ void request_writer(zsock_t *pipe, void *args)
 
     if (!quiet)
         printf("[I] writer [%zu]: terminated\n", id);
+}
+
+zactor_t* request_writer_new(zconfig_t *config, size_t id)
+{
+    request_writer_state_t *state = request_writer_state_new(config, id);
+    return zactor_new(request_writer, state);
 }

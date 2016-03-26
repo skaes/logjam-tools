@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-    extern void request_writer(zsock_t *pipe, void *args);
+extern zactor_t* request_writer_new(zconfig_t *config, size_t id);
 
 #ifdef __cplusplus
 }
