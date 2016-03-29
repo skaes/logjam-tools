@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-extern int run_controller_loop(zconfig_t* config);
+extern int run_controller_loop(zconfig_t* config, size_t io_threads);
 
 #ifdef __cplusplus
 }

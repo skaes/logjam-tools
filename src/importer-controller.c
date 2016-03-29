@@ -433,7 +433,7 @@ void controller_destroy_actors(controller_state_t *state)
     zsock_destroy(&state->adder_socket);
 }
 
-int run_controller_loop(zconfig_t* config)
+int run_controller_loop(zconfig_t* config, size_t io_threads)
 {
     set_thread_name("controller[0]");
     printf("[I] controller: starting\n");
@@ -441,7 +441,7 @@ int run_controller_loop(zconfig_t* config)
     int rc;
     // set global config
     zsys_init();
-    zsys_set_io_threads(1);
+    zsys_set_io_threads(io_threads);
     zsys_set_rcvhwm(1000);
     zsys_set_sndhwm(1000);
     zsys_set_linger(0);

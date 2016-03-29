@@ -13,12 +13,13 @@ static char *frontend_timings_apdex_attr = NULL;
 
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-n] [-v] [-q] [-p num-parsers] [-u num-updaters] [-w num_writers] [-s stream-pattern] [-c config-file] [-f frontend-timings-log-file] [-a frontend-apdex-attribute]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-n] [-v] [-q] [-i io-threads] [-p num-parsers] [-u num-updaters] [-w num_writers] [-s stream-pattern] [-c config-file] [-f frontend-timings-log-file] [-a frontend-apdex-attribute]\n", argv[0]);
 }
 
 static char* num_parsers_arg_value = NULL;
 static char* num_updaters_arg_value = NULL;
 static char* num_writers_arg_value = NULL;
+static size_t io_threads = 1;
 
 static void setup_thread_counts(zconfig_t* config)
 {
@@ -42,7 +43,7 @@ void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "a:c:f:np:qs:u:vw:")) != -1) {
+    while ((c = getopt(argc, argv, "a:c:f:np:qs:u:vw:i:")) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -95,8 +96,11 @@ void process_arguments(int argc, char * const *argv)
             }
             break;
         }
+        case 'i':
+            io_threads = atoi(optarg);
+            break;
         case '?':
-            if (optopt == 'a' || optopt == 'c' || optopt == 'f' || optopt == 'p' || optopt == 's' || optopt == 'u' || optopt == 'w')
+            if (optopt == 'a' || optopt == 'c' || optopt == 'f' || optopt == 'p' || optopt == 's' || optopt == 'u' || optopt == 'w' || optopt == 'i')
                 fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);
@@ -152,5 +156,5 @@ int main(int argc, char * const *argv)
     setup_stream_config(config, subscription_pattern);
     setup_thread_counts(config);
 
-    return run_controller_loop(config);
+    return run_controller_loop(config, io_threads);
 }
