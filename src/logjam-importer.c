@@ -19,7 +19,7 @@ void print_usage(char * const *argv)
 static char* num_parsers_arg_value = NULL;
 static char* num_updaters_arg_value = NULL;
 static char* num_writers_arg_value = NULL;
-static size_t io_threads = 1;
+static size_t io_threads = 0;
 
 static void setup_thread_counts(zconfig_t* config)
 {

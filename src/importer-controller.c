@@ -441,7 +441,14 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     int rc;
     // set global config
     zsys_init();
+
+    // argument takes precedence over config file
+    if (io_threads == 0)
+        io_threads = atoi(zconfig_resolve(config, "frontend/threads/zmq_io", "1"));
+    if (verbose)
+        printf("[D] io-threads: %lu\n", io_threads);
     zsys_set_io_threads(io_threads);
+
     zsys_set_rcvhwm(1000);
     zsys_set_sndhwm(1000);
     zsys_set_linger(0);
