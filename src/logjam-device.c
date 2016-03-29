@@ -27,6 +27,8 @@ static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
 
+static size_t io_threads = 1;
+
 static msg_meta_t msg_meta = META_INFO_EMPTY;
 
 typedef struct {
@@ -134,14 +136,14 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *_receiver, void 
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-d device number] [-r rabbit-host] [-p pull-port] [-c config-file] [-e environment]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-d device number] [-r rabbit-host] [-p pull-port] [-c config-file] [-e environment] [-i io-threads]\n", argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "d:r:p:c:e:")) != -1) {
+    while ((c = getopt(argc, argv, "d:r:p:c:e:i:")) != -1) {
         switch (c) {
         case 'd':
             msg_meta.device_number = atoi(optarg);
@@ -158,8 +160,11 @@ static void process_arguments(int argc, char * const *argv)
         case 'c':
             config_file_name = optarg;
             break;
+        case 'i':
+            io_threads = atoi(optarg);
+            break;
         case '?':
-            if (optopt == 'c' || optopt == 'p' || optopt == 'r' || optopt == 'e')
+            if (optopt == 'c' || optopt == 'p' || optopt == 'r' || optopt == 'e' || optopt == 'i')
                 fprintf(stderr, "option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "unknown option `-%c'.\n", optopt);
@@ -187,8 +192,9 @@ int main(int argc, char * const *argv)
     printf("[I] started logjam-device\n"
            "[I] pull-port:   %d\n"
            "[I] pub-port:    %d\n"
-           "[I] rabbit-host: %s\n",
-           pull_port, pub_port, rabbit_host);
+           "[I] rabbit-host: %s\n"
+           "[I] io-threads:  %lu\n",
+           pull_port, pub_port, rabbit_host, io_threads);
 
     // load config
     if (zsys_file_exists(config_file_name)) {
@@ -202,7 +208,7 @@ int main(int argc, char * const *argv)
     zsys_set_sndhwm(10000);
     zsys_set_pipehwm(1000);
     zsys_set_linger(100);
-    // zsys_set_io_threads(2);
+    zsys_set_io_threads(io_threads);
 
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_PULL);
