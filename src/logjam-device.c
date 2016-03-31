@@ -228,7 +228,7 @@ int main(int argc, char * const *argv)
     // create socket for publishing
     zsock_t *publisher = zsock_new(ZMQ_PUB);
     assert_x(publisher != NULL, "socket creation failed");
-    zsock_set_sndhwm(publisher, 100000);
+    zsock_set_sndhwm(publisher, 1000000);
 
     rc = zsock_bind(publisher, "tcp://%s:%d", "*", pub_port);
     assert_x(rc == pub_port, "socket bind failed");
