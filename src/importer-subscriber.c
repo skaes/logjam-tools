@@ -41,7 +41,7 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
 {
     zsock_t *socket = zsock_new(ZMQ_SUB);
     assert(socket);
-    zsock_set_rcvhwm(socket, 10000);
+    zsock_set_rcvhwm(socket, 100000);
     zsock_set_linger(socket, 0);
     zsock_set_reconnect_ivl(socket, 100); // 100 ms
     zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
