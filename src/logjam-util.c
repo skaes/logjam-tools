@@ -200,3 +200,82 @@ void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file)
         frame = zmsg_next(self);
     }
 }
+
+//  --------------------------------------------------------------------------
+//  Save message to an open file, return 0 if OK, else -1. The message is
+//  saved as a series of frames, each with length and data. Note that the
+//  file is NOT guaranteed to be portable between operating systems, not
+//  versions of CZMQ. The file format is at present undocumented and liable
+//  to arbitrary change.
+
+int
+zmsg_savex (zmsg_t *self, FILE *file)
+{
+    assert (self);
+    assert (zmsg_is (self));
+    assert (file);
+
+    size_t frame_count = zmsg_size (self);
+    if (fwrite (&frame_count, sizeof (frame_count), 1, file) != 1)
+        return -1;
+
+    zframe_t *frame = zmsg_first (self);
+    while (frame) {
+        size_t frame_size = zframe_size (frame);
+        if (fwrite (&frame_size, sizeof (frame_size), 1, file) != 1)
+            return -1;
+        if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
+            return -1;
+        frame = zmsg_next (self);
+    }
+    return 0;
+}
+
+//  --------------------------------------------------------------------------
+//  Load/append an open file into message, create new message if
+//  null message provided. Returns NULL if the message could not be
+//  loaded.
+
+zmsg_t *
+zmsg_loadx (zmsg_t *self, FILE *file)
+{
+    assert (file);
+    if (!self)
+        self = zmsg_new ();
+    if (!self)
+        return NULL;
+
+    size_t frame_count;
+    size_t rc = fread (&frame_count, sizeof (frame_count), 1, file);
+
+    if (rc == 1) {
+        for (size_t i = 0; i < frame_count; i++) {
+            size_t frame_size;
+            rc = fread (&frame_size, sizeof (frame_size), 1, file);
+            if (rc == 1) {
+                zframe_t *frame = zframe_new (NULL, frame_size);
+                if (!frame) {
+                    zmsg_destroy (&self);
+                    return NULL;    //  Unable to allocate frame, fail
+                }
+                rc = fread (zframe_data (frame), frame_size, 1, file);
+                if (frame_size > 0 && rc != 1) {
+                    zframe_destroy (&frame);
+                    zmsg_destroy (&self);
+                    return NULL;    //  Corrupt file, fail
+                }
+                if (zmsg_append (self, &frame) == -1) {
+                    zmsg_destroy (&self);
+                    return NULL;    //  Unable to add frame, fail
+                }
+            }
+            else
+                break;              //  Unable to read properly, quit
+        }
+    }
+    if (!zmsg_size (self)) {
+        zmsg_destroy (&self);
+        self = NULL;
+    }
+    return self;
+}

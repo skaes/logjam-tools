@@ -10,7 +10,9 @@ bin_PROGRAMS = \
     logjam-device \
     logjam-importer \
     logjam-httpd \
-    logjam-graylog-forwarder
+    logjam-graylog-forwarder \
+    logjam-dump \
+    logjam-replay
 
 noinst_PROGRAMS = \
     test_publisher \
@@ -92,6 +94,16 @@ logjam_graylog_forwarder_SOURCES = \
     src/logjam-message.h \
     src/str-builder.c \
     src/str-builder.h
+
+logjam_dump_SOURCES = \
+    src/logjam-dump.c \
+    src/logjam-util.c \
+    src/logjam-util.h
+
+logjam_replay_SOURCES = \
+    src/logjam-replay.c \
+    src/logjam-util.c \
+    src/logjam-util.h
 
 tester_SOURCES = src/tester.c
 

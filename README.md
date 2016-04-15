@@ -8,7 +8,7 @@ infrastructure for logjam (see https://github.com/skaes/logjam_app).
        src="https://scan.coverity.com/projects/3357/badge.svg"/>
 </a>
 
-Currently the following daemons are provided:
+Currently the following programs are provided:
 
 ## logjam-device
 
@@ -35,6 +35,16 @@ and publishes it on on ZeroMQ PUB socket for the importer to pick up.
 
 A daemon which subscribes to PUB sockets of logjam-devices and
 forwards GELF messages to a graylog GELF socket endpoint.
+
+## logjam-dump
+
+A utility program to capture messages sent from a logjam device and
+log them to disk.
+
+## logjam-replay
+
+A utility program to replay messages captured by logjam-dump. Useful
+in determining maximum system throughput.
 
 
 ## Speed

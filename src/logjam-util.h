@@ -135,6 +135,9 @@ static inline zmsg_t* zmsg_recv_with_retry(zsock_t *socket)
     return msg;
 }
 
+extern int zmsg_savex (zmsg_t *self, FILE *file);
+extern zmsg_t* zmsg_loadx (zmsg_t *self, FILE *file);
+
 #ifdef __cplusplus
 }
 #endif
