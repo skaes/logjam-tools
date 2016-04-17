@@ -1,6 +1,8 @@
 #include <zmq.h>
 #include <czmq.h>
 #include <limits.h>
+#include <zlib.h>
+#include <snappy-c.h>
 #include "logjam-util.h"
 
 bool output_socket_ready(zsock_t *socket, int msecs)
@@ -48,8 +50,8 @@ int set_thread_name(const char* name)
 
 void dump_meta_info(msg_meta_t *meta)
 {
-    printf("[D] meta(tag:%hx version:%hu device:%u sequence:%" PRIu64 " created:%" PRIu64 ")\n",
-           meta->tag, meta->version, meta->device_number, meta->sequence_number, meta->created_ms);
+    printf("[D] meta(tag:%hx version:%u compression:%u device:%u sequence:%" PRIu64 " created:%" PRIu64 ")\n",
+           meta->tag, meta->version, meta->compression_method, meta->device_number, meta->sequence_number, meta->created_ms);
 }
 
 void dump_meta_info_network_format(msg_meta_t *meta)
@@ -60,23 +62,20 @@ void dump_meta_info_network_format(msg_meta_t *meta)
     dump_meta_info(&m);
 }
 
-int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta)
+int zmq_msg_extract_meta_info(zmq_msg_t *meta_msg, msg_meta_t *meta)
 {
-    // make sure the caller is clear in his head
-    assert(zmsg_size(msg) == 4);
+    int rc = zmq_msg_size(meta_msg) == sizeof(msg_meta_t);
+    if (rc) {
+        memcpy(meta, zmq_msg_data(meta_msg), sizeof(msg_meta_t));
+        meta_info_decode(meta);
+        if (meta->tag != META_INFO_TAG || meta->version != META_INFO_VERSION)
+            rc = 0;
+    }
+    return rc;
+}
 
-    // pop all frames
-    zframe_t *app_env_frame = zmsg_pop(msg);
-    zframe_t *routing_key_frame = zmsg_pop(msg);
-    zframe_t *body_frame = zmsg_pop(msg);
-    zframe_t *meta_frame = zmsg_pop(msg);
-
-    // push back everything except the meta information
-    zmsg_append(msg, &app_env_frame);
-    zmsg_append(msg, &routing_key_frame);
-    zmsg_append(msg, &body_frame);
-
-    // check frame size, tag and protocol version
+int frame_extract_meta_info(zframe_t *meta_frame, msg_meta_t *meta)
+{
     int rc = zframe_size(meta_frame) == sizeof(msg_meta_t);
     if (rc) {
         memcpy(meta, zframe_data(meta_frame), sizeof(msg_meta_t));
@@ -84,28 +83,63 @@ int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta)
         if (meta->tag != META_INFO_TAG || meta->version != META_INFO_VERSION)
             rc = 0;
     }
-    zframe_destroy(&meta_frame);
     return rc;
 }
 
-int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta_t *msg_meta)
+int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta)
+{
+    // make sure the caller is clear in his head
+    assert(zmsg_size(msg) == 4);
+    zframe_t *meta_frame = zmsg_last(msg);
+
+    // check frame size, tag and protocol version
+    int rc = frame_extract_meta_info(meta_frame, meta);
+    return rc;
+}
+
+int string_to_compression_method(const char *s)
+{
+    if (!strcmp("gzip", s))
+        return GZIP_COMPRESSION;
+    else if (!strcmp("snappy", s))
+        return SNAPPY_COMPRESSION;
+    else if (!strcmp("brotli", s))
+        return BROTLI_COMPRESSION;
+    else {
+        fprintf(stderr, "unsupported compression method: '%s'\n", s);
+        return NO_COMPRESSION;
+    }
+}
+
+const char* compression_method_to_string(int compression_method)
+{
+    switch (compression_method) {
+    case NO_COMPRESSION:     return "no compression";
+    case GZIP_COMPRESSION:   return "gzip";
+    case SNAPPY_COMPRESSION: return "snappy";
+    case BROTLI_COMPRESSION: return "brotli";
+    default:                 return "unknown compression method";
+    }
+}
+
+int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta_t *msg_meta, int flags)
 {
     int rc=0;
     zmq_msg_t *app_env = &message_parts[0];
     zmq_msg_t *key     = &message_parts[1];
     zmq_msg_t *body    = &message_parts[2];
 
-    rc = zmq_msg_send(app_env, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+    rc = zmq_msg_send(app_env, publisher, flags|ZMQ_SNDMORE);
     if (rc == -1) {
         log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
-    rc = zmq_msg_send(key, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+    rc = zmq_msg_send(key, publisher, flags|ZMQ_SNDMORE);
     if (rc == -1) {
         log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
-    rc = zmq_msg_send(body, publisher, ZMQ_SNDMORE|ZMQ_DONTWAIT);
+    rc = zmq_msg_send(body, publisher, flags|ZMQ_SNDMORE);
     if (rc == -1) {
         log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
@@ -116,7 +150,7 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
     msg_add_meta_info(&meta, msg_meta);
     // dump_meta_info_network_format(zmq_msg_data(&meta));
 
-    rc = zmq_msg_send(&meta, publisher, ZMQ_DONTWAIT);
+    rc = zmq_msg_send(&meta, publisher, flags);
     if (rc == -1) {
         log_zmq_error(rc, __FILE__, __LINE__);
     }
@@ -124,11 +158,150 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
     return rc;
 }
 
-
-json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
+void compress_message_data_gzip(zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len)
 {
-    char* json_data = (char*)zframe_data(body);
-    int json_data_len = (int)zframe_size(body);
+    const Bytef *raw_data = (Bytef *)data;
+    uLong raw_len = data_len;
+    uLongf compressed_len = compressBound(raw_len);
+    // printf("[D] util: compression bound %zu\n", compressed_len);
+    size_t buffer_size = zchunk_max_size(buffer);
+    if (buffer_size < compressed_len) {
+        size_t next_size = 2 * buffer_size;
+        while (next_size < compressed_len)
+            next_size *= 2;
+        // printf("[D] util: resizing compression buffer to %zu\n", next_size);
+        zchunk_resize(buffer, next_size);
+    }
+    Bytef *compressed_data = zchunk_data(buffer);
+
+    // compress will update compressed_len to the actual size of the compressed data
+    int rc = compress(compressed_data, &compressed_len, raw_data, raw_len);
+    assert(rc == Z_OK);
+    assert(compressed_len <= zchunk_max_size(buffer));
+
+    zmq_msg_t compressed_msg;
+    zmq_msg_init_size(&compressed_msg, compressed_len);
+    memcpy(zmq_msg_data(&compressed_msg), compressed_data, compressed_len);
+    zmq_msg_move(body, &compressed_msg);
+
+    // printf("[D] uncompressed/compressed: %ld/%ld\n", raw_len, compressed_len);
+}
+
+void compress_message_data_snappy(zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len)
+{
+    size_t max_compressed_len = snappy_max_compressed_length(data_len);
+    // printf("[D] util: compression bound %zu\n", max_compressed_len);
+    size_t buffer_size = zchunk_max_size(buffer);
+    if (buffer_size < max_compressed_len) {
+        size_t next_size = 2 * buffer_size;
+        while (next_size < max_compressed_len)
+            next_size *= 2;
+        // printf("[D] util: resizing compression buffer to %zu\n", next_size);
+        zchunk_resize(buffer, next_size);
+    }
+    char *compressed_data = (char*) zchunk_data(buffer);
+
+    // compress will update compressed_len to the actual size of the compressed data
+    size_t compressed_len = max_compressed_len;
+    int rc = snappy_compress(data, data_len, compressed_data, &compressed_len);
+    assert(rc == SNAPPY_OK);
+    assert(compressed_len <= zchunk_max_size(buffer));
+
+    zmq_msg_t compressed_msg;
+    zmq_msg_init_size(&compressed_msg, compressed_len);
+    memcpy(zmq_msg_data(&compressed_msg), compressed_data, compressed_len);
+    zmq_msg_move(body, &compressed_msg);
+
+    // printf("[D] uncompressed/compressed: %ld/%ld\n", raw_len, compressed_len);
+}
+
+
+void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len)
+{
+    switch (compression_method) {
+    case GZIP_COMPRESSION:
+        compress_message_data_gzip(buffer, body, data, data_len);
+        break;
+    case SNAPPY_COMPRESSION:
+        compress_message_data_snappy(buffer, body, data, data_len);
+        break;
+    default:
+        fprintf(stderr, "[D] unknown compression method\n");
+    }
+}
+
+
+// we give up if the buffer needs to be larger than 10MB
+const size_t max_buffer_size = 32 * 1024 * 1024;
+
+int uncompress_frame_gzip(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
+{
+    uLongf dest_size = zchunk_max_size(buffer);
+    Bytef *dest = zchunk_data(buffer);
+    const Bytef *source = zframe_data(body_frame);
+    uLong source_len = zframe_size(body_frame);
+
+    while ( zchunk_max_size(buffer) <= max_buffer_size ) {
+        if ( Z_OK == uncompress(dest, &dest_size, source, source_len) ) {
+            *body = (char*) zchunk_data(buffer);
+            *body_len = dest_size;
+            return 1;
+        } else {
+            size_t next_size = 2 * zchunk_max_size(buffer);
+            if (next_size > max_buffer_size)
+                next_size = max_buffer_size;
+            zchunk_resize(buffer, next_size);
+            dest_size = next_size;
+            dest = zchunk_data(buffer);
+        }
+    }
+    return 0;
+}
+
+int uncompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
+{
+    const char *source = (char*) zframe_data(body_frame);
+    size_t source_len = zframe_size(body_frame);
+
+    size_t dest_size = zchunk_max_size(buffer);
+    char *dest = (char*) zchunk_data(buffer);
+
+    size_t uncompressed_length;
+    if (SNAPPY_OK != snappy_uncompressed_length(source, source_len, &uncompressed_length))
+        return 0;
+
+    if (uncompressed_length > dest_size) {
+        size_t next_size = 2 * dest_size;
+        while (next_size < max_buffer_size)
+            next_size *= 2;
+        if (next_size > max_buffer_size)
+            next_size = max_buffer_size;
+        zchunk_resize(buffer, next_size);
+        dest_size = next_size;
+        dest = (char*) zchunk_data(buffer);
+    }
+
+    if (SNAPPY_OK != snappy_uncompress(source, source_len, dest, &dest_size))
+        return 0;
+    else
+        return 1;
+}
+
+int uncompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buffer, char **body, size_t* body_len)
+{
+    switch (compression_method) {
+    case GZIP_COMPRESSION:
+        return uncompress_frame_gzip(body_frame, buffer, body, body_len);
+    case SNAPPY_COMPRESSION:
+        return uncompress_frame_snappy(body_frame, buffer, body, body_len);
+    default:
+        fprintf(stderr, "[D] unknown compression method\n");
+        return 0;
+    }
+}
+
+json_object* parse_json_data(const char *json_data, size_t json_data_len, json_tokener* tokener)
+{
     json_tokener_reset(tokener);
     json_object *jobj = json_tokener_parse_ex(tokener, json_data, json_data_len);
     enum json_tokener_error jerr = json_tokener_get_error(tokener);
@@ -144,7 +317,7 @@ json_object* parse_json_body(zframe_t *body, json_tokener* tokener)
     {
         // Handle extra characters after parsed object as desired.
         fprintf(stderr, "[W] parse_json_body: %s\n", "extranoeus data in message payload");
-        my_zframe_fprint(body, "[W] MSGBODY=", stderr);
+        fprintf(stderr, "[W] MSGBODY=%.*s", (int)json_data_len, json_data);
     }
     // if (strnlen(json_data, json_data_len) < json_data_len) {
     //     fprintf(stderr, "[W] parse_json_body: json payload has null bytes\ndata: %*s\n", json_data_len, json_data);

@@ -15,18 +15,29 @@ extern "C" {
 #include <stdint.h>
 #include <json-c/json.h>
 
+#define NO_COMPRESSION     0
+#define GZIP_COMPRESSION   1
+#define SNAPPY_COMPRESSION 2
+// brotli not yet supported
+#define BROTLI_COMPRESSION 3
+
+#define INITIAL_COMPRESSION_BUFFER_SIZE (16 * 1024)
+#define INITIAL_DECOMPRESSION_BUFFER_SIZE (32 * 1024)
+
 #define META_INFO_VERSION 1
 #define META_INFO_TAG 0xcabd
-#define META_INFO_EMPTY {META_INFO_TAG, META_INFO_VERSION, 0U, 0ULL, 0ULL}
+#define META_INFO_EMPTY {META_INFO_TAG, NO_COMPRESSION, META_INFO_VERSION, 0U, 0ULL, 0ULL}
 
 // encoding of the 4th frame added by logjam device
 typedef struct {
     uint16_t tag;
-    uint16_t version;
+    uint8_t  compression_method;
+    uint8_t  version;
     uint32_t device_number;
     uint64_t created_ms;
     uint64_t sequence_number;
 } msg_meta_t;
+
 
 #if !HAVE_DECL_HTONLL
 extern uint64_t htonll(uint64_t net_number);
@@ -44,7 +55,6 @@ extern void dump_meta_info_network_format(msg_meta_t *meta);
 static inline void meta_info_encode(msg_meta_t *meta)
 {
     meta->tag = htons(META_INFO_TAG);
-    meta->version = htons(META_INFO_VERSION);
     meta->device_number = htonl(meta->device_number);
     meta->created_ms = htonll(meta->created_ms);
     meta->sequence_number = htonll(meta->sequence_number);
@@ -53,7 +63,6 @@ static inline void meta_info_encode(msg_meta_t *meta)
 static inline void meta_info_decode(msg_meta_t *meta)
 {
     meta->tag = ntohs(meta->tag);
-    meta->version = ntohs(meta->version);
     meta->device_number = ntohl(meta->device_number);
     meta->created_ms = ntohll(meta->created_ms);
     meta->sequence_number = ntohll(meta->sequence_number);
@@ -61,19 +70,28 @@ static inline void meta_info_decode(msg_meta_t *meta)
 
 static inline void msg_add_meta_info(zmq_msg_t *msg, msg_meta_t *meta)
 {
-    zmq_msg_init_size(msg, sizeof(*meta));
+    zmq_msg_init_size(msg, sizeof(msg_meta_t));
     void *data = zmq_msg_data(msg);
-    memcpy(data, meta, sizeof(*meta));
+    memcpy(data, meta,  sizeof(msg_meta_t));
     meta_info_encode(data);
 }
 
+extern int zmq_msg_extract_meta_info(zmq_msg_t *meta_msg, msg_meta_t *meta);
 extern int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta);
+extern int frame_extract_meta_info(zframe_t *frame, msg_meta_t *meta);
+
+extern int string_to_compression_method(const char *s);
+extern const char* compression_method_to_string(int compression_method);
 
 extern bool output_socket_ready(zsock_t *socket, int msecs);
 
-extern int publish_on_zmq_transport(zmq_msg_t *message_parts, void *socket, msg_meta_t *msg_meta);
+extern int publish_on_zmq_transport(zmq_msg_t *message_parts, void *socket, msg_meta_t *msg_meta, int flags);
 
-extern json_object* parse_json_body(zframe_t *body, json_tokener* tokener);
+extern void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len);
+
+extern int uncompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buffer, char **body, size_t* body_len);
+
+extern json_object* parse_json_data(const char *json_data, size_t json_data_len, json_tokener* tokener);
 
 extern void dump_json_object(FILE *f, const char* prefix, json_object *jobj);
 

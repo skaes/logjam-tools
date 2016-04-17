@@ -6,9 +6,10 @@ typedef struct {
     size_t id;
     char me[16];
     zconfig_t *config;
-    zsock_t *pipe;          // actor commands
-    zsock_t *pull_socket;   // incoming messages from subscriber
-    zsock_t *push_socket;   // outgoing messages to writer
+    zsock_t *pipe;                          // actor commands
+    zsock_t *pull_socket;                   // incoming messages from subscriber
+    zsock_t *push_socket;                   // outgoing messages to writer
+    zchunk_t *decompression_buffer;
 } parser_state_t;
 
 static int process_logjam_message(parser_state_t *state)
@@ -18,7 +19,7 @@ static int process_logjam_message(parser_state_t *state)
     logjam_message *logjam_msg = logjam_message_read(state->pull_socket);
 
     if (logjam_msg && !zsys_interrupted) {
-        gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg);
+        gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->decompression_buffer);
         const char *gelf_data = gelf_message_to_string (gelf_msg);
 
         // printf("[D] GELF Format: %s\n", gelf_data);
@@ -103,6 +104,7 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     snprintf(state->me, 16, "parser[%zu]", id);
     state->pull_socket = parser_pull_socket_new();
     state->push_socket = parser_push_socket_new();
+    state->decompression_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
     return state;
 }
 
@@ -113,6 +115,7 @@ void parser_state_destroy(parser_state_t **state_p)
     // must not destroy the pipe, as it's owned by the actor
     zsock_destroy(&state->pull_socket);
     zsock_destroy(&state->push_socket);
+    zchunk_destroy(&state->decompression_buffer);
     free(state);
     *state_p = NULL;
 }

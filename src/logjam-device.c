@@ -9,7 +9,11 @@
 #include <getopt.h>
 #include "logjam-util.h"
 #include "rabbitmq-listener.h"
+#include "message-compressor.h"
 
+// shared globals
+bool verbose = false;
+bool quiet = false;
 
 /* global config */
 static zconfig_t* config = NULL;
@@ -17,6 +21,7 @@ static zfile_t *config_file = NULL;
 static char *config_file_name = "logjam.conf";
 static time_t config_file_last_modified = 0;
 static char *config_file_digest = "";
+static bool config_file_exists = false;
 // check every 10 ticks whether config file has changed
 #define CONFIG_FILE_CHECK_INTERVAL 10
 
@@ -27,14 +32,26 @@ static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
 
+static size_t compressed_messages_count = 0;
+static size_t compressed_messages_bytes = 0;
+static size_t compressed_messages_max_bytes = 0;
+
 static size_t io_threads = 1;
+static size_t num_compressors = 4;
 
 static msg_meta_t msg_meta = META_INFO_EMPTY;
+
+#define MAX_COMPRESSORS 64
+static int compression_method = NO_COMPRESSION;
+static zchunk_t *compression_buffer;
+static uint64_t global_time = 0;
 
 typedef struct {
     // raw zmq sockets, to avoid zsock_resolve
     void *receiver;
     void *publisher;
+    void *compressor_input;
+    void *compressor_output;
 } publisher_state_t;
 
 
@@ -48,30 +65,48 @@ static void config_file_init()
 static bool config_file_has_changed()
 {
     bool changed = false;
-    zfile_restat(config_file);
-    if (config_file_last_modified != zfile_modified(config_file)) {
-        const char *new_digest = zfile_digest(config_file);
-        // printf("[D] old digest: %s\n[D] new digest: %s\n", config_file_digest, new_digest);
-        changed = strcmp(config_file_digest, new_digest) != 0;
+    if (config_file_exists) {
+        zfile_restat(config_file);
+        if (config_file_last_modified != zfile_modified(config_file)) {
+            const char *new_digest = zfile_digest(config_file);
+            // printf("[D] old digest: %s\n[D] new digest: %s\n", config_file_digest, new_digest);
+            changed = strcmp(config_file_digest, new_digest) != 0;
+        }
     }
     return changed;
 }
 
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
-    static size_t last_received_count = 0;
-    static size_t last_received_bytes = 0;
-    size_t message_count = received_messages_count - last_received_count;
-    size_t message_bytes = received_messages_bytes - last_received_bytes;
-    double avg_msg_size = message_count ? (message_bytes / 1024.0) / message_count : 0;
-    double max_msg_size = received_messages_max_bytes / 1024.0;
+    static size_t last_received_count   = 0;
+    static size_t last_received_bytes   = 0;
+    static size_t last_compressed_count = 0;
+    static size_t last_compressed_bytes = 0;
+
+    size_t message_count    = received_messages_count - last_received_count;
+    size_t message_bytes    = received_messages_bytes - last_received_bytes;
+    size_t compressed_count = compressed_messages_count - last_compressed_count;
+    size_t compressed_bytes = compressed_messages_bytes - last_compressed_bytes;
+
+    double avg_msg_size        = message_count ? (message_bytes / 1024.0) / message_count : 0;
+    double max_msg_size        = received_messages_max_bytes / 1024.0;
+    double avg_compressed_size = compressed_count ? (compressed_bytes / 1024.0) / compressed_count : 0;
+    double max_compressed_size = compressed_messages_max_bytes / 1024.0;
+
     printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
            message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
+
+    printf("[I] compressd %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
+           compressed_count, compressed_bytes/1024.0, avg_compressed_size, max_compressed_size);
+
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
+    last_compressed_count = compressed_messages_count;
+    last_compressed_bytes = compressed_messages_bytes;
+    compressed_messages_max_bytes = 0;
 
-    msg_meta.created_ms = zclock_time();
+    global_time = zclock_time();
 
     static size_t ticks = 0;
     bool terminate = (++ticks % CONFIG_FILE_CHECK_INTERVAL == 0) && config_file_has_changed();
@@ -83,27 +118,26 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
-static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *_receiver, void *callback_data)
+static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *callback_data)
 {
     int i = 0;
     zmq_msg_t message_parts[4];
     publisher_state_t *state = (publisher_state_t*)callback_data;
-    void *receiver = state->receiver;
-    void *publisher = state->publisher;
+    void *socket = zsock_resolve(sock);
 
-    // read the message parts
+    // read the message parts, possibly including the message meta info
     while (!zsys_interrupted) {
         // printf("[D] receiving part %d\n", i+1);
         if (i>3) {
             zmq_msg_t dummy_msg;
             zmq_msg_init(&dummy_msg);
-            zmq_recvmsg(receiver, &dummy_msg, 0);
+            zmq_recvmsg(socket, &dummy_msg, 0);
             zmq_msg_close(&dummy_msg);
         } else {
             zmq_msg_init(&message_parts[i]);
-            zmq_recvmsg(receiver, &message_parts[i], 0);
+            zmq_recvmsg(socket, &message_parts[i], 0);
         }
-        if (!zsocket_rcvmore(receiver))
+        if (!zsocket_rcvmore(socket))
             break;
         i++;
     }
@@ -117,14 +151,36 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *_receiver, void 
         goto cleanup;
     }
 
-    size_t msg_bytes = zmq_msg_size(&message_parts[2]);
-    received_messages_count++;
-    received_messages_bytes += msg_bytes;
-    if (msg_bytes > received_messages_max_bytes)
-        received_messages_max_bytes = msg_bytes;
+    zmq_msg_t *body = &message_parts[2];
+    msg_meta_t meta = META_INFO_EMPTY;
+    if (i==3)
+        zmq_msg_extract_meta_info(&message_parts[3], &meta);
 
-    msg_meta.sequence_number++;
-    publish_on_zmq_transport(&message_parts[0], publisher, &msg_meta);
+    if (meta.created_ms)
+        msg_meta.created_ms = meta.created_ms;
+    else
+        msg_meta.created_ms = global_time;
+
+    size_t msg_bytes = zmq_msg_size(body);
+    if (socket == state->compressor_output) {
+        compressed_messages_count++;
+        compressed_messages_bytes += msg_bytes;
+        if (msg_bytes > compressed_messages_max_bytes)
+            compressed_messages_max_bytes = msg_bytes;
+    } else {
+        received_messages_count++;
+        received_messages_bytes += msg_bytes;
+        if (msg_bytes > received_messages_max_bytes)
+            received_messages_max_bytes = msg_bytes;
+    }
+
+    if (compression_method && !meta.compression_method) {
+        publish_on_zmq_transport(&message_parts[0], state->compressor_input, &msg_meta, 0);
+    } else {
+        msg_meta.compression_method = meta.compression_method;
+        msg_meta.sequence_number++;
+        publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
+    }
 
  cleanup:
     for (;i>=0;i--) {
@@ -136,17 +192,20 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *_receiver, void 
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-d device number] [-r rabbit-host] [-p pull-port] [-c config-file] [-e environment] [-i io-threads]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-v] [-q] [-d device number] [-r rabbit-host] [-p pull-port] [-c config-file] [-e environment] [-i io-threads] [-s num-compressors]\n", argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "d:r:p:c:e:i:")) != -1) {
+    while ((c = getopt(argc, argv, "vqd:r:p:c:e:i:x:s:")) != -1) {
         switch (c) {
-        case 'd':
-            msg_meta.device_number = atoi(optarg);
+        case 'v':
+            verbose = true;
+            break;
+        case 'q':
+            quiet = true;
             break;
         case 'r':
             rabbit_host = optarg;
@@ -163,8 +222,20 @@ static void process_arguments(int argc, char * const *argv)
         case 'i':
             io_threads = atoi(optarg);
             break;
+        case 's':
+            num_compressors = atoi(optarg);
+            if (num_compressors > MAX_COMPRESSORS) {
+                num_compressors = MAX_COMPRESSORS;
+                printf("[I] number of compressors reduced to %d\n", MAX_COMPRESSORS);
+            }
+            break;
+        case 'x':
+            compression_method = string_to_compression_method(optarg);
+            if (compression_method)
+                printf("[I] compressing streams with: %s\n", compression_method_to_string(compression_method));
+            break;
         case '?':
-            if (optopt == 'c' || optopt == 'p' || optopt == 'r' || optopt == 'e' || optopt == 'i')
+            if (strchr("repcisx", optopt))
                 fprintf(stderr, "option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "unknown option `-%c'.\n", optopt);
@@ -197,7 +268,8 @@ int main(int argc, char * const *argv)
            pull_port, pub_port, rabbit_host, io_threads);
 
     // load config
-    if (zsys_file_exists(config_file_name)) {
+    config_file_exists = zsys_file_exists(config_file_name);
+    if (config_file_exists) {
         config_file_init();
         config = zconfig_load((char*)config_file_name);
     }
@@ -209,6 +281,8 @@ int main(int argc, char * const *argv)
     zsys_set_pipehwm(1000);
     zsys_set_linger(100);
     zsys_set_io_threads(io_threads);
+
+    compression_buffer = zchunk_new(NULL, INITIAL_COMPRESSION_BUFFER_SIZE);
 
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_PULL);
@@ -227,13 +301,29 @@ int main(int argc, char * const *argv)
 
     // create socket for publishing
     zsock_t *publisher = zsock_new(ZMQ_PUB);
-    assert_x(publisher != NULL, "socket creation failed");
+    assert_x(publisher != NULL, "publisher socket creation failed");
     zsock_set_sndhwm(publisher, 1000000);
 
     rc = zsock_bind(publisher, "tcp://%s:%d", "*", pub_port);
-    assert_x(rc == pub_port, "socket bind failed");
+    assert_x(rc == pub_port, "publisher socket bind failed");
 
-    // setup the rabbitmq listener thread
+    // create compressor sockets
+    zsock_t *compressor_input = zsock_new(ZMQ_PUSH);
+    assert_x(compressor_input != NULL, "compressor input socket creation failed");
+    rc = zsock_bind(compressor_input, "inproc://compressor-input");
+    assert_x(rc==0, "compressor input socket bind failed");
+
+    zsock_t *compressor_output = zsock_new(ZMQ_PULL);
+    assert_x(compressor_output != NULL, "compressor output socket creation failed");
+    rc = zsock_bind(compressor_output, "inproc://compressor-output");
+    assert_x(rc==0, "compressor output socket bind failed");
+
+    // create compressor agents
+    zactor_t *compressors[MAX_COMPRESSORS];
+    for (size_t i = 0; i < num_compressors; i++)
+        compressors[i] = message_compressor_new(i, compression_method);
+
+    // setup the rabbitmq listener agents
     zactor_t *rabbit_listener = NULL;
 
     if (rabbit_host != NULL) {
@@ -261,13 +351,22 @@ int main(int argc, char * const *argv)
     publisher_state_t publisher_state = {
         .receiver = zsock_resolve(receiver),
         .publisher = zsock_resolve(publisher),
+        .compressor_input = zsock_resolve(compressor_input),
+        .compressor_output = zsock_resolve(compressor_output),
     };
+
+    // setup handler for compression results
+    rc = zloop_reader(loop, compressor_output, read_zmq_message_and_forward, &publisher_state);
+    assert(rc == 0);
+    zloop_reader_set_tolerant(loop, compressor_output);
+
+    // setup handdler for messages incoming from the outside or rabbit_listener
     rc = zloop_reader(loop, receiver, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, receiver);
 
     // initialize clock
-    msg_meta.created_ms = zclock_time();
+    global_time = zclock_time();
 
     // run the loop
     if (!zsys_interrupted) {
@@ -292,6 +391,10 @@ int main(int argc, char * const *argv)
     zactor_destroy(&rabbit_listener);
     zsock_destroy(&receiver);
     zsock_destroy(&publisher);
+    zsock_destroy(&compressor_input);
+    zsock_destroy(&compressor_output);
+    for (size_t i = 0; i < num_compressors; i++)
+        zactor_destroy(&compressors[i]);
     zsys_shutdown();
 
     printf("[I] terminated\n");

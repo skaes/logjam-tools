@@ -89,7 +89,7 @@ logjam_message* logjam_message_read(zsock_t *receiver)
     return msg;
 }
 
-gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg)
+gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, zchunk_t *decompression_buffer)
 {
     json_object *obj = NULL, *http_request = NULL, *lines = NULL;
     const char *host = "Not found", *action = "Not found";
@@ -97,7 +97,23 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg)
 
     // TODO: no need to allocate a new tokener for each message
     json_tokener* tokener = json_tokener_new();
-    json_object *request = parse_json_body(logjam_msg->frames[2], tokener);
+
+    // extract meta information
+    msg_meta_t meta;
+    frame_extract_meta_info(logjam_msg->frames[3], &meta);
+
+    // decompress if necessary
+    char *json_data;
+    size_t json_data_len;
+    if (meta.compression_method) {
+        uncompress_frame(logjam_msg->frames[2], meta.compression_method, decompression_buffer, &json_data, &json_data_len);
+    } else {
+        json_data = (char*)zframe_data(logjam_msg->frames[2]);
+        json_data_len = zframe_size(logjam_msg->frames[2]);
+    }
+
+    // now see whether we can parse it
+    json_object *request = parse_json_data(json_data, json_data_len, tokener);
 
     if (!request) {
         json_tokener_free(tokener);

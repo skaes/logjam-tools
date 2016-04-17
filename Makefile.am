@@ -26,7 +26,9 @@ logjam_device_SOURCES = \
     src/logjam-util.c \
     src/logjam-util.h \
     src/rabbitmq-listener.c \
-    src/rabbitmq-listener.h
+    src/rabbitmq-listener.h \
+    src/message-compressor.c \
+    src/message-compressor.h
 
 logjam_importer_SOURCES = \
     src/importer-adder.c \

@@ -172,14 +172,34 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         fprintf(stderr, "[E] parser received incomplete message\n");
         my_zmsg_fprint(msg, "[E] FRAME=", stderr);
     }
-    zframe_t *stream  = zmsg_first(msg);
-    zframe_t *topic   = zmsg_next(msg);
-    zframe_t *body    = zmsg_next(msg);
-    json_object *request = parse_json_body(body, parser_state->tokener);
+    zframe_t *stream_frame  = zmsg_first(msg);
+    zframe_t *topic_frame   = zmsg_next(msg);
+    zframe_t *body_frame    = zmsg_next(msg);
+    zframe_t *meta_frame    = zmsg_next(msg);
+
+    msg_meta_t meta;
+    frame_extract_meta_info(meta_frame, &meta);
+    // dump_meta_info(&meta);
+
+    char *body;
+    size_t body_len;
+    if (meta.compression_method) {
+        int rc = uncompress_frame(body_frame, meta.compression_method, parser_state->decompression_buffer, &body, &body_len);
+        if (!rc) {
+            fprintf(stderr, "[E] could not decompress payload\n");
+            return;
+        }
+    } else {
+        body = (char*) zframe_data(body_frame);
+        body_len = zframe_size(body_frame);
+    }
+
+    json_object *request = parse_json_data(body, body_len, parser_state->tokener);
     if (request != NULL) {
-        char *topic_str = (char*) zframe_data(topic);
-        int n = zframe_size(topic);
-        processor_state_t *processor = processor_create(stream, parser_state, request);
+        // dump_json_object(stdout, "[D] ", request);
+        char *topic_str = (char*) zframe_data(topic_frame);
+        int n = zframe_size(topic_frame);
+        processor_state_t *processor = processor_create(stream_frame, parser_state, request);
 
         if (processor == NULL) {
             fprintf(stderr, "[E] could not create processor\n");
@@ -239,6 +259,7 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->processors = processor_hash_new();
     state->tracker = tracker_new();
     state->statsd_client = statsd_client_new(config, state->me);
+    state->decompression_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
     return state;
 }
 
@@ -253,6 +274,7 @@ void parser_state_destroy(parser_state_t **state_p)
     zhash_destroy(&state->processors);
     tracker_destroy(&state->tracker);
     statsd_client_destroy(&state->statsd_client);
+    zchunk_destroy(&state->decompression_buffer);
     free(state);
     *state_p = NULL;
 }

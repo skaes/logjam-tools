@@ -54,6 +54,7 @@ esac
 # setup pkgconfig path so that libzmq can find libsodium
 # and libczmq can find libzmq
 export PKG_CONFIG_PATH="$prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
+echo "using PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
 
 function handle_rabbitmq()
 {
@@ -67,9 +68,8 @@ function handle_rabbitmq()
         git fetch
         git checkout $expected_revision
     fi
-    [ $forced == "1" ] && rm -f config.status
+    [ $forced == "1" ] && git clean -qfd
     test -f config.status || (autoreconf -i && ./configure --prefix=$prefix)
-    [ $forced == "1" ] && make clean
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
@@ -89,7 +89,7 @@ function handle_mongoc()
         git checkout $expected_revision
         git submodule update
     fi
-    [ $forced == "1" ] && rm -f config.status
+    [ $forced == "1" ] && git clean -qfd
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --with-libbson=bundled)
     [ $forced == "1" ] && make clean
     make -j4
@@ -110,9 +110,8 @@ function handle_json_c()
         git fetch
         git checkout $expected_revision
     fi
-    [ $forced == "1" ] && rm -f config.status
+    [ $forced == "1" ] && git clean -qfd
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
-    [ $forced == "1" ] && make clean
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
@@ -129,7 +128,6 @@ function handle_sodium()
     cd $d
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || ./configure --prefix=$prefix
-    [ $forced == "1" ] && make clean
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
@@ -143,9 +141,8 @@ function handle_zeromq()
     test -f $f || wget -nv http://download.zeromq.org/$f
     test -d $d || tar xzvf $f
     cd $d
-    [ $forced == "1" ] && rm -f config.status
+    [ $forced == "1" ] && git clean -qfd
     test -f config.status || ./configure && ./configure --prefix=$prefix
-    [ $forced == "1" ] && make clean
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
@@ -164,14 +161,53 @@ function handle_czmq()
         git fetch
         git checkout $expected_revision
     fi
-    [ $forced == "1" ] && rm -f config.status
+    [ $forced == "1" ] && git clean -qfd
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
-    [ $forced == "1" ] && make clean
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
     cd ..
 }
+
+function handle_snappy()
+{
+    d=snappy
+    test -d $d || git clone https://github.com/google/${d}.git
+    cd $d
+    revision=$(git rev-parse HEAD)
+    expected_revision="2b9152d9c5bed71dffb7f7f6c7a3ec48b058ff2d" # 1.1.3
+    if [ "$revision" != "" ]; then
+        git reset --hard
+        git fetch
+        git checkout $expected_revision
+    fi
+    [ $forced == "1" ] && git clean -qfd
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
+    make -j4
+    $LSUDO make $cmd
+    $LSUDO $ldconfig
+    cat > libsnappy.pc <<EOF
+prefix=${prefix}
+exec_prefix=\${prefix}
+libdir=\${exec_prefix}/lib
+includedir=\${prefix}/include
+bin
+Name: libsnappy
+Description: Fast compression library from Google
+Version: 1.1.3
+Requires:
+Libs:  -L\${libdir} -lsnappy
+Cflags: -I\${includedir}
+EOF
+    if [ "$cmd" = "install" ]; then
+        $LSUDO cp libsnappy.pc $prefix/lib/pkgconfig
+        $LSUDO chmod 644 $prefix/lib/pkgconfig/libsnappy.pc
+    else
+        $LSUDO rm -f $prefix/lib/pkgconfig/libsnappy.pc
+    fi
+    cd ..
+}
+
 
 case $cmd in
     uninstall|clean)
@@ -181,8 +217,10 @@ case $cmd in
         handle_json_c
         handle_mongoc
         handle_rabbitmq
+        handle_snappy
         ;;
     *)
+        handle_snappy
         handle_rabbitmq
         handle_mongoc
         handle_json_c

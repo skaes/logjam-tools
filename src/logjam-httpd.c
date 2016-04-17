@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <getopt.h>
 #include <json-c/json.h>
+#include <zlib.h>
 #include "logjam-util.h"
 
 static bool verbose = false;
@@ -67,6 +68,8 @@ static int path_prefix_length;
 static int path_prefix_alive_length;
 
 static msg_meta_t msg_meta = META_INFO_EMPTY;
+static int compression = NO_COMPRESSION;
+static zchunk_t* compression_buffer = NULL;
 
 typedef struct {
     char app[256];
@@ -211,6 +214,9 @@ void init_globals()
     // bind for downstream devices / logjam importer
     rc = zsock_bind(pub_socket_wrapper, "tcp://*:%d", pub_port);
     assert (rc == pub_port);
+
+    // setup zchunk for compressing json data
+    compression_buffer = zchunk_new(NULL, INITIAL_COMPRESSION_BUFFER_SIZE);
 }
 
 static inline
@@ -285,8 +291,9 @@ bool extract_msg_data(char *query_string, char* headers, msg_data_t *msg_data)
     return valid;
 }
 
-static inline
-void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
+
+static
+void send_logjam_message(msg_data_t *data, msg_meta_t *meta, int compression_method)
 {
     char app_env[256];
     int app_env_len = sprintf(app_env, "%s-%s", data->app, data->env);
@@ -300,11 +307,16 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
     zmq_msg_init_size(&message_parts[1], data->routing_key_len);
     memcpy(zmq_msg_data(&message_parts[1]), data->routing_key, data->routing_key_len);
 
-    zmq_msg_init_size(&message_parts[2], data->json_len);
-    memcpy(zmq_msg_data(&message_parts[2]), data->json_str, data->json_len);
+    if (compression && !meta->compression_method) {
+        compress_message_data(compression_method, compression_buffer, &message_parts[2], data->json_str, data->json_len);
+        msg_meta.compression_method = compression;
+    } else {
+        zmq_msg_init_size(&message_parts[2], data->json_len);
+        memcpy(zmq_msg_data(&message_parts[2]), data->json_str, data->json_len);
+    }
 
     msg_meta.sequence_number++;
-    publish_on_zmq_transport(message_parts, pub_socket, meta);
+    publish_on_zmq_transport(message_parts, pub_socket, meta, 0);
 
     zmq_msg_close(&message_parts[0]);
     zmq_msg_close(&message_parts[1]);
@@ -447,7 +459,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     if (headers) headers++;
 
     if (extract_msg_data(query_string, headers, &msg_data)) {
-        send_logjam_message(&msg_data, &msg_meta);
+        send_logjam_message(&msg_data, &msg_meta, compression);
     } else
         fprintf(stderr, "[E] %s:%d: invalid query string\n", __FILE__, __LINE__);
 
@@ -523,14 +535,14 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-d device number] [-t http-port] [-p pub-port] [-c capture file name]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-d device number] [-t http-port] [-p pub-port] [-c capture file name] [-x compression-method]\n", argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "d:p:t:c:v")) != -1) {
+    while ((c = getopt(argc, argv, "d:p:t:c:x:v")) != -1) {
         switch (c) {
         case 'd':
             msg_meta.device_number = atoi(optarg);
@@ -543,6 +555,11 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'c':
             capture_file_name = strdup(optarg);
+            break;
+        case 'x':
+            compression = string_to_compression_method(optarg);
+            if (compression)
+                printf("[I] compressing streams with: %s\n", compression_method_to_string(compression));
             break;
         case 'v':
             verbose = true;
@@ -561,7 +578,6 @@ static void process_arguments(int argc, char * const *argv)
         }
     }
 }
-
 
 int main(int argc, char * const *argv)
 {

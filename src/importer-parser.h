@@ -50,6 +50,7 @@ typedef struct {
     zhash_t *processors;
     uuid_tracker_t *tracker;
     statsd_client_t *statsd_client;
+    zchunk_t *decompression_buffer;
 } parser_state_t;
 
 extern zactor_t* parser_new(zconfig_t *config, size_t id);

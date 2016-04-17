@@ -148,6 +148,7 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
     msg_meta_t meta;
     int rc = msg_extract_meta_info(msg, &meta);
     if (!rc) {
+        // dump_meta_info(&meta);
         if (!state->meta_info_failures++) {
             fprintf(stderr, "[E] subscriber: received invalid meta info\n");
         }

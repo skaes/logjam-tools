@@ -3,6 +3,7 @@
 #include <amqp_tcp_socket.h>
 #include <amqp.h>
 #include <amqp_framing.h>
+#include "logjam-util.h"
 #include "rabbitmq-listener.h"
 
 #if defined(__APPLE__) && defined(SO_NOSIGPIPE)
@@ -80,7 +81,7 @@ void die_on_amqp_error(amqp_rpc_reply_t x, char const *context)
 }
 
 static
-bool output_socket_ready(void *socket)
+bool zmq_output_socket_ready(void *socket)
 {
     int msecs = 0;
     zmq_pollitem_t items[] = { { socket, 0, ZMQ_POLLOUT, 0 } };
@@ -132,7 +133,7 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_re
     memset(app, 0, n);
     memset(env, 0, n);
     sscanf(stream, "%[^-]-%[^-]", app, env);
-    if (strcmp(env, rabbit_env)) {
+    if (strcmp(env, rabbit_env) || strcmp(stream, "profilebackend-preview")) {
         printf("[I] skipping: %s-%s\n", app, env);
         return;
     }
@@ -145,7 +146,8 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_re
 
     char queue[n+15];
     memset(queue, 0, n+15);
-    sprintf(queue, "logjam-device-%s-%s", app, env);
+    // TODO: change it back to device
+    sprintf(queue, "logjam-defice-%s-%s", app, env);
     // printf("[D] queue: %s\n", queue);
 
     printf("[I] binding: %s ==> %s\n", exchange, queue);
@@ -209,16 +211,24 @@ int rabbitmq_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, vo
         return -1;
     }
 
-    // printf("[D] delivery %u, exchange %.*s routingkey %.*s\n",
-    //        (unsigned) envelope.delivery_tag,
-    //        (int) envelope.exchange.len, (char *) envelope.exchange.bytes,
-    //        (int) envelope.routing_key.len, (char *) envelope.routing_key.bytes);
-    //
     // if (envelope.message.properties._flags & AMQP_BASIC_CONTENT_TYPE_FLAG) {
     //     printf("[D] content-type: %.*s\n",
     //            (int) envelope.message.properties.content_type.len,
     //            (char *) envelope.message.properties.content_type.bytes);
     // }
+
+    const char *meta_data = NULL;
+    amqp_basic_properties_t *properties = &envelope.message.properties;
+    amqp_table_t *headers = &properties->headers;
+    int n = headers->num_entries;
+    for (int i = 0; i < n; i++) {
+        amqp_bytes_t *key = &headers->entries[i].key;
+        if (key->len == 4 && memcmp(key->bytes, "info", 4) == 0) {
+            amqp_field_value_t *value = &headers->entries[i].value;
+            if (value->kind == 'S' && value->value.bytes.len == sizeof(msg_meta_t))
+                meta_data = value->value.bytes.bytes;
+        }
+    }
 
     // send messages to main thread
     zmsg_t *msg = zmsg_new();
@@ -229,9 +239,11 @@ int rabbitmq_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, vo
         zmsg_addmem(msg, envelope.exchange.bytes, envelope.exchange.len);
     zmsg_addmem(msg, envelope.routing_key.bytes, envelope.routing_key.len);
     zmsg_addmem(msg, envelope.message.body.bytes, envelope.message.body.len);
+    if (meta_data)
+        zmsg_addmem(msg, meta_data, sizeof(msg_meta_t));
     // zmsg_dump(msg);
 
-    if (output_socket_ready(receiver)) {
+    if (zmq_output_socket_ready(receiver)) {
         zmsg_send(&msg, receiver);
     } else {
         if (!zsys_interrupted)
