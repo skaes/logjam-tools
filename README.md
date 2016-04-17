@@ -15,16 +15,16 @@ Currently the following programs are provided:
 A daemon which offers a ZeroMQ PULL socket endpoint for applications
 to connect to and a ZeroMQ SUB socket for forwarding. It optionally
 subscribes to a RabbitMQ server to collect application messages from
-there and republishes them on the PUB socket. You can run as many of
-those devices as needed to scale the logging infrastructure.
+there and republishes them on the PUB socket. It can compress the log
+stream on the fly to reduce network traffic, although compressing it
+at the producer is preferable. You can run as many of those devices as
+needed to scale the logging infrastructure.
 
 ## logjam-importer
 
-A multithreaded daemon using CZMQ's actor framework which is scheduled
-to replace all of the ruby importer code still in logjam. It's much
-less resource intensive than the ruby code and a _lot_ faster, while
-still very stable: it has been in production use since April 2014 and
-hasn't crashed once.
+A multithreaded daemon using CZMQ's actor framework which has replaced
+all of the ruby importer code in logjam. It's much less resource
+intensive than the ruby code and a _lot_ faster.
 
 ## logjam-httpd
 
@@ -45,18 +45,6 @@ log them to disk.
 
 A utility program to replay messages captured by logjam-dump. Useful
 in determining maximum system throughput.
-
-
-## Speed
-
-On my iMac, one logjam-device can forward 20K messages per second (4K
-message size). This is about 20 times faster than my original attempt
-using ruby. The importer currently handles up to 30K app messages per
-second on moderate hardware and scales with the number of cores.
-
-![CPU Usage Graph](doc/logjam-importer-cpu-usage.png)
-
-See also: (; http://www.youtube.com/watch?v=1S1fISh-pag ;)
 
 
 # Dependencies
