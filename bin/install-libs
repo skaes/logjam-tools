@@ -200,6 +200,7 @@ Libs:  -L\${libdir} -lsnappy
 Cflags: -I\${includedir}
 EOF
     if [ "$cmd" = "install" ]; then
+        $LSUDO mkdir -p $prefix/lib/pkgconfig
         $LSUDO cp libsnappy.pc $prefix/lib/pkgconfig
         $LSUDO chmod 644 $prefix/lib/pkgconfig/libsnappy.pc
     else
@@ -216,12 +217,12 @@ case $cmd in
         handle_sodium
         handle_json_c
         handle_mongoc
-        handle_rabbitmq
         handle_snappy
+        handle_rabbitmq
         ;;
     *)
-        handle_snappy
         handle_rabbitmq
+        handle_snappy
         handle_mongoc
         handle_json_c
         handle_sodium
