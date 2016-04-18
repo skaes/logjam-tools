@@ -213,6 +213,9 @@ static void process_arguments(int argc, char * const *argv)
         case 'e':
             rabbit_env = optarg;
             break;
+        case 'd':
+            msg_meta.device_number = atoi(optarg);
+            break;
         case 'p':
             pull_port = atoi(optarg);
             break;
@@ -235,7 +238,7 @@ static void process_arguments(int argc, char * const *argv)
                 printf("[I] compressing streams with: %s\n", compression_method_to_string(compression_method));
             break;
         case '?':
-            if (strchr("repcisx", optopt))
+            if (strchr("drepcisx", optopt))
                 fprintf(stderr, "option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "unknown option `-%c'.\n", optopt);
@@ -244,6 +247,7 @@ static void process_arguments(int argc, char * const *argv)
             print_usage(argv);
             exit(1);
         default:
+            fprintf(stderr, "BUG: can't process option -%c\n", optopt);
             exit(1);
         }
     }

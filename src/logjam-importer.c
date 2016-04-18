@@ -109,6 +109,7 @@ void process_arguments(int argc, char * const *argv)
             print_usage(argv);
             exit(1);
         default:
+            fprintf(stderr, "BUG: can't process option -%c\n", optopt);
             exit(1);
         }
     }
