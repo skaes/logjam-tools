@@ -147,7 +147,7 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_re
     char queue[n+15];
     memset(queue, 0, n+15);
     // TODO: change it back to device
-    sprintf(queue, "logjam-defice-%s-%s", app, env);
+    sprintf(queue, "logjam-device-%s-%s", app, env);
     // printf("[D] queue: %s\n", queue);
 
     printf("[I] binding: %s ==> %s\n", exchange, queue);
