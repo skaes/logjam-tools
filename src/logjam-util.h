@@ -99,6 +99,8 @@ extern void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file);
 
 extern void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file);
 
+extern void my_zmq_msg_fprint(zmq_msg_t* msg, size_t n, const char* prefix, FILE* file);
+
 static inline void log_zmq_error(int rc, const char* file, const int line)
 {
     if (rc != 0) {

@@ -334,13 +334,10 @@ void dump_json_object(FILE *f, const char* prefix, json_object *jobj)
     // don't try to free the json string. it will crash.
 }
 
-void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file)
+static void print_msg(byte* data, size_t size, const char *prefix, FILE *file)
 {
-    assert (self);
     if (prefix)
         fprintf (file, "%s", prefix);
-    byte *data = zframe_data (self);
-    size_t size = zframe_size (self);
 
     int is_bin = 0;
     uint char_nbr;
@@ -364,6 +361,14 @@ void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file)
     fprintf (file, "%s\n", ellipsis);
 }
 
+void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file)
+{
+    assert (self);
+    byte *data = zframe_data (self);
+    size_t size = zframe_size (self);
+    print_msg(data, size, prefix, file);
+}
+
 void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file)
 {
     zframe_t *frame = zmsg_first(self);
@@ -371,6 +376,15 @@ void my_zmsg_fprint(zmsg_t* self, const char* prefix, FILE* file)
     while (frame && frame_nbr++ < 10) {
         my_zframe_fprint(frame, prefix, file);
         frame = zmsg_next(self);
+    }
+}
+
+void my_zmq_msg_fprint(zmq_msg_t* msg, size_t n, const char* prefix, FILE* file )
+{
+    for (size_t i = 0; i < n; i++) {
+        byte* data = zmq_msg_data(&msg[i]);
+        size_t size = zmq_msg_size(&msg[i]);
+        print_msg(data, size, prefix, file);
     }
 }
 

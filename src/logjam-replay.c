@@ -51,7 +51,7 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
         return 0;
     }
 
-    if (--message_credit <= 0) {
+    if (message_credit-- <= 0) {
         zclock_sleep(1);
         return 0;
     }

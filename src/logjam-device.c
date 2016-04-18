@@ -156,6 +156,10 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     if (i==3)
         zmq_msg_extract_meta_info(&message_parts[3], &meta);
 
+    // const char *prefix = socket == state->compressor_output ? "EXTERNAL MESSAGE" : "INTERNAL MESSAGE";
+    // my_zmq_msg_fprint(&message_parts[0], 3, prefix, stdout);
+    // dump_meta_info(&meta);
+
     if (meta.created_ms)
         msg_meta.created_ms = meta.created_ms;
     else
@@ -179,6 +183,8 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     } else {
         msg_meta.compression_method = meta.compression_method;
         msg_meta.sequence_number++;
+        // my_zmq_msg_fprint(&message_parts[0], 3, "OUT", stdout);
+        // dump_meta_info(&msg_meta);
         publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
     }
 
