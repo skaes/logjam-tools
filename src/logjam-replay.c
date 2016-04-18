@@ -84,7 +84,7 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
 
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-v] [-r] [-s] [-l] [-i io-threads] [-z zmq-connection-spec ] [dump-file-name]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-v] [-s] [-l] [-i io-threads] [-z zmq-connection-spec ] [-r msgs-per-second] [dump-file-name]\n", argv[0]);
 }
 
 void process_arguments(int argc, char * const *argv)
