@@ -36,6 +36,7 @@ static size_t decompressed_messages_count = 0;
 static size_t decompressed_messages_bytes = 0;
 static size_t decompressed_messages_max_bytes = 0;
 
+static zlist_t *hosts = NULL;
 static zlist_t *subscriptions = NULL;
 
 static size_t io_threads = 1;
@@ -202,14 +203,14 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-v] [-q] [-d device number] [-p sub-port] [-c config-file] [-e subscription] [-i io-threads] [-s num-decompressors] [-z ]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-v] [-q] [-d device number] [-p sub-port] [-c config-file] [-e subscription] [-i io-threads] [-s num-decompressors] [-h hosts]\n", argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
     opterr = 0;
-    while ((c = getopt(argc, argv, "vqd:p:c:e:i:s:")) != -1) {
+    while ((c = getopt(argc, argv, "vqd:p:c:e:i:s:h:")) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -242,8 +243,11 @@ static void process_arguments(int argc, char * const *argv)
                 printf("[I] number of compressors reduced to %d\n", MAX_COMPRESSORS);
             }
             break;
+        case 'h':
+            hosts = split_delimited_string(optarg);
+            break;
         case '?':
-            if (strchr("depcis", optopt))
+            if (strchr("depcish", optopt))
                 fprintf(stderr, "option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "unknown option `-%c'.\n", optopt);
@@ -256,8 +260,15 @@ static void process_arguments(int argc, char * const *argv)
             exit(1);
         }
     }
+
     if (subscriptions == NULL)
         subscriptions = split_delimited_string(getenv("LOGJAM_PUBSUB_BRIDGE_SUBSCRIPTIONS"));
+
+    if (hosts == NULL) {
+        hosts = split_delimited_string(getenv("LOGJAM_PUBSUB_BRIDGE_DEVICES"));
+        if (hosts == NULL)
+            zlist_push(hosts, "localhost");
+    }
 }
 
 int main(int argc, char * const *argv)
@@ -298,8 +309,12 @@ int main(int argc, char * const *argv)
     zsock_set_rcvhwm(receiver, 100000);
 
     // bind externally
-    rc = zsock_connect(receiver, "tcp://%s:%d", "broker-1.monitor.preview.fra1.xing.com", pull_port);
-    assert_x(rc == 0, "receiver socket: external connect failed");
+    char* host = zlist_first(hosts);
+    while (host) {
+        rc = zsock_connect(receiver, "tcp://%s:%d", host, pull_port);
+        assert_x(rc == 0, "receiver socket: external connect failed");
+        host = zlist_next(hosts);
+    }
 
     // create socket for publishing
     zsock_t *publisher = zsock_new(ZMQ_PUSH);
@@ -386,6 +401,8 @@ int main(int argc, char * const *argv)
     printf("[I] received %zu messages\n", received_messages_count);
     printf("[I] shutting down\n");
 
+    zlist_destroy(&hosts);
+    zlist_destroy(&subscriptions);
     zsock_destroy(&receiver);
     zsock_destroy(&publisher);
     zsock_destroy(&compressor_input);
