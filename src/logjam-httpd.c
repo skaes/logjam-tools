@@ -12,6 +12,7 @@
 #include "logjam-util.h"
 
 static bool verbose = false;
+static bool debug = false;
 
 static char http_response_ok [] =
     "HTTP/1.1 200 OK\r\n"
@@ -535,7 +536,7 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-d device number] [-t http-port] [-p pub-port] [-c capture file name] [-x compression-method]\n", argv[0]);
+    fprintf(stderr, "usage: %s [-v] [-d device number] [-t http-port] [-p pub-port] [-c capture file name] [-x compression-method]\n", argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
@@ -562,7 +563,10 @@ static void process_arguments(int argc, char * const *argv)
                 printf("[I] compressing streams with: %s\n", compression_method_to_string(compression));
             break;
         case 'v':
-            verbose = true;
+            if (verbose)
+                debug= true;
+            else
+                verbose = true;
             break;
         case '?':
             if (optopt == 'd' || optopt == 'p' || optopt == 't')

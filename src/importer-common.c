@@ -2,6 +2,7 @@
 
 bool dryrun = false;
 bool verbose = false;
+bool debug = false;
 bool quiet = false;
 
 // utf8 conversion

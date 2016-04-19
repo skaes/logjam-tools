@@ -5,8 +5,10 @@ static char *dump_file_name = "logjam-stream.dump";
 static size_t dump_file_size = 0;
 static size_t bytes_read_from_file = 0;
 
-static size_t io_threads = 1;
 static bool verbose = false;
+static bool debug = false;
+
+static size_t io_threads = 1;
 static char *connection_spec = "tcp://localhost:9605";
 static bool endless_loop = false;
 static int messages_per_second = 100000;
@@ -85,7 +87,10 @@ void process_arguments(int argc, char * const *argv)
     while ((c = getopt(argc, argv, "vlr:sc:i:z:")) != -1) {
         switch (c) {
         case 'v':
-            verbose = true;
+            if (verbose)
+                debug = true;
+            else
+                verbose = true;
             break;
         case 'l':
             endless_loop = true;

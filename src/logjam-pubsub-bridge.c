@@ -13,6 +13,7 @@
 // shared globals
 bool verbose = false;
 bool quiet = false;
+bool debug = false;
 
 /* global config */
 static zconfig_t* config = NULL;
@@ -184,8 +185,10 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     } else {
         // forward to comsumer
         msg_meta.sequence_number++;
-        // my_zmq_msg_fprint(&message_parts[0], 3, "OUT", stdout);
-        // dump_meta_info(&msg_meta);
+        if (debug) {
+            my_zmq_msg_fprint(&message_parts[0], 3, "[D]", stdout);
+            dump_meta_info(&msg_meta);
+        }
         publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
     }
 
@@ -209,7 +212,10 @@ static void process_arguments(int argc, char * const *argv)
     while ((c = getopt(argc, argv, "vqd:p:c:e:i:s:")) != -1) {
         switch (c) {
         case 'v':
-            verbose = true;
+            if (verbose)
+                debug= true;
+            else
+                verbose = true;
             break;
         case 'q':
             quiet = true;

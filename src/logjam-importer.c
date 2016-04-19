@@ -49,7 +49,10 @@ void process_arguments(int argc, char * const *argv)
             dryrun = true;
             break;
         case 'v':
-            verbose = true;
+            if (verbose)
+                debug = true;
+            else
+                verbose = true;
             break;
         case 'q':
             quiet = true;

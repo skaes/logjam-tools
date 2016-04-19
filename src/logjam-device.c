@@ -13,6 +13,7 @@
 
 // shared globals
 bool verbose = false;
+bool debug = false;
 bool quiet = false;
 
 /* global config */
@@ -208,7 +209,10 @@ static void process_arguments(int argc, char * const *argv)
     while ((c = getopt(argc, argv, "vqd:r:p:c:e:i:x:s:")) != -1) {
         switch (c) {
         case 'v':
-            verbose = true;
+            if (verbose)
+                debug = true;
+            else
+                verbose = true;
             break;
         case 'q':
             quiet = true;

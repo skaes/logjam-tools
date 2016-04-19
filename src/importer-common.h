@@ -38,6 +38,7 @@ extern FILE* frontend_timings;
 
 extern bool dryrun;
 extern bool verbose;
+extern bool debug;
 extern bool quiet;
 
 #define ISO_DATE_STR_LEN 11

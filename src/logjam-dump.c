@@ -5,6 +5,7 @@ static char *dump_file_name = "logjam-stream.dump";
 
 static size_t io_threads = 1;
 static bool verbose = false;
+static bool debug = false;
 static char *connection_spec = "tcp://localhost:9606";
 
 static size_t received_messages_count = 0;
@@ -59,7 +60,10 @@ void process_arguments(int argc, char * const *argv)
     while ((c = getopt(argc, argv, "vc:i:z:")) != -1) {
         switch (c) {
         case 'v':
-            verbose = true;
+            if (verbose)
+                debug= true;
+            else
+                verbose = true;
             break;
         case 'i':
             io_threads = atoi(optarg);
