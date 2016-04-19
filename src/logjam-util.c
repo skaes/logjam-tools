@@ -5,6 +5,26 @@
 #include <snappy-c.h>
 #include "logjam-util.h"
 
+zlist_t *split_delimited_string(const char* s)
+{
+    if (!s) return NULL;
+
+    char delim[] = ", ";
+    char* token;
+    char* state = NULL;
+    zlist_t *strings = zlist_new();
+
+    char *buffer = strdup(s);
+    token = strtok_r(buffer, delim, &state);
+    while (token != NULL) {
+        zlist_push(strings, strdup(token));
+        token = strtok_r (NULL, delim, &state);
+    }
+    free(buffer);
+
+    return strings;
+}
+
 bool output_socket_ready(zsock_t *socket, int msecs)
 {
     zmq_pollitem_t items[] = { { zsock_resolve(socket), 0, ZMQ_POLLOUT, 0 } };
@@ -122,6 +142,8 @@ const char* compression_method_to_string(int compression_method)
     }
 }
 
+#define RESOURCE_TEMPORARILY_UNAVAILABLE 35
+
 int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta_t *msg_meta, int flags)
 {
     int rc=0;
@@ -131,17 +153,20 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
 
     rc = zmq_msg_send(app_env, publisher, flags|ZMQ_SNDMORE);
     if (rc == -1) {
-        log_zmq_error(rc, __FILE__, __LINE__);
+        if (errno != RESOURCE_TEMPORARILY_UNAVAILABLE)
+            log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
     rc = zmq_msg_send(key, publisher, flags|ZMQ_SNDMORE);
     if (rc == -1) {
-        log_zmq_error(rc, __FILE__, __LINE__);
+        if (errno != RESOURCE_TEMPORARILY_UNAVAILABLE)
+            log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
     rc = zmq_msg_send(body, publisher, flags|ZMQ_SNDMORE);
     if (rc == -1) {
-        log_zmq_error(rc, __FILE__, __LINE__);
+        if (errno != RESOURCE_TEMPORARILY_UNAVAILABLE)
+            log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
 
@@ -152,7 +177,8 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
 
     rc = zmq_msg_send(&meta, publisher, flags);
     if (rc == -1) {
-        log_zmq_error(rc, __FILE__, __LINE__);
+        if (errno != RESOURCE_TEMPORARILY_UNAVAILABLE)
+            log_zmq_error(rc, __FILE__, __LINE__);
     }
     zmq_msg_close(&meta);
     return rc;
@@ -234,7 +260,7 @@ void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *
 // we give up if the buffer needs to be larger than 10MB
 const size_t max_buffer_size = 32 * 1024 * 1024;
 
-int uncompress_frame_gzip(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
+int decompress_frame_gzip(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
 {
     uLongf dest_size = zchunk_max_size(buffer);
     Bytef *dest = zchunk_data(buffer);
@@ -258,13 +284,16 @@ int uncompress_frame_gzip(zframe_t *body_frame, zchunk_t *buffer, char **body, s
     return 0;
 }
 
-int uncompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
+int decompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
 {
     const char *source = (char*) zframe_data(body_frame);
     size_t source_len = zframe_size(body_frame);
 
     size_t dest_size = zchunk_max_size(buffer);
     char *dest = (char*) zchunk_data(buffer);
+
+    *body = "";
+    *body_len = 0;
 
     size_t uncompressed_length;
     if (SNAPPY_OK != snappy_uncompressed_length(source, source_len, &uncompressed_length))
@@ -283,19 +312,22 @@ int uncompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body,
 
     if (SNAPPY_OK != snappy_uncompress(source, source_len, dest, &dest_size))
         return 0;
-    else
-        return 1;
+
+    *body = dest;
+    *body_len = dest_size;
+
+    return 1;
 }
 
-int uncompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buffer, char **body, size_t* body_len)
+int decompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buffer, char **body, size_t* body_len)
 {
     switch (compression_method) {
     case GZIP_COMPRESSION:
-        return uncompress_frame_gzip(body_frame, buffer, body, body_len);
+        return decompress_frame_gzip(body_frame, buffer, body, body_len);
     case SNAPPY_COMPRESSION:
-        return uncompress_frame_snappy(body_frame, buffer, body, body_len);
+        return decompress_frame_snappy(body_frame, buffer, body, body_len);
     default:
-        fprintf(stderr, "[D] unknown compression method\n");
+        fprintf(stderr, "[D] unknown compression method: %d\n", compression_method);
         return 0;
     }
 }
@@ -465,4 +497,27 @@ zmsg_loadx (zmsg_t *self, FILE *file)
         self = NULL;
     }
     return self;
+}
+
+void setup_subscriptions_for_sub_socket(zlist_t *subscriptions, zsock_t *socket)
+{
+    if (subscriptions==NULL || zlist_size(subscriptions)==0) {
+        zsock_set_subscribe(socket, "");
+        return;
+    }
+    // setup subscriptions for only a subset
+    char *stream = zlist_first(subscriptions);
+    while (stream != NULL)  {
+        printf("[I] subscriber: subscribing to stream: %s\n", stream);
+        zsock_set_subscribe(socket, stream);
+        size_t n = strlen(stream);
+        if (n > 15 && !strncmp(stream, "request-stream-", 15)) {
+            zsock_set_subscribe(socket, stream+15);
+        } else {
+            char old_stream[n+15+1];
+            sprintf(old_stream, "request-stream-%s", stream);
+            zsock_set_subscribe(socket, old_stream);
+        }
+        stream = zlist_next(subscriptions);
+    }
 }

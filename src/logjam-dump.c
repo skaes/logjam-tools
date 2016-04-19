@@ -1,14 +1,5 @@
 #include "logjam-util.h"
 
-static inline
-void assert_x(int rc, const char* error_text)
-{
-    if (!rc) {
-        fprintf(stderr, "[E] Failed assertion: %s\n", error_text);
-        assert(0);
-    }
-}
-
 FILE* dump_file = NULL;
 static char *dump_file_name = "logjam-stream.dump";
 

@@ -24,7 +24,11 @@ typedef struct {
     zsock_t *push_socket;
     int compression_method;
     zchunk_t *compression_buffer;
+    bool decompress;
 } compressor_state_t;
+
+#define COMPRESS false
+#define DECOMPRESS true
 
 static
 zsock_t *compressor_pull_socket_new()
@@ -47,7 +51,7 @@ zsock_t *compressor_push_socket_new()
 }
 
 static
-compressor_state_t* compressor_state_new(size_t id, int compression_method)
+compressor_state_t* compressor_state_new(size_t id, int compression_method, bool decompress)
 {
     compressor_state_t *state = zmalloc(sizeof(*state));
     state->id = id;
@@ -55,6 +59,7 @@ compressor_state_t* compressor_state_new(size_t id, int compression_method)
     state->push_socket = compressor_push_socket_new();
     state->compression_method = compression_method;
     state->compression_buffer = zchunk_new(NULL, INITIAL_COMPRESSION_BUFFER_SIZE);
+    state->decompress = decompress;
     return state;
 }
 
@@ -77,19 +82,33 @@ void handle_compressor_request(zmsg_t *msg, compressor_state_t *state)
     zmsg_next(msg);
     zframe_t *body_frame = zmsg_next(msg);
     zframe_t *meta_frame = zmsg_next(msg);
+    msg_meta_t *meta = (msg_meta_t*) zframe_data(meta_frame);
 
     void *data = zframe_data(body_frame);
     size_t data_len = zframe_size(body_frame);
 
-    zmq_msg_t compressed_body;
-    zmq_msg_init(&compressed_body);
-    compress_message_data(state->compression_method, state->compression_buffer, &compressed_body, data, data_len);
-    zframe_reset(body_frame, zmq_msg_data(&compressed_body), zmq_msg_size(&compressed_body));
-    zmq_msg_close(&compressed_body);
+    // my_zmsg_fprint(msg, "COMPRESSED", stdout);
+    // dump_meta_info_network_format(meta);
 
-    // no need to decode, we can modify in place
-    msg_meta_t *meta = (msg_meta_t*) zframe_data(meta_frame);
-    meta->compression_method = state->compression_method;
+    if (state->decompress) {
+        size_t new_body_len;
+        char* new_body;
+        int rc = decompress_frame(body_frame, meta->compression_method, state->compression_buffer, &new_body, &new_body_len);
+        if (!rc) {
+            fprintf(stderr, "[E] could not decompress payload\n");
+        } else {
+            // printf("UNCOMPRESSED[%zu] %.*s\n", new_body_len, (int)new_body_len, new_body);
+            zframe_reset(body_frame, new_body, new_body_len);
+            meta->compression_method = NO_COMPRESSION;
+        }
+    } else {
+        zmq_msg_t new_body;
+        zmq_msg_init(&new_body);
+        compress_message_data(state->compression_method, state->compression_buffer, &new_body, data, data_len);
+        zframe_reset(body_frame, zmq_msg_data(&new_body), zmq_msg_size(&new_body));
+        zmq_msg_close(&new_body);
+        meta->compression_method = state->compression_method;
+    }
 
     zmsg_send(&msg, state->push_socket);
 }
@@ -161,6 +180,12 @@ void message_compressor(zsock_t *pipe, void *args)
 
 zactor_t* message_compressor_new(size_t id, int compression_method)
 {
-    compressor_state_t *state = compressor_state_new(id, compression_method);
+    compressor_state_t *state = compressor_state_new(id, compression_method, COMPRESS);
+    return zactor_new(message_compressor, state);
+}
+
+zactor_t* message_decompressor_new(size_t id)
+{
+    compressor_state_t *state = compressor_state_new(id, NO_COMPRESSION, DECOMPRESS);
     return zactor_new(message_compressor, state);
 }

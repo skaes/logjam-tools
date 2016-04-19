@@ -184,7 +184,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
     char *body;
     size_t body_len;
     if (meta.compression_method) {
-        int rc = uncompress_frame(body_frame, meta.compression_method, parser_state->decompression_buffer, &body, &body_len);
+        int rc = decompress_frame(body_frame, meta.compression_method, parser_state->decompression_buffer, &body, &body_len);
         if (!rc) {
             fprintf(stderr, "[E] could not decompress payload\n");
             return;

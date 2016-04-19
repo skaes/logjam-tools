@@ -106,7 +106,7 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, zchunk_t *decom
     char *json_data;
     size_t json_data_len;
     if (meta.compression_method) {
-        uncompress_frame(logjam_msg->frames[2], meta.compression_method, decompression_buffer, &json_data, &json_data_len);
+        decompress_frame(logjam_msg->frames[2], meta.compression_method, decompression_buffer, &json_data, &json_data_len);
     } else {
         json_data = (char*)zframe_data(logjam_msg->frames[2]);
         json_data_len = zframe_size(logjam_msg->frames[2]);

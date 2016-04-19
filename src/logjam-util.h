@@ -15,6 +15,9 @@ extern "C" {
 #include <stdint.h>
 #include <json-c/json.h>
 
+
+extern zlist_t *split_delimited_string(const char* s);
+
 #define NO_COMPRESSION     0
 #define GZIP_COMPRESSION   1
 #define SNAPPY_COMPRESSION 2
@@ -89,7 +92,9 @@ extern int publish_on_zmq_transport(zmq_msg_t *message_parts, void *socket, msg_
 
 extern void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len);
 
-extern int uncompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buffer, char **body, size_t* body_len);
+extern int decompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buffer, char **body, size_t* body_len);
+
+extern int decompress_message_data(zmq_msg_t *msg, int compression_method, zchunk_t *buffer, char **body, size_t* body_len);
 
 extern json_object* parse_json_data(const char *json_data, size_t json_data_len, json_tokener* tokener);
 
@@ -106,6 +111,15 @@ static inline void log_zmq_error(int rc, const char* file, const int line)
     if (rc != 0) {
         fprintf(stderr, "[E] %s:%d: errno(%d): %s, interrupted=%d, rc=%d\n",
                 file, line, errno, zmq_strerror(errno), zsys_interrupted, rc);
+    }
+}
+
+static inline
+void assert_x(int rc, const char* error_text)
+{
+    if (!rc) {
+        fprintf(stderr, "[E] Failed assertion: %s\n", error_text);
+        assert(0);
     }
 }
 
@@ -154,6 +168,8 @@ static inline zmsg_t* zmsg_recv_with_retry(zsock_t *socket)
     } while (msg == NULL && (errno == EINTR || errno == EAGAIN) && !zsys_interrupted);
     return msg;
 }
+
+extern void setup_subscriptions_for_sub_socket(zlist_t *subscriptions, zsock_t *socket);
 
 extern int zmsg_savex (zmsg_t *self, FILE *file);
 extern zmsg_t* zmsg_loadx (zmsg_t *self, FILE *file);

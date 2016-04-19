@@ -46,6 +46,12 @@ log them to disk.
 A utility program to replay messages captured by logjam-dump. Useful
 in determining maximum system throughput.
 
+## logjam-pubsub-bridge
+
+A utility program which subscribes to a logjam-device PUB socket,
+decompresses and forwards messages to a PUSH socket. Only to be used
+when writing the decompression logic is to cmplex for a consumer.
+
 
 # Dependencies
 

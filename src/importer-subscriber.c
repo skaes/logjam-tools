@@ -267,28 +267,9 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
 static
 void setup_subscriptions(subscriber_state_t *state)
 {
-    if (zhash_size(stream_subscriptions) == 0) {
-        // subscribe to all messages
-        zsock_set_subscribe(state->sub_socket, "");
-    } else {
-        // setup subscriptions for only a subset
-        zlist_t *subscriptions = zhash_keys(stream_subscriptions);
-        char *stream = zlist_first(subscriptions);
-        while (stream != NULL)  {
-            printf("[I] subscriber: subscribing to stream: %s\n", stream);
-            zsock_set_subscribe(state->sub_socket, stream);
-            size_t n = strlen(stream);
-            if (n > 15 && !strncmp(stream, "request-stream-", 15)) {
-                zsock_set_subscribe(state->sub_socket, stream+15);
-            } else {
-                char old_stream[n+15+1];
-                sprintf(old_stream, "request-stream-%s", stream);
-                zsock_set_subscribe(state->sub_socket, old_stream);
-            }
-            stream = zlist_next(subscriptions);
-        }
-        zlist_destroy(&subscriptions);
-    }
+    zlist_t *subscriptions = zhash_keys(stream_subscriptions);
+    setup_subscriptions_for_sub_socket(subscriptions, state->sub_socket);
+    zlist_destroy(&subscriptions);
 }
 
 void subscriber(zsock_t *pipe, void *args)
