@@ -120,7 +120,7 @@ int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta)
 int string_to_compression_method(const char *s)
 {
     if (!strcmp("gzip", s))
-        return GZIP_COMPRESSION;
+        return ZLIB_COMPRESSION;
     else if (!strcmp("snappy", s))
         return SNAPPY_COMPRESSION;
     else if (!strcmp("brotli", s))
@@ -135,7 +135,7 @@ const char* compression_method_to_string(int compression_method)
 {
     switch (compression_method) {
     case NO_COMPRESSION:     return "no compression";
-    case GZIP_COMPRESSION:   return "gzip";
+    case ZLIB_COMPRESSION:   return "zlib";
     case SNAPPY_COMPRESSION: return "snappy";
     case BROTLI_COMPRESSION: return "brotli";
     default:                 return "unknown compression method";
@@ -245,7 +245,7 @@ void compress_message_data_snappy(zchunk_t* buffer, zmq_msg_t *body, char *data,
 void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len)
 {
     switch (compression_method) {
-    case GZIP_COMPRESSION:
+    case ZLIB_COMPRESSION:
         compress_message_data_gzip(buffer, body, data, data_len);
         break;
     case SNAPPY_COMPRESSION:
@@ -322,7 +322,7 @@ int decompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body,
 int decompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buffer, char **body, size_t* body_len)
 {
     switch (compression_method) {
-    case GZIP_COMPRESSION:
+    case ZLIB_COMPRESSION:
         return decompress_frame_gzip(body_frame, buffer, body, body_len);
     case SNAPPY_COMPRESSION:
         return decompress_frame_snappy(body_frame, buffer, body, body_len);

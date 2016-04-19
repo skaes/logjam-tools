@@ -19,7 +19,7 @@ extern "C" {
 extern zlist_t *split_delimited_string(const char* s);
 
 #define NO_COMPRESSION     0
-#define GZIP_COMPRESSION   1
+#define ZLIB_COMPRESSION   1
 #define SNAPPY_COMPRESSION 2
 // brotli not yet supported
 #define BROTLI_COMPRESSION 3
