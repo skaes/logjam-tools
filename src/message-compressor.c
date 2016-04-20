@@ -144,9 +144,11 @@ void message_compressor(zsock_t *pipe, void *args)
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
-                printf("[D] compressor[%zu]: tick\n", id);
+                if (verbose)
+                    printf("[D] compressor[%zu]: tick\n", id);
             } else if (streq(cmd, "$TERM")) {
-                printf("[D] compressor[%zu]: received $TERM command\n", id);
+                if (verbose)
+                    printf("[D] compressor[%zu]: received $TERM command\n", id);
                 free(cmd);
                 break;
             } else {

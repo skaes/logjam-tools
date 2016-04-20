@@ -94,11 +94,13 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     double avg_decompressed_size = decompressed_count ? (decompressed_bytes / 1024.0) / decompressed_count : 0;
     double max_decompressed_size = decompressed_messages_max_bytes / 1024.0;
 
-    printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
-           message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
+    if (!quiet) {
+        printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
+               message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
 
-    printf("[I] compressd %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
-           decompressed_count, decompressed_bytes/1024.0, avg_decompressed_size, max_decompressed_size);
+        printf("[I] compressd %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
+               decompressed_count, decompressed_bytes/1024.0, avg_decompressed_size, max_decompressed_size);
+    }
 
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
@@ -203,14 +205,45 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-v] [-q] [-d device number] [-p sub-port] [-c config-file] [-e subscription] [-i io-threads] [-s num-decompressors] [-h hosts]\n", argv[0]);
+    fprintf(stderr,
+            "usage: %s [options]\n"
+            "\nOptions are:\n"
+            "  -c, --config             zeromq config file\n"
+            "  -d, --device-id          device id (integer)\n"
+            "  -e, --subscription       subscription patterns\n"
+            "  -h, --hosts              devices to connect to\n"
+            "  -i, --io-threads         zeromq io threads\n"
+            "  -p, --sub-port           port number of zeromq sub socket\n"
+            "  -q, --quiet              supress most output\n"
+            "  -s, --decompressors      number of decompressor threads\n"
+            "  -v, --verbose            log more (use -vv for debug output)\n"
+            "\nEnvironment variables (parameters take precedence):\n"
+            "  LOGJAM_DEVICES           devices to connect to\n"
+            "  LOGJAM_SUBSCRIPTIONS     subscription patterns\n"
+            , argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
+    int longindex = 0;
     opterr = 0;
-    while ((c = getopt(argc, argv, "vqd:p:c:e:i:s:h:")) != -1) {
+
+    static struct option long_options[] = {
+        {"config",        required_argument, 0, 'c' },
+        {"decompressors", required_argument, 0, 's' },
+        {"device-id",     required_argument, 0, 'd' },
+        {"hosts",         required_argument, 0, 'h' },
+        {"input-port",    required_argument, 0, 'p' },
+        {"io-threads",    required_argument, 0, 'i' },
+        {"output-port",   required_argument, 0, 'p' },
+        {"quiet",         no_argument,       0, 'q' },
+        {"subscribe",     required_argument, 0, 'e' },
+        {"verbose",       no_argument,       0, 'v' },
+        {0,               0,                 0,  0  }
+    };
+
+    while ((c = getopt_long(argc, argv, "vqd:p:c:e:i:s:h:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -235,16 +268,34 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'i':
             io_threads = atoi(optarg);
+            if (io_threads == 0) {
+                printf("[E] invalid io-threads value: must be greater than 0\n");
+                exit(1);
+            }
             break;
         case 's':
             num_compressors = atoi(optarg);
+            if (num_compressors == 0) {
+                printf("[E] invalid number of compressors: must be greater than 0\n");
+                exit(1);
+            }
             if (num_compressors > MAX_COMPRESSORS) {
-                num_compressors = MAX_COMPRESSORS;
-                printf("[I] number of compressors reduced to %d\n", MAX_COMPRESSORS);
+                printf("[E] invalid number of compressors: must be less than %d\n", MAX_COMPRESSORS+1);
+                exit(1);
             }
             break;
         case 'h':
             hosts = split_delimited_string(optarg);
+            if (hosts == NULL || zlist_size(hosts) == 0) {
+                printf("[E] must specifiy at least one device to connect to\n");
+                exit(1);
+            }
+            break;
+        case 0:
+            printf("option %s", long_options[longindex].name);
+            if (optarg)
+                printf(" with arg %s", optarg);
+            printf("\n");
             break;
         case '?':
             if (strchr("depcish", optopt))
@@ -256,16 +307,16 @@ static void process_arguments(int argc, char * const *argv)
             print_usage(argv);
             exit(1);
         default:
-            fprintf(stderr, "BUG: can't process option -%c\n", optopt);
+            fprintf(stderr, "BUG: can't process option -%c\n", c);
             exit(1);
         }
     }
 
     if (subscriptions == NULL)
-        subscriptions = split_delimited_string(getenv("LOGJAM_PUBSUB_BRIDGE_SUBSCRIPTIONS"));
+        subscriptions = split_delimited_string(getenv("LOGJAM_SUBSCRIPTIONS"));
 
     if (hosts == NULL) {
-        hosts = split_delimited_string(getenv("LOGJAM_PUBSUB_BRIDGE_DEVICES"));
+        hosts = split_delimited_string(getenv("LOGJAM_DEVICES"));
         if (hosts == NULL) {
             hosts = zlist_new();
             zlist_push(hosts, "localhost");
@@ -284,11 +335,12 @@ int main(int argc, char * const *argv)
     // TODO: figure out sensible port numbers
     pub_port = pull_port + 1;
 
-    printf("[I] started %s\n"
-           "[I] sub-port:    %d\n"
-           "[I] push-port:   %d\n"
-           "[I] io-threads:  %lu\n",
-           argv[0], pull_port, pub_port, io_threads);
+    if (!quiet)
+        printf("[I] started %s\n"
+               "[I] sub-port:    %d\n"
+               "[I] push-port:   %d\n"
+               "[I] io-threads:  %lu\n",
+               argv[0], pull_port, pub_port, io_threads);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
@@ -374,12 +426,15 @@ int main(int argc, char * const *argv)
     global_time = zclock_time();
 
     // setup subscriptions
-    if (subscriptions == NULL || zlist_size(subscriptions) == 0)
+    if (subscriptions == NULL || zlist_size(subscriptions) == 0) {
+        if (!quiet)
+            printf("[I] subscribing to all log messages\n");
         zsock_set_subscribe(receiver, "");
-    else {
+    } else {
         char *subscription = zlist_first(subscriptions);
         while (subscription) {
-            printf("[I] subscribing to %s\n", subscription);
+            if (!quiet)
+                printf("[I] subscribing to %s\n", subscription);
             zsock_set_subscribe(receiver, subscription);
             subscription = zlist_next(subscriptions);
         }
@@ -387,21 +442,25 @@ int main(int argc, char * const *argv)
 
     // run the loop
     if (!zsys_interrupted) {
-        printf("[I] starting main event loop\n");
+        if (!quiet)
+            printf("[I] starting main event loop\n");
         bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
         do {
             rc = zloop_start(loop);
             should_continue_to_run &= errno == EINTR && !zsys_interrupted;
             log_zmq_error(rc, __FILE__, __LINE__);
         } while (should_continue_to_run);
-        printf("[I] main event zloop terminated with return code %d\n", rc);
+        if (!quiet)
+            printf("[I] main event zloop terminated with return code %d\n", rc);
     }
 
     zloop_destroy(&loop);
     assert(loop == NULL);
 
-    printf("[I] received %zu messages\n", received_messages_count);
-    printf("[I] shutting down\n");
+    if (!quiet) {
+        printf("[I] received %zu messages\n", received_messages_count);
+        printf("[I] shutting down\n");
+    }
 
     zlist_destroy(&hosts);
     zlist_destroy(&subscriptions);
@@ -413,7 +472,8 @@ int main(int argc, char * const *argv)
         zactor_destroy(&compressors[i]);
     zsys_shutdown();
 
-    printf("[I] terminated\n");
+    if (!quiet)
+        printf("[I] terminated\n");
 
     return rc;
 }
