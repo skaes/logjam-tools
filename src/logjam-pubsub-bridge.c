@@ -266,8 +266,10 @@ static void process_arguments(int argc, char * const *argv)
 
     if (hosts == NULL) {
         hosts = split_delimited_string(getenv("LOGJAM_PUBSUB_BRIDGE_DEVICES"));
-        if (hosts == NULL)
+        if (hosts == NULL) {
+            hosts = zlist_new();
             zlist_push(hosts, "localhost");
+        }
     }
 }
 
@@ -282,11 +284,11 @@ int main(int argc, char * const *argv)
     // TODO: figure out sensible port numbers
     pub_port = pull_port + 1;
 
-    printf("[I] started logjam-device\n"
-           "[I] sub-port:   %d\n"
-           "[I] pub-port:    %d\n"
+    printf("[I] started %s\n"
+           "[I] sub-port:    %d\n"
+           "[I] push-port:   %d\n"
            "[I] io-threads:  %lu\n",
-           pull_port, pub_port, io_threads);
+           argv[0], pull_port, pub_port, io_threads);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
@@ -372,15 +374,15 @@ int main(int argc, char * const *argv)
     global_time = zclock_time();
 
     // setup subscriptions
-    char *subscription = zlist_first(subscriptions);
-    if (subscription == NULL)
+    if (subscriptions == NULL || zlist_size(subscriptions) == 0)
         zsock_set_subscribe(receiver, "");
     else {
-        do {
+        char *subscription = zlist_first(subscriptions);
+        while (subscription) {
             printf("[I] subscribing to %s\n", subscription);
             zsock_set_subscribe(receiver, subscription);
             subscription = zlist_next(subscriptions);
-        } while (subscription);
+        }
     }
 
     // run the loop
