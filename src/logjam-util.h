@@ -115,10 +115,10 @@ static inline void log_zmq_error(int rc, const char* file, const int line)
 }
 
 static inline
-void assert_x(int rc, const char* error_text)
+void assert_x(int rc, const char* error_text, const char* file, const int line)
 {
     if (!rc) {
-        fprintf(stderr, "[E] Failed assertion: %s\n", error_text);
+        fprintf(stderr, "[E] %s:%d: failed assertion: %s\n", file, line, error_text);
         assert(0);
     }
 }

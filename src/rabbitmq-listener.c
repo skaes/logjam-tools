@@ -103,7 +103,7 @@ amqp_connection_state_t setup_amqp_connection()
 #endif
 
     int status = amqp_socket_open(socket, rabbit_host, rabbit_port);
-    assert_x(!status, "Opening RabbitMQ socket");
+    assert_x(!status, "Opening RabbitMQ socket", __FILE__, __LINE__);
 
     die_on_amqp_error(amqp_login(connection, "/", 0, OUR_FRAME_MAX, 0, AMQP_SASL_METHOD_PLAIN, "guest", "guest"),
                       "Logging in to RabbitMQ");

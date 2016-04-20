@@ -122,7 +122,7 @@ int main(int argc, char * const *argv)
 
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_SUB);
-    assert_x(receiver != NULL, "zmq socket creation failed");
+    assert_x(receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
 
     // connect socket
     int rc = zsock_connect(receiver, "%s", connection_spec);

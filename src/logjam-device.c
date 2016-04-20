@@ -300,37 +300,37 @@ int main(int argc, char * const *argv)
 
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_PULL);
-    assert_x(receiver != NULL, "zmq socket creation failed");
+    assert_x(receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
 
     //  configure the socket
     zsock_set_rcvhwm(receiver, 100000);
 
     // bind externally
     rc = zsock_bind(receiver, "tcp://%s:%d", "*", pull_port);
-    assert_x(rc == pull_port, "receiver socket: external bind failed");
+    assert_x(rc == pull_port, "receiver socket: external bind failed", __FILE__, __LINE__);
 
     // bind internally
     rc = zsock_bind(receiver, "inproc://receiver");
-    assert_x(rc != -1, "receiver socket: internal bind failed");
+    assert_x(rc != -1, "receiver socket: internal bind failed", __FILE__, __LINE__);
 
     // create socket for publishing
     zsock_t *publisher = zsock_new(ZMQ_PUB);
-    assert_x(publisher != NULL, "publisher socket creation failed");
+    assert_x(publisher != NULL, "publisher socket creation failed", __FILE__, __LINE__);
     zsock_set_sndhwm(publisher, 1000000);
 
     rc = zsock_bind(publisher, "tcp://%s:%d", "*", pub_port);
-    assert_x(rc == pub_port, "publisher socket bind failed");
+    assert_x(rc == pub_port, "publisher socket bind failed", __FILE__, __LINE__);
 
     // create compressor sockets
     zsock_t *compressor_input = zsock_new(ZMQ_PUSH);
-    assert_x(compressor_input != NULL, "compressor input socket creation failed");
+    assert_x(compressor_input != NULL, "compressor input socket creation failed", __FILE__, __LINE__);
     rc = zsock_bind(compressor_input, "inproc://compressor-input");
-    assert_x(rc==0, "compressor input socket bind failed");
+    assert_x(rc==0, "compressor input socket bind failed", __FILE__, __LINE__);
 
     zsock_t *compressor_output = zsock_new(ZMQ_PULL);
-    assert_x(compressor_output != NULL, "compressor output socket creation failed");
+    assert_x(compressor_output != NULL, "compressor output socket creation failed", __FILE__, __LINE__);
     rc = zsock_bind(compressor_output, "inproc://compressor-output");
-    assert_x(rc==0, "compressor output socket bind failed");
+    assert_x(rc==0, "compressor output socket bind failed", __FILE__, __LINE__);
 
     // create compressor agents
     zactor_t *compressors[MAX_COMPRESSORS];
@@ -346,7 +346,7 @@ int main(int argc, char * const *argv)
             goto cleanup;
         } else {
             rabbit_listener = zactor_new(rabbitmq_listener, config);
-            assert_x(rabbit_listener != NULL, "could not fork rabbitmq listener thread");
+            assert_x(rabbit_listener != NULL, "could not fork rabbitmq listener thread", __FILE__, __LINE__);
             printf("[I] created rabbitmq listener thread\n");
         }
     }

@@ -155,7 +155,7 @@ int main(int argc, char * const *argv)
 
     // create socket to receive messages on
     zsock_t *sender = zsock_new(ZMQ_PUSH);
-    assert_x(sender != NULL, "zmq socket creation failed");
+    assert_x(sender != NULL, "zmq socket creation failed", __FILE__, __LINE__);
 
     // configure the socket
     zsock_set_sndhwm(sender, 1000000);
