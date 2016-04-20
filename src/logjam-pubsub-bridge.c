@@ -95,10 +95,10 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     double max_decompressed_size = decompressed_messages_max_bytes / 1024.0;
 
     if (!quiet) {
-        printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
+        printf("[I] processed    %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
                message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
 
-        printf("[I] compressd %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
+        printf("[I] decompressed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
                decompressed_count, decompressed_bytes/1024.0, avg_decompressed_size, max_decompressed_size);
     }
 
