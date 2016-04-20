@@ -207,17 +207,17 @@ static void print_usage(char * const *argv)
 {
     fprintf(stderr,
             "usage: %s [options]\n"
-            "\nOptions are:\n"
+            "\nOptions:\n"
             "  -c, --config             zeromq config file\n"
             "  -d, --device-id          device id (integer)\n"
-            "  -e, --subscription       subscription patterns\n"
+            "  -e, --subscribe          subscription patterns\n"
             "  -h, --hosts              devices to connect to\n"
             "  -i, --io-threads         zeromq io threads\n"
             "  -p, --sub-port           port number of zeromq sub socket\n"
             "  -q, --quiet              supress most output\n"
             "  -s, --decompressors      number of decompressor threads\n"
             "  -v, --verbose            log more (use -vv for debug output)\n"
-            "\nEnvironment variables (parameters take precedence):\n"
+            "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES           devices to connect to\n"
             "  LOGJAM_SUBSCRIPTIONS     subscription patterns\n"
             , argv[0]);
