@@ -213,7 +213,8 @@ static void print_usage(char * const *argv)
             "  -e, --subscribe          subscription patterns\n"
             "  -h, --hosts              devices to connect to\n"
             "  -i, --io-threads         zeromq io threads\n"
-            "  -p, --sub-port           port number of zeromq sub socket\n"
+            "  -p, --input-port         port number of zeromq input socket\n"
+            "  -P, --output-port        port number of zeromq ouput socket\n"
             "  -q, --quiet              supress most output\n"
             "  -s, --decompressors      number of decompressor threads\n"
             "  -v, --verbose            log more (use -vv for debug output)\n"
@@ -236,14 +237,14 @@ static void process_arguments(int argc, char * const *argv)
         {"hosts",         required_argument, 0, 'h' },
         {"input-port",    required_argument, 0, 'p' },
         {"io-threads",    required_argument, 0, 'i' },
-        {"output-port",   required_argument, 0, 'p' },
+        {"output-port",   required_argument, 0, 'P' },
         {"quiet",         no_argument,       0, 'q' },
         {"subscribe",     required_argument, 0, 'e' },
         {"verbose",       no_argument,       0, 'v' },
         {0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:p:c:e:i:s:h:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:P:c:e:i:s:h:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -262,6 +263,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'p':
             pull_port = atoi(optarg);
+            break;
+        case 'P':
+            pub_port = atoi(optarg);
             break;
         case 'c':
             config_file_name = optarg;
@@ -331,9 +335,6 @@ int main(int argc, char * const *argv)
 
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IOLBF, 0);
-
-    // TODO: figure out sensible port numbers
-    pub_port = pull_port + 1;
 
     if (!quiet)
         printf("[I] started %s\n"
