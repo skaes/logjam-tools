@@ -142,8 +142,6 @@ const char* compression_method_to_string(int compression_method)
     }
 }
 
-#define RESOURCE_TEMPORARILY_UNAVAILABLE 35
-
 int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta_t *msg_meta, int flags)
 {
     int rc=0;
@@ -153,19 +151,19 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
 
     rc = zmq_msg_send(app_env, publisher, flags|ZMQ_SNDMORE);
     if (rc == -1) {
-        if (errno != RESOURCE_TEMPORARILY_UNAVAILABLE)
+        if (errno != EAGAIN)
             log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
     rc = zmq_msg_send(key, publisher, flags|ZMQ_SNDMORE);
     if (rc == -1) {
-        if (errno != RESOURCE_TEMPORARILY_UNAVAILABLE)
+        if (errno != EAGAIN)
             log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
     rc = zmq_msg_send(body, publisher, flags|ZMQ_SNDMORE);
     if (rc == -1) {
-        if (errno != RESOURCE_TEMPORARILY_UNAVAILABLE)
+        if (errno != EAGAIN)
             log_zmq_error(rc, __FILE__, __LINE__);
         return rc;
     }
@@ -177,7 +175,7 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
 
     rc = zmq_msg_send(&meta, publisher, flags);
     if (rc == -1) {
-        if (errno != RESOURCE_TEMPORARILY_UNAVAILABLE)
+        if (errno != EAGAIN)
             log_zmq_error(rc, __FILE__, __LINE__);
     }
     zmq_msg_close(&meta);
