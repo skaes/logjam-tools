@@ -220,14 +220,15 @@ static void print_usage(char * const *argv)
             "  -h, --hosts              specs of devices to connect to\n"
             "  -i, --io-threads         zeromq io threads\n"
             "  -p, --input-port         port number of zeromq input socket\n"
-            "  -P, --output-port        port number of zeromq ouput socket\n"
             "  -q, --quiet              supress most output\n"
             "  -s, --decompressors      number of decompressor threads\n"
             "  -v, --verbose            log more (use -vv for debug output)\n"
+            "  -P, --output-port        port number of zeromq ouput socket\n"
             "  -R, --rcv-hwm            high watermark for input socket\n"
             "  -S, --snd-hwm            high watermark for output socket\n"
+            "      --help               display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
-            "  LOGJAM_DEVICES           devices to connect to\n"
+            "  LOGJAM_DEVICES           specs of devices to connect to\n"
             "  LOGJAM_SUBSCRIPTIONS     subscription patterns\n"
             "  LOGJAM_RCV_HWM           high watermark for input socket\n"
             "  LOGJAM_SND_HWM           high watermark for output socket\n"
@@ -242,19 +243,20 @@ static void process_arguments(int argc, char * const *argv)
     opterr = 0;
 
     static struct option long_options[] = {
-        {"config",        required_argument, 0, 'c' },
-        {"decompressors", required_argument, 0, 's' },
-        {"device-id",     required_argument, 0, 'd' },
-        {"hosts",         required_argument, 0, 'h' },
-        {"input-port",    required_argument, 0, 'p' },
-        {"io-threads",    required_argument, 0, 'i' },
-        {"output-port",   required_argument, 0, 'P' },
-        {"quiet",         no_argument,       0, 'q' },
-        {"subscribe",     required_argument, 0, 'e' },
-        {"verbose",       no_argument,       0, 'v' },
-        {"snd-hwm",       no_argument,       0, 'S' },
-        {"rcv-hwm",       no_argument,       0, 'R' },
-        {0,               0,                 0,  0  }
+        { "config",        required_argument, 0, 'c' },
+        { "decompressors", required_argument, 0, 's' },
+        { "device-id",     required_argument, 0, 'd' },
+        { "help",          no_argument,       0,  0  },
+        { "hosts",         required_argument, 0, 'h' },
+        { "input-port",    required_argument, 0, 'p' },
+        { "io-threads",    required_argument, 0, 'i' },
+        { "output-port",   required_argument, 0, 'P' },
+        { "quiet",         no_argument,       0, 'q' },
+        { "rcv-hwm",       required_argument, 0, 'R' },
+        { "snd-hwm",       required_argument, 0, 'S' },
+        { "subscribe",     required_argument, 0, 'e' },
+        { "verbose",       no_argument,       0, 'v' },
+        { 0,               0,                 0,  0  }
     };
 
     while ((c = getopt_long(argc, argv, "vqd:p:P:R:S:c:e:i:s:h:", long_options, &longindex)) != -1) {
@@ -315,10 +317,8 @@ static void process_arguments(int argc, char * const *argv)
             snd_hwm = atoi(optarg);
             break;
         case 0:
-            printf("option %s", long_options[longindex].name);
-            if (optarg)
-                printf(" with arg %s", optarg);
-            printf("\n");
+            print_usage(argv);
+            exit(0);
             break;
         case '?':
             if (strchr("depcish", optopt))
@@ -335,9 +335,6 @@ static void process_arguments(int argc, char * const *argv)
         }
     }
 
-    if (subscriptions == NULL)
-        subscriptions = split_delimited_string(getenv("LOGJAM_SUBSCRIPTIONS"));
-
     if (hosts == NULL) {
         hosts = split_delimited_string(getenv("LOGJAM_DEVICES"));
         if (hosts == NULL) {
@@ -347,12 +344,16 @@ static void process_arguments(int argc, char * const *argv)
     }
     augment_zmq_connection_specs(&hosts, pull_port);
 
+    if (subscriptions == NULL)
+        subscriptions = split_delimited_string(getenv("LOGJAM_SUBSCRIPTIONS"));
+
     if (rcv_hwm == -1) {
         if (( v = getenv("LOGJAM_RCV_HWM") ))
             rcv_hwm = atoi(v);
         else
             rcv_hwm = DEFAULT_RCV_HWM;
     }
+
     if (snd_hwm == -1) {
         if (( v = getenv("LOGJAM_SND_HWM") ))
             snd_hwm = atoi(v);

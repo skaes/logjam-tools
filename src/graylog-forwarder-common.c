@@ -1,7 +1,18 @@
 #include "graylog-forwarder-common.h"
 
-bool dryrun        = false;
+bool dryrun = false;
+bool verbose = false;
+bool debug = false;
+bool quiet = false;
 bool compress_gelf = false;
+
+zlist_t *hosts = NULL;
+char *interface = NULL;
+zlist_t *subscriptions = NULL;
+
+int rcv_hwm = -1;
+int snd_hwm = -1;
+
 
 compressed_gelf_t *
 compressed_gelf_new(Bytef *data, uLongf len)

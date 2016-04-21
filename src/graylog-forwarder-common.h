@@ -10,7 +10,25 @@ extern "C" {
 #endif
 
 extern bool dryrun;
+extern bool verbose;
+extern bool quiet;
+extern bool debug;
 extern bool compress_gelf;
+
+#define DEFAULT_RCV_HWM       10000
+#define DEFAULT_RCV_HWM_STR  "10000"
+#define DEFAULT_SND_HWM      100000
+#define DEFAULT_SND_HWM_STR "100000"
+
+#define DEFAULT_INTERFACE_PORT 9609
+#define DEFAULT_INTERFACE "tcp://0.0.0.0:9609"
+
+extern zlist_t *hosts;
+extern char *interface;
+extern zlist_t *subscriptions;
+
+extern int rcv_hwm;
+extern int snd_hwm;
 
 #define MAX_PARSERS 20
 extern unsigned int num_parsers;

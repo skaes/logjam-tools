@@ -22,10 +22,10 @@ typedef struct {
 
 
 static
-bool controller_create_actors(controller_state_t *state)
+bool controller_create_actors(controller_state_t *state, zlist_t* devices, zlist_t *subscriptions, int rcv_hwm, int send_hwm)
 {
     // create subscriber
-    state->subscriber = zactor_new(graylog_forwarder_subscriber, state->config);
+    state->subscriber = graylog_forwarder_subscriber_new(state->config, devices, subscriptions, rcv_hwm, send_hwm);
 
     // create the parsers
     for (size_t i=0; i<num_parsers; i++) {
@@ -63,14 +63,14 @@ int send_tick_commands(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
-int graylog_forwarder_run_controller_loop(zconfig_t* config)
+int graylog_forwarder_run_controller_loop(zconfig_t* config, zlist_t* devices, zlist_t *subscriptions, int rcv_hwm, int send_hwm)
 {
-    set_thread_name("graylog-forwarder-controller");
+    set_thread_name("controller");
 
     zsys_init();
 
     controller_state_t state = {.config = config};
-    bool start_up_complete = controller_create_actors(&state);
+    bool start_up_complete = controller_create_actors(&state, devices, subscriptions, rcv_hwm, send_hwm);
 
     if (!start_up_complete)
         goto exit;
@@ -95,18 +95,18 @@ int graylog_forwarder_run_controller_loop(zconfig_t* config)
             log_zmq_error(rc, __FILE__, __LINE__);
         } while (should_continue_to_run);
     }
-    printf("[I] graylog-forwarder-controller: shutting down\n");
+    printf("[I] controller: shutting down\n");
 
     // shutdown
     zloop_destroy(&loop);
     assert(loop == NULL);
 
  exit:
-    printf("[I] graylog-forwarder-controller: destroying actor threads\n");
+    printf("[I] controller: destroying actor threads\n");
     controller_destroy_actors(&state);
-    printf("[I] graylog-forwarder-controller: calling zsys_shutdown\n");
+    printf("[I] controller: calling zsys_shutdown\n");
     zsys_shutdown();
 
-    printf("[I] graylog-forwarder-controller: terminated\n");
+    printf("[I] controller: terminated\n");
     return 0;
 }

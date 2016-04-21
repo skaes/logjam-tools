@@ -35,7 +35,7 @@ static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
     }
 
     while (!zsys_interrupted && !output_socket_ready(state->push_socket, 1000)) {
-        fprintf(stderr, "[W] graylog-forwarder-writer: push socket not ready (graylog not connected?). blocking!\n");
+        fprintf(stderr, "[W] writer: push socket not ready (graylog not connected?). blocking!\n");
     }
 
     if (!zsys_interrupted) {
@@ -61,28 +61,11 @@ zsock_t* writer_push_socket_new(zconfig_t* config)
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
+    zsock_set_sndhwm(socket, snd_hwm);
 
-    char* graylog_endpoint = zconfig_resolve(config, "/graylog/endpoint", NULL);
-    if (graylog_endpoint == NULL) {
-        fprintf(stderr, "[E] graylog-forwarder-writer: missing graylog endpoint configuration.\n");
-        exit(1);
-    }
-
-    // set outbound high-water-mark
-    int high_water_mark = atoi(zconfig_resolve(config, "/graylog/high_water_mark", "10000"));
-    printf("[I] graylog-forwarder-writer: setting high-water-mark for outbound messages to %d\n", high_water_mark);
-    zsock_set_sndhwm(socket, high_water_mark);
-
-    // bind socket, taking thread startup time into account
-    // TODO: this is a hack. better let controller coordinate this
-    for (int i=0; i<10; i++) {
-        int rc = zsock_bind(socket, "%s", graylog_endpoint);
-        if (rc != -1) {
-            printf("[I] graylog-forwarder-writer: binding PUSH socket for graylog to %s\n", graylog_endpoint);
-            break;
-        }
-        zclock_sleep(100);
-    }
+    printf("[I] writer: binding PUSH socket for graylog to %s\n", interface);
+    int rc = zsock_bind(socket, "%s", interface);
+    assert(rc > 0);
 
     return socket;
 }
@@ -110,7 +93,7 @@ void writer_state_destroy(writer_state_t **state_p)
 
 void graylog_forwarder_writer(zsock_t *pipe, void *args)
 {
-    set_thread_name("graylog-forwarder-writer[0]");
+    set_thread_name("writer[0]");
 
     zconfig_t* config = args;
     writer_state_t *state = writer_state_new(pipe, config);
@@ -130,16 +113,16 @@ void graylog_forwarder_writer(zsock_t *pipe, void *args)
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "$TERM")) {
-                fprintf(stderr, "[D] graylog-forwarder-writer: received $TERM command\n");
+                fprintf(stderr, "[D] writer: received $TERM command\n");
                 free(cmd);
                 break;
             }
             else if (streq(cmd, "tick")) {
-                printf("[I] graylog-forwarder-writer: sent %zu messages\n",
+                printf("[I] writer: sent %zu messages\n",
                        state->message_count);
                 state->message_count = 0;
             } else {
-                fprintf(stderr, "[E] graylog-forwarder-writer: received unknown command: %s\n", cmd);
+                fprintf(stderr, "[E] writer: received unknown command: %s\n", cmd);
                 assert(false);
             }
         } else if (socket == state->pull_socket) {
@@ -154,7 +137,7 @@ void graylog_forwarder_writer(zsock_t *pipe, void *args)
         }
     }
 
-    fprintf(stdout, "[I] graylog-forwarder-writer: shutting down\n");
+    fprintf(stdout, "[I] writer: shutting down\n");
     writer_state_destroy(&state);
-    fprintf(stdout, "[I] graylog-forwarder-writer: terminated\n");
+    fprintf(stdout, "[I] writer: terminated\n");
 }

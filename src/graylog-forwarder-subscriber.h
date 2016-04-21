@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-extern void graylog_forwarder_subscriber(zsock_t *pipe, void *args);
+extern zactor_t* graylog_forwarder_subscriber_new(zconfig_t *config, zlist_t *devices, zlist_t *subscriptions, int rcv_hwm, int send_hwm);
 
 #ifdef __cplusplus
 }

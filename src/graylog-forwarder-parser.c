@@ -22,7 +22,8 @@ static int process_logjam_message(parser_state_t *state)
         gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->decompression_buffer);
         const char *gelf_data = gelf_message_to_string (gelf_msg);
 
-        // printf("[D] GELF Format: %s\n", gelf_data);
+        if (debug)
+            printf("[D] GELF message: %s\n", gelf_data);
 
         zmsg_t *msg = zmsg_new();
         assert(msg);
@@ -44,7 +45,7 @@ static int process_logjam_message(parser_state_t *state)
         }
 
         while (!zsys_interrupted && !output_socket_ready(state->push_socket, 1000)) {
-            fprintf(stderr, "[W] graylog-forwarder-parser [%zu]: push socket not ready (writer queue is full). blocking!\n", state->id);
+            fprintf(stderr, "[W] parser [%zu]: push socket not ready (writer queue is full). blocking!\n", state->id);
         }
 
         if (!zsys_interrupted) {
@@ -143,11 +144,11 @@ void parser(zsock_t *pipe, void *args)
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "$TERM")) {
-                fprintf(stderr, "[D] graylog-forwarder-parser [%zu]: received $TERM command\n", id);
+                fprintf(stderr, "[D] parser [%zu]: received $TERM command\n", id);
                 free(cmd);
                 break;
             } else {
-                fprintf(stderr, "[E] graylog-forwarder-parser [%zu]: received unknown command: %s\n", id, cmd);
+                fprintf(stderr, "[E] parser [%zu]: received unknown command: %s\n", id, cmd);
                 free(cmd);
                 assert(false);
             }
@@ -159,9 +160,9 @@ void parser(zsock_t *pipe, void *args)
         }
     }
 
-    printf("[I] graylog-forwarder-parser [%zu]: shutting down\n", id);
+    printf("[I] parser [%zu]: shutting down\n", id);
     parser_state_destroy(&state);
-    printf("[I] graylog-forwarder-parser [%zu]: terminated\n", id);
+    printf("[I] parser [%zu]: terminated\n", id);
 }
 
 zactor_t* graylog_forwarder_parser_new(zconfig_t *config, size_t id)

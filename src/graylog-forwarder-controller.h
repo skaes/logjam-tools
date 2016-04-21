@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-extern int graylog_forwarder_run_controller_loop(zconfig_t* config);
+extern int graylog_forwarder_run_controller_loop(zconfig_t* config, zlist_t* devices, zlist_t *subscriptions, int rcv_hwm, int send_hwm);
 
 #ifdef __cplusplus
 }
