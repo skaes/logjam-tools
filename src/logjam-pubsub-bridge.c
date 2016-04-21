@@ -26,7 +26,10 @@ static bool config_file_exists = false;
 #define CONFIG_FILE_CHECK_INTERVAL 10
 
 static int pull_port = 9606;
-static int pub_port = 9608;
+static int pub_port  = 9608;
+
+static int rcv_hwm =  10000;
+static int snd_hwm = 100000;
 
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
@@ -218,9 +221,13 @@ static void print_usage(char * const *argv)
             "  -q, --quiet              supress most output\n"
             "  -s, --decompressors      number of decompressor threads\n"
             "  -v, --verbose            log more (use -vv for debug output)\n"
+            "  -R, --rcv-hwm            high watermark for input socket\n"
+            "  -S, --snd-hwm            high watermark for output socket\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES           devices to connect to\n"
             "  LOGJAM_SUBSCRIPTIONS     subscription patterns\n"
+            "  LOGJAM_RCV_HWM           high watermark for input socket\n"
+            "  LOGJAM_SND_HWM           high watermark for output socket\n"
             , argv[0]);
 }
 
@@ -241,10 +248,12 @@ static void process_arguments(int argc, char * const *argv)
         {"quiet",         no_argument,       0, 'q' },
         {"subscribe",     required_argument, 0, 'e' },
         {"verbose",       no_argument,       0, 'v' },
+        {"snd-hwm",       no_argument,       0, 'S' },
+        {"rcv-hwm",       no_argument,       0, 'R' },
         {0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:p:P:c:e:i:s:h:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:P:R:S:c:e:i:s:h:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -295,6 +304,12 @@ static void process_arguments(int argc, char * const *argv)
                 exit(1);
             }
             break;
+        case 'R':
+            rcv_hwm = atoi(optarg);
+            break;
+        case 'S':
+            snd_hwm = atoi(optarg);
+            break;
         case 0:
             printf("option %s", long_options[longindex].name);
             if (optarg)
@@ -327,6 +342,12 @@ static void process_arguments(int argc, char * const *argv)
         }
     }
     augment_zmq_connection_specs(&hosts, pull_port);
+
+    char *v = NULL;
+    if ( (v = getenv("LOGJAM_RCV_HWM")) )
+        rcv_hwm = atoi(v);
+    if ( (v = getenv("LOGJAM_SND_HWM")) )
+        snd_hwm = atoi(v);
 }
 
 int main(int argc, char * const *argv)
@@ -341,8 +362,10 @@ int main(int argc, char * const *argv)
         printf("[I] started %s\n"
                "[I] sub-port:    %d\n"
                "[I] push-port:   %d\n"
-               "[I] io-threads:  %lu\n",
-               argv[0], pull_port, pub_port, io_threads);
+               "[I] io-threads:  %lu\n"
+               "[I] rcv-hwm:  %d\n"
+               "[I] snd-hwm:  %d\n"
+               , argv[0], pull_port, pub_port, io_threads, rcv_hwm, snd_hwm);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
@@ -362,7 +385,7 @@ int main(int argc, char * const *argv)
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_SUB);
     assert_x(receiver != NULL, "sub socket creation failed", __FILE__, __LINE__);
-    zsock_set_rcvhwm(receiver, 100000);
+    zsock_set_rcvhwm(receiver, rcv_hwm);
 
     // bind externally
     char* host = zlist_first(hosts);
@@ -377,7 +400,7 @@ int main(int argc, char * const *argv)
     // create socket for publishing
     zsock_t *publisher = zsock_new(ZMQ_PUSH);
     assert_x(publisher != NULL, "pub socket creation failed", __FILE__, __LINE__);
-    zsock_set_sndhwm(publisher, 1000000);
+    zsock_set_sndhwm(publisher, snd_hwm);
 
     rc = zsock_bind(publisher, "tcp://%s:%d", "*", pub_port);
     assert_x(rc == pub_port, "pub socket bind failed", __FILE__, __LINE__);
