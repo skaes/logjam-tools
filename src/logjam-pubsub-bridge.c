@@ -28,8 +28,11 @@ static bool config_file_exists = false;
 static int pull_port = 9606;
 static int pub_port  = 9608;
 
-static int rcv_hwm =  10000;
-static int snd_hwm = 100000;
+#define DEFAULT_RCV_HWM  10000
+#define DEFAULT_SND_HWM 100000
+
+static int rcv_hwm = -1;
+static int snd_hwm = -1;
 
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
@@ -234,6 +237,7 @@ static void print_usage(char * const *argv)
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
+    char *v;
     int longindex = 0;
     opterr = 0;
 
@@ -343,11 +347,18 @@ static void process_arguments(int argc, char * const *argv)
     }
     augment_zmq_connection_specs(&hosts, pull_port);
 
-    char *v = NULL;
-    if ( (v = getenv("LOGJAM_RCV_HWM")) )
-        rcv_hwm = atoi(v);
-    if ( (v = getenv("LOGJAM_SND_HWM")) )
-        snd_hwm = atoi(v);
+    if (rcv_hwm == -1) {
+        if (( v = getenv("LOGJAM_RCV_HWM") ))
+            rcv_hwm = atoi(v);
+        else
+            rcv_hwm = DEFAULT_RCV_HWM;
+    }
+    if (snd_hwm == -1) {
+        if (( v = getenv("LOGJAM_SND_HWM") ))
+            snd_hwm = atoi(v);
+        else
+            snd_hwm = DEFAULT_SND_HWM;
+    }
 }
 
 int main(int argc, char * const *argv)
