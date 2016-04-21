@@ -17,12 +17,53 @@ zlist_t *split_delimited_string(const char* s)
     char *buffer = strdup(s);
     token = strtok_r(buffer, delim, &state);
     while (token != NULL) {
-        zlist_push(strings, strdup(token));
+        zlist_append(strings, strdup(token));
         token = strtok_r (NULL, delim, &state);
     }
     free(buffer);
 
     return strings;
+}
+
+char* augment_zmq_connection_spec(char* spec, int default_port)
+{
+    size_t n = strlen(spec);
+    assert(n < 900);
+    char buffer[1024] = {0};
+    if (strstr(spec, "://")) {
+        if (strncmp(spec, "tcp://", 6) && strncmp(spec, "ipc://", 6)) {
+            fprintf(stderr, "[E] protocol not supported: %s\n", spec);
+            assert(false);
+        }
+        strcat(buffer, spec);
+    } else {
+        strcat(buffer, "tcp://");
+        strcat(buffer+6, spec);
+        n += 6;
+    }
+    if (strrchr(buffer, ':') == buffer+3)
+        sprintf(buffer+n, ":%d", default_port);
+
+    if (strcmp(buffer, spec))
+        return strdup(buffer);
+    else
+        return spec;
+}
+
+void augment_zmq_connection_specs(zlist_t** specs, int default_port)
+{
+    char *spec;
+    zlist_t *old_list = *specs;
+    zlist_t *new_list = zlist_new();
+    while ( (spec = zlist_pop(old_list)) ) {
+        char *new_spec = augment_zmq_connection_spec(spec, default_port);
+        if (spec != new_spec)
+            free(spec);
+        zlist_append(new_list, new_spec);
+        spec = zlist_next(old_list);
+    }
+    zlist_destroy(&old_list);
+    *specs = new_list;
 }
 
 bool output_socket_ready(zsock_t *socket, int msecs)

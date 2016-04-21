@@ -17,6 +17,8 @@ extern "C" {
 
 
 extern zlist_t *split_delimited_string(const char* s);
+extern char* augment_zmq_connection_spec(char* spec, int default_port);
+extern void augment_zmq_connection_specs(zlist_t** specs, int default_port);
 
 #define NO_COMPRESSION     0
 #define ZLIB_COMPRESSION   1

@@ -211,7 +211,7 @@ static void print_usage(char * const *argv)
             "  -c, --config             zeromq config file\n"
             "  -d, --device-id          device id (integer)\n"
             "  -e, --subscribe          subscription patterns\n"
-            "  -h, --hosts              devices to connect to\n"
+            "  -h, --hosts              specs of devices to connect to\n"
             "  -i, --io-threads         zeromq io threads\n"
             "  -p, --input-port         port number of zeromq input socket\n"
             "  -P, --output-port        port number of zeromq ouput socket\n"
@@ -323,9 +323,10 @@ static void process_arguments(int argc, char * const *argv)
         hosts = split_delimited_string(getenv("LOGJAM_DEVICES"));
         if (hosts == NULL) {
             hosts = zlist_new();
-            zlist_push(hosts, "localhost");
+            zlist_push(hosts, strdup("localhost"));
         }
     }
+    augment_zmq_connection_specs(&hosts, pull_port);
 }
 
 int main(int argc, char * const *argv)
@@ -360,24 +361,26 @@ int main(int argc, char * const *argv)
 
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_SUB);
-    assert_x(receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
+    assert_x(receiver != NULL, "sub socket creation failed", __FILE__, __LINE__);
     zsock_set_rcvhwm(receiver, 100000);
 
     // bind externally
     char* host = zlist_first(hosts);
     while (host) {
-        rc = zsock_connect(receiver, "tcp://%s:%d", host, pull_port);
-        assert_x(rc == 0, "receiver socket: external connect failed", __FILE__, __LINE__);
+        if (!quiet)
+            printf("[I] connecting to: %s\n", host);
+        rc = zsock_connect(receiver, "%s", host);
+        assert_x(rc == 0, "sub socket connect failed", __FILE__, __LINE__);
         host = zlist_next(hosts);
     }
 
     // create socket for publishing
     zsock_t *publisher = zsock_new(ZMQ_PUSH);
-    assert_x(publisher != NULL, "publisher socket creation failed", __FILE__, __LINE__);
+    assert_x(publisher != NULL, "pub socket creation failed", __FILE__, __LINE__);
     zsock_set_sndhwm(publisher, 1000000);
 
     rc = zsock_bind(publisher, "tcp://%s:%d", "*", pub_port);
-    assert_x(rc == pub_port, "publisher socket bind failed", __FILE__, __LINE__);
+    assert_x(rc == pub_port, "pub socket bind failed", __FILE__, __LINE__);
 
     // create compressor sockets
     zsock_t *compressor_input = zsock_new(ZMQ_PUSH);
@@ -443,7 +446,7 @@ int main(int argc, char * const *argv)
 
     // run the loop
     if (!zsys_interrupted) {
-        if (!quiet)
+        if (verbose)
             printf("[I] starting main event loop\n");
         bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
         do {
@@ -451,7 +454,7 @@ int main(int argc, char * const *argv)
             should_continue_to_run &= errno == EINTR && !zsys_interrupted;
             log_zmq_error(rc, __FILE__, __LINE__);
         } while (should_continue_to_run);
-        if (!quiet)
+        if (verbose)
             printf("[I] main event zloop terminated with return code %d\n", rc);
     }
 
