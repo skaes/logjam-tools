@@ -142,6 +142,7 @@ function handle_zeromq()
     test -d $d || tar xzvf $f
     cd $d
     [ $forced == "1" ] && git clean -qfd
+    test -f configure.ac.orig || patch -p1 < ../../../etc/io-thread-name.patch
     test -f config.status || ./configure && ./configure --prefix=$prefix
     make -j4
     $LSUDO make $cmd

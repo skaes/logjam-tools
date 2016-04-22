@@ -1,0 +1,35 @@
+diff --git a/configure.ac b/configure.ac
+index f412942..472e039 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -254,6 +254,11 @@ esac
+ 
+ # Checks for libraries
+ AC_CHECK_LIB([pthread], [pthread_create])
++AC_CHECK_FUNC([pthread_setname_np],
++              [AC_DEFINE([ZMQ_HAVE_PTHREAD_SETNAME_NP], [1], [Have pthread_set_name_np])],
++              [AC_CHECK_LIB(pthread, pthread_setname_np,
++                            [AC_DEFINE([ZMQ_HAVE_PTHREAD_SETNAME_NP], [1], [Have pthread_set_name_np])],
++                            [AC_DEFINE([ZMQ_HAVE_PTHREAD_SETNAME_NP], [0], [Have pthread_set_name_np])])])
+ AC_CHECK_LIB([rt], [clock_gettime])
+ 
+ if test "x$with_libsodium" != "xno"; then
+diff --git a/src/thread.cpp b/src/thread.cpp
+index e9eeceb..1f68ba7 100644
+--- a/src/thread.cpp
++++ b/src/thread.cpp
+@@ -76,6 +76,14 @@ extern "C"
+         rc = pthread_sigmask (SIG_BLOCK, &signal_set, NULL);
+         posix_assert (rc);
+ #endif
++        //  Set thread name to support CPU usage analysis using ps/top/htop.
++        //  We ignore return codes as porgram functionality is not affected.
++#if defined HAVE_PTHREAD_SETNAME_NP && defined ZMQ_HAVE_LINUX
++        pthread_t self = pthread_self();
++        pthread_setname_np(self, "libzmq-io-thread");
++#elif defined HAVE_PTHREAD_SETNAME_NP && defined ZMQ_HAVE_OSX
++        pthread_setname_np("libzmq-io-thread");
++#endif
+ 
+         zmq::thread_t *self = (zmq::thread_t*) arg_;   
+         self->tfn (self->arg);
