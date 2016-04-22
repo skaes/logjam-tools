@@ -33,6 +33,7 @@ test -z "$OLD_CFLAGS" || CFLAGS=$OLD_CFLAGS
 test -z "$OLD_CC" || CC=$OLD_CC
 
 AC_CONFIG_FILES([Makefile])
+AC_CONFIG_HEADERS([config.h])
 
 AC_ARG_WITH(opt-dir,
 	AS_HELP_STRING([--with-opt-dir=DIR-LIST],
@@ -64,8 +65,10 @@ AS_IF([test "x$CPUPROFILE" == "x"], AC_SUBST([OPT_PROFILER_FLAGS]), AC_SUBST([OP
 AC_CHECK_DECLS([htonll, ntohll])
 
 AC_CHECK_FUNC([pthread_setname_np],
-              [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1])],
-              [AC_CHECK_LIB(pthread, pthread_setname_np, [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1])])])
+              [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1], [Have pthread_set_name_np])],
+              [AC_CHECK_LIB(pthread, pthread_setname_np,
+                            [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1], [Have pthread_set_name_np])],
+                            [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1], [Don't have pthread_set_name_np])])])
 
 AX_CHECK_ZLIB
 

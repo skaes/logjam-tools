@@ -5,6 +5,7 @@
 extern "C" {
 #endif
 
+#include "../config.h"
 #include <zmq.h>
 #include <czmq.h>
 #include <stdio.h>
@@ -14,7 +15,6 @@ extern "C" {
 #include <ctype.h>
 #include <stdint.h>
 #include <json-c/json.h>
-
 
 extern zlist_t *split_delimited_string(const char* s);
 extern char* augment_zmq_connection_spec(char* spec, int default_port);

@@ -1,7 +1,7 @@
 AUTOMAKE_OPTIONS = subdir-objects
 ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS} -I m4
 
-AM_CPPFLAGS = $(OPTDIR_CPPFLAGS) $(DEPS_CFLAGS) -D_GNU_SOURCE
+AM_CPPFLAGS = -I$(top_srcdir) $(OPTDIR_CPPFLAGS) $(DEPS_CFLAGS) -D_GNU_SOURCE
 AM_CFLAGS = --std=gnu99 -Wall -fno-fast-math
 AM_LDFLAGS = $(OPT_PTHREAD_FLAGS)
 LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS) $(OPT_PROFILER_FLAGS) -lm
@@ -23,6 +23,7 @@ noinst_PROGRAMS = \
     checker
 
 logjam_device_SOURCES = \
+    config.h \
     src/logjam-device.c \
     src/logjam-util.c \
     src/logjam-util.h \
@@ -32,6 +33,7 @@ logjam_device_SOURCES = \
     src/message-compressor.h
 
 logjam_importer_SOURCES = \
+    config.h \
     src/importer-adder.c \
     src/importer-adder.h \
     src/importer-common.c \
@@ -73,11 +75,13 @@ logjam_importer_SOURCES = \
     src/zring.h
 
 logjam_httpd_SOURCES = \
+    config.h \
     src/logjam-httpd.c \
     src/logjam-util.c \
     src/logjam-util.h
 
 logjam_graylog_forwarder_SOURCES = \
+    config.h \
     src/logjam-graylog-forwarder.c \
     src/graylog-forwarder-common.c \
     src/graylog-forwarder-common.h \
@@ -99,16 +103,19 @@ logjam_graylog_forwarder_SOURCES = \
     src/str-builder.h
 
 logjam_dump_SOURCES = \
+    config.h \
     src/logjam-dump.c \
     src/logjam-util.c \
     src/logjam-util.h
 
 logjam_replay_SOURCES = \
+    config.h \
     src/logjam-replay.c \
     src/logjam-util.c \
     src/logjam-util.h
 
 logjam_pubsub_bridge_SOURCES = \
+    config.h \
     src/logjam-pubsub-bridge.c \
     src/logjam-util.c \
     src/logjam-util.h \
