@@ -14,7 +14,7 @@
 #define OUR_FRAME_MAX (8 * FRAME_MAX_DEFAULT)
 
 char* rabbit_host = NULL;
-char* rabbit_env = "development";
+char* rabbit_env = NULL;
 int   rabbit_port = 5672;
 
 typedef struct {
@@ -146,7 +146,6 @@ void rabbitmq_add_queue(amqp_connection_state_t conn, amqp_channel_t* channel_re
 
     char queue[n+15];
     memset(queue, 0, n+15);
-    // TODO: change it back to device
     sprintf(queue, "logjam-device-%s-%s", app, env);
     // printf("[D] queue: %s\n", queue);
 
@@ -257,21 +256,15 @@ int rabbitmq_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, vo
 }
 
 static
-int rabbitmq_setup_queues(amqp_connection_state_t conn, zconfig_t *config)
+int rabbitmq_setup_queues(amqp_connection_state_t conn, zlist_t* streams)
 {
     amqp_channel_t channel = 1;
 
-    zconfig_t *streams = zconfig_locate(config, "backend/streams");
-    assert(streams);
-
-    zconfig_t *stream_config = zconfig_child(streams);
-    assert(stream_config);
-
-    do {
-        char *stream = zconfig_name(stream_config);
+    char *stream = zlist_first(streams);
+    while (stream) {
         rabbitmq_add_queue(conn, &channel, stream);
-        stream_config = zconfig_next(stream_config);
-    } while (stream_config && !zsys_interrupted);
+        stream = zlist_next(streams);
+    }
 
     return channel;
 }
@@ -297,12 +290,14 @@ int pipe_command(zloop_t *loop, zsock_t *pipe, void *args)
 
 void rabbitmq_listener(zsock_t *pipe, void* args)
 {
+    set_thread_name("rabbit-consumer");
+
     // signal readyiness immediately so that zmq publishers are already processed
     // while the rabbitmq exchanges/queues/bindings are created
     zsock_signal(pipe, 0);
 
     amqp_connection_state_t conn = setup_amqp_connection();
-    int last_channel = rabbitmq_setup_queues(conn, (zconfig_t*)args);
+    int last_channel = rabbitmq_setup_queues(conn, (zlist_t*)args);
 
     // connect to the receiver socket
     zsock_t *receiver = zsock_new(ZMQ_PUSH);

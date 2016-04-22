@@ -7,14 +7,14 @@
 
 zlist_t *split_delimited_string(const char* s)
 {
-    if (!s) return NULL;
+    zlist_t *strings = zlist_new();
+    if (!s) return strings;
 
     char delim[] = ", ";
     char* token;
     char* state = NULL;
-    zlist_t *strings = zlist_new();
-
     char *buffer = strdup(s);
+
     token = strtok_r(buffer, delim, &state);
     while (token != NULL) {
         zlist_append(strings, strdup(token));

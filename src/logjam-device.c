@@ -16,6 +16,14 @@ bool verbose = false;
 bool debug = false;
 bool quiet = false;
 
+#define DEFAULT_RCV_HWM  100000
+#define DEFAULT_SND_HWM 1000000
+
+int rcv_hwm = -1;
+int snd_hwm = -1;
+
+zlist_t* subscriptions = NULL;
+
 /* global config */
 static zconfig_t* config = NULL;
 static zfile_t *config_file = NULL;
@@ -199,14 +207,57 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-v] [-q] [-d device number] [-r rabbit-host] [-p pull-port] [-c config-file] [-e environment] [-i io-threads] [-s num-compressors]\n", argv[0]);
+    fprintf(stderr,
+            "usage: %s [options]\n"
+            "\nOptions:\n"
+            "  -c, --config             zeromq config file\n"
+            "  -d, --device-id          device id (integer)\n"
+            "  -e, --env                create queues for this environment only\n"
+            "  -E, --subscribe          subscription patterns\n"
+            "  -i, --io-threads         zeromq io threads\n"
+            "  -p, --input-port         port number of zeromq input socket\n"
+            "  -q, --quiet              supress most output\n"
+            "  -r, --rabbit             rabbitmq broker to connect to\n"
+            "  -s, --compressors        number of compressor threads\n"
+            "  -v, --verbose            log more (use -vv for debug output)\n"
+            "  -P, --output-port        port number of zeromq ouput socket\n"
+            "  -R, --rcv-hwm            high watermark for input socket\n"
+            "  -S, --snd-hwm            high watermark for output socket\n"
+            "      --help               display this message\n"
+            "\nEnvironment: (parameters take precedence)\n"
+            "  LOGJAM_DEVICES           specs of devices to connect to\n"
+            "  LOGJAM_SUBSCRIPTIONS     subscription patterns\n"
+            "  LOGJAM_RCV_HWM           high watermark for input socket\n"
+            "  LOGJAM_SND_HWM           high watermark for output socket\n"
+            "  LOGJAM_RABBIT_ENV        create queues for this environment only\n"
+            , argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
+    char *v;
+    int longindex = 0;
     opterr = 0;
-    while ((c = getopt(argc, argv, "vqd:r:p:c:e:i:x:s:")) != -1) {
+
+    static struct option long_options[] = {
+        { "config",        required_argument, 0, 'c' },
+        { "device-id",     required_argument, 0, 'd' },
+        { "env",           required_argument, 0, 'E' },
+        { "help",          no_argument,       0,  0  },
+        { "input-port",    required_argument, 0, 'p' },
+        { "io-threads",    required_argument, 0, 'i' },
+        { "output-port",   required_argument, 0, 'P' },
+        { "quiet",         no_argument,       0, 'q' },
+        { "rabbit",        required_argument, 0, 'r' },
+        { "rcv-hwm",       required_argument, 0, 'R' },
+        { "snd-hwm",       required_argument, 0, 'S' },
+        { "subscribe",     required_argument, 0, 'e' },
+        { "verbose",       no_argument,       0, 'v' },
+        { 0,               0,                 0,  0  }
+    };
+
+    while ((c = getopt_long(argc, argv, "vqd:r:p:c:e:i:x:s:P:S:R:E:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -220,6 +271,9 @@ static void process_arguments(int argc, char * const *argv)
         case 'r':
             rabbit_host = optarg;
             break;
+        case 'E':
+            subscriptions = split_delimited_string(optarg);
+            break;
         case 'e':
             rabbit_env = optarg;
             break;
@@ -228,6 +282,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'p':
             pull_port = atoi(optarg);
+            break;
+        case 'P':
+            pub_port = atoi(optarg);
             break;
         case 'c':
             config_file_name = optarg;
@@ -247,8 +304,18 @@ static void process_arguments(int argc, char * const *argv)
             if (compression_method)
                 printf("[I] compressing streams with: %s\n", compression_method_to_string(compression_method));
             break;
+        case 'R':
+            rcv_hwm = atoi(optarg);
+            break;
+        case 'S':
+            snd_hwm = atoi(optarg);
+            break;
+        case 0:
+            print_usage(argv);
+            exit(0);
+            break;
         case '?':
-            if (strchr("drepcisx", optopt))
+            if (strchr("drpceixsPSRE", optopt))
                 fprintf(stderr, "option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "unknown option `-%c'.\n", optopt);
@@ -261,6 +328,30 @@ static void process_arguments(int argc, char * const *argv)
             exit(1);
         }
     }
+
+    if (subscriptions == NULL)
+        subscriptions = split_delimited_string(getenv("LOGJAM_SUBSCRIPTIONS"));
+
+    if (rcv_hwm == -1) {
+        if (( v = getenv("LOGJAM_RCV_HWM") ))
+            rcv_hwm = atoi(v);
+        else
+            rcv_hwm = DEFAULT_RCV_HWM;
+    }
+
+    if (snd_hwm == -1) {
+        if (( v = getenv("LOGJAM_SND_HWM") ))
+            snd_hwm = atoi(v);
+        else
+            snd_hwm = DEFAULT_SND_HWM;
+    }
+
+    if (rabbit_env == NULL) {
+        if (( v = getenv("LOGJAM_RABBIT_ENV") ))
+            rabbit_env = v;
+        else
+            rabbit_env = DEFAULT_RABBIT_ENV;
+    }
 }
 
 int main(int argc, char * const *argv)
@@ -271,21 +362,39 @@ int main(int argc, char * const *argv)
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IOLBF, 0);
 
-    // TODO: figure out sensible port numbers
-    pub_port = pull_port + 1;
-
-    printf("[I] started logjam-device\n"
+    printf("[I] started %s\n"
            "[I] pull-port:   %d\n"
            "[I] pub-port:    %d\n"
            "[I] rabbit-host: %s\n"
-           "[I] io-threads:  %lu\n",
-           pull_port, pub_port, rabbit_host, io_threads);
+           "[I] io-threads:  %lu\n"
+           "[I] rcv-hwm:     %d\n"
+           "[I] snd-hwm:     %d\n"
+           , argv[0], pull_port, pub_port, rabbit_host, io_threads, rcv_hwm, snd_hwm);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
     if (config_file_exists) {
         config_file_init();
         config = zconfig_load((char*)config_file_name);
+    } else
+        config = zconfig_new("EMPTY", NULL);
+
+    // load subscriptions from config
+    if (zlist_size(subscriptions) == 0) {
+        zconfig_t *streams = zconfig_locate(config, "backend/streams");
+        if (streams) {
+            zconfig_t *stream_config = zconfig_child(streams);
+            while (stream_config) {
+                char *stream = zconfig_name(stream_config);
+                zlist_append(subscriptions, stream);
+                stream_config = zconfig_next(stream_config);
+            }
+        }
+    }
+    if (rabbit_host && zlist_size(subscriptions) == 0) {
+        fprintf(stderr, "[E] cannot start rabbitmq listener thread because no scubriptions were specified\n");
+        printf("[I] %s aborted\n", argv[0]);
+        exit(1);
     }
 
     // set global config
@@ -303,7 +412,7 @@ int main(int argc, char * const *argv)
     assert_x(receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
 
     //  configure the socket
-    zsock_set_rcvhwm(receiver, 100000);
+    zsock_set_rcvhwm(receiver, rcv_hwm);
 
     // bind externally
     rc = zsock_bind(receiver, "tcp://%s:%d", "*", pull_port);
@@ -316,7 +425,7 @@ int main(int argc, char * const *argv)
     // create socket for publishing
     zsock_t *publisher = zsock_new(ZMQ_PUB);
     assert_x(publisher != NULL, "publisher socket creation failed", __FILE__, __LINE__);
-    zsock_set_sndhwm(publisher, 1000000);
+    zsock_set_sndhwm(publisher, snd_hwm);
 
     rc = zsock_bind(publisher, "tcp://%s:%d", "*", pub_port);
     assert_x(rc == pub_port, "publisher socket bind failed", __FILE__, __LINE__);
@@ -338,18 +447,9 @@ int main(int argc, char * const *argv)
         compressors[i] = message_compressor_new(i, compression_method);
 
     // setup the rabbitmq listener agents
-    zactor_t *rabbit_listener = NULL;
-
-    if (rabbit_host != NULL) {
-        if (config == NULL) {
-            fprintf(stderr, "[E] cannot start rabbitmq listener thread because no config file given\n");
-            goto cleanup;
-        } else {
-            rabbit_listener = zactor_new(rabbitmq_listener, config);
-            assert_x(rabbit_listener != NULL, "could not fork rabbitmq listener thread", __FILE__, __LINE__);
-            printf("[I] created rabbitmq listener thread\n");
-        }
-    }
+    zactor_t *rabbit_listener = zactor_new(rabbitmq_listener, subscriptions);
+    assert_x(rabbit_listener != NULL, "could not fork rabbitmq listener thread", __FILE__, __LINE__);
+    printf("[I] created rabbitmq listener thread\n");
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -384,14 +484,16 @@ int main(int argc, char * const *argv)
 
     // run the loop
     if (!zsys_interrupted) {
-        printf("starting main event loop\n");
+        if (verbose)
+            printf("[I] starting main event loop\n");
         bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
         do {
             rc = zloop_start(loop);
             should_continue_to_run &= errno == EINTR && !zsys_interrupted;
             log_zmq_error(rc, __FILE__, __LINE__);
         } while (should_continue_to_run);
-        printf("main event zloop terminated with return code %d\n", rc);
+        if (verbose)
+            printf("[I] main event zloop terminated with return code %d\n", rc);
     }
 
     zloop_destroy(&loop);
@@ -399,7 +501,6 @@ int main(int argc, char * const *argv)
 
     printf("[I] received %zu messages\n", received_messages_count);
 
- cleanup:
     printf("[I] shutting down\n");
 
     zactor_destroy(&rabbit_listener);
@@ -411,7 +512,7 @@ int main(int argc, char * const *argv)
         zactor_destroy(&compressors[i]);
     zsys_shutdown();
 
-    printf("[I] terminated\n");
+    printf("[I] %s terminated\n", argv[0]);
 
     return rc;
 }
