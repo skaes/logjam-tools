@@ -210,26 +210,27 @@ static void print_usage(char * const *argv)
     fprintf(stderr,
             "usage: %s [options]\n"
             "\nOptions:\n"
-            "  -c, --config             zeromq config file\n"
-            "  -d, --device-id          device id (integer)\n"
-            "  -e, --env                create queues for this environment only\n"
-            "  -E, --subscribe          subscription patterns\n"
-            "  -i, --io-threads         zeromq io threads\n"
-            "  -p, --input-port         port number of zeromq input socket\n"
-            "  -q, --quiet              supress most output\n"
-            "  -r, --rabbit             rabbitmq broker to connect to\n"
-            "  -s, --compressors        number of compressor threads\n"
-            "  -v, --verbose            log more (use -vv for debug output)\n"
-            "  -P, --output-port        port number of zeromq ouput socket\n"
-            "  -R, --rcv-hwm            high watermark for input socket\n"
-            "  -S, --snd-hwm            high watermark for output socket\n"
-            "      --help               display this message\n"
+            "  -c, --config C             zeromq config file\n"
+            "  -d, --device-id N          device id (integer)\n"
+            "  -e, --env E                create queues for this environment only\n"
+            "  -E, --subscribe A,B        subscription patterns\n"
+            "  -i, --io-threads N         zeromq io threads\n"
+            "  -p, --input-port N         port number of zeromq input socket\n"
+            "  -q, --quiet                supress most output\n"
+            "  -r, --rabbit R             rabbitmq broker to connect to\n"
+            "  -s, --compressors N        number of compressor threads\n"
+            "  -v, --verbose              log more (use -vv for debug output)\n"
+            "  -x, --compress M           compress logjam traffic using (snappy|zlib)\n"
+            "  -P, --output-port N        port number of zeromq ouput socket\n"
+            "  -R, --rcv-hwm N            high watermark for input socket\n"
+            "  -S, --snd-hwm N            high watermark for output socket\n"
+            "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
-            "  LOGJAM_DEVICES           specs of devices to connect to\n"
-            "  LOGJAM_SUBSCRIPTIONS     subscription patterns\n"
-            "  LOGJAM_RCV_HWM           high watermark for input socket\n"
-            "  LOGJAM_SND_HWM           high watermark for output socket\n"
-            "  LOGJAM_RABBIT_ENV        create queues for this environment only\n"
+            "  LOGJAM_DEVICES             specs of devices to connect to\n"
+            "  LOGJAM_SUBSCRIPTIONS       subscription patterns\n"
+            "  LOGJAM_RCV_HWM             high watermark for input socket\n"
+            "  LOGJAM_SND_HWM             high watermark for output socket\n"
+            "  LOGJAM_RABBIT_ENV          create queues for this environment only\n"
             , argv[0]);
 }
 
@@ -241,6 +242,7 @@ static void process_arguments(int argc, char * const *argv)
     opterr = 0;
 
     static struct option long_options[] = {
+        { "compress",      required_argument, 0, 'x' },
         { "config",        required_argument, 0, 'c' },
         { "device-id",     required_argument, 0, 'd' },
         { "env",           required_argument, 0, 'E' },

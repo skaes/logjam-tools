@@ -13,6 +13,15 @@
 
 static bool verbose = false;
 static bool debug = false;
+static bool quiet = false;
+
+#define DEFAULT_RCV_HWM 100000
+#define DEFAULT_SND_HWM 100000
+
+static int rcv_hwm = -1;
+static int snd_hwm = -1;
+
+static int io_threads = 1;
 
 static char http_response_ok [] =
     "HTTP/1.1 200 OK\r\n"
@@ -133,7 +142,8 @@ void parse_query(char *s, json_object *json)
     key = s;
     while (*s && (*s != '=')) s++;
     if (!*s) {
-        printf("no parameters\n");
+        if (debug)
+            printf("[E] no parameters\n");
         return;
     }
     *(s++) = '\0';
@@ -317,6 +327,14 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta, int compression_met
     }
 
     msg_meta.sequence_number++;
+    if (debug) {
+        printf("SENDING ====================================\n");
+        my_zmq_msg_fprint(&message_parts[0], 3, "[D]", stdout);
+        dump_meta_info(&msg_meta);
+        if (compression_method) {
+            printf("[D] UNCOMPRESSED: %*.s\n", data->json_len, data->json_str);
+        }
+    }
     publish_on_zmq_transport(message_parts, pub_socket, meta, 0);
 
     zmq_msg_close(&message_parts[0]);
@@ -369,12 +387,14 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     if (capture_file) {
         // dump message in binary format, compatible with czmq library zmsg_save()
         if (fwrite (&raw_size, sizeof (raw_size), 1, capture_file) != 1)
-            fprintf(stderr, "[E] could not write message size to capture file\n");
+            if (verbose)
+                fprintf(stderr, "[E] could not write message size to capture file\n");
         if (fwrite (raw, raw_size, 1, capture_file) != 1)
-            fprintf(stderr, "[E] could not write message body to capture file\n");
+            if (verbose)
+                fprintf(stderr, "[E] could not write message body to capture file\n");
     }
 
-    if (verbose)
+    if (debug)
         printf("[D] msg_size: %d, raw size: %d\n", msg_size, raw_size);
 
     message_size += raw_size;
@@ -384,7 +404,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     if (message_size > received_messages_max_bytes)
         received_messages_max_bytes = message_size;
 
-    if (verbose)
+    if (debug)
         printf("[D] raw_size=%d:\n>>>\n%.*s<<<\n", raw_size, raw_size, raw);
 
     // copy first line for logging purposes
@@ -405,7 +425,8 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // if the data obtained with a single read does not include the
     // end of the first line, then we consider the request invalid
     if (!end_of_first_line) {
-        fprintf(stderr, "[E] %s:%d first %d bytes of request did not include CR/LF pair\n", __FILE__, __LINE__, raw_size);
+        if (verbose)
+            fprintf(stderr, "[E] %s:%d first %d bytes of request did not include CR/LF pair\n", __FILE__, __LINE__, raw_size);
         goto send_answer;
     }
 
@@ -413,7 +434,8 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     bool valid_size = raw_size > path_prefix_length;
     // printf("[D] path_prefix_len: %d, raw_size: %d, size ok: %d\n", path_prefix_length, raw_size, valid_size);
     if (!valid_size) {
-        fprintf(stderr, "[E] %s:%d invalid path (too short).\n", __FILE__, __LINE__);
+        if (verbose)
+            fprintf(stderr, "[E] %s:%d invalid path (too short).\n", __FILE__, __LINE__);
         goto send_answer;
     }
 
@@ -421,14 +443,16 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
         // confirm liveness
         rc = zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
         if (rc == -1) {
-            fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request: %s\n",
-                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
+            if (verbose)
+                fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request: %s\n",
+                        __FILE__, __LINE__, zmq_strerror (errno), first_line);
             return 0;
         }
         rc = zmq_send (http_socket, http_response_alive, alive_length, ZMQ_SNDMORE);
         if (rc == -1) {
-            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s\n",
-                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
+            if (verbose)
+                fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s\n",
+                        __FILE__, __LINE__, zmq_strerror (errno), first_line);
             return 0;
         }
         goto close_connection;
@@ -437,7 +461,8 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     } else if (memcmp(raw, path_prefix_page, path_prefix_length) == 0) {
         msg_data.msg_type = "page";
     } else {
-        fprintf(stderr, "[E] %s:%d: invalid request prefix.\n", __FILE__, __LINE__);
+        if (verbose)
+            fprintf(stderr, "[E] %s:%d: invalid request prefix.\n", __FILE__, __LINE__);
         goto send_answer;
     }
 
@@ -449,7 +474,8 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
     // check protocol spec
     if (memcmp(raw+i, " HTTP/1.1\r\n", 11) != 0 && memcmp(raw+i, " HTTP/1.0\r\n", 11) != 0 ) {
-        fprintf(stderr, "[D] %s:%d: invalid protocol spec %.9s\n", __FILE__, __LINE__, raw+i);
+        if (verbose)
+            fprintf(stderr, "[D] %s:%d: invalid http protocol spec %.9s\n", __FILE__, __LINE__, raw+i);
         goto send_answer;
     }
 
@@ -461,7 +487,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
     if (extract_msg_data(query_string, headers, &msg_data)) {
         send_logjam_message(&msg_data, &msg_meta, compression);
-    } else
+    } else if (verbose)
         fprintf(stderr, "[E] %s:%d: invalid query string\n", __FILE__, __LINE__);
 
     valid = true;
@@ -469,30 +495,34 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
  send_answer:
     if (!valid) {
-        fprintf(stderr, "[E] %03d %s\n", http_return_code, first_line);
-    } else if (verbose) {
+        if (verbose)
+            fprintf(stderr, "[E] %03d %s\n", http_return_code, first_line);
+    } else if (debug) {
         printf("[D] %03d %s\n", http_return_code, first_line);
     }
 
     // send the ID frame followed by the response
     rc = zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
     if (rc == -1) {
-        fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request: %s\n",
-                __FILE__, __LINE__, zmq_strerror (errno), first_line);
+        if (verbose)
+            fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request: %s\n",
+                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
         return 0;
     }
     if (valid) {
         zmq_send (http_socket, http_response_ok, ok_length, ZMQ_SNDMORE);
         if (rc == -1) {
-            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s\n",
-                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
+            if (verbose)
+                fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s\n",
+                        __FILE__, __LINE__, zmq_strerror (errno), first_line);
         }
     } else {
         http_failures++;
         zmq_send (http_socket, http_response_fail, fail_length, ZMQ_SNDMORE);
         if (rc == -1) {
-            fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s\n",
-                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
+            if (verbose)
+                fprintf(stderr, "[E] %s:%d: %s. failed to send answer frame. aborting request: %s\n",
+                        __FILE__, __LINE__, zmq_strerror (errno), first_line);
         }
     }
 
@@ -501,14 +531,16 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     // if anything goes wrong here, die!
     rc = zmq_send (http_socket, id, id_size, ZMQ_SNDMORE);
     if (rc != (int)id_size) {
-        fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request: %s\n",
-                __FILE__, __LINE__, zmq_strerror (errno), first_line);
+        if (verbose)
+            fprintf(stderr, "[E] %s:%d: %s. failed to send identity frame. aborting request: %s\n",
+                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
         return 0;
     }
     rc = zmq_send (http_socket, 0, 0, ZMQ_SNDMORE);
     if (rc == -1) {
-        fprintf(stderr, "[E] %s:%d: %s. failed to send delimiter frame. aborting request: %s\n",
-                __FILE__, __LINE__, zmq_strerror (errno), first_line);
+        if (verbose)
+            fprintf(stderr, "[E] %s:%d: %s. failed to send delimiter frame. aborting request: %s\n",
+                    __FILE__, __LINE__, zmq_strerror (errno), first_line);
     }
 
     return 0;
@@ -523,8 +555,9 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     double avg_msg_size = message_count ? (message_bytes / 1024.0) / message_count : 0;
     double max_msg_size = received_messages_max_bytes / 1024.0;
 
-    printf("[I] processed %zu messages (invalid: %zu), size: %.2f KB, avg: %.2f KB, max: %.2f KB\n",
-           message_count, http_failures, message_bytes/1024.0, avg_msg_size, max_msg_size);
+    if (!quiet)
+        printf("[I] processed %zu messages (invalid: %zu), size: %.2f KB, avg: %.2f KB, max: %.2f KB\n",
+               message_count, http_failures, message_bytes/1024.0, avg_msg_size, max_msg_size);
 
     http_failures = 0;
     last_received_count = received_messages_count;
@@ -536,23 +569,70 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
 
 static void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-v] [-d device number] [-t http-port] [-p pub-port] [-c capture file name] [-x compression-method]\n", argv[0]);
+    fprintf(stderr,
+            "usage: %s [options]\n"
+            "\nOptions:\n"
+            "  -c, --capture-file F        capture incoming traffic\n"
+            "  -d, --device-id N           device id (integer)\n"
+            "  -i, --io-threads N          zeromq io threads\n"
+            "  -p, --input-port N          port number of zeromq input socket\n"
+            "  -q, --quiet                 supress most output\n"
+            "  -v, --verbose               log more (use -vv for debug output)\n"
+            "  -x, --compress M            compress logjam traffic using (snappy|zlib)\n"
+            "  -P, --output-port N         port number of zeromq ouput socket\n"
+            "  -R, --rcv-hwm N             high watermark for input socket\n"
+            "  -S, --snd-hwm N             high watermark for output socket\n"
+            "      --help                  display this message\n"
+            "\nEnvironment: (parameters take precedence)\n"
+            "  LOGJAM_RCV_HWM              high watermark for input socket\n"
+            "  LOGJAM_SND_HWM              high watermark for output socket\n"
+            , argv[0]);
 }
 
 static void process_arguments(int argc, char * const *argv)
 {
     char c;
+    char *v;
+    int longindex = 0;
     opterr = 0;
-    while ((c = getopt(argc, argv, "d:p:t:c:x:v")) != -1) {
+
+    static struct option long_options[] = {
+        { "capture-file",  required_argument, 0, 'c' },
+        { "compress",      required_argument, 0, 'x' },
+        { "device-id",     required_argument, 0, 'd' },
+        { "help",          no_argument,       0,  0  },
+        { "input-port",    required_argument, 0, 'p' },
+        { "io-threads",    required_argument, 0, 'i' },
+        { "output-port",   required_argument, 0, 'P' },
+        { "quiet",         no_argument,       0, 'q' },
+        { "rcv-hwm",       required_argument, 0, 'R' },
+        { "snd-hwm",       required_argument, 0, 'S' },
+        { "verbose",       no_argument,       0, 'v' },
+        { 0,               0,                 0,  0  }
+    };
+
+    while ((c = getopt_long(argc, argv, "vqd:p:P:c:x:R:S:i:", long_options, &longindex)) != -1) {
         switch (c) {
+        case 'v':
+            if (verbose)
+                debug= true;
+            else
+                verbose = true;
+            break;
+        case 'q':
+            quiet = true;
+            break;
         case 'd':
             msg_meta.device_number = atoi(optarg);
             break;
-        case 'p':
-            pub_port = atoi(optarg);
+        case 'i':
+            io_threads = atoi(optarg);
             break;
-        case 't':
+        case 'p':
             http_port = atoi(optarg);
+            break;
+        case 'P':
+            pub_port = atoi(optarg);
             break;
         case 'c':
             capture_file_name = strdup(optarg);
@@ -562,11 +642,15 @@ static void process_arguments(int argc, char * const *argv)
             if (compression)
                 printf("[I] compressing streams with: %s\n", compression_method_to_string(compression));
             break;
-        case 'v':
-            if (verbose)
-                debug= true;
-            else
-                verbose = true;
+        case 'R':
+            rcv_hwm = atoi(optarg);
+            break;
+        case 'S':
+            snd_hwm = atoi(optarg);
+            break;
+        case 0:
+            print_usage(argv);
+            exit(0);
             break;
         case '?':
             if (optopt == 'd' || optopt == 'p' || optopt == 't')
@@ -582,6 +666,20 @@ static void process_arguments(int argc, char * const *argv)
             exit(1);
         }
     }
+
+    if (rcv_hwm == -1) {
+        if (( v = getenv("LOGJAM_RCV_HWM") ))
+            rcv_hwm = atoi(v);
+        else
+            rcv_hwm = DEFAULT_RCV_HWM;
+    }
+
+    if (snd_hwm == -1) {
+        if (( v = getenv("LOGJAM_SND_HWM") ))
+            snd_hwm = atoi(v);
+        else
+            snd_hwm = DEFAULT_SND_HWM;
+    }
 }
 
 int main(int argc, char * const *argv)
@@ -594,11 +692,11 @@ int main(int argc, char * const *argv)
 
     // set global config
     zsys_init();
-    zsys_set_rcvhwm(100000);
-    zsys_set_sndhwm(100000);
+    zsys_set_rcvhwm(rcv_hwm );
+    zsys_set_sndhwm(snd_hwm);
     zsys_set_pipehwm(1000);
     zsys_set_linger(0);
-    // zsys_set_io_threads(2);
+    zsys_set_io_threads(io_threads);
 
     init_globals();
 
@@ -608,7 +706,7 @@ int main(int argc, char * const *argv)
         if (capture_file)
             printf("[I] saving request stream to capture file: %s\n", capture_file_name);
         else
-            printf("[I] could not open cpature file for writing: %s\n", capture_file_name);
+            printf("[W] could not open cpature file for writing: %s\n", capture_file_name);
     }
 
     // set up event loop
@@ -627,20 +725,23 @@ int main(int argc, char * const *argv)
     zloop_set_tolerant(loop, &http_poll_item);
 
     if (!zsys_interrupted) {
-        printf("[I] starting main event loop\n");
+        if (verbose)
+            printf("[I] starting main event loop\n");
         bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
         do {
             rc = zloop_start(loop);
             should_continue_to_run &= errno == EINTR && !zsys_interrupted;
             log_zmq_error(rc, __FILE__, __LINE__);
         } while (should_continue_to_run);
-        printf("[I] main event zloop terminated with return code %d\n", rc);
+        if (verbose)
+            printf("[I] main event zloop terminated with return code %d\n", rc);
     }
 
     zloop_destroy(&loop);
     assert(loop == NULL);
 
-    printf("[I] received %zu messages\n", received_messages_count);
+    if (!quiet)
+        printf("[I] received %zu messages\n", received_messages_count);
 
     zsock_destroy(&pub_socket_wrapper);
     zsock_destroy(&http_socket_wrapper);
@@ -649,9 +750,13 @@ int main(int argc, char * const *argv)
     if (capture_file)
         fclose(capture_file);
 
-    printf("[I] shutting down\n");
+    if (!quiet)
+        printf("[I] shutting down\n");
+
     zsys_shutdown();
-    printf("[I] terminated\n");
+
+    if (!quiet)
+        printf("[I] terminated\n");
 
     return 0;
 }
