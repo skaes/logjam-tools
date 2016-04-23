@@ -9,13 +9,6 @@
 extern "C" {
 #endif
 
-#ifdef DEBUG
-#undef DEBUG
-#define DEBUG 1
-#else
-#define DEBUG 0
-#endif
-
 #define MAX_PARSERS 20
 #define MAX_ADDERS 10
 #define MAX_WRITERS 20
@@ -25,6 +18,25 @@ extern unsigned long num_parsers;
 extern unsigned long num_writers;
 extern unsigned long num_updaters;
 
+#define DEFAULT_RCV_HWM      100000
+#define DEFAULT_RCV_HWM_STR "100000"
+#define DEFAULT_SND_HWM       10000
+#define DEFAULT_SND_HWM_STR  "10000"
+
+#define DEFAULT_PULL_PORT 9605
+#define DEFAULT_SUB_PORT 9606
+#define DEFAULT_LIVE_STREAM_PORT 9607
+
+#define DEFAULT_PULL_CONNECTION_SPEC "tcp://localhost:9605"
+#define DEFAULT_SUB_CONNECTION_SPEC "tcp://localhost:9606"
+#define DEFAULT_LIVE_STREAM_CONNECTION "tcp://localhost:9607"
+
+extern char* live_stream_connection_spec;
+extern int pull_port;
+extern int sub_port;
+extern int rcv_hwm;
+extern int snd_hwm;
+extern zlist_t* hosts;
 extern FILE* frontend_timings;
 
 #define INVALID_DATE -1

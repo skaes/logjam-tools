@@ -37,16 +37,8 @@ typedef struct {
 
 
 static
-zsock_t* subscriber_sub_socket_new(zconfig_t* config)
+void extract_bindings_from_config(zconfig_t* config)
 {
-    zsock_t *socket = zsock_new(ZMQ_SUB);
-    assert(socket);
-    zsock_set_rcvhwm(socket, 100000);
-    zsock_set_linger(socket, 0);
-    zsock_set_reconnect_ivl(socket, 100); // 100 ms
-    zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
-
-    // connect socket to endpoints
     zconfig_t *bindings = zconfig_locate(config, "frontend/endpoints/bindings");
     assert(bindings);
     zconfig_t *binding = zconfig_child(bindings);
@@ -56,13 +48,38 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
             if (verbose)
                 printf("[I] subscriber: ignoring empty SUB socket binding\n");
         } else {
-            if (!quiet)
-                printf("[I] subscriber: connecting SUB socket to %s\n", spec);
-            int rc = zsock_connect(socket, "%s", spec);
-            log_zmq_error(rc, __FILE__, __LINE__);
-            assert(rc == 0);
+            zlist_append(hosts, spec);
         }
         binding = zconfig_next(binding);
+    }
+}
+
+static
+zsock_t* subscriber_sub_socket_new(zconfig_t* config)
+{
+    zsock_t *socket = zsock_new(ZMQ_SUB);
+    assert(socket);
+    zsock_set_rcvhwm(socket, rcv_hwm);
+    zsock_set_linger(socket, 0);
+    zsock_set_reconnect_ivl(socket, 100); // 100 ms
+    zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
+
+    if (hosts == NULL) {
+        hosts = zlist_new();
+        extract_bindings_from_config(config);
+    }
+    if (zlist_size(hosts) == 0)
+        zlist_append(hosts, augment_zmq_connection_spec("localhost", sub_port));
+
+    // connect socket to endpoints
+    char* host = zlist_first(hosts);
+    while (host) {
+        if (!quiet)
+            printf("[I] subscriber: connecting SUB socket to: %s\n", host);
+        int rc = zsock_connect(socket, "%s", host);
+        log_zmq_error(rc, __FILE__, __LINE__);
+        assert(rc == 0);
+        host = zlist_next(hosts);
     }
 
     return socket;
@@ -78,10 +95,11 @@ zsock_t* subscriber_pull_socket_new(zconfig_t* config)
     zsock_set_reconnect_ivl(socket, 100); // 100 ms
     zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
-    char *pull_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pull", "tcp://127.0.0.1:9605");
+    char *pull_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pull", "tcp://*");
+    char *full_spec = augment_zmq_connection_spec(pull_spec, pull_port);
     if (!quiet)
-        printf("[I] subscriber: binding PULL socket to %s\n", pull_spec);
-    int rc = zsock_bind(socket, "%s", pull_spec);
+        printf("[I] subscriber: binding PULL socket to %s\n", full_spec);
+    int rc = zsock_bind(socket, "%s", full_spec);
     assert(rc != -1);
 
     const char *inproc_binding = "inproc://subscriber-pull";

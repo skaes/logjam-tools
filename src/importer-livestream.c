@@ -1,12 +1,12 @@
+#include "importer-common.h"
 #include "importer-livestream.h"
 
 zsock_t* live_stream_socket_new(zconfig_t* config)
 {
-    const char* connection_spec = zconfig_resolve(config, "livestream/endpoint", "tcp://localhost:9607");
     zsock_t *live_stream_socket = zsock_new(ZMQ_PUSH);
     assert(live_stream_socket);
     zsock_set_sndtimeo(live_stream_socket, 10);
-    int rc = zsock_connect(live_stream_socket, "%s", connection_spec);
+    int rc = zsock_connect(live_stream_socket, "%s", live_stream_connection_spec);
     assert(rc == 0);
     return live_stream_socket;
 }
