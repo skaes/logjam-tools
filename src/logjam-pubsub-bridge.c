@@ -243,20 +243,20 @@ static void process_arguments(int argc, char * const *argv)
     opterr = 0;
 
     static struct option long_options[] = {
-        { "apdex-attribute",  required_argument, 0, 'a' },
-        { "config",           required_argument, 0, 'c' },
-        { "help",             no_argument,       0,  0  },
-        { "hosts",            required_argument, 0, 'h' },
-        { "io-threads",       required_argument, 0, 'i' },
-        { "parsers",          required_argument, 0, 'p' },
-        { "quiet",            no_argument,       0, 'q' },
-        { "rcv-hwm",          required_argument, 0, 'R' },
-        { "snd-hwm",          required_argument, 0, 'S' },
-        { "subscribe",        required_argument, 0, 'e' },
-        { "updaters",         required_argument, 0, 'u' },
-        { "verbose",          no_argument,       0, 'v' },
-        { "writers",          required_argument, 0, 'w' },
-        { 0,                  0,                 0,  0  }
+        { "config",        required_argument, 0, 'c' },
+        { "decompressors", required_argument, 0, 's' },
+        { "device-id",     required_argument, 0, 'd' },
+        { "help",          no_argument,       0,  0  },
+        { "hosts",         required_argument, 0, 'h' },
+        { "input-port",    required_argument, 0, 'p' },
+        { "io-threads",    required_argument, 0, 'i' },
+        { "output-port",   required_argument, 0, 'P' },
+        { "quiet",         no_argument,       0, 'q' },
+        { "rcv-hwm",       required_argument, 0, 'R' },
+        { "snd-hwm",       required_argument, 0, 'S' },
+        { "subscribe",     required_argument, 0, 'e' },
+        { "verbose",       no_argument,       0, 'v' },
+        { 0,               0,                 0,  0  }
     };
 
     while ((c = getopt_long(argc, argv, "vqd:p:P:R:S:c:e:i:s:h:", long_options, &longindex)) != -1) {
