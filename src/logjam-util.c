@@ -160,7 +160,7 @@ int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta)
 
 int string_to_compression_method(const char *s)
 {
-    if (!strcmp("gzip", s))
+    if (!strcmp("zlib", s))
         return ZLIB_COMPRESSION;
     else if (!strcmp("snappy", s))
         return SNAPPY_COMPRESSION;
@@ -277,7 +277,7 @@ void compress_message_data_snappy(zchunk_t* buffer, zmq_msg_t *body, char *data,
     memcpy(zmq_msg_data(&compressed_msg), compressed_data, compressed_len);
     zmq_msg_move(body, &compressed_msg);
 
-    // printf("[D] uncompressed/compressed: %ld/%ld\n", raw_len, compressed_len);
+    // printf("[D] uncompressed/compressed: %ld/%ld\n", data_len, compressed_len);
 }
 
 

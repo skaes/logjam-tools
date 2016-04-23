@@ -304,7 +304,7 @@ bool extract_msg_data(char *query_string, char* headers, msg_data_t *msg_data)
 
 
 static
-void send_logjam_message(msg_data_t *data, msg_meta_t *meta, int compression_method)
+void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
 {
     char app_env[256];
     int app_env_len = sprintf(app_env, "%s-%s", data->app, data->env);
@@ -318,23 +318,26 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta, int compression_met
     zmq_msg_init_size(&message_parts[1], data->routing_key_len);
     memcpy(zmq_msg_data(&message_parts[1]), data->routing_key, data->routing_key_len);
 
-    if (compression && !meta->compression_method) {
-        compress_message_data(compression_method, compression_buffer, &message_parts[2], data->json_str, data->json_len);
-        msg_meta.compression_method = compression;
+    if (compression) {
+        zmq_msg_init(&message_parts[2]);
+        compress_message_data(compression, compression_buffer, &message_parts[2], data->json_str, data->json_len);
     } else {
         zmq_msg_init_size(&message_parts[2], data->json_len);
         memcpy(zmq_msg_data(&message_parts[2]), data->json_str, data->json_len);
     }
 
+    msg_meta.compression_method = compression;
     msg_meta.sequence_number++;
+
     if (debug) {
         printf("SENDING ====================================\n");
         my_zmq_msg_fprint(&message_parts[0], 3, "[D]", stdout);
         dump_meta_info(&msg_meta);
-        if (compression_method) {
-            printf("[D] UNCOMPRESSED: %*.s\n", data->json_len, data->json_str);
+        if (compression) {
+            printf("[D] UNCOMPRESSED: %.*s\n", data->json_len, data->json_str);
         }
     }
+
     publish_on_zmq_transport(message_parts, pub_socket, meta, 0);
 
     zmq_msg_close(&message_parts[0]);
@@ -486,7 +489,7 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     if (headers) headers++;
 
     if (extract_msg_data(query_string, headers, &msg_data)) {
-        send_logjam_message(&msg_data, &msg_meta, compression);
+        send_logjam_message(&msg_data, &msg_meta);
     } else if (verbose)
         fprintf(stderr, "[E] %s:%d: invalid query string\n", __FILE__, __LINE__);
 
