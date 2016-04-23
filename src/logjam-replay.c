@@ -1,4 +1,5 @@
 #include "logjam-util.h"
+#include <getopt.h>
 
 FILE* dump_file = NULL;
 static char *dump_file_name = "logjam-stream.dump";
@@ -9,7 +10,9 @@ static bool verbose = false;
 static bool debug = false;
 
 static size_t io_threads = 1;
-static char *connection_spec = "tcp://localhost:9605";
+static char *connection_spec = NULL;
+#define DEFAULT_PUSH_PORT 9605
+#define DEFAULT_CONNECTION_SPEC "tcp://localhost:9605"
 static bool endless_loop = false;
 static int messages_per_second = 100000;
 static int message_credit = 1000000;
@@ -60,8 +63,14 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
     if (msg_bytes > replayed_messages_max_bytes)
         replayed_messages_max_bytes = msg_bytes;
 
+    if (debug) {
+        my_zmsg_fprint(msg, "[D]", stdout);
+        msg_meta_t meta;
+        msg_extract_meta_info(msg, &meta);
+        dump_meta_info(&meta);
+    }
+
     // send message and destroy it
-    // zmsg_print(msg);
     zmsg_send(&msg, socket);
 
     if (bytes_read_from_file == dump_file_size) {
@@ -77,14 +86,35 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
 
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-v] [-s] [-l] [-i io-threads] [-z zmq-connection-spec ] [-r msgs-per-second] [dump-file-name]\n", argv[0]);
+    fprintf(stderr,
+            "usage: %s [options] [dump-file-name]\n"
+            "\nOptions:\n"
+            "  -i, --io-threads N         zeromq io threads\n"
+            "  -l, --loop                 loop the dump file\n"
+            "  -r, --msg-rate N           output message rate (per second)\n"
+            "  -v, --verbose              log more (use -vv for debug output)\n"
+            "  -p, --push S               zmq specification for push socket\n"
+            "      --help                 display this message\n"
+            , argv[0]);
 }
 
 void process_arguments(int argc, char * const *argv)
 {
     char c;
+    int longindex = 0;
     opterr = 0;
-    while ((c = getopt(argc, argv, "vlr:sc:i:z:")) != -1) {
+
+    static struct option long_options[] = {
+        { "help",          no_argument,       0,  0  },
+        { "loop",          no_argument,       0, 'l' },
+        { "msg-rate",      required_argument, 0, 'r' },
+        { "io-threads",    required_argument, 0, 'i' },
+        { "push",          required_argument, 0, 'p' },
+        { "verbose",       no_argument,       0, 'v' },
+        { 0,               0,                 0,  0  }
+    };
+
+    while ((c = getopt_long(argc, argv, "vlr:i:p:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -101,11 +131,15 @@ void process_arguments(int argc, char * const *argv)
         case 'i':
             io_threads = atoi(optarg);
             break;
-        case 'z':
-            connection_spec = optarg;
+        case 'p':
+            connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_PUSH_PORT);
+            break;
+        case 0:
+            print_usage(argv);
+            exit(0);
             break;
         case '?':
-            if (optopt == 'o' || optopt == 'i')
+            if (strchr("riz", optopt))
                 fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);
@@ -126,6 +160,9 @@ void process_arguments(int argc, char * const *argv)
     } else if (optind +1 == argc) {
         dump_file_name = argv[argc-1];
     }
+
+    if (connection_spec == NULL)
+        connection_spec = DEFAULT_CONNECTION_SPEC;
 }
 
 int main(int argc, char * const *argv)
@@ -155,12 +192,13 @@ int main(int argc, char * const *argv)
 
     // create socket to receive messages on
     zsock_t *sender = zsock_new(ZMQ_PUSH);
-    assert_x(sender != NULL, "zmq socket creation failed", __FILE__, __LINE__);
+    assert_x(sender != NULL, "[E] zmq socket creation failed", __FILE__, __LINE__);
 
     // configure the socket
     zsock_set_sndhwm(sender, 1000000);
 
     // connect socket
+    printf("[I] connecting PUSH socket to %s\n", connection_spec);
     int rc = zsock_connect(sender, "%s", connection_spec);
     log_zmq_error(rc, __FILE__, __LINE__);
     assert(rc == 0);

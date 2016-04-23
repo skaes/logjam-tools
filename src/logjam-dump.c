@@ -130,7 +130,7 @@ void process_arguments(int argc, char * const *argv)
         fprintf(stderr, "[E] too many arguments\n");
         print_usage(argv);
         exit(1);
-    } else if (optind +1 == argc) {
+    } else if (optind + 1 == argc) {
         dump_file_name = argv[argc-1];
     }
 
