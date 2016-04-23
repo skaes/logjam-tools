@@ -1,4 +1,5 @@
 #include "logjam-util.h"
+#include <getopt.h>
 
 FILE* dump_file = NULL;
 static char *dump_file_name = "logjam-stream.dump";
@@ -6,7 +7,12 @@ static char *dump_file_name = "logjam-stream.dump";
 static size_t io_threads = 1;
 static bool verbose = false;
 static bool debug = false;
-static char *connection_spec = "tcp://localhost:9606";
+
+static int sub_port = -1;
+static zlist_t *connection_specs = NULL;
+
+#define DEFAULT_SUB_PORT 9606
+#define DEFAULT_CONNECTION_SPEC "tcp://localhost:9606"
 
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
@@ -34,6 +40,13 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
     zmsg_t *msg = zmsg_recv(socket);
     if (!msg) return 1;
 
+    if (debug) {
+        my_zmsg_fprint(msg, "[D]", stdout);
+        msg_meta_t meta;
+        msg_extract_meta_info(msg, &meta);
+        dump_meta_info(&meta);
+    }
+
     // calculate stats
     size_t msg_bytes = zmsg_content_size(msg);
     received_messages_count++;
@@ -50,14 +63,34 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
 
 void print_usage(char * const *argv)
 {
-    fprintf(stderr, "usage: %s [-v] [-i io-threads] [-z zmq-connection-spec ] [dump-file-name]\n", argv[0]);
+    fprintf(stderr,
+            "usage: %s [options] [dump-file-name]\n"
+            "\nOptions:\n"
+            "  -e, --subscribe A,B        subscription patterns\n"
+            "  -h, --hosts H,I            specs of devices to connect to\n"
+            "  -i, --io-threads N         zeromq io threads\n"
+            "  -p, --input-port N         port number of zeromq input socket\n"
+            "  -v, --verbose              log more (use -vv for debug output)\n"
+            "      --help                 display this message\n"
+            , argv[0]);
 }
 
 void process_arguments(int argc, char * const *argv)
 {
     char c;
+    int longindex = 0;
     opterr = 0;
-    while ((c = getopt(argc, argv, "vc:i:z:")) != -1) {
+
+    static struct option long_options[] = {
+        { "help",          no_argument,       0,  0  },
+        { "hosts",         required_argument, 0, 'h' },
+        { "input-port",    required_argument, 0, 'p' },
+        { "io-threads",    required_argument, 0, 'i' },
+        { "verbose",       no_argument,       0, 'v' },
+        { 0,               0,                 0,  0  }
+    };
+
+    while ((c = getopt_long(argc, argv, "vc:i:h:p:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -68,11 +101,18 @@ void process_arguments(int argc, char * const *argv)
         case 'i':
             io_threads = atoi(optarg);
             break;
-        case 'z':
-            connection_spec = optarg;
+        case 'p':
+            sub_port = atoi(optarg);
+            break;
+        case 'h':
+            connection_specs = split_delimited_string(optarg);
+            break;
+        case 0:
+            print_usage(argv);
+            exit(0);
             break;
         case '?':
-            if (optopt == 'o' || optopt == 'i')
+            if (strchr("hip", optopt))
                 fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);
@@ -93,6 +133,15 @@ void process_arguments(int argc, char * const *argv)
     } else if (optind +1 == argc) {
         dump_file_name = argv[argc-1];
     }
+
+    if (sub_port == -1)
+        sub_port = DEFAULT_SUB_PORT;
+
+    if (connection_specs == NULL) {
+        connection_specs = zlist_new();
+        zlist_append(connection_specs, DEFAULT_CONNECTION_SPEC);
+    }
+    augment_zmq_connection_specs(&connection_specs, sub_port);
 }
 
 int main(int argc, char * const *argv)
@@ -125,9 +174,14 @@ int main(int argc, char * const *argv)
     assert_x(receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
 
     // connect socket
-    int rc = zsock_connect(receiver, "%s", connection_spec);
-    log_zmq_error(rc, __FILE__, __LINE__);
-    assert(rc == 0);
+    char *spec = zlist_first(connection_specs);
+    while (spec) {
+        printf("[I] connecting SUB socket to %s\n", spec);
+        int rc = zsock_connect(receiver, "%s", spec);
+        log_zmq_error(rc, __FILE__, __LINE__);
+        assert(rc == 0);
+        spec = zlist_next(connection_specs);
+    }
 
     // receive everything
     zsock_set_subscribe(receiver, "");
@@ -140,7 +194,7 @@ int main(int argc, char * const *argv)
     assert(loop);
     zloop_set_verbose(loop, 0);
 
-    rc = zloop_reader(loop, receiver, read_zmq_message_and_dump, NULL);
+    int rc = zloop_reader(loop, receiver, read_zmq_message_and_dump, NULL);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, receiver);
 
