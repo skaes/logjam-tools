@@ -68,7 +68,7 @@ AC_CHECK_FUNC([pthread_setname_np],
               [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1], [Have pthread_set_name_np])],
               [AC_CHECK_LIB(pthread, pthread_setname_np,
                             [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1], [Have pthread_set_name_np])],
-                            [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1], [Don't have pthread_set_name_np])])])
+                            [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [0], [Don't have pthread_set_name_np])])])
 
 AX_CHECK_ZLIB
 
