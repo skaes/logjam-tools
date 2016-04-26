@@ -14,7 +14,8 @@ bin_PROGRAMS = \
     logjam-dump \
     logjam-replay \
     logjam-pubsub-bridge \
-    logjam-logger
+    logjam-logger \
+    logjam-tail
 
 noinst_PROGRAMS = \
     test_publisher \
@@ -126,6 +127,12 @@ logjam_pubsub_bridge_SOURCES = \
 logjam_logger_SOURCES = \
     config.h \
     src/logjam-logger.c \
+    src/logjam-util.c \
+    src/logjam-util.h
+
+logjam_tail_SOURCES = \
+    config.h \
+    src/logjam-tail.c \
     src/logjam-util.c \
     src/logjam-util.h
 

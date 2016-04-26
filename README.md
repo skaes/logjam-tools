@@ -57,6 +57,11 @@ when writing the decompression logic is to cmplex for a consumer.
 A utility program which reads lines from stdin and publishes them on
 a PUB socket.
 
+## logjam-tail
+
+A utility program which connects to a logjam-logger PUB socket and
+displays matching lines on stdout.
+
 
 # Dependencies
 

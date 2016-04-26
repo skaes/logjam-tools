@@ -5,18 +5,13 @@ static bool verbose = false;
 static bool debug = false;
 
 static size_t io_threads = 1;
-#define DEFAULT_PUB_PORT 9601
-#define DEFAULT_BIND_SPEC "tcp://*:9601"
-static char* bind_spec = NULL;
+#define DEFAULT_SUB_PORT 9601
+#define DEFAULT_CONNECTION_SPEC "tcp://localhost:9601"
+static char* connection_spec = NULL;
 
 static size_t processed_lines_count = 0;
 static size_t processed_lines_bytes = 0;
 static size_t processed_lines_max_bytes = 0;
-
-static char* buffer = NULL;
-static size_t buffer_size;
-#define INITIAL_BUFFER_SIZE 8*1024
-static bool terminating = false;
 
 static int timer_event( zloop_t *loop, int timer_id, void *arg)
 {
@@ -36,20 +31,15 @@ static int timer_event( zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
-static int read_line_and_forward(zloop_t *loop, zmq_pollitem_t *item, void* arg)
+static int read_msg_and_print(zloop_t *loop, zsock_t *socket, void* arg)
 {
-    zsock_t *socket = arg;
-    zmsg_t *msg = zmsg_new();
-    assert(msg);
+    zmsg_t *msg = zmsg_recv(socket);
+    zframe_t *content = zmsg_first(msg);
+    int line_length = zframe_size(content);
+    const char* line = (const char*)zframe_data(content);
 
-    // read input
-    ssize_t line_length = getline(&buffer, &buffer_size, stdin);
-    if (line_length == -1) {
-        if (verbose) printf("[I] end of input. aborting.\n");
-        terminating = true;
-        return -1;
-    }
-    zmsg_addmem(msg, buffer, line_length - 1);
+    // print line
+    printf("%.*s\n", line_length, line);
 
     // calculate stats
     processed_lines_count++;
@@ -57,11 +47,7 @@ static int read_line_and_forward(zloop_t *loop, zmq_pollitem_t *item, void* arg)
     if (line_length > processed_lines_max_bytes)
         processed_lines_max_bytes = line_length;
 
-    if (debug)
-        my_zmsg_fprint(msg, "[D]", stdout);
-
-    // send message and destroy it
-    zmsg_send(&msg, socket);
+    zmsg_destroy(&msg);
 
     return 0;
 }
@@ -73,7 +59,7 @@ void print_usage(char * const *argv)
             "\nOptions:\n"
             "  -i, --io-threads N         zeromq io threads\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
-            "  -b, --bind I               zmq specification for binding pub socket\n"
+            "  -c, --connect S            zmq specification for connecting SUB socket\n"
             "      --help                 display this message\n"
             , argv[0]);
 }
@@ -87,7 +73,7 @@ void process_arguments(int argc, char * const *argv)
     static struct option long_options[] = {
         { "help",          no_argument,       0,  0  },
         { "io-threads",    required_argument, 0, 'i' },
-        { "bind",          required_argument, 0, 'b' },
+        { "connect",       required_argument, 0, 'c' },
         { 0,               0,                 0,  0  }
     };
 
@@ -102,8 +88,8 @@ void process_arguments(int argc, char * const *argv)
         case 'i':
             io_threads = atoi(optarg);
             break;
-        case 'b':
-            bind_spec = augment_zmq_connection_spec(optarg, DEFAULT_PUB_PORT);
+        case 'c':
+            connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_SUB_PORT);
             break;
         case 0:
             print_usage(argv);
@@ -124,8 +110,8 @@ void process_arguments(int argc, char * const *argv)
         }
     }
 
-    if (bind_spec == NULL)
-        bind_spec = DEFAULT_BIND_SPEC;
+    if (connection_spec == NULL)
+        connection_spec = DEFAULT_CONNECTION_SPEC;
 }
 
 int main(int argc, char * const *argv)
@@ -145,16 +131,17 @@ int main(int argc, char * const *argv)
     zsys_set_io_threads(io_threads);
 
     // create socket to publish messages on
-    zsock_t *sender = zsock_new(ZMQ_PUB);
-    assert_x(sender != NULL, "[E] zmq socket creation failed", __FILE__, __LINE__);
+    zsock_t *receiver = zsock_new(ZMQ_SUB);
+    assert_x(receiver != NULL, "[E] zmq socket creation failed", __FILE__, __LINE__);
 
     // configure the socket
-    zsock_set_sndhwm(sender, 100000);
+    zsock_set_subscribe(receiver, "");
+    zsock_set_sndhwm(receiver, 100000);
 
     // connect socket
-    if (verbose) printf("[I] binding PUB socket to %s\n", bind_spec);
-    int rc = zsock_bind(sender, "%s", bind_spec);
-    assert_x(rc>0, "[E] pub socket bind failed", __FILE__, __LINE__);
+    if (verbose) printf("[I] connecting SUB socket to %s\n", connection_spec);
+    int rc = zsock_connect(receiver, "%s", connection_spec);
+    assert_x(rc==0, "[E] sub socket connct failed", __FILE__, __LINE__);
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -166,16 +153,9 @@ int main(int argc, char * const *argv)
     rc = zloop_timer(loop, 1000, 0, timer_event, &timer_id);
     assert(rc != -1);
 
-    // register FILE descriptor for pollin events
-    zmq_pollitem_t stdio_item = {
-        .fd = fileno(stdin),
-        .events = ZMQ_POLLIN
-    };
-    rc = zloop_poller(loop, &stdio_item, read_line_and_forward, sender);
+    // register a reader for the SUB socket
+    rc = zloop_reader(loop, receiver, read_msg_and_print, NULL);
     assert(rc==0);
-
-    // allocate the input buffer
-    buffer = zmalloc(INITIAL_BUFFER_SIZE);
 
     if (!zsys_interrupted) {
         if (verbose) printf("[I] starting main event loop\n");
@@ -183,7 +163,7 @@ int main(int argc, char * const *argv)
         do {
             rc = zloop_start(loop);
             should_continue_to_run &= errno == EINTR && !zsys_interrupted;
-            if (!terminating)
+            if (!zsys_interrupted)
                 log_zmq_error(rc, __FILE__, __LINE__);
         } while (should_continue_to_run);
         if (verbose) printf("[I] main event loop terminated with return code %d\n", rc);
@@ -194,7 +174,7 @@ int main(int argc, char * const *argv)
 
     zloop_destroy(&loop);
     assert(loop == NULL);
-    zsock_destroy(&sender);
+    zsock_destroy(&receiver);
     zsys_shutdown();
 
     if (verbose) printf("[I] terminated\n");

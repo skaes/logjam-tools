@@ -39,3 +39,4 @@ config.h
 config.h.in
 stamp-h1
 logjam-logger
+logjam-tail
