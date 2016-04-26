@@ -18,6 +18,8 @@ static size_t buffer_size;
 #define INITIAL_BUFFER_SIZE 8*1024
 static bool terminating = false;
 
+static char* topic = "";
+
 static int timer_event( zloop_t *loop, int timer_id, void *arg)
 {
     static size_t last_processed_count = 0;
@@ -41,6 +43,7 @@ static int read_line_and_forward(zloop_t *loop, zmq_pollitem_t *item, void* arg)
     zsock_t *socket = arg;
     zmsg_t *msg = zmsg_new();
     assert(msg);
+    zmsg_addstr(msg, topic);
 
     // read input
     ssize_t line_length = getline(&buffer, &buffer_size, stdin);
@@ -71,9 +74,10 @@ void print_usage(char * const *argv)
     fprintf(stderr,
             "usage: %s [options]\n"
             "\nOptions:\n"
-            "  -i, --io-threads N         zeromq io threads\n"
-            "  -v, --verbose              log more (use -vv for debug output)\n"
             "  -b, --bind I               zmq specification for binding pub socket\n"
+            "  -i, --io-threads N         zeromq io threads\n"
+            "  -t, --topic                data for topic frame\n"
+            "  -v, --verbose              log more (use -vv for debug output)\n"
             "      --help                 display this message\n"
             , argv[0]);
 }
@@ -88,10 +92,12 @@ void process_arguments(int argc, char * const *argv)
         { "help",          no_argument,       0,  0  },
         { "io-threads",    required_argument, 0, 'i' },
         { "bind",          required_argument, 0, 'b' },
+        { "topic",         required_argument, 0, 't' },
+        { "verbose",       no_argument,       0, 'v' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vi:p:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vi:b:t:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -105,12 +111,15 @@ void process_arguments(int argc, char * const *argv)
         case 'b':
             bind_spec = augment_zmq_connection_spec(optarg, DEFAULT_PUB_PORT);
             break;
+        case 't':
+            topic = optarg;
+            break;
         case 0:
             print_usage(argv);
             exit(0);
             break;
         case '?':
-            if (strchr("riz", optopt))
+            if (strchr("bit", optopt))
                 fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);

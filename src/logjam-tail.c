@@ -3,11 +3,14 @@
 
 static bool verbose = false;
 static bool debug = false;
+static bool prefix = false;
 
 static size_t io_threads = 1;
 #define DEFAULT_SUB_PORT 9601
 #define DEFAULT_CONNECTION_SPEC "tcp://localhost:9601"
 static char* connection_spec = NULL;
+
+static zlist_t * topics = NULL;
 
 static size_t processed_lines_count = 0;
 static size_t processed_lines_bytes = 0;
@@ -34,12 +37,21 @@ static int timer_event( zloop_t *loop, int timer_id, void *arg)
 static int read_msg_and_print(zloop_t *loop, zsock_t *socket, void* arg)
 {
     zmsg_t *msg = zmsg_recv(socket);
-    zframe_t *content = zmsg_first(msg);
-    int line_length = zframe_size(content);
-    const char* line = (const char*)zframe_data(content);
+
+    zframe_t *topic_frame = zmsg_first(msg);
+    zframe_t *content_frame = zmsg_next(msg);
+
+    int topic_length = zframe_size(topic_frame);
+    const char* topic = (const char*)zframe_data(topic_frame);
+
+    int line_length = zframe_size(content_frame);
+    const char* line = (const char*)zframe_data(content_frame);
 
     // print line
-    printf("%.*s\n", line_length, line);
+    if (prefix)
+        printf("%.*s:%.*s\n", topic_length, topic, line_length, line);
+    else
+        printf("%.*s\n", line_length, line);
 
     // calculate stats
     processed_lines_count++;
@@ -57,9 +69,11 @@ void print_usage(char * const *argv)
     fprintf(stderr,
             "usage: %s [options]\n"
             "\nOptions:\n"
-            "  -i, --io-threads N         zeromq io threads\n"
-            "  -v, --verbose              log more (use -vv for debug output)\n"
             "  -c, --connect S            zmq specification for connecting SUB socket\n"
+            "  -p, --prefix S             prefix each line with its topic\n"
+            "  -i, --io-threads N         zeromq io threads\n"
+            "  -t, --topic T              subscribe to list of topics\n"
+            "  -v, --verbose              log more (use -vv for debug output)\n"
             "      --help                 display this message\n"
             , argv[0]);
 }
@@ -74,10 +88,13 @@ void process_arguments(int argc, char * const *argv)
         { "help",          no_argument,       0,  0  },
         { "io-threads",    required_argument, 0, 'i' },
         { "connect",       required_argument, 0, 'c' },
+        { "topic",         required_argument, 0, 't' },
+        { "prefix",        no_argument,       0, 'p' },
+        { "verbose",       no_argument,       0, 'v' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vi:p:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vi:c:t:p", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -91,12 +108,18 @@ void process_arguments(int argc, char * const *argv)
         case 'c':
             connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_SUB_PORT);
             break;
+        case 't':
+            topics = split_delimited_string(optarg);
+            break;
+        case 'p':
+            prefix = true;
+            break;
         case 0:
             print_usage(argv);
             exit(0);
             break;
         case '?':
-            if (strchr("riz", optopt))
+            if (strchr("cit", optopt))
                 fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);
@@ -112,6 +135,11 @@ void process_arguments(int argc, char * const *argv)
 
     if (connection_spec == NULL)
         connection_spec = DEFAULT_CONNECTION_SPEC;
+
+    if (topics == NULL) {
+        topics = zlist_new();
+        zlist_append(topics, "");
+    }
 }
 
 int main(int argc, char * const *argv)
@@ -135,8 +163,16 @@ int main(int argc, char * const *argv)
     assert_x(receiver != NULL, "[E] zmq socket creation failed", __FILE__, __LINE__);
 
     // configure the socket
-    zsock_set_subscribe(receiver, "");
     zsock_set_sndhwm(receiver, 100000);
+
+    // subscribe to topics
+    char * topic = zlist_first(topics);
+    while (topic) {
+        if (verbose)
+            printf("susbcribing to topic: '%s'\n", topic);
+        zsock_set_subscribe(receiver, topic);
+        topic = zlist_next(topics);
+    }
 
     // connect socket
     if (verbose) printf("[I] connecting SUB socket to %s\n", connection_spec);
