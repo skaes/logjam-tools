@@ -134,16 +134,32 @@ function handle_sodium()
     cd ..
 }
 
-function handle_zeromq()
+function handle_zeromq_deprecated()
 {
     d=zeromq-4.0.7
     f=${d}.tar.gz
     test -f $f || wget -nv http://download.zeromq.org/$f
+    [ $forced == "1" ] && rm -rf $d
     test -d $d || tar xzvf $f
     cd $d
-    [ $forced == "1" ] && git clean -qfd
     test -f configure.ac.orig || patch -p1 < ../../../etc/io-thread-name.patch
-    test -f config.status || ./configure && ./configure --prefix=$prefix
+    test -f config.status || (sh autogen.sh && ./configure && ./configure --prefix=$prefix/deprecated)
+    make -j4
+    $LSUDO make $cmd
+    $LSUDO $ldconfig
+    cd ..
+}
+
+function handle_zeromq()
+{
+    d=zeromq-4.1.4
+    f=${d}.tar.gz
+    test -f $f || wget -nv http://download.zeromq.org/$f
+    [ $forced == "1" ] && rm -rf $d
+    test -d $d || tar xzvf $f
+    cd $d
+    test -f configure.ac.orig || patch -p1 < ../../../etc/io-thread-name.patch
+    test -f config.status || (sh autogen.sh && ./configure && ./configure --prefix=$prefix)
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
@@ -173,10 +189,10 @@ function handle_czmq()
 function handle_snappy()
 {
     d=snappy
-    test -d $d || git clone https://github.com/google/${d}.git
+    test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="2b9152d9c5bed71dffb7f7f6c7a3ec48b058ff2d" # 1.1.3
+    expected_revision="10c7088336f490e646de7d40e9ace0958b269047" # 1.1.3 with pkg-config patch
     if [ "$revision" != "" ]; then
         git reset --hard
         git fetch
@@ -187,32 +203,13 @@ function handle_snappy()
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
-    cat > libsnappy.pc <<EOF
-prefix=${prefix}
-exec_prefix=\${prefix}
-libdir=\${exec_prefix}/lib
-includedir=\${prefix}/include
-bin
-Name: libsnappy
-Description: Fast compression library from Google
-Version: 1.1.3
-Requires:
-Libs:  -L\${libdir} -lsnappy
-Cflags: -I\${includedir}
-EOF
-    if [ "$cmd" = "install" ]; then
-        $LSUDO mkdir -p $prefix/lib/pkgconfig
-        $LSUDO cp libsnappy.pc $prefix/lib/pkgconfig
-        $LSUDO chmod 644 $prefix/lib/pkgconfig/libsnappy.pc
-    else
-        $LSUDO rm -f $prefix/lib/pkgconfig/libsnappy.pc
-    fi
     cd ..
 }
 
 
 case $cmd in
     uninstall|clean)
+        handle_zeromq_deprecated
         handle_czmq
         handle_zeromq
         handle_sodium
@@ -229,5 +226,6 @@ case $cmd in
         handle_sodium
         handle_zeromq
         handle_czmq
+        handle_zeromq_deprecated
         ;;
 esac
