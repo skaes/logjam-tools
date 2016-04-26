@@ -52,6 +52,11 @@ A utility program which subscribes to a logjam-device PUB socket,
 decompresses and forwards messages to a PUSH socket. Only to be used
 when writing the decompression logic is to cmplex for a consumer.
 
+## logjam-logger
+
+A utility program which reads lines from stdin and publishes them on
+a PUB socket.
+
 
 # Dependencies
 

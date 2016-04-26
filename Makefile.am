@@ -13,7 +13,8 @@ bin_PROGRAMS = \
     logjam-graylog-forwarder \
     logjam-dump \
     logjam-replay \
-    logjam-pubsub-bridge
+    logjam-pubsub-bridge \
+    logjam-logger
 
 noinst_PROGRAMS = \
     test_publisher \
@@ -121,6 +122,12 @@ logjam_pubsub_bridge_SOURCES = \
     src/logjam-util.h \
     src/message-compressor.c \
     src/message-compressor.h
+
+logjam_logger_SOURCES = \
+    config.h \
+    src/logjam-logger.c \
+    src/logjam-util.c \
+    src/logjam-util.h
 
 tester_SOURCES = src/tester.c
 
