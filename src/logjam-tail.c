@@ -10,11 +10,34 @@ static size_t io_threads = 1;
 #define DEFAULT_CONNECTION_SPEC "tcp://localhost:9601"
 static char* connection_spec = NULL;
 
-static zlist_t * topics = NULL;
+static zlist_t *topics = NULL;
 
 static size_t processed_lines_count = 0;
 static size_t processed_lines_bytes = 0;
 static size_t processed_lines_max_bytes = 0;
+
+static char *log_file_name = NULL;
+static FILE *log_file = NULL;
+
+static
+void sighup_handler(int value)
+{
+    if (log_file_name) {
+        log_file = freopen(log_file_name, "a", log_file);
+        assert(log_file);
+    }
+}
+
+static void setup_sighup_handler()
+{
+    // Install signal handler for SIGHUP
+    struct sigaction action;
+    action.sa_handler = sighup_handler;
+    action.sa_flags = 0;
+    sigemptyset (&action.sa_mask);
+    sigaction (SIGHUP, &action, NULL);
+}
+
 
 static int timer_event( zloop_t *loop, int timer_id, void *arg)
 {
@@ -49,9 +72,9 @@ static int read_msg_and_print(zloop_t *loop, zsock_t *socket, void* arg)
 
     // print line
     if (prefix)
-        printf("%.*s:%.*s\n", topic_length, topic, line_length, line);
+        fprintf(log_file, "%.*s:%.*s\n", topic_length, topic, line_length, line);
     else
-        printf("%.*s\n", line_length, line);
+        fprintf(log_file, "%.*s\n", line_length, line);
 
     // calculate stats
     processed_lines_count++;
@@ -67,10 +90,10 @@ static int read_msg_and_print(zloop_t *loop, zsock_t *socket, void* arg)
 void print_usage(char * const *argv)
 {
     fprintf(stderr,
-            "usage: %s [options]\n"
+            "usage: %s [options] [log-file]\n"
             "\nOptions:\n"
             "  -c, --connect S            zmq specification for connecting SUB socket\n"
-            "  -p, --prefix S             prefix each line with its topic\n"
+            "  -p, --prefix               prefix each line with its topic\n"
             "  -i, --io-threads N         zeromq io threads\n"
             "  -t, --topic T              subscribe to list of topics\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
@@ -133,6 +156,20 @@ void process_arguments(int argc, char * const *argv)
         }
     }
 
+    if (optind + 1 < argc) {
+        fprintf(stderr, "[E] too many arguments\n");
+        print_usage(argv);
+        exit(1);
+    } else if (optind + 1 == argc) {
+        log_file_name = argv[argc-1];
+    }
+
+    if (log_file_name) {
+        log_file = fopen(log_file_name, "a");
+        assert(log_file);
+    } else
+        log_file = stdout;
+
     if (connection_spec == NULL)
         connection_spec = DEFAULT_CONNECTION_SPEC;
 
@@ -144,6 +181,8 @@ void process_arguments(int argc, char * const *argv)
 
 int main(int argc, char * const *argv)
 {
+    setup_sighup_handler();
+
     // don't buffer stdout and stderr
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IOLBF, 0);
