@@ -48,8 +48,11 @@ AC_ARG_WITH(opt-dir,
                 AC_SUBST([DEPS_LIBS],["-lrabbitmq -lczmq -lzmq -ljson-c -lmongoc-1.0 -lbson-1.0 -lsnappy"])
 	])
 
+AS_IF([test "x$prefix" != "x"],
+      [PKG_CONFIG_PATH="$prefix/lib/pkgconfig:$PKG_CONFIG_PATH"; export PKG_CONFIG_PATH])
+
 AS_IF([test "x$with_opt_dir" == "x"],
-      [ PKG_CONFIG_PATH="$prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
+      [
         PKG_CHECK_MODULES([DEPS],[libzmq >= 3.2.5 libczmq >= 3.0.2 librabbitmq >= 0.4.1 json-c >= 0.11 libbson-1.0 >= 0.6.6 libmongoc-1.0 >= 0.94.1 libsnappy >= 1.1.3],[:],
                           [
                             echo "checking modules failed. using builtin default directories."
