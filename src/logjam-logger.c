@@ -18,7 +18,13 @@ static size_t buffer_size;
 #define INITIAL_BUFFER_SIZE 8*1024
 static bool terminating = false;
 
-static char* topic = "";
+static char *topic = "";
+static char *app_name = NULL;
+
+static char* log_id = "logjam";
+static int log_level = LOG_INFO;
+static int log_facility = LOG_USER;
+static bool log_to_syslog = false;
 
 static int timer_event( zloop_t *loop, int timer_id, void *arg)
 {
@@ -45,7 +51,7 @@ static int read_line_and_forward(zloop_t *loop, zmq_pollitem_t *item, void* arg)
     assert(msg);
     zmsg_addstr(msg, topic);
 
-    // read input
+    // read input and append it ot message
     ssize_t line_length = getline(&buffer, &buffer_size, stdin);
     if (line_length == -1) {
         if (verbose) printf("[I] end of input. aborting.\n");
@@ -53,6 +59,13 @@ static int read_line_and_forward(zloop_t *loop, zmq_pollitem_t *item, void* arg)
         return -1;
     }
     zmsg_addmem(msg, buffer, line_length - 1);
+
+    if (log_to_syslog) {
+        if (topic)
+            syslog(log_level, "%s", buffer);
+        else
+            syslog(log_level, "%s:%s", topic, buffer);
+    }
 
     // calculate stats
     processed_lines_count++;
@@ -74,12 +87,70 @@ void print_usage(char * const *argv)
     fprintf(stderr,
             "usage: %s [options]\n"
             "\nOptions:\n"
+            "  -a, --app                  app name for syslog\n"
             "  -b, --bind I               zmq specification for binding pub socket\n"
             "  -i, --io-threads N         zeromq io threads\n"
+            "  -s, --syslog [F.L]         send data to syslog with optional facility.level\n"
+            "                             facility can be one of (user, local0 ... local7)\n"
+            "                             level can be one of (error, warn, notice, info)\n"
             "  -t, --topic                data for topic frame\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "      --help                 display this message\n"
             , argv[0]);
+}
+
+bool scan_syslog_param(char *arg, int* level, int* facility)
+{
+    char facility_buffer[256];
+    char level_buffer[256];
+
+    if (strlen(arg) > 256) {
+        fprintf(stderr, "[E] syslog priority param too large\n");
+        return false;
+    }
+
+    if (2 != sscanf(arg, "%[^.].%s", facility_buffer, level_buffer)) {
+        fprintf(stderr, "[E] syslog priority param should be facility.level\n");
+        return false;
+    }
+
+    if (!strncasecmp(level_buffer, "error", 3))
+        *level = LOG_ERR;
+    else if (!strncasecmp(level_buffer, "warn", 4))
+        *level = LOG_WARNING;
+    else if (!strncasecmp(level_buffer, "notice", 4))
+        *level = LOG_NOTICE;
+    else if (streq(level_buffer, "info"))
+        *level = LOG_INFO;
+    else {
+        printf("[E] unknown log level %s\n", level_buffer);
+        return false;
+    }
+
+    if (!strncasecmp(facility_buffer, "local0", 6))
+        *facility = LOG_LOCAL0;
+    else if (!strncasecmp(facility_buffer, "local1", 6))
+        *facility = LOG_LOCAL1;
+    else if (!strncasecmp(facility_buffer, "local2", 6))
+        *facility = LOG_LOCAL2;
+    else if (!strncasecmp(facility_buffer, "local3", 6))
+        *facility = LOG_LOCAL3;
+    else if (!strncasecmp(facility_buffer, "local4", 6))
+        *facility = LOG_LOCAL4;
+    else if (!strncasecmp(facility_buffer, "local5", 6))
+        *facility = LOG_LOCAL5;
+    else if (!strncasecmp(facility_buffer, "local6", 6))
+        *facility = LOG_LOCAL6;
+    else if (!strncasecmp(facility_buffer, "local7", 6))
+        *facility = LOG_LOCAL7;
+    else if (!strncasecmp(facility_buffer, "user", 5))
+        *facility = LOG_USER;
+    else {
+        printf("[E] unknown log facility %s\n", level_buffer);
+        return false;
+    }
+
+    return true;
 }
 
 void process_arguments(int argc, char * const *argv)
@@ -90,14 +161,16 @@ void process_arguments(int argc, char * const *argv)
 
     static struct option long_options[] = {
         { "help",          no_argument,       0,  0  },
-        { "io-threads",    required_argument, 0, 'i' },
+        { "app",           required_argument, 0, 'a' },
         { "bind",          required_argument, 0, 'b' },
+        { "io-threads",    required_argument, 0, 'i' },
+        { "syslog",        optional_argument, 0, 's' },
         { "topic",         required_argument, 0, 't' },
         { "verbose",       no_argument,       0, 'v' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vi:b:t:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, ":vi:b:t:a:s:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -108,18 +181,36 @@ void process_arguments(int argc, char * const *argv)
         case 'i':
             io_threads = atoi(optarg);
             break;
+        case 'a':
+            app_name = optarg;
+            break;
         case 'b':
             bind_spec = augment_zmq_connection_spec(optarg, DEFAULT_PUB_PORT);
             break;
         case 't':
             topic = optarg;
             break;
+        case 's':
+            log_to_syslog = true;
+            if (!scan_syslog_param(optarg, &log_facility, &log_level)) {
+                print_usage(argv);
+                exit(1);
+            }
+            break;
+        case ':':
+            if (optopt == 's') {
+                log_to_syslog = true;
+            } else {
+                print_usage(argv);
+                exit(1);
+            }
+            break;
         case 0:
             print_usage(argv);
             exit(0);
             break;
         case '?':
-            if (strchr("bit", optopt))
+            if (strchr("abits", optopt))
                 fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);
@@ -144,6 +235,8 @@ int main(int argc, char * const *argv)
     setvbuf(stderr, NULL, _IOLBF, 0);
 
     process_arguments(argc, argv);
+
+    openlog(log_id, LOG_PID, log_facility);
 
     // set global config
     zsys_init();
@@ -205,6 +298,8 @@ int main(int argc, char * const *argv)
     assert(loop == NULL);
     zsock_destroy(&sender);
     zsys_shutdown();
+
+    closelog();
 
     if (verbose) printf("[I] terminated\n");
 
