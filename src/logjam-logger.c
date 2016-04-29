@@ -21,7 +21,7 @@ static bool terminating = false;
 static char *topic = "";
 static char *app_name = NULL;
 
-static char* log_id = "logjam";
+static char* log_id = "logjam-logger";
 static int log_level = LOG_INFO;
 static int log_facility = LOG_USER;
 static bool log_to_syslog = false;
@@ -87,16 +87,16 @@ void print_usage(char * const *argv)
     fprintf(stderr,
             "usage: %s [options]\n"
             "\nOptions:\n"
-            "  -a, --app                  app name for syslog\n"
+            "  -a, --app                  app name for syslog (default: %s)\n"
             "  -b, --bind I               zmq specification for binding pub socket\n"
             "  -i, --io-threads N         zeromq io threads\n"
             "  -s, --syslog [F.L]         send data to syslog with optional facility.level\n"
-            "                             facility can be one of (user, local0 ... local7)\n"
-            "                             level can be one of (error, warn, notice, info)\n"
+            "                             facility can be one of (user, local0 ... local7), default: user\n"
+            "                             level can be one of (error, warn, notice, info),  default: info\n"
             "  -t, --topic                data for topic frame\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "      --help                 display this message\n"
-            , argv[0]);
+            , argv[0], log_id);
 }
 
 bool scan_syslog_param(char *arg, int* level, int* facility)
