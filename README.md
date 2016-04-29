@@ -66,7 +66,7 @@ displays lines matching an optional list of topics on stdout.
 # Dependencies
 
 * librabbitmq (0.7.0)
-* libzmq (4.1.2)
+* libzmq (4.0.7)
 * libczmq (3.0.2)
 * mongo-c-driver (1.1.2)
 * libbson (included in mongo-c-driver as a submodule)
@@ -132,7 +132,7 @@ headers and libraries are installed under `/opt/logjam`, `/usr/local` or
 `autogen.sh` accepts the usual configure arguments, such as
 `--prefix`. Thus, if you have installed the libraries under
 `/opt/logjam`, and want to install the logjam tools in the same place,
-run `sh autogen.sh --with-opt-dir=/opt/logjam --prefix=/opt/logjam`
+run `sh autogen.sh --prefix=/opt/logjam`
 
 If you want to get rid of the installed software, run
 ```
