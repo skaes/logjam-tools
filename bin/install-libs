@@ -134,22 +134,6 @@ function handle_sodium()
     cd ..
 }
 
-function handle_zeromq_deprecated()
-{
-    d=zeromq-4.0.7
-    f=${d}.tar.gz
-    test -f $f || wget -nv http://download.zeromq.org/$f
-    [ $forced == "1" ] && rm -rf $d
-    test -d $d || tar xzvf $f
-    cd $d
-    test -f configure.ac.orig || patch -p1 < ../../../etc/io-thread-name.patch
-    test -f config.status || (sh autogen.sh && ./configure && ./configure --prefix=$prefix/deprecated)
-    make -j4
-    $LSUDO make $cmd
-    $LSUDO $ldconfig
-    cd ..
-}
-
 function handle_zeromq()
 {
     d=zeromq-4.1.4
@@ -209,7 +193,6 @@ function handle_snappy()
 
 case $cmd in
     uninstall|clean)
-        handle_zeromq_deprecated
         handle_czmq
         handle_zeromq
         handle_sodium
@@ -226,6 +209,5 @@ case $cmd in
         handle_sodium
         handle_zeromq
         handle_czmq
-        handle_zeromq_deprecated
         ;;
 esac
