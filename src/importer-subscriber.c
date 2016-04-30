@@ -101,6 +101,7 @@ zsock_t* subscriber_pull_socket_new(zconfig_t* config)
         printf("[I] subscriber: binding PULL socket to %s\n", full_spec);
     int rc = zsock_bind(socket, "%s", full_spec);
     assert(rc != -1);
+    free(full_spec);
 
     const char *inproc_binding = "inproc://subscriber-pull";
     if (!quiet)

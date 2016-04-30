@@ -47,7 +47,7 @@ char* augment_zmq_connection_spec(char* spec, int default_port)
     if (strcmp(buffer, spec))
         return strdup(buffer);
     else
-        return spec;
+        return strdup(spec);
 }
 
 void augment_zmq_connection_specs(zlist_t** specs, int default_port)
@@ -57,8 +57,7 @@ void augment_zmq_connection_specs(zlist_t** specs, int default_port)
     zlist_t *new_list = zlist_new();
     while ( (spec = zlist_pop(old_list)) ) {
         char *new_spec = augment_zmq_connection_spec(spec, default_port);
-        if (spec != new_spec)
-            free(spec);
+        free(spec);
         zlist_append(new_list, new_spec);
         spec = zlist_next(old_list);
     }
