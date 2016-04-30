@@ -226,7 +226,6 @@ static void print_usage(char * const *argv)
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
-            "  LOGJAM_DEVICES             specs of devices to connect to\n"
             "  LOGJAM_SUBSCRIPTIONS       subscription patterns\n"
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
             "  LOGJAM_SND_HWM             high watermark for output socket\n"
