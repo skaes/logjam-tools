@@ -156,7 +156,7 @@ function handle_czmq()
     test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="e4af2e7850ad0cdb74429bb57b6fc9bd63869045" # 3.0.2
+    expected_revision="d97cb1c32f4606d2c9394065af287951e785da1c" # 3.0.2 with fixes
     if [ "$revision" != "" ]; then
         git reset --hard
         git fetch
