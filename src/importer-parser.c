@@ -204,6 +204,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         if (processor == NULL) {
             fprintf(stderr, "[E] could not create processor\n");
             my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+            json_object_put(request);
             return;
         }
         processor->request_count++;
