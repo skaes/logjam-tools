@@ -136,14 +136,18 @@ function handle_sodium()
 
 function handle_zeromq()
 {
-    d=zeromq-4.1.4
-    f=${d}.tar.gz
-    test -f $f || wget -nv http://download.zeromq.org/$f
-    [ $forced == "1" ] && rm -rf $d
-    test -d $d || tar xzvf $f
+    d=zeromq4-1
+    test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
-    test -f configure.ac.orig || patch -p1 < ../../../etc/io-thread-name.patch
-    test -f config.status || (sh autogen.sh && ./configure && ./configure --prefix=$prefix)
+    revision=$(git rev-parse HEAD)
+    expected_revision="973d8c9f52cef68e729f0122adc023ceaf3e85bf" # 4.1.5 with thread name patch
+    if [ "$revision" != "" ]; then
+        git reset --hard
+        git fetch
+        git checkout $expected_revision
+    fi
+    [ $forced == "1" ] && git clean -qfd
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
