@@ -367,9 +367,6 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
     uint8_t first_line [sizeof(raw)+4];
     int first_line_length = 0;
 
-    msg_data_t msg_data = {};
-    received_messages_count++;
-
     // get HTTP request; ID frame and then request
     id_size = zmq_recv (item->socket, id, MAX_ID_SIZE, 0);
     assert (id_size > 0);
@@ -378,10 +375,18 @@ int process_http_request(zloop_t *loop, zmq_pollitem_t *item, void *arg)
 
     int msg_size = zmq_recv (item->socket, raw, MAX_REQUEST_SIZE, 0);
     assert (msg_size >= 0);
+
+    if (msg_size == 0) {
+        if (debug) printf("[D] received empty frame, probably connect/disconnect notification\n");
+        return 0;
+    }
     if (msg_size > MAX_REQUEST_SIZE)
         raw_size = MAX_REQUEST_SIZE;
     else
         raw_size = msg_size;
+
+    msg_data_t msg_data = {};
+    received_messages_count++;
 
     // terminate buffer with 0 character, just in case
     // sizeof(raw) = MAX_REQUEST_SIZE + 1, so this is safe:
