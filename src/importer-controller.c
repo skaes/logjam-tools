@@ -308,10 +308,12 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     int64_t end_time_ms = zclock_mono();
     int runtime = end_time_ms - start_time_ms;
     int next_tick = runtime > 999 ? 1 : 1000 - runtime;
+    double received_percent = parsed_msgs_count == 0 ? 0 : ((double) front_stats.received / parsed_msgs_count) * 100;
+    double dropped_percent  = front_stats.received == 0 ? 0 : ((double) front_stats.dropped / front_stats.received) * 100;
     printf("[I] controller: %5zu messages (%3d ms); frontend: %3zu [%4.1f%%] (dropped: %2zu [%4.1f%%])\n",
            parsed_msgs_count, runtime,
-           front_stats.received, ((double) front_stats.received / parsed_msgs_count) * 100,
-           front_stats.dropped, ((double) front_stats.dropped / front_stats.received) * 100) ;
+           front_stats.received, received_percent,
+           front_stats.dropped, dropped_percent) ;
 
     // log a warning about the number of blocked updates
     if (state->updates_blocked) {
