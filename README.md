@@ -81,12 +81,22 @@ Ubuntu packages are available from
 <img src="doc/packagecloud-logo-med-dark.png" height="16">
 </a>.
 
+The are two types of packages available: `logjam-tools` will install
+in `/opt/logjam/`, `logjam-tools-usr-local` in `/usr/local`. The tools
+package uses very recent and sometimes patched libraries. Installing
+in `/usr/local` might cause problems with other applications. In this
+case, use `-opt-logjam` packages. However, you will need to set some
+enviroment variables to make use of the libararies provided by logjam:
+Set `ZMQ_LIB_PATH` to `/opt/logjam/lib` in order to use `libzmq`from
+`ffi-rzmq`, add `/opt/logjam/lib/pkgconfig` to `PKG_CONFIG_PATH` and
+`/opt/logjam/bin` to `PATH`.
+
 Installation instructions how to add the package cloud apt repository
 can be found [here](https://packagecloud.io/stkaes/logjam/install).
 
 The final step is then `apt-get install logjam-tools`.
 
-Currently, only 14.04 LTS ist supported.
+Currently, 12.04 LTS and 14.04 LTS are supported.
 
 ## From source
 
