@@ -340,10 +340,10 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
     }
 
     int rc = publish_on_zmq_transport(message_parts, pub_socket, meta, 0);
-    if (rc) {
+    if (rc == -1) {
         dropped_messages_count++;
         if (verbose) {
-            fprintf(stderr, "[E] could not publish metrics message %d\n", rc);
+            fprintf(stderr, "[E] could not publish metrics message\n");
             log_zmq_error(rc, __FILE__, __LINE__);
         }
     }
