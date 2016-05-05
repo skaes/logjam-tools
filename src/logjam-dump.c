@@ -17,6 +17,74 @@ static zlist_t *connection_specs = NULL;
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
+static size_t message_gaps = 0;
+
+static zhashx_t *seen_devices = NULL;
+typedef struct {
+    uint32_t device_number;
+    uint64_t sequence_number;
+    uint64_t lost;
+} device_info_t;
+
+static size_t uint64_hash(const void *key)
+{
+    return (size_t) key;
+}
+
+static int uint64_comparator(const void *a, const void *b)
+{
+    return a < b ? -1 : (a > b ? 1 : 0);
+}
+
+static void device_info_destroy(void **item)
+{
+    free(*item);
+    *item = NULL;
+}
+
+static void create_device_hash()
+{
+    seen_devices = zhashx_new();
+    zhashx_set_key_hasher(seen_devices, uint64_hash);
+    zhashx_set_key_destructor(seen_devices, NULL);
+    zhashx_set_key_duplicator(seen_devices, NULL);
+    zhashx_set_key_comparator(seen_devices, uint64_comparator);
+    zhashx_set_destructor(seen_devices, device_info_destroy);
+}
+
+static void destroy_device_hash()
+{
+    zhashx_destroy(&seen_devices);
+}
+
+static int64_t calculate_gap_and_update_sequence_number(msg_meta_t* meta)
+{
+    uint64_t device_number = meta->device_number;
+    if (device_number == 0)
+        return 0;
+
+    uint64_t sequence_number = meta->sequence_number;
+    device_info_t *info = zhashx_lookup(seen_devices, (const void*) device_number);
+
+    if (info == NULL) {
+        printf("[I] counting gaps for device %" PRIu64 "\n", device_number);
+        info = zmalloc(sizeof(*info));
+        assert(info);
+        info->device_number = device_number;
+        info->sequence_number = sequence_number;
+        info->lost = 0;
+        int rc = zhashx_insert(seen_devices, (const void*) device_number, info);
+        assert(rc == 0);
+        return 0;
+    } else {
+        int64_t gap = sequence_number - info->sequence_number - 1;
+        info->sequence_number = sequence_number;
+        info->lost += gap;
+        if (gap > 0)
+            fprintf(stderr, "[W] lost %" PRIu64 " messages from device %" PRIu64 "\n", gap, device_number);
+        return gap;
+    }
+}
 
 static int timer_event( zloop_t *loop, int timer_id, void *arg)
 {
@@ -26,11 +94,12 @@ static int timer_event( zloop_t *loop, int timer_id, void *arg)
     size_t message_bytes = received_messages_bytes - last_received_bytes;
     double avg_msg_size = message_count ? (message_bytes / 1024.0) / message_count : 0;
     double max_msg_size = received_messages_max_bytes / 1024.0;
-    printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
-           message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
+    printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB (gaps: %zu)\n",
+           message_count, message_bytes/1024.0, avg_msg_size, max_msg_size, message_gaps);
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
+    message_gaps = 0;
 
     return 0;
 }
@@ -40,12 +109,16 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
     zmsg_t *msg = zmsg_recv(socket);
     if (!msg) return 1;
 
+    msg_meta_t meta;
+    msg_extract_meta_info(msg, &meta);
+
     if (debug) {
         my_zmsg_fprint(msg, "[D]", stdout);
-        msg_meta_t meta;
-        msg_extract_meta_info(msg, &meta);
         dump_meta_info(&meta);
     }
+
+    // check for gaps
+    message_gaps += calculate_gap_and_update_sequence_number(&meta);
 
     // calculate stats
     size_t msg_bytes = zmsg_content_size(msg);
@@ -61,7 +134,7 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
     return 0;
 }
 
-void print_usage(char * const *argv)
+static void print_usage(char * const *argv)
 {
     fprintf(stderr,
             "usage: %s [options] [dump-file-name]\n"
@@ -75,7 +148,7 @@ void print_usage(char * const *argv)
             , argv[0]);
 }
 
-void process_arguments(int argc, char * const *argv)
+static void process_arguments(int argc, char * const *argv)
 {
     char c;
     int longindex = 0;
@@ -152,6 +225,8 @@ int main(int argc, char * const *argv)
 
     process_arguments(argc, argv);
 
+    create_device_hash();
+
     // open dump file
     dump_file = fopen(dump_file_name, "w");
     if (!dump_file) {
@@ -219,6 +294,7 @@ int main(int argc, char * const *argv)
     // clean up
     if (verbose) printf("[I] shutting down\n");
 
+    destroy_device_hash();
     fclose(dump_file);
     zloop_destroy(&loop);
     assert(loop == NULL);
