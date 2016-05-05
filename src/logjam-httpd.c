@@ -70,6 +70,7 @@ static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
 static size_t http_failures = 0;
+static size_t dropped_messages_count = 0;
 
 static char path_prefix_ajax[]  = "GET /logjam/ajax?";
 static char path_prefix_page[]  = "GET /logjam/page?";
@@ -338,7 +339,14 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
         }
     }
 
-    publish_on_zmq_transport(message_parts, pub_socket, meta, 0);
+    int rc = publish_on_zmq_transport(message_parts, pub_socket, meta, 0);
+    if (rc) {
+        dropped_messages_count++;
+        if (verbose) {
+            fprintf(stderr, "[E] could not publish metrics message %d\n", rc);
+            log_zmq_error(rc, __FILE__, __LINE__);
+        }
+    }
 
     zmq_msg_close(&message_parts[0]);
     zmq_msg_close(&message_parts[1]);
@@ -564,10 +572,11 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     double max_msg_size = received_messages_max_bytes / 1024.0;
 
     if (!quiet)
-        printf("[I] processed %zu messages (invalid: %zu), size: %.2f KB, avg: %.2f KB, max: %.2f KB\n",
-               message_count, http_failures, message_bytes/1024.0, avg_msg_size, max_msg_size);
+        printf("[I] processed %zu messages (invalid: %zu, dropped: %zu), size: %.2f KB, avg: %.2f KB, max: %.2f KB\n",
+               message_count, http_failures, dropped_messages_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
 
     http_failures = 0;
+    dropped_messages_count = 0;
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
