@@ -540,6 +540,7 @@ zmsg_loadx (zmsg_t *self, FILE *file)
 void setup_subscriptions_for_sub_socket(zlist_t *subscriptions, zsock_t *socket)
 {
     if (subscriptions==NULL || zlist_size(subscriptions)==0) {
+        printf("[I] subscriber: subscribing to all streams\n");
         zsock_set_subscribe(socket, "");
         return;
     }
