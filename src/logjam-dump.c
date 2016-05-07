@@ -81,7 +81,7 @@ static int64_t calculate_gap_and_update_sequence_number(msg_meta_t* meta)
         if (gap > 0) {
             info->lost += gap;
             fprintf(stderr, "[W] lost %" PRIu64 " messages from device %" PRIu64 " (%" PRIu64 "-%" PRIu64 ")\n",
-                    gap, device_number, info->sequence_number + 1, sequence_number);
+                    gap, device_number, info->sequence_number + 1, sequence_number - 1);
         }
         info->sequence_number = sequence_number;
         return gap;
