@@ -303,6 +303,7 @@ int server_delete_uuid(zloop_t *loop, zsock_t *socket, void *arg)
         failure_t *failure = zmalloc(sizeof(*failure));
         failure->created_time_ms = state->current_time_ms;
         failure->msg = zmsg_dup(original_msg);
+        zmsg_clear_device_and_sequence_number(failure->msg);
         zring_insert(state->failures, uuid, failure);
     }
     free(uuid);
