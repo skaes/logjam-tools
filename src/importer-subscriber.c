@@ -183,20 +183,15 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
         return;
     }
     uint64_t old_sequence_number = state->sequence_numbers[meta.device_number];
-    if (meta.sequence_number > 0 && meta.sequence_number <= old_sequence_number) {
-        fprintf(stderr, "[W] subscriber: received duplicate sequence number %" PRIu64 " from device %d\n",
-                meta.sequence_number, meta.device_number);
+    int64_t gap = meta.sequence_number - old_sequence_number - 1;
+    if (gap > 0 && old_sequence_number) {
+        fprintf(stderr, "[W] subscriber: lost %" PRIi64 " messages from device %" PRIu32 " (%" PRIu64 "-%" PRIu64 ")\n",
+                gap, meta.device_number, old_sequence_number + 1, meta.sequence_number - 1);
+        state->message_gap_size += gap;
     } else {
-        int64_t gap = meta.sequence_number - old_sequence_number - 1;
-        if (gap > 0 && old_sequence_number) {
-            fprintf(stderr, "[W] subscriber: lost %" PRIi64 " messages from device %" PRIu32 " (%" PRIu64 "-%" PRIu64 ")\n",
-                    gap, meta.device_number, old_sequence_number + 1, meta.sequence_number - 1);
-            state->message_gap_size += gap;
-        } else {
-            // printf("[D] subscriber: msg(device %d, sequence %llu)\n", meta.device_number, meta.sequence_number);
-        }
-        state->sequence_numbers[meta.device_number] = meta.sequence_number;
+        printf("[D] subscriber: msg(device %d, sequence %" PRIu64 ")\n", meta.device_number, meta.sequence_number);
     }
+    state->sequence_numbers[meta.device_number] = meta.sequence_number;
 }
 
 static
