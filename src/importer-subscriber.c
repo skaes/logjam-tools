@@ -189,7 +189,7 @@ void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
                 gap, meta.device_number, old_sequence_number + 1, meta.sequence_number - 1);
         state->message_gap_size += gap;
     } else {
-        printf("[D] subscriber: msg(device %d, sequence %" PRIu64 ")\n", meta.device_number, meta.sequence_number);
+        // printf("[D] subscriber: msg(device %d, sequence %" PRIu64 ")\n", meta.device_number, meta.sequence_number);
     }
     state->sequence_numbers[meta.device_number] = meta.sequence_number;
 }
