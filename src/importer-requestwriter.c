@@ -12,7 +12,7 @@
  *                                  |
  *                                 PIPE
  *               PUSH    PULL       |       PUSH    PULL
- *  parser(n_p)  >----------o  writer(n_w)  >----------o  live stream server
+ *  parser(n_p)  >----------o  writer(n_w)  >----------o  live stream publisher
  *
  */
 
@@ -479,7 +479,7 @@ request_writer_state_t* request_writer_state_new(zconfig_t *config, size_t id)
     state->id = id;
     snprintf(state->me, 16, "writer[%zu]", id);
     state->pull_socket = request_writer_pull_socket_new(id);
-    state->live_stream_socket = live_stream_socket_new(config);
+    state->live_stream_socket = live_stream_client_socket_new(config);
     for (int i=0; i<num_databases; i++) {
         state->mongo_clients[i] = mongoc_client_new(databases[i]);
         assert(state->mongo_clients[i]);

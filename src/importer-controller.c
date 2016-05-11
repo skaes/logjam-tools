@@ -22,6 +22,7 @@
  *                 --- PIPE ---  updaters(n_u)
  *                 --- PIPE ---  tracker
  *                 --- PIPE ---  watchdog
+ *                 --- PIPE ---  live stream publisher
  *
  *                 PUSH    PULL
  *                 o----------<  updaters(n_u)
@@ -30,7 +31,7 @@
  *                 o----------<  adders(n_a)
  *
  *                 PUSH    PULL
- *                 >----------o  live stream server
+ *                 >----------o  live stream publisher
 */
 
 // The controller creates all other threads, collects data from the parsers every second,
@@ -55,6 +56,7 @@ typedef struct {
     zactor_t *adders[MAX_ADDERS];
     zactor_t *writers[MAX_WRITERS];
     zactor_t *updaters[MAX_UPDATERS];
+    zactor_t *live_stream_publisher;
     zsock_t *updates_socket;
     size_t updates_blocked;
     zsock_t *adder_socket;
@@ -342,6 +344,8 @@ bool controller_create_actors(controller_state_t *state)
 {
     // start the statsd updater
     state->statsd_server = zactor_new(statsd_actor_fn, state->config);
+    // start the live stream publisher
+    state->live_stream_publisher = zactor_new(live_stream_actor_fn, state->config);
     // start the indexer
     state->indexer = zactor_new(indexer, NULL);
     // create subscriber
@@ -365,7 +369,7 @@ bool controller_create_actors(controller_state_t *state)
     assert(rc == 0);
 
     // connect to live stream
-    state->live_stream_socket = live_stream_socket_new(state->config);
+    state->live_stream_socket = live_stream_client_socket_new(state->config);
 
     for (size_t i=0; i<num_writers; i++) {
         state->writers[i] = request_writer_new(state->config, i);
@@ -424,6 +428,9 @@ void controller_destroy_actors(controller_state_t *state)
 
     if (verbose) printf("[D] controller: destroying indexer\n");
     zactor_destroy(&state->indexer);
+
+    if (verbose) printf("[D] controller: destroying live stream publisher\n");
+    zactor_destroy(&state->live_stream_publisher);
 
     if (verbose) printf("[D] controller: destroying live stream socket\n");
     zsock_destroy(&state->live_stream_socket);
