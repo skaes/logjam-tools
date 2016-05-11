@@ -7,7 +7,7 @@ zsock_t* live_stream_socket_new(zconfig_t* config)
     assert(live_stream_socket);
     // zsock_set_sndtimeo(live_stream_socket, 10);
     int rc = zsock_bind(live_stream_socket, "%s", live_stream_connection_spec);
-    assert(rc > 0);
+    assert(rc != -1);
     return live_stream_socket;
 }
 
