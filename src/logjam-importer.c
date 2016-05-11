@@ -264,7 +264,7 @@ int main(int argc, char * const *argv)
     // zconfig_print(config);
 
     if (live_stream_connection_spec == NULL)
-        live_stream_connection_spec = zconfig_resolve(config, "livestream/endpoint", DEFAULT_LIVE_STREAM_CONNECTION);
+        live_stream_connection_spec = zconfig_resolve(config, "frontend/endpoints/livestream/pub", DEFAULT_LIVE_STREAM_CONNECTION);
 
     setup_thread_counts(config);
 
