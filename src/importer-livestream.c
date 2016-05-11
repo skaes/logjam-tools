@@ -23,7 +23,7 @@ zsock_t* live_stream_pull_socket_new(zconfig_t* config)
 static
 zsock_t* live_stream_pub_socket_new(zconfig_t* config)
 {
-    zsock_t *socket = zsock_new(ZMQ_SUB);
+    zsock_t *socket = zsock_new(ZMQ_PUB);
     assert(socket);
     zsock_set_sndhwm(socket, snd_hwm);
     if (!quiet)
@@ -53,7 +53,6 @@ void live_stream_state_destroy(live_stream_state_t** state_p)
     *state_p = NULL;
 }
 
-
 zsock_t* live_stream_client_socket_new(zconfig_t* config)
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
@@ -65,8 +64,6 @@ zsock_t* live_stream_client_socket_new(zconfig_t* config)
 
 void live_stream_publish(zsock_t *live_stream_socket, const char* key, const char* json_str)
 {
-    if (dryrun) return;
-
     zstr_sendx(live_stream_socket, key, json_str, NULL);
 }
 
