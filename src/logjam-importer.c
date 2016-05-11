@@ -52,7 +52,7 @@ void print_usage(char * const *argv)
             "  -f, --frontend-log F       frontend timings log file\n"
             "  -h, --hosts H,I            specs of devices to connect to\n"
             "  -i, --io-threads N         zeromq io threads\n"
-            "  -l, --live-stream S        zmq connection spec for publishing live stream data\n"
+            "  -l, --live-stream S        zmq bind spec for publishing live stream data\n"
             "  -p, --parsers N            number of parser threads\n"
             "  -u, --updaters N           number of db stats updater threads\n"
             "  -q, --quiet                supress most output\n"

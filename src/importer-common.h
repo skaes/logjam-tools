@@ -29,7 +29,7 @@ extern unsigned long num_updaters;
 
 #define DEFAULT_PULL_CONNECTION_SPEC "tcp://localhost:9605"
 #define DEFAULT_SUB_CONNECTION_SPEC "tcp://localhost:9606"
-#define DEFAULT_LIVE_STREAM_CONNECTION "tcp://localhost:9607"
+#define DEFAULT_LIVE_STREAM_CONNECTION "tcp://*:9607"
 
 extern char* live_stream_connection_spec;
 extern int pull_port;
