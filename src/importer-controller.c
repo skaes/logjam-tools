@@ -158,10 +158,11 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     state->ticks++;
 
-    // tell tracker, subscriber and stats server to tick
+    // tell tracker, subscriber, live stream publisher and  stats server to tick
     zstr_send(state->statsd_server, "tick");
     zstr_send(state->subscriber, "tick");
     zstr_send(state->tracker, "tick");
+    zstr_send(state->live_stream_publisher, "tick");
 
     // printf("[D] controller: collecting data from parsers: tick[%zu]\n", state->ticks);
     for (size_t i=0; i<num_parsers; i++) {
