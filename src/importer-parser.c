@@ -186,7 +186,9 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
     if (meta.compression_method) {
         int rc = decompress_frame(body_frame, meta.compression_method, parser_state->decompression_buffer, &body, &body_len);
         if (!rc) {
-            fprintf(stderr, "[E] could not decompress payload\n");
+            char *app_env = (char*) zframe_data(stream_frame);
+            int n = zframe_size(stream_frame);
+            fprintf(stderr, "[E] parser: could not decompress payload from %.*s\n", n, app_env);
             return;
         }
     } else {

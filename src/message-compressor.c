@@ -78,7 +78,7 @@ static
 void handle_compressor_request(zmsg_t *msg, compressor_state_t *state)
 {
     // get body frame
-    zmsg_first(msg);
+    zframe_t *stream_frame = zmsg_first(msg);
     zmsg_next(msg);
     zframe_t *body_frame = zmsg_next(msg);
     zframe_t *meta_frame = zmsg_next(msg);
@@ -95,7 +95,9 @@ void handle_compressor_request(zmsg_t *msg, compressor_state_t *state)
         char* new_body;
         int rc = decompress_frame(body_frame, meta->compression_method, state->compression_buffer, &new_body, &new_body_len);
         if (!rc) {
-            fprintf(stderr, "[E] could not decompress payload\n");
+            char *app_env = (char*) zframe_data(stream_frame);
+            int n = zframe_size(stream_frame);
+            fprintf(stderr, "[E] decompressor: could not decompress payload from %.*s\n", n, app_env);
         } else {
             // printf("UNCOMPRESSED[%zu] %.*s\n", new_body_len, (int)new_body_len, new_body);
             zframe_reset(body_frame, new_body, new_body_len);
