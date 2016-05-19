@@ -99,7 +99,7 @@ void handle_compressor_request(zmsg_t *msg, compressor_state_t *state)
             int n = zframe_size(stream_frame);
             const char *method_name = compression_method_to_string(meta->compression_method);
             fprintf(stderr, "[E] decompressor: could not decompress payload from %.*s (%s)\n", n, app_env, method_name);
-            dump_meta_info(meta);
+            dump_meta_info("[E]", meta);
             my_zmsg_fprint(msg, "[E] FRAME=", stderr);
 
         } else {

@@ -196,7 +196,7 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
         msg_meta.sequence_number++;
         if (debug) {
             my_zmq_msg_fprint(&message_parts[0], 3, "[D]", stdout);
-            dump_meta_info(&msg_meta);
+            dump_meta_info("[D]", &msg_meta);
         }
         publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
     }

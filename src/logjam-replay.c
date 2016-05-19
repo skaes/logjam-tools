@@ -67,7 +67,7 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
         my_zmsg_fprint(msg, "[D]", stdout);
         msg_meta_t meta;
         msg_extract_meta_info(msg, &meta);
-        dump_meta_info(&meta);
+        dump_meta_info("[D]", &meta);
     }
 
     // send message and destroy it

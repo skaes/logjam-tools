@@ -58,8 +58,8 @@ extern uint64_t ntohll(uint64_t native_number);
 
 extern int set_thread_name(const char* name);
 
-extern void dump_meta_info(msg_meta_t *meta);
-extern void dump_meta_info_network_format(msg_meta_t *meta);
+extern void dump_meta_info(const char* prefix, msg_meta_t *meta);
+extern void dump_meta_info_network_format(const char* prefix, msg_meta_t *meta);
 
 static inline void meta_info_encode(msg_meta_t *meta)
 {

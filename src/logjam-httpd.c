@@ -333,7 +333,7 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
     if (debug) {
         printf("SENDING ====================================\n");
         my_zmq_msg_fprint(&message_parts[0], 3, "[D]", stdout);
-        dump_meta_info(&msg_meta);
+        dump_meta_info("[D]", &msg_meta);
         if (compression) {
             printf("[D] UNCOMPRESSED: %.*s\n", data->json_len, data->json_str);
         }

@@ -116,7 +116,7 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
 
     if (debug) {
         my_zmsg_fprint(msg, "[D]", stdout);
-        dump_meta_info(&meta);
+        dump_meta_info("[D]", &meta);
     }
 
     // check for gaps

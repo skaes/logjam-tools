@@ -108,18 +108,18 @@ int set_thread_name(const char* name)
 #endif
 }
 
-void dump_meta_info(msg_meta_t *meta)
+void dump_meta_info(const char* prefix, msg_meta_t *meta)
 {
-    printf("[D] meta(tag:%hx version:%u compression:%u device:%u sequence:%" PRIu64 " created:%" PRIu64 ")\n",
-           meta->tag, meta->version, meta->compression_method, meta->device_number, meta->sequence_number, meta->created_ms);
+    printf("%s meta(tag:%hx version:%u compression:%u device:%u sequence:%" PRIu64 " created:%" PRIu64 ")\n",
+           prefix, meta->tag, meta->version, meta->compression_method, meta->device_number, meta->sequence_number, meta->created_ms);
 }
 
-void dump_meta_info_network_format(msg_meta_t *meta)
+void dump_meta_info_network_format(const char* prefix, msg_meta_t *meta)
 {
     // copy meta
     msg_meta_t m = *meta;
     meta_info_decode(&m);
-    dump_meta_info(&m);
+    dump_meta_info(prefix, &m);
 }
 
 int zmq_msg_extract_meta_info(zmq_msg_t *meta_msg, msg_meta_t *meta)
@@ -349,8 +349,10 @@ int decompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body,
     *body_len = 0;
 
     size_t uncompressed_length;
-    if (SNAPPY_OK != snappy_uncompressed_length(source, source_len, &uncompressed_length))
+    if (SNAPPY_OK != snappy_uncompressed_length(source, source_len, &uncompressed_length)) {
+        fprintf(stderr, "[E] snappy_uncompressed_length failed\n");
         return 0;
+    }
 
     if (uncompressed_length > dest_size) {
         size_t next_size = 2 * dest_size;
@@ -362,9 +364,12 @@ int decompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body,
         dest_size = next_size;
         dest = (char*) zchunk_data(buffer);
     }
+    assert(dest_size >= uncompressed_length);
 
-    if (SNAPPY_OK != snappy_uncompress(source, source_len, dest, &dest_size))
+    if (SNAPPY_OK != snappy_uncompress(source, source_len, dest, &dest_size)) {
+        fprintf(stderr, "[E] snappy_uncompress failed\n");
         return 0;
+    }
 
     *body = dest;
     *body_len = dest_size;
