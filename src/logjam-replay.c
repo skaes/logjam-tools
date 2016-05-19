@@ -11,8 +11,10 @@ static bool debug = false;
 
 static size_t io_threads = 1;
 static char *connection_spec = NULL;
-#define DEFAULT_PUSH_PORT 9605
-#define DEFAULT_CONNECTION_SPEC "tcp://localhost:9605"
+
+#define DEFAULT_CONNECTION_PORT 9606
+#define DEFAULT_CONNECTION_SPEC "tcp://*:9606"
+
 static bool endless_loop = false;
 static int messages_per_second = 100000;
 static int message_credit = 1000000;
@@ -42,10 +44,6 @@ static int timer_event( zloop_t *loop, int timer_id, void *arg)
 static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void* arg)
 {
     zsock_t *socket = arg;
-    if (!output_socket_ready(arg, 5)) {
-        // give the receiver a chance to catch up
-        return 0;
-    }
 
     if (message_credit-- <= 0) {
         zclock_sleep(1);
@@ -93,7 +91,7 @@ void print_usage(char * const *argv)
             "  -l, --loop                 loop the dump file\n"
             "  -r, --msg-rate N           output message rate (per second)\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
-            "  -p, --push S               zmq specification for push socket\n"
+            "  -p, --pub S                zmq specification for pub socket\n"
             "      --help                 display this message\n"
             , argv[0]);
 }
@@ -109,7 +107,7 @@ void process_arguments(int argc, char * const *argv)
         { "loop",          no_argument,       0, 'l' },
         { "msg-rate",      required_argument, 0, 'r' },
         { "io-threads",    required_argument, 0, 'i' },
-        { "push",          required_argument, 0, 'p' },
+        { "pub",           required_argument, 0, 'p' },
         { "verbose",       no_argument,       0, 'v' },
         { 0,               0,                 0,  0  }
     };
@@ -132,14 +130,14 @@ void process_arguments(int argc, char * const *argv)
             io_threads = atoi(optarg);
             break;
         case 'p':
-            connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_PUSH_PORT);
+            connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_CONNECTION_PORT);
             break;
         case 0:
             print_usage(argv);
             exit(0);
             break;
         case '?':
-            if (strchr("riz", optopt))
+            if (strchr("rip", optopt))
                 fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);
@@ -190,18 +188,18 @@ int main(int argc, char * const *argv)
     zsys_set_linger(100);
     zsys_set_io_threads(io_threads);
 
-    // create socket to receive messages on
-    zsock_t *sender = zsock_new(ZMQ_PUSH);
-    assert_x(sender != NULL, "[E] zmq socket creation failed", __FILE__, __LINE__);
+    // create socket to push messages to
+    zsock_t* publisher = zsock_new(ZMQ_PUB);
+    assert_x(publisher != NULL, "[E] zmq socket creation failed", __FILE__, __LINE__);
 
-    // configure the socket
-    zsock_set_sndhwm(sender, 1000000);
+    // configure the push socket
+    zsock_set_sndhwm(publisher, 1000000);
 
-    // connect socket
-    printf("[I] connecting PUSH socket to %s\n", connection_spec);
-    int rc = zsock_connect(sender, "%s", connection_spec);
-    log_zmq_error(rc, __FILE__, __LINE__);
-    assert(rc == 0);
+    // bind pub socket
+    printf("[I] binding PUB socket to %s\n", connection_spec);
+    int rc = zsock_bind(publisher, "%s", connection_spec);
+    // log_zmq_error(rc, __FILE__, __LINE__);
+    assert(rc != -1);
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -213,7 +211,7 @@ int main(int argc, char * const *argv)
         .fd = fileno(dump_file),
         .events = ZMQ_POLLIN
     };
-    rc = zloop_poller(loop, &dump_file_item, file_consume_message_and_forward, sender);
+    rc = zloop_poller(loop, &dump_file_item, file_consume_message_and_forward, publisher);
     assert(rc==0);
 
     // calculate statistics every 1000 ms
@@ -243,7 +241,7 @@ int main(int argc, char * const *argv)
     fclose(dump_file);
     zloop_destroy(&loop);
     assert(loop == NULL);
-    zsock_destroy(&sender);
+    zsock_destroy(&publisher);
     zsys_shutdown();
 
     if (verbose) printf("[I] terminated\n");

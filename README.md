@@ -44,7 +44,7 @@ log them to disk.
 ## logjam-replay
 
 A utility program to replay messages captured by logjam-dump. Useful
-in determining maximum system throughput.
+in determining maximum system throughput. Mimics a logjam-device.
 
 ## logjam-pubsub-bridge
 
