@@ -289,7 +289,8 @@ void compress_message_data_snappy(zchunk_t* buffer, zmq_msg_t *body, char *data,
     zmq_msg_t compressed_msg;
     zmq_msg_init_size(&compressed_msg, compressed_len);
     memcpy(zmq_msg_data(&compressed_msg), compressed_data, compressed_len);
-    zmq_msg_move(body, &compressed_msg);
+    rc = zmq_msg_move(body, &compressed_msg);
+    assert(rc != -1);
 
     // printf("[D] uncompressed/compressed: %ld/%ld\n", data_len, compressed_len);
 }
