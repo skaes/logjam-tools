@@ -14,6 +14,7 @@
 static bool verbose = false;
 static bool debug = false;
 static bool quiet = false;
+static bool debug_compress = false;
 
 #define DEFAULT_RCV_HWM 100000
 #define DEFAULT_SND_HWM 100000
@@ -81,6 +82,7 @@ static int path_prefix_alive_length;
 static msg_meta_t msg_meta = META_INFO_EMPTY;
 static int compression = NO_COMPRESSION;
 static zchunk_t* compression_buffer = NULL;
+static zchunk_t* decompression_buffer = NULL;
 
 typedef struct {
     char app[256];
@@ -227,8 +229,9 @@ void init_globals()
     rc = zsock_bind(pub_socket_wrapper, "tcp://*:%d", pub_port);
     assert (rc == pub_port);
 
-    // setup zchunk for compressing json data
+    // setup zchunks for compressing/decompressing json data
     compression_buffer = zchunk_new(NULL, INITIAL_COMPRESSION_BUFFER_SIZE);
+    decompression_buffer = zchunk_new(NULL, INITIAL_COMPRESSION_BUFFER_SIZE);
 }
 
 static inline
@@ -330,12 +333,23 @@ void send_logjam_message(msg_data_t *data, msg_meta_t *meta)
     msg_meta.compression_method = compression;
     msg_meta.sequence_number++;
 
-    if (debug) {
+    if (debug || (compression && debug_compress)) {
         printf("SENDING ====================================\n");
         my_zmq_msg_fprint(&message_parts[0], 3, "[D]", stdout);
         dump_meta_info("[D]", &msg_meta);
         if (compression) {
-            printf("[D] UNCOMPRESSED: %.*s\n", data->json_len, data->json_str);
+            printf("[D] ORIGINAL: %.*s\n", data->json_len, data->json_str);
+            if (debug_compress) {
+                zframe_t *body_frame = zframe_new(zmq_msg_data(&message_parts[2]), zmq_msg_size(&message_parts[2]));
+                char *body = NULL;
+                size_t body_len = 0;
+                int rc = decompress_frame(body_frame, compression, decompression_buffer, &body, &body_len);
+                printf("[D] UNCOMPRESSED: %.*s\n", (int)body_len, body);
+                assert(rc==1);
+                assert(body_len == (size_t)data->json_len);
+                assert(strncmp(data->json_str, body, body_len) == 0);
+                zframe_destroy(&body_frame);
+            }
         }
     }
 
@@ -596,6 +610,7 @@ static void print_usage(char * const *argv)
             "  -q, --quiet                 supress most output\n"
             "  -v, --verbose               log more (use -vv for debug output)\n"
             "  -x, --compress M            compress logjam traffic using (snappy|zlib)\n"
+            "  -D, --debug-compress        check decompressability\n"
             "  -P, --output-port N         port number of zeromq ouput socket\n"
             "  -R, --rcv-hwm N             high watermark for input socket\n"
             "  -S, --snd-hwm N             high watermark for output socket\n"
@@ -614,27 +629,31 @@ static void process_arguments(int argc, char * const *argv)
     opterr = 0;
 
     static struct option long_options[] = {
-        { "capture-file",  required_argument, 0, 'c' },
-        { "compress",      required_argument, 0, 'x' },
-        { "device-id",     required_argument, 0, 'd' },
-        { "help",          no_argument,       0,  0  },
-        { "input-port",    required_argument, 0, 'p' },
-        { "io-threads",    required_argument, 0, 'i' },
-        { "output-port",   required_argument, 0, 'P' },
-        { "quiet",         no_argument,       0, 'q' },
-        { "rcv-hwm",       required_argument, 0, 'R' },
-        { "snd-hwm",       required_argument, 0, 'S' },
-        { "verbose",       no_argument,       0, 'v' },
-        { 0,               0,                 0,  0  }
+        { "capture-file",   required_argument, 0, 'c' },
+        { "compress",       required_argument, 0, 'x' },
+        { "debug-compress", no_argument,       0, 'D' },
+        { "device-id",      required_argument, 0, 'd' },
+        { "help",           no_argument,       0,  0  },
+        { "input-port",     required_argument, 0, 'p' },
+        { "io-threads",     required_argument, 0, 'i' },
+        { "output-port",    required_argument, 0, 'P' },
+        { "quiet",          no_argument,       0, 'q' },
+        { "rcv-hwm",        required_argument, 0, 'R' },
+        { "snd-hwm",        required_argument, 0, 'S' },
+        { "verbose",        no_argument,       0, 'v' },
+        { 0,                0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:p:P:c:x:R:S:i:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:P:c:x:R:S:i:D", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
                 debug= true;
             else
                 verbose = true;
+            break;
+        case 'D':
+            debug_compress = true;
             break;
         case 'q':
             quiet = true;
