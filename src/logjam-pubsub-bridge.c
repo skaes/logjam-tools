@@ -337,10 +337,10 @@ static void process_arguments(int argc, char * const *argv)
 
     if (hosts == NULL) {
         hosts = split_delimited_string(getenv("LOGJAM_DEVICES"));
-        if (hosts == NULL) {
+        if (hosts == NULL)
             hosts = zlist_new();
+        if (zlist_size(hosts) == 0)
             zlist_push(hosts, strdup("localhost"));
-        }
     }
     augment_zmq_connection_specs(&hosts, pull_port);
 
