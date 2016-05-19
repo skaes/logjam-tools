@@ -37,6 +37,7 @@ _process_id           process_id
 _http_method          request_info["method"]
 _http_url             request_info["url"]
 _http_header_*        all entries from request_info["headers"] as separate fields (normalize header name/key using lowercase letters and underscores)
+_logjam_message_size  the bytesize of the original logjam request message
 ```
 
 Example
@@ -64,5 +65,6 @@ Example
   "_http_header_user_agent": "RestCake/0.10.6",
   "_http_header_accept_encoding": "deflate, gzip",
   "_http_header_accept": "application/json",
+  "_logjam_message_size": 1192
 }
 ```

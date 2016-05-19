@@ -246,6 +246,8 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, zchunk_t *decom
 
     gelf_message_add_int (gelf_msg, "level", SYSLOG_MAPPING[level]);
 
+    gelf_message_add_int (gelf_msg, "_logjam_message_size", json_data_len);
+
     free (app_env);
     json_object_put (request);
     json_tokener_free (tokener);
