@@ -60,7 +60,13 @@ AS_IF([test "x$with_opt_dir" == "x"],
                           [
                             echo "checking modules failed. using builtin default directories."
                             AC_SUBST([OPTDIR_CPPFLAGS],["-I/opt/logjam/include -I/opt/logjam/include/libbson-1.0 -I/opt/logjam/include/libmongoc-1.0 -I/usr/local/include -I/usr/local/include/libbson-1.0 -I/usr/local/include/libmongoc-1.0 -I/opt/local/include -I/opt/local/include/libbson-1.0 -I/opt/local/include/libmongoc-1.0"])
-                            AC_SUBST([OPTDIR_LDFLAGS],["-L/opt/logjam/lib -L/usr/local/lib -L/opt/local/lib"])
+
+                            OPTDIR_LDFLAGS=""
+                            AS_IF([test -d /opt/logjam/lib], [OPTDIR_LDFLAGS="$OPTDIR_LDFLAGS -L/opt/logjam/lib"])
+                            AS_IF([test -d /usr/local/lib],  [OPTDIR_LDFLAGS="$OPTDIR_LDFLAGS -L/usr/local/lib"])
+                            AS_IF([test -d /opt/local/lib],  [OPTDIR_LDFLAGS="$OPTDIR_LDFLAGS -L/opt/local/lib"])
+                            AC_SUBST([OPTDIR_LDFLAGS])
+
                             AC_SUBST([DEPS_LIBS],["-lrabbitmq -lczmq -lzmq -ljson-c -lmongoc-1.0 -lbson-1.0 -lsnappy"])]
                          )
       ])
