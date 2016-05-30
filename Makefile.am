@@ -74,7 +74,10 @@ logjam_importer_SOURCES = \
     src/statsd-client.c \
     src/statsd-client.h \
     src/zring.c \
-    src/zring.h
+    src/zring.h \
+    src/device-tracker.c \
+    src/device-tracker.h
+
 
 logjam_httpd_SOURCES = \
     config.h \
@@ -102,13 +105,17 @@ logjam_graylog_forwarder_SOURCES = \
     src/logjam-message.c \
     src/logjam-message.h \
     src/str-builder.c \
-    src/str-builder.h
+    src/str-builder.h \
+    src/device-tracker.c \
+    src/device-tracker.h
 
 logjam_dump_SOURCES = \
     config.h \
     src/logjam-dump.c \
     src/logjam-util.c \
-    src/logjam-util.h
+    src/logjam-util.h \
+    src/device-tracker.c \
+    src/device-tracker.h
 
 logjam_replay_SOURCES = \
     config.h \
@@ -122,7 +129,9 @@ logjam_pubsub_bridge_SOURCES = \
     src/logjam-util.c \
     src/logjam-util.h \
     src/message-compressor.c \
-    src/message-compressor.h
+    src/message-compressor.h \
+    src/device-tracker.c \
+    src/device-tracker.h
 
 logjam_logger_SOURCES = \
     config.h \
@@ -149,7 +158,9 @@ dist_noinst_SCRIPTS = autogen.sh
 checker_SOURCES = \
     src/checker.c \
     src/zring.c \
-    src/zring.h
+    src/zring.h \
+    src/logjam-util.c \
+    src/logjam-util.h
 
 
 #local rules

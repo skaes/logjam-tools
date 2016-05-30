@@ -139,6 +139,8 @@ void
 zring_test (int verbose)
 {
     printf (" * zring: ");
+    if (verbose)
+        printf("\n");
 
     zring_t *ring = zring_new ();
     assert (ring);

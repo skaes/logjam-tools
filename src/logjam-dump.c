@@ -1,4 +1,5 @@
 #include "logjam-util.h"
+#include "device-tracker.h"
 #include <getopt.h>
 
 FILE* dump_file = NULL;
@@ -19,77 +20,11 @@ static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
 static size_t message_gaps = 0;
 
-static zhashx_t *seen_devices = NULL;
-typedef struct {
-    uint32_t device_number;
-    uint64_t sequence_number;
-    uint64_t lost;
-} device_info_t;
-
-static size_t uint64_hash(const void *key)
-{
-    return (size_t) key;
-}
-
-static int uint64_comparator(const void *a, const void *b)
-{
-    return a < b ? -1 : (a > b ? 1 : 0);
-}
-
-static void device_info_destroy(void **item)
-{
-    free(*item);
-    *item = NULL;
-}
-
-static void create_device_hash()
-{
-    seen_devices = zhashx_new();
-    zhashx_set_key_hasher(seen_devices, uint64_hash);
-    zhashx_set_key_destructor(seen_devices, NULL);
-    zhashx_set_key_duplicator(seen_devices, NULL);
-    zhashx_set_key_comparator(seen_devices, uint64_comparator);
-    zhashx_set_destructor(seen_devices, device_info_destroy);
-}
-
-static void destroy_device_hash()
-{
-    zhashx_destroy(&seen_devices);
-}
-
-static int64_t calculate_gap_and_update_sequence_number(msg_meta_t* meta)
-{
-    uint64_t device_number = meta->device_number;
-    if (device_number == 0)
-        return 0;
-
-    uint64_t sequence_number = meta->sequence_number;
-    device_info_t *info = zhashx_lookup(seen_devices, (const void*) device_number);
-
-    if (info == NULL) {
-        printf("[I] counting gaps for device %" PRIu64 "\n", device_number);
-        info = zmalloc(sizeof(*info));
-        assert(info);
-        info->device_number = device_number;
-        info->sequence_number = sequence_number;
-        info->lost = 0;
-        int rc = zhashx_insert(seen_devices, (const void*) device_number, info);
-        assert(rc == 0);
-        return 0;
-    } else {
-        int64_t gap = sequence_number - info->sequence_number - 1;
-        if (gap > 0) {
-            info->lost += gap;
-            fprintf(stderr, "[W] lost %" PRIu64 " messages from device %" PRIu64 " (%" PRIu64 "-%" PRIu64 ")\n",
-                    gap, device_number, info->sequence_number + 1, sequence_number - 1);
-        }
-        info->sequence_number = sequence_number;
-        return gap;
-    }
-}
+static device_tracker_t *tracker = NULL;
 
 static int timer_event( zloop_t *loop, int timer_id, void *arg)
 {
+    static size_t ticks = 0;
     static size_t last_received_count = 0;
     static size_t last_received_bytes = 0;
     size_t message_count = received_messages_count - last_received_count;
@@ -102,7 +37,8 @@ static int timer_event( zloop_t *loop, int timer_id, void *arg)
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
     message_gaps = 0;
-
+    if (++ticks % HEART_BEAT_INTERVAL == 0)
+        device_tracker_reconnect_stale_devices(tracker);
     return 0;
 }
 
@@ -119,8 +55,17 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
         dump_meta_info("[D]", &meta);
     }
 
-    // check for gaps
-    message_gaps += calculate_gap_and_update_sequence_number(&meta);
+    // check for gaps and process heart beats
+    zframe_t *first = zmsg_first(msg);
+    char *pub_spec = NULL;
+    bool is_heartbeat = zframe_streq(first, "heartbeat");
+    if (is_heartbeat) {
+        if (verbose)
+            printf("[I] received heartbeat from device %d\n", meta.device_number);
+        zframe_t *spec_frame = zmsg_next(msg);
+        pub_spec = zframe_strdup(spec_frame);
+    }
+    message_gaps += device_tracker_calculate_gap(tracker, &meta, pub_spec);
 
     // calculate stats
     size_t msg_bytes = zmsg_content_size(msg);
@@ -130,7 +75,8 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
         received_messages_max_bytes = msg_bytes;
 
     // dump message to file annd free memory
-    zmsg_savex(msg, dump_file);
+    if (!is_heartbeat)
+        zmsg_savex(msg, dump_file);
     zmsg_destroy(&msg);
 
     return 0;
@@ -214,7 +160,7 @@ static void process_arguments(int argc, char * const *argv)
 
     if (connection_specs == NULL) {
         connection_specs = zlist_new();
-        zlist_append(connection_specs, DEFAULT_CONNECTION_SPEC);
+        zlist_append(connection_specs, strdup(DEFAULT_CONNECTION_SPEC));
     }
     augment_zmq_connection_specs(&connection_specs, sub_port);
 }
@@ -227,8 +173,6 @@ int main(int argc, char * const *argv)
 
     process_arguments(argc, argv);
 
-    create_device_hash();
-
     // open dump file
     dump_file = fopen(dump_file_name, "w");
     if (!dump_file) {
@@ -236,7 +180,6 @@ int main(int argc, char * const *argv)
         exit(1);
     }
     if (verbose) printf("[I] dumping stream to %s\n", dump_file_name);
-
 
     // set global config
     zsys_init();
@@ -263,8 +206,11 @@ int main(int argc, char * const *argv)
     // receive everything
     zsock_set_subscribe(receiver, "");
 
-    //  configure the socket
+    // configure the socket
     zsock_set_rcvhwm(receiver, 100000);
+
+    // create device tracker
+    tracker = device_tracker_new(connection_specs, receiver);
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -276,9 +222,8 @@ int main(int argc, char * const *argv)
     zloop_reader_set_tolerant(loop, receiver);
 
     // calculate statistics every 1000 ms
-    int timer_id = 1;
-    rc = zloop_timer(loop, 1000, 0, timer_event, &timer_id);
-    assert(rc != -1);
+    int timer_id = zloop_timer(loop, 1000, 0, timer_event, receiver);
+    assert(timer_id != -1);
 
     if (!zsys_interrupted) {
         if (verbose) printf("[I] starting main event loop\n");
@@ -296,7 +241,7 @@ int main(int argc, char * const *argv)
     // clean up
     if (verbose) printf("[I] shutting down\n");
 
-    destroy_device_hash();
+    device_tracker_destroy(&tracker);
     fclose(dump_file);
     zloop_destroy(&loop);
     assert(loop == NULL);

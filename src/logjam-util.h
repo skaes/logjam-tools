@@ -24,6 +24,14 @@ extern zlist_t *split_delimited_string(const char* s);
 extern char* augment_zmq_connection_spec(char* spec, int default_port);
 extern void augment_zmq_connection_specs(zlist_t** specs, int default_port);
 
+
+// check every 10 ticks whether config file has changed
+#define CONFIG_FILE_CHECK_INTERVAL 10
+// send heart beats every 5 ticks
+#define HEART_BEAT_INTERVAL 5
+// initial credit leads to 30 seconds
+#define INITIAL_HEARTBEAT_CREDIT 6
+
 #define NO_COMPRESSION     0
 #define ZLIB_COMPRESSION   1
 #define SNAPPY_COMPRESSION 2
@@ -83,6 +91,13 @@ static inline void msg_add_meta_info(zmq_msg_t *msg, msg_meta_t *meta)
     void *data = zmq_msg_data(msg);
     memcpy(data, meta,  sizeof(msg_meta_t));
     meta_info_encode(data);
+}
+
+static inline void zmsg_add_meta_info(zmsg_t *msg, msg_meta_t *meta)
+{
+    msg_meta_t m = *meta;
+    meta_info_encode(&m);
+    zmsg_addmem(msg, &m, sizeof(m));
 }
 
 extern int zmq_msg_extract_meta_info(zmq_msg_t *meta_msg, msg_meta_t *meta);
@@ -180,6 +195,10 @@ extern void setup_subscriptions_for_sub_socket(zlist_t *subscriptions, zsock_t *
 
 extern int zmsg_savex (zmsg_t *self, FILE *file);
 extern zmsg_t* zmsg_loadx (zmsg_t *self, FILE *file);
+
+extern void logjam_util_test (int verbose);
+extern const char* my_fqdn();
+extern void send_heartbeat(zsock_t *socket, msg_meta_t* meta, int pub_port);
 
 #ifdef __cplusplus
 }

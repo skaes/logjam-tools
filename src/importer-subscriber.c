@@ -1,6 +1,7 @@
 #include "importer-subscriber.h"
 #include "importer-streaminfo.h"
 #include "logjam-util.h"
+#include "device-tracker.h"
 
 /*
  * connections: n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
@@ -22,11 +23,12 @@
 // actor state
 typedef struct {
     zsock_t *pipe;                            // actor commands
+    zlist_t *devices;                         // list of devices to connect to (overrides config)
+    device_tracker_t *tracker;                // tracks sequence numbers, gaps and heartbeats for devices
     zsock_t *sub_socket;                      // incoming data from logjam devices
     zsock_t *push_socket;                     // outgoing data for parsers
     zsock_t *pull_socket;                     // pull for direct connections (apps)
     zsock_t *pub_socket;                      // republish all incoming messages (optional)
-    uint64_t sequence_numbers[MAX_DEVICES];   // last seen message sequence number for given device
     size_t message_count;                     // messages processed (since last tick)
     size_t messages_dev_zero;                 // messages arrived from device 0 (since last tick)
     size_t meta_info_failures;                // messages with invalid meta info (since last tick)
@@ -37,8 +39,9 @@ typedef struct {
 
 
 static
-void extract_bindings_from_config(zconfig_t* config)
+zlist_t* extract_devices_from_config(zconfig_t* config)
 {
+    zlist_t *devices = zlist_new();
     zconfig_t *bindings = zconfig_locate(config, "frontend/endpoints/bindings");
     assert(bindings);
     zconfig_t *binding = zconfig_child(bindings);
@@ -48,14 +51,15 @@ void extract_bindings_from_config(zconfig_t* config)
             if (verbose)
                 printf("[I] subscriber: ignoring empty SUB socket binding\n");
         } else {
-            zlist_append(hosts, spec);
+            zlist_append(devices, spec);
         }
         binding = zconfig_next(binding);
     }
+    return devices;
 }
 
 static
-zsock_t* subscriber_sub_socket_new(zconfig_t* config)
+zsock_t* subscriber_sub_socket_new(zconfig_t* config, zlist_t* devices)
 {
     zsock_t *socket = zsock_new(ZMQ_SUB);
     assert(socket);
@@ -64,22 +68,15 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config)
     zsock_set_reconnect_ivl(socket, 100); // 100 ms
     zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
-    if (hosts == NULL) {
-        hosts = zlist_new();
-        extract_bindings_from_config(config);
-    }
-    if (zlist_size(hosts) == 0)
-        zlist_append(hosts, augment_zmq_connection_spec("localhost", sub_port));
-
     // connect socket to endpoints
-    char* host = zlist_first(hosts);
-    while (host) {
+    char* spec = zlist_first(devices);
+    while (spec) {
         if (!quiet)
-            printf("[I] subscriber: connecting SUB socket to: %s\n", host);
-        int rc = zsock_connect(socket, "%s", host);
+            printf("[I] subscriber: connecting SUB socket to: %s\n", spec);
+        int rc = zsock_connect(socket, "%s", spec);
         log_zmq_error(rc, __FILE__, __LINE__);
         assert(rc == 0);
-        host = zlist_next(hosts);
+        spec = zlist_next(devices);
     }
 
     return socket;
@@ -162,36 +159,34 @@ void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
 }
 
 static
-void check_and_update_sequence_number(subscriber_state_t *state, zmsg_t* msg)
+int process_meta_information_and_handle_heartbeat(subscriber_state_t *state, zmsg_t* msg)
 {
+    zframe_t *first = zmsg_first(msg);
+    char *pub_spec = NULL;
+    bool is_heartbeat = zframe_streq(first, "heartbeat");
+
     msg_meta_t meta;
     int rc = msg_extract_meta_info(msg, &meta);
     if (!rc) {
         // dump_meta_info(&meta);
-        if (!state->meta_info_failures++) {
+        if (!state->meta_info_failures++)
             fprintf(stderr, "[E] subscriber: received invalid meta info\n");
-        }
-        return;
+        return is_heartbeat;
     }
     if (meta.device_number == 0) {
         // ignore device number 0
         state->messages_dev_zero++;
-        return;
+        return is_heartbeat;
     }
-    if (meta.device_number > MAX_DEVICES && !state->meta_info_failures++) {
-        fprintf(stderr, "[E] subscriber: received illegal device number: %d\n", meta.device_number);
-        return;
+    if (is_heartbeat) {
+        if (debug)
+            printf("received heartbeat form device %d\n", meta.device_number);
+        zmsg_first(msg); // msg_extract_meta_info repositions the pointer, so reset
+        zframe_t *spec_frame = zmsg_next(msg);
+        pub_spec = zframe_strdup(spec_frame);
     }
-    uint64_t old_sequence_number = state->sequence_numbers[meta.device_number];
-    int64_t gap = meta.sequence_number - old_sequence_number - 1;
-    if (gap > 0 && old_sequence_number) {
-        fprintf(stderr, "[W] subscriber: lost %" PRIi64 " messages from device %" PRIu32 " (%" PRIu64 "-%" PRIu64 ")\n",
-                gap, meta.device_number, old_sequence_number + 1, meta.sequence_number - 1);
-        state->message_gap_size += gap;
-    } else {
-        // printf("[D] subscriber: msg(device %d, sequence %" PRIu64 ")\n", meta.device_number, meta.sequence_number);
-    }
-    state->sequence_numbers[meta.device_number] = meta.sequence_number;
+    state->message_gap_size += device_tracker_calculate_gap(state->tracker, &meta, pub_spec);
+    return is_heartbeat;
 }
 
 static
@@ -208,14 +203,19 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
             return 0;
         }
         if (n == 4) {
-            check_and_update_sequence_number(state, msg);
+            int is_heartbeat = process_meta_information_and_handle_heartbeat(state, msg);
+            if (is_heartbeat) {
+                zmsg_destroy(&msg);
+                return 0;
+            }
         }
-        if (PUBLISH_DUPLICATES) {
+
+        if (PUBLISH_DUPLICATES)
             subscriber_publish_duplicate(msg, state->pub_socket);
-        }
-        if (!output_socket_ready(state->push_socket, 0) && !state->message_blocks++) {
+
+        if (!output_socket_ready(state->push_socket, 0) && !state->message_blocks++)
             fprintf(stderr, "[W] subscriber: push socket not ready. blocking!\n");
-        }
+
         int rc = zmsg_send_and_destroy(&msg, state->push_socket);
         if (rc) {
             if (!state->message_drops++)
@@ -228,6 +228,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
 static
 int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
+    static size_t ticks = 0;
     int rc = 0;
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
@@ -248,6 +249,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             state->messages_dev_zero = 0;
             state->message_drops = 0;
             state->message_blocks = 0;
+            if (++ticks % HEART_BEAT_INTERVAL == 0)
+                device_tracker_reconnect_stale_devices(state->tracker);
         } else {
             fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
         }
@@ -259,15 +262,26 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
 
 
 static
-subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config)
+subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config, zlist_t *devices)
 {
+    // figure out devices specs
+    if (devices == NULL)
+        devices = zlist_new();
+    if (zlist_size(devices) == 0)
+        devices = extract_devices_from_config(config);
+    if (zlist_size(devices) == 0)
+        zlist_append(devices, augment_zmq_connection_spec("localhost", sub_port));
+
+    //create the state
     subscriber_state_t *state = zmalloc(sizeof(*state));
     state->pipe = pipe;
-    state->sub_socket = subscriber_sub_socket_new(config);
+    state->devices = devices;
+    state->sub_socket = subscriber_sub_socket_new(config, state->devices);
+    state->tracker = device_tracker_new(devices, state->sub_socket);
     state->pull_socket = subscriber_pull_socket_new(config);
     state->push_socket = subscriber_push_socket_new(config);
     if (PUBLISH_DUPLICATES)
-        state->pub_socket  = subscriber_pub_socket_new(config);
+        state->pub_socket = subscriber_pub_socket_new(config);
     return state;
 }
 
@@ -280,9 +294,9 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
     zsock_destroy(&state->push_socket);
     if (PUBLISH_DUPLICATES)
         zsock_destroy(&state->pub_socket);
+    device_tracker_destroy(&state->tracker);
     *state_p = NULL;
 }
-
 
 static
 void setup_subscriptions(subscriber_state_t *state)
@@ -298,7 +312,7 @@ void subscriber(zsock_t *pipe, void *args)
 
     int rc;
     zconfig_t* config = args;
-    subscriber_state_t *state = subscriber_state_new(pipe, config);
+    subscriber_state_t *state = subscriber_state_new(pipe, config, hosts);
 
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);

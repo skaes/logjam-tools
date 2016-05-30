@@ -1,14 +1,21 @@
 #include "graylog-forwarder-subscriber.h"
 #include "logjam-message.h"
+#include "device-tracker.h"
 
 // actor state
 typedef struct {
-    zconfig_t *config;    // config
-    zlist_t *devices;     // list of devices to connect to (overrides config)
-    zsock_t *pipe;        // actor commands
-    zsock_t *sub_socket;  // incoming data from logjam devices
-    zsock_t *push_socket; // outgoing data for parsers
-    size_t message_count; // how many messages we have received since last tick
+    zconfig_t *config;          // config
+    zsock_t *pipe;              // actor commands
+    zlist_t *devices;           // list of devices to connect to (overrides config)
+    device_tracker_t *tracker;  // tracks gaps and heartbeats
+    zsock_t *sub_socket;        // incoming data from logjam devices
+    zsock_t *push_socket;       // outgoing data for parsers
+    size_t message_count;       // how many messages we have received since last tick
+    size_t messages_dev_zero;   // messages arrived from device 0 (since last tick)
+    size_t meta_info_failures;  // messages with invalid meta info (since last tick)
+    size_t message_gap_size;    // messages missed due to gaps in the stream (since last tick)
+    size_t message_drops;       // messages dropped because push_socket wasn't ready (since last tick)
+    size_t message_blocks;      // how often the subscriber blocked on the push_socket (since last tick)
     zlist_t *subscriptions;
     int rcv_hwm;
     int snd_hwm;
@@ -49,11 +56,16 @@ zsock_t* subscriber_sub_socket_new(subscriber_state_t *state)
     }
 
     char *subscription = zlist_first(state->subscriptions);
+    bool subscribed_to_all = false;
     while (subscription) {
         printf("[I] subscriber: subscribing to '%s'\n", subscription);
+        if (streq(subscription, ""))
+            subscribed_to_all = true;
         zsock_set_subscribe(socket, subscription);
         subscription = zlist_next(state->subscriptions);
     }
+    if (!subscribed_to_all)
+        zsock_set_subscribe(socket, "heartbeat");
 
     if (!state->devices || zlist_size(state->devices) == 0) {
         // convert config file to list of devices
@@ -107,6 +119,7 @@ subscriber_state_t* subscriber_state_new(zsock_t* pipe, subscriber_args_t* args)
     state->snd_hwm = args->snd_hwm;
     state->sub_socket = subscriber_sub_socket_new(state);
     state->push_socket = subscriber_push_socket_new();
+    state->tracker = device_tracker_new(state->devices, state->sub_socket);
     free(args);
     return state;
 }
@@ -117,7 +130,39 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
     subscriber_state_t *state = *state_p;
     zsock_destroy(&state->sub_socket);
     zsock_destroy(&state->push_socket);
+    device_tracker_destroy(&state->tracker);
     *state_p = NULL;
+}
+
+static
+int process_meta_information_and_handle_heartbeat(subscriber_state_t *state, zmsg_t* msg)
+{
+    zframe_t *first = zmsg_first(msg);
+    char *pub_spec = NULL;
+    bool is_heartbeat = zframe_streq(first, "heartbeat");
+
+    msg_meta_t meta;
+    int rc = msg_extract_meta_info(msg, &meta);
+    if (!rc) {
+        // dump_meta_info(&meta);
+        if (!state->meta_info_failures++)
+            fprintf(stderr, "[E] subscriber: received invalid meta info\n");
+        return is_heartbeat;
+    }
+    if (meta.device_number == 0) {
+        // ignore device number 0
+        state->messages_dev_zero++;
+        return is_heartbeat;
+    }
+    if (is_heartbeat) {
+        if (debug)
+            printf("received heartbeat form device %d\n", meta.device_number);
+        zmsg_first(msg); // msg_extract_meta_info repositions the pointer, so reset
+        zframe_t *spec_frame = zmsg_next(msg);
+        pub_spec = zframe_strdup(spec_frame);
+    }
+    state->message_gap_size += device_tracker_calculate_gap(state->tracker, &meta, pub_spec);
+    return is_heartbeat;
 }
 
 static
@@ -127,6 +172,9 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
     zmsg_t *msg = zmsg_recv(socket);
 
     if (msg) {
+        if (debug)
+            my_zmsg_fprint(msg, "[D] ", stderr);
+
         state->message_count++;
         int n = zmsg_size(msg);
         if (n < 3 || n > 4) {
@@ -135,15 +183,21 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
             zmsg_destroy(&msg);
             return 0;
         }
-
-        while (!zsys_interrupted && !output_socket_ready(state->push_socket, 1000)) {
-            fprintf(stderr, "[W] subscriber: push socket not ready (parser queues are full). blocking!\n");
+        if (n==4) {
+            int is_heartbeat = process_meta_information_and_handle_heartbeat(state, msg);
+            if (is_heartbeat) {
+                zmsg_destroy(&msg);
+                return 0;
+            }
         }
 
-        if (!zsys_interrupted) {
-            zmsg_send(&msg, state->push_socket);
-        } else {
-            zmsg_destroy(&msg);
+        if (!output_socket_ready(state->push_socket, 0) && !state->message_blocks++)
+            fprintf(stderr, "[W] subscriber: push socket not ready. blocking!\n");
+
+        int rc = zmsg_send_and_destroy(&msg, state->push_socket);
+        if (rc) {
+            if (!state->message_drops++)
+                fprintf(stderr, "[E] subscriber: dropped message on push socket (%d: %s)\n", errno, zmq_strerror(errno));
         }
     }
     return 0;
@@ -152,6 +206,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
 static
 int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
+    static size_t ticks = 0;
     int rc = 0;
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
@@ -161,9 +216,17 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             fprintf(stderr, "[D] subscriber: received $TERM command\n");
             rc = -1;
         } else if (streq(cmd, "tick")) {
-            printf("[I] subscriber: received %zu messages\n",
-                    state->message_count);
+            printf("[I] subscriber: %5zu messages "
+                   "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
+                   state->message_count, state->message_gap_size, state->meta_info_failures,
+                   state->messages_dev_zero, state->message_blocks, state->message_drops);
             state->message_count = 0;
+            state->message_gap_size = 0;
+            state->meta_info_failures = 0;
+            state->messages_dev_zero = 0;
+            state->message_drops = 0;
+            if (++ticks % HEART_BEAT_INTERVAL == 0)
+                device_tracker_reconnect_stale_devices(state->tracker);
         } else {
             fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
         }

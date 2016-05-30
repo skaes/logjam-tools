@@ -19,6 +19,9 @@ static bool debug_compress = false;
 #define DEFAULT_RCV_HWM 100000
 #define DEFAULT_SND_HWM 100000
 
+// send heart beats every 5 seconds
+#define HEART_BEAT_INTERVAL 5
+
 static int rcv_hwm = -1;
 static int snd_hwm = -1;
 
@@ -257,7 +260,7 @@ bool extract_msg_data(char *query_string, char* headers, msg_data_t *msg_data)
     }
 
     // add time info
-    msg_meta.created_ms = zclock_time();
+    msg_meta.created_ms = zclock_mono();
     json_object_object_add(json, "started_ms", json_object_new_int64(msg_meta.created_ms));
     json_object_object_add(json, "started_at", json_object_new_string(current_time_as_string));
 
@@ -595,6 +598,16 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
     set_started_at();
+
+    // publish heartbeat
+    static size_t ticks = 0;
+    if (++ticks % HEART_BEAT_INTERVAL == 0) {
+        msg_meta.compression_method = NO_COMPRESSION;
+        msg_meta.sequence_number++;
+        msg_meta.created_ms = zclock_mono();
+        send_heartbeat(pub_socket, &msg_meta, pub_port);
+    }
+
     return 0;
 }
 

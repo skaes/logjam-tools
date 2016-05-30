@@ -96,7 +96,7 @@ static void process_arguments(int argc, char * const *argv)
         case 'h':
             hosts = split_delimited_string(optarg);
             if (hosts == NULL || zlist_size(hosts) == 0) {
-                printf("[E] must specifiy at least one device to connect to\n");
+                printf("[E] must specify at least one device to connect to\n");
                 exit(1);
             }
             break;

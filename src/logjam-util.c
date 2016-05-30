@@ -580,4 +580,81 @@ void setup_subscriptions_for_sub_socket(zlist_t *subscriptions, zsock_t *socket)
         }
         stream = zlist_next(subscriptions);
     }
+    // subscribe to heartbeats
+    zsock_set_subscribe(socket, "heartbeat");
+}
+
+// unlike zsys_hostname() this supports IPV6
+const char* my_fqdn()
+{
+    static char* fqdn = NULL;
+    static char* hostname = NULL;
+    int rc;
+
+    if (fqdn) return fqdn;
+
+    if (!hostname) {
+        char buffer[1024];
+        buffer[1023] = '\0';
+        rc = gethostname(buffer, 1023);
+        assert(rc==0);
+        hostname = strdup(buffer);
+    }
+
+    struct addrinfo hints;
+    memset(&hints, 0, sizeof hints);
+    hints.ai_family = AF_UNSPEC; /*either IPV4 or IPV6*/
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_flags = AI_CANONNAME;
+
+    struct addrinfo *info;
+    rc = getaddrinfo(hostname, NULL, &hints, &info);
+    if (rc != 0) {
+        fprintf(stderr, "[E] could not determine FQDN: %s\n", gai_strerror(rc));
+        fprintf(stderr, "[W] using hostname: %s\n", hostname);
+        return hostname;
+    }
+
+    struct addrinfo *p;
+    for (p = info; p != NULL; p = p->ai_next) {
+        fqdn = strdup(p->ai_canonname);
+        // printf("hostname: %s\n", p->ai_canonname);
+    }
+    freeaddrinfo(info);
+
+    return fqdn;
+}
+
+void send_heartbeat(zsock_t *socket, msg_meta_t *meta, int pub_port)
+{
+    zmsg_t *msg = zmsg_new();
+    zmsg_addstr(msg, "heartbeat");
+    zmsg_addstrf(msg, "tcp://%s:%d", my_fqdn(), pub_port);
+    zmsg_addstr(msg, "{}"); // empty JSON body
+    zmsg_add_meta_info(msg, meta);
+    zmsg_send_and_destroy(&msg, socket);
+}
+
+static void test_my_fqdn (int verbose)
+{
+    for (int i=0; i++ < 30;) {
+        const char* hostname = my_fqdn();
+        if (hostname && strchr(hostname, '.')) {
+            if (verbose)
+                printf("\tmy_fqdn: found hostname = %s\n", hostname);
+            break;
+        }
+        sleep(1);
+    }
+}
+
+void logjam_util_test (int verbose)
+{
+    printf (" * logjam-utils: ");
+    if (verbose)
+        printf("\n");
+
+    test_my_fqdn (verbose);
+
+    printf ("OK\n");
 }

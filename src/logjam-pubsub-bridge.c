@@ -9,6 +9,7 @@
 #include <getopt.h>
 #include "logjam-util.h"
 #include "message-compressor.h"
+#include "device-tracker.h"
 
 // shared globals
 bool verbose = false;
@@ -42,6 +43,7 @@ static size_t decompressed_messages_count = 0;
 static size_t decompressed_messages_bytes = 0;
 static size_t decompressed_messages_max_bytes = 0;
 
+static device_tracker_t *tracker = NULL;
 static zlist_t *hosts = NULL;
 static zlist_t *subscriptions = NULL;
 
@@ -123,6 +125,8 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
         printf("[I] detected config change. terminating.\n");
         zsys_interrupted = 1;
     }
+    if (ticks % HEART_BEAT_INTERVAL == 0)
+        device_tracker_reconnect_stale_devices(tracker);
 
     return 0;
 }
@@ -167,7 +171,7 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
 
     // const char *prefix = socket == state->compressor_output ? "EXTERNAL MESSAGE" : "INTERNAL MESSAGE";
     // my_zmq_msg_fprint(&message_parts[0], 3, prefix, stdout);
-    // dump_meta_info(&meta);
+    // dump_meta_info(prefix, &meta);
 
     if (meta.created_ms)
         msg_meta.created_ms = meta.created_ms;
@@ -198,7 +202,16 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
             my_zmq_msg_fprint(&message_parts[0], 3, "[D]", stdout);
             dump_meta_info("[D]", &msg_meta);
         }
-        publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
+        char *pub_spec = NULL;
+        bool is_heartbeat = zmq_msg_size(&message_parts[0]) == 9 && strncmp("heartbeat", zmq_msg_data(&message_parts[0]), 9) == 0;
+        if (is_heartbeat) {
+            if (debug)
+                printf("[D] received heartbeat message from device %u\n", msg_meta.device_number);
+            pub_spec = strndup(zmq_msg_data(&message_parts[1]), zmq_msg_size(&message_parts[1]));
+        }
+        device_tracker_calculate_gap(tracker, &msg_meta, pub_spec);
+        if (!is_heartbeat)
+            publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
     }
 
  cleanup:
@@ -408,6 +421,7 @@ int main(int argc, char * const *argv)
         assert_x(rc == 0, "sub socket connect failed", __FILE__, __LINE__);
         host = zlist_next(hosts);
     }
+    tracker = device_tracker_new(hosts, receiver);
 
     // create socket for publishing
     zsock_t *publisher = zsock_new(ZMQ_PUSH);
@@ -439,9 +453,8 @@ int main(int argc, char * const *argv)
     zloop_set_verbose(loop, 0);
 
     // calculate statistics every 1000 ms
-    int timer_id = 1;
-    rc = zloop_timer(loop, 1000, 0, timer_event, &timer_id);
-    assert(rc != -1);
+    int timer_id = zloop_timer(loop, 1000, 0, timer_event, NULL);
+    assert(timer_id != -1);
 
     // setup handler for the receiver socket
     publisher_state_t publisher_state = {
@@ -477,6 +490,7 @@ int main(int argc, char * const *argv)
             zsock_set_subscribe(receiver, subscription);
             subscription = zlist_next(subscriptions);
         }
+        zsock_set_subscribe(receiver, "heartbeat");
     }
 
     // run the loop
@@ -507,6 +521,7 @@ int main(int argc, char * const *argv)
     zsock_destroy(&publisher);
     zsock_destroy(&compressor_input);
     zsock_destroy(&compressor_output);
+    device_tracker_destroy(&tracker);
     for (size_t i = 0; i < num_compressors; i++)
         zactor_destroy(&compressors[i]);
     zsys_shutdown();

@@ -31,8 +31,6 @@ static char *config_file_name = "logjam.conf";
 static time_t config_file_last_modified = 0;
 static char *config_file_digest = "";
 static bool config_file_exists = false;
-// check every 10 ticks whether config file has changed
-#define CONFIG_FILE_CHECK_INTERVAL 10
 
 static int pull_port = 9605;
 static int pub_port = 9606;
@@ -49,6 +47,7 @@ static size_t io_threads = 1;
 static size_t num_compressors = 4;
 
 static msg_meta_t msg_meta = META_INFO_EMPTY;
+static char device_number_s[11] = {'0', 0};
 
 #define MAX_COMPRESSORS 64
 static int compression_method = NO_COMPRESSION;
@@ -87,6 +86,8 @@ static bool config_file_has_changed()
 
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
+    zsock_t* pub_socket = arg;
+
     static size_t last_received_count   = 0;
     static size_t last_received_bytes   = 0;
     static size_t last_compressed_count = 0;
@@ -115,13 +116,26 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     last_compressed_bytes = compressed_messages_bytes;
     compressed_messages_max_bytes = 0;
 
+    // update timestamp
     global_time = zclock_time();
 
+    // check for config changes
     static size_t ticks = 0;
     bool terminate = (++ticks % CONFIG_FILE_CHECK_INTERVAL == 0) && config_file_has_changed();
     if (terminate) {
         printf("[I] detected config change. terminating.\n");
         zsys_interrupted = 1;
+        return 0;
+    }
+
+    // publish heartbeat
+    if (ticks % HEART_BEAT_INTERVAL == 0) {
+        msg_meta.compression_method = NO_COMPRESSION;
+        msg_meta.sequence_number++;
+        msg_meta.created_ms = global_time;
+        if (verbose)
+            printf("[I] sending heartbeat\n");
+        send_heartbeat(pub_socket, &msg_meta, pub_port);
     }
 
     return 0;
@@ -280,6 +294,7 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'd':
             msg_meta.device_number = atoi(optarg);
+            snprintf(device_number_s, sizeof(device_number_s), "%d", msg_meta.device_number);
             break;
         case 'p':
             pull_port = atoi(optarg);
@@ -457,12 +472,7 @@ int main(int argc, char * const *argv)
     assert(loop);
     zloop_set_verbose(loop, 0);
 
-    // calculate statistics every 1000 ms
-    int timer_id = 1;
-    rc = zloop_timer(loop, 1000, 0, timer_event, &timer_id);
-    assert(rc != -1);
-
-    // setup handler for the receiver socket
+    // setup publisher state
     publisher_state_t publisher_state = {
         .receiver = zsock_resolve(receiver),
         .publisher = zsock_resolve(publisher),
@@ -470,12 +480,16 @@ int main(int argc, char * const *argv)
         .compressor_output = zsock_resolve(compressor_output),
     };
 
+    // calculate statistics every 1000 ms
+    int timer_id = zloop_timer(loop, 1000, 0, timer_event, publisher);
+    assert(timer_id != -1);
+
     // setup handler for compression results
     rc = zloop_reader(loop, compressor_output, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, compressor_output);
 
-    // setup handdler for messages incoming from the outside or rabbit_listener
+    // setup handler for messages incoming from the outside or rabbit_listener
     rc = zloop_reader(loop, receiver, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, receiver);
