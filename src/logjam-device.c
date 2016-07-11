@@ -504,7 +504,7 @@ int main(int argc, char * const *argv)
     // setup the rabbitmq listener agents
     zactor_t *rabbit_listener = NULL;
     if (rabbit_host != NULL) {
-        zactor_new(rabbitmq_listener, subscriptions);
+        rabbit_listener = zactor_new(rabbitmq_listener, subscriptions);
         assert_x(rabbit_listener != NULL, "could not start rabbitmq listener thread", __FILE__, __LINE__);
         printf("[I] created rabbitmq listener thread\n");
     }
