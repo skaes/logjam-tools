@@ -502,9 +502,12 @@ int main(int argc, char * const *argv)
         compressors[i] = message_compressor_new(i, compression_method);
 
     // setup the rabbitmq listener agents
-    zactor_t *rabbit_listener = zactor_new(rabbitmq_listener, subscriptions);
-    assert_x(rabbit_listener != NULL, "could not fork rabbitmq listener thread", __FILE__, __LINE__);
-    printf("[I] created rabbitmq listener thread\n");
+    zactor_t *rabbit_listener = NULL;
+    if (rabbit_host != NULL) {
+        zactor_new(rabbitmq_listener, subscriptions);
+        assert_x(rabbit_listener != NULL, "could not start rabbitmq listener thread", __FILE__, __LINE__);
+        printf("[I] created rabbitmq listener thread\n");
+    }
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -567,6 +570,7 @@ int main(int argc, char * const *argv)
     zactor_destroy(&rabbit_listener);
     zsock_destroy(&receiver);
     zsock_destroy(&events_receiver);
+    zsock_destroy(&events_output);
     zsock_destroy(&publisher);
     zsock_destroy(&compressor_input);
     zsock_destroy(&compressor_output);
