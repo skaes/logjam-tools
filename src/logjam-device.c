@@ -32,6 +32,7 @@ static time_t config_file_last_modified = 0;
 static char *config_file_digest = "";
 static bool config_file_exists = false;
 
+static int events_port = 9604;
 static int pull_port = 9605;
 static int pub_port = 9606;
 
@@ -57,6 +58,8 @@ static uint64_t global_time = 0;
 typedef struct {
     // raw zmq sockets, to avoid zsock_resolve
     void *receiver;
+    void *events_receiver;
+    void *events_output;
     void *publisher;
     void *compressor_input;
     void *compressor_output;
@@ -219,6 +222,24 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     return 0;
 }
 
+static int read_event_message_and_forward_and_reply(zloop_t *loop, zsock_t *sock, void *callback_data)
+{
+    publisher_state_t *state = (publisher_state_t*)callback_data;
+    zmsg_t* event = zmsg_recv(sock);
+    assert(event);
+    int rc = zmsg_send_and_destroy(&event, state->events_output);
+    if (rc)
+        fprintf(stderr, "[E] could not forward events message (%d: %s)\n", errno, zmq_strerror(errno));
+
+    zmsg_t* reply = zmsg_new();
+    zmsg_addstr(reply, rc==0 ? "200 OK" : "400 RTFM");
+    rc = zmsg_send_and_destroy(&reply, sock);
+    if (rc)
+        fprintf(stderr, "[E] could not send response (%d: %s)\n", errno, zmq_strerror(errno));
+
+    return 0;
+}
+
 static void print_usage(char * const *argv)
 {
     fprintf(stderr,
@@ -233,6 +254,7 @@ static void print_usage(char * const *argv)
             "  -q, --quiet                supress most output\n"
             "  -r, --rabbit R             rabbitmq broker to connect to\n"
             "  -s, --compressors N        number of compressor threads\n"
+            "  -t, --events-port N        port number of zeromq events socket\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "  -x, --compress M           compress logjam traffic using (snappy|zlib)\n"
             "  -P, --output-port N        port number of zeromq ouput socket\n"
@@ -259,6 +281,7 @@ static void process_arguments(int argc, char * const *argv)
         { "config",        required_argument, 0, 'c' },
         { "device-id",     required_argument, 0, 'd' },
         { "env",           required_argument, 0, 'E' },
+        { "events-port",   required_argument, 0, 't' },
         { "help",          no_argument,       0,  0  },
         { "input-port",    required_argument, 0, 'p' },
         { "io-threads",    required_argument, 0, 'i' },
@@ -272,7 +295,7 @@ static void process_arguments(int argc, char * const *argv)
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:r:p:c:e:i:x:s:P:S:R:E:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:r:p:c:e:i:x:s:P:S:R:E:t:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -314,6 +337,9 @@ static void process_arguments(int argc, char * const *argv)
                 num_compressors = MAX_COMPRESSORS;
                 printf("[I] number of compressors reduced to %d\n", MAX_COMPRESSORS);
             }
+            break;
+        case 't':
+            events_port = atoi(optarg);
             break;
         case 'x':
             compression_method = string_to_compression_method(optarg);
@@ -381,11 +407,12 @@ int main(int argc, char * const *argv)
     printf("[I] started %s\n"
            "[I] pull-port:   %d\n"
            "[I] pub-port:    %d\n"
+           "[I] events-port: %d\n"
            "[I] rabbit-host: %s\n"
            "[I] io-threads:  %lu\n"
            "[I] rcv-hwm:     %d\n"
            "[I] snd-hwm:     %d\n"
-           , argv[0], pull_port, pub_port, rabbit_host, io_threads, rcv_hwm, snd_hwm);
+           , argv[0], pull_port, pub_port, events_port, rabbit_host, io_threads, rcv_hwm, snd_hwm);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
@@ -438,6 +465,18 @@ int main(int argc, char * const *argv)
     rc = zsock_bind(receiver, "inproc://receiver");
     assert_x(rc != -1, "receiver socket: internal bind failed", __FILE__, __LINE__);
 
+    // create and bind socket for receiving logjam events (LogjamAgent.send_event)
+    zsock_t *events_receiver = zsock_new(ZMQ_REP);
+    assert_x(events_receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
+    rc = zsock_bind(events_receiver, "tcp://%s:%d", "*", events_port);
+    assert_x(rc == pull_port, "receiver socket: external bind failed", __FILE__, __LINE__);
+
+    // create events output socket and connect to the inproc receiver
+    zsock_t *events_output = zsock_new(ZMQ_PUSH);
+    assert_x(events_output != NULL, "zmq socket creation failed", __FILE__, __LINE__);
+    rc = zsock_connect(events_output, "inproc://receiver");
+    assert(rc == 0);
+
     // create socket for publishing
     zsock_t *publisher = zsock_new(ZMQ_PUB);
     assert_x(publisher != NULL, "publisher socket creation failed", __FILE__, __LINE__);
@@ -475,6 +514,8 @@ int main(int argc, char * const *argv)
     // setup publisher state
     publisher_state_t publisher_state = {
         .receiver = zsock_resolve(receiver),
+        .events_receiver = zsock_resolve(events_receiver),
+        .events_output = zsock_resolve(events_output),
         .publisher = zsock_resolve(publisher),
         .compressor_input = zsock_resolve(compressor_input),
         .compressor_output = zsock_resolve(compressor_output),
@@ -493,6 +534,11 @@ int main(int argc, char * const *argv)
     rc = zloop_reader(loop, receiver, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, receiver);
+
+    // setup handler for event messages (all from the outside)
+    rc = zloop_reader(loop, events_receiver, read_event_message_and_forward_and_reply, &publisher_state);
+    assert(rc == 0);
+    zloop_reader_set_tolerant(loop, events_receiver);
 
     // initialize clock
     global_time = zclock_time();
@@ -520,6 +566,7 @@ int main(int argc, char * const *argv)
 
     zactor_destroy(&rabbit_listener);
     zsock_destroy(&receiver);
+    zsock_destroy(&events_receiver);
     zsock_destroy(&publisher);
     zsock_destroy(&compressor_input);
     zsock_destroy(&compressor_output);

@@ -62,6 +62,42 @@ a PUB socket, optionally using a given topic.
 A utility program which connects to a logjam-logger PUB socket and
 displays lines matching an optional list of topics on stdout.
 
+## Default ports
+
+This is the list ports to which various programs bind.
+
+### 9604
+
+A zeromq REP socket for synchronous publishing of logjam events
+(logjam-device, logjam-importer)
+
+### 9605
+
+A zeromq PUSH socket to which logjam messages can be sent
+(logjam-device, logjam-importer)
+
+### 9606
+
+A zeromq PUB socket on which logjam messages are published
+(logjam-device)
+
+### 9607
+
+A zeromq PUB socket on which live stream messages are published
+(logjam-importer)
+
+### 9608 (8080)
+
+A websocket which listens for connects from logjam livestream clients
+running in browsers (livestream server, currently in ruby, see
+https://githum.com/skaes/logjam-core)
+
+### 9609
+
+A zeromq PUSH socket for graylog to connect to
+(logjam-graylog-forwarder)
+
+
 
 # Dependencies
 

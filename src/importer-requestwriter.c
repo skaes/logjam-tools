@@ -320,6 +320,37 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
     bson_t *document = bson_sized_new(1024);
     json_object_to_bson("event", request, document);
 
+    json_object *uuid_obj;
+    const char *uuid = NULL;
+    if (json_object_object_get_ex(request, "uuid", &uuid_obj)) {
+        uuid = json_object_get_string(uuid_obj);
+        int len = strlen(uuid);
+        if (len != 32) {
+            // this can't be a UUID
+            fprintf(stderr, "[W] invalid uuid: %s (stream: %s)\n", uuid, stream_info->key);
+            dump_json_object(stderr, "[W]", request);
+            uuid = NULL;
+            uuid_obj = NULL;
+        } else {
+            json_object_get(uuid_obj);
+            bson_append_binary(document, "_id", 3, BSON_SUBTYPE_UUID_DEPRECATED, (uint8_t*)uuid, 32);
+        }
+        json_object_object_del(request, "uuid");
+    }
+    if (uuid == NULL) {
+        // generate an oid
+        bson_oid_t oid;
+        bson_oid_init(&oid, NULL);
+        bson_append_oid(document, "_id", 3, &oid);
+        // printf("[D] generated oid for document:\n");
+    }
+    {
+        size_t n = 1024;
+        char context[n];
+        snprintf(context, n, "%s:%s", db_name, uuid);
+        json_object_to_bson(context, request, document);
+    }
+
     if (!dryrun) {
         bson_error_t error;
         int tries = TOKU_TX_RETRIES;
