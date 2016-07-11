@@ -469,7 +469,7 @@ int main(int argc, char * const *argv)
     zsock_t *events_receiver = zsock_new(ZMQ_REP);
     assert_x(events_receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
     rc = zsock_bind(events_receiver, "tcp://%s:%d", "*", events_port);
-    assert_x(rc == pull_port, "receiver socket: external bind failed", __FILE__, __LINE__);
+    assert_x(rc == events_port, "receiver socket: external bind failed", __FILE__, __LINE__);
 
     // create events output socket and connect to the inproc receiver
     zsock_t *events_output = zsock_new(ZMQ_PUSH);
