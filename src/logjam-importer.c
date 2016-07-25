@@ -288,7 +288,7 @@ int main(int argc, char * const *argv)
                "[I] writers:       %zu\n"
                "[I] updaters:      %zu\n"
                "[I] subscription:  %s\n"
-               , argv[0], sub_port, pull_port, live_stream_connection_spec, io_threads, rcv_hwm, snd_hwm,
+               , argv[0], pull_port, sub_port, live_stream_connection_spec, io_threads, rcv_hwm, snd_hwm,
                num_parsers, num_writers, num_updaters, subscription_pattern);
 
     initialize_mongo_db_globals(config);
