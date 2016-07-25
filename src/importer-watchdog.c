@@ -15,13 +15,12 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
     watchdog_state_t *state = arg;
     state->credit--;
-    if (verbose) {
-        printf("[I] watchdog: credit: %d\n", state->credit);
-    }
     if (state->credit == 0) {
         fflush(stdout);
         fprintf(stderr, "[E] watchdog: no credit left, aborting process\n");
         abort();
+    } else if (state->credit < CREDIT - 1) {
+        printf("[I] watchdog: credit left: %d\n", state->credit);
     }
     return 0;
 }

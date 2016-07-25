@@ -325,9 +325,12 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     // signal liveness to watchdog, unless we're dropping all frontend requests
-    if (front_stats.received == 0 || front_stats.dropped < front_stats.received) {
+    if (front_stats.received == 0)
         zstr_send(state->watchdog, "tick");
-    }
+    else if (front_stats.dropped < front_stats.received)
+        zstr_send(state->watchdog, "tick");
+    else
+        fprintf(stderr, "[W] controller: dropped all frontend stats: %zu\n", front_stats.dropped);
 
     if (terminate) {
         printf("[I] controller: detected config change. terminating.\n");
