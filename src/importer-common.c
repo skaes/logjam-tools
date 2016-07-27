@@ -292,8 +292,12 @@ bool config_update_date_info()
 
     sprintf(iso_date_tomorrow,  "%04d-%02d-%02d", 1900 + lt.tm_year, 1 + lt.tm_mon, lt.tm_mday);
 
-    // printf("[D] today's    ISO date is %s\n", iso_date_today);
-    // printf("[D] tomorrow's ISO date is %s\n", iso_date_tomorrow);
     bool changed = strcmp(old_date, iso_date_today);
+
+    printf("[D] date info: old        ISO date is %s\n", old_date);
+    printf("[D] date info: today's    ISO date is %s\n", iso_date_today);
+    printf("[D] date info: tomorrow's ISO date is %s\n", iso_date_tomorrow);
+    printf("[D] date info: changed             is %d\n", changed);
+
     return changed;
 }
