@@ -375,7 +375,7 @@ void indexer(zsock_t *pipe, void *args)
                 free(cmd);
                 break;
             } else {
-                printf("[E] indexer[%zu]: received unknnown command: %s\n", id, cmd);
+                printf("[E] indexer[%zu]: received unknown command: %s\n", id, cmd);
                 assert(false);
             }
         } else if (socket == state->pull_socket) {

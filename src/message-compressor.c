@@ -158,7 +158,7 @@ void message_compressor(zsock_t *pipe, void *args)
                 free(cmd);
                 break;
             } else {
-                printf("[E] compressor[%zu]: received unknnown command: %s\n", id, cmd);
+                printf("[E] compressor[%zu]: received unknown command: %s\n", id, cmd);
                 assert(false);
             }
         } else if (socket == state->pull_socket) {

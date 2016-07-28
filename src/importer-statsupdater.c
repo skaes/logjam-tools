@@ -487,7 +487,7 @@ void stats_updater(zsock_t *pipe, void *args)
                 free(cmd);
                 break;
             } else {
-                fprintf(stderr, "[E] updater[%zu]: received unknnown command: %s\n", id, cmd);
+                fprintf(stderr, "[E] updater[%zu]: received unknown command: %s\n", id, cmd);
                 assert(false);
             }
         } else if (socket == state->pull_socket) {
