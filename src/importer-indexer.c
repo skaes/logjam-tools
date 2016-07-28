@@ -349,7 +349,9 @@ void indexer(zsock_t *pipe, void *args)
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
-                // printf("[D] indexer[%zu]: tick\n", id);
+                if (verbose)
+                    printf("[D] indexer[%zu]: tick\n", id);
+
                 // if date has changed, start a background thread to create databases for the next day
                 if (config_update_date_info()) {
                     printf("[I] indexer[%zu]: date change. creating indexes for tomorrow\n", id);
