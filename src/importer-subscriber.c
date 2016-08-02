@@ -254,9 +254,7 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
     int ok = true;
     state->message_count++;
     int n = zmsg_size(msg);
-    assert(n>2);
-
-    zmsg_dump(msg);
+    assert(n>1);
 
     // pop the sender id added by the router socket
     zframe_t *sender_id = zmsg_pop(msg);

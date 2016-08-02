@@ -228,9 +228,7 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
     zmsg_t* msg = zmsg_recv(socket);
     assert(msg);
     size_t n = zmsg_size(msg);
-    assert(n>2);
-
-    zmsg_dump(msg);
+    assert(n>1);
 
     zframe_t *sender_id = zmsg_pop(msg);
     zframe_t *empty = zmsg_first(msg);
