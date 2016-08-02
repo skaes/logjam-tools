@@ -71,7 +71,7 @@ the ZeroMQ socket types behind the ports.
 
 A ZeroMQ BROKER socket for which implements the server side of the
 logjam producer protocol (logjam-device, logjam-importer). See
-[producer_protocol.md](specs/producer_protocol.md).
+[producer_protocol](specs/producer_protocol.md).
 
 ### 9605
 
@@ -83,7 +83,7 @@ A ZeroMQ PUSH socket to which logjam messages can be sent
 A ZeroMQ PUB socket on which logjam messages are published
 (logjam-device). Messages sent over this socket follow the logjam
 consumer protocol. See
-[consumer_protocol.md](specs/consumer_protocol.md).
+[consumer_protocol](specs/consumer_protocol.md).
 
 ### 9607
 
