@@ -32,7 +32,7 @@ static time_t config_file_last_modified = 0;
 static char *config_file_digest = "";
 static bool config_file_exists = false;
 
-static int events_port = 9604;
+static int router_port = 9604;
 static int pull_port = 9605;
 static int pub_port = 9606;
 
@@ -58,8 +58,8 @@ static uint64_t global_time = 0;
 typedef struct {
     // raw zmq sockets, to avoid zsock_resolve
     void *receiver;
-    void *events_receiver;
-    void *events_output;
+    void *router_receiver;
+    void *router_output;
     void *publisher;
     void *compressor_input;
     void *compressor_output;
@@ -222,20 +222,44 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     return 0;
 }
 
-static int read_event_message_and_forward_and_reply(zloop_t *loop, zsock_t *sock, void *callback_data)
+static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
     publisher_state_t *state = (publisher_state_t*)callback_data;
-    zmsg_t* event = zmsg_recv(sock);
-    assert(event);
-    int rc = zmsg_send_and_destroy(&event, state->events_output);
-    if (rc)
-        fprintf(stderr, "[E] could not forward events message (%d: %s)\n", errno, zmq_strerror(errno));
+    zmsg_t* msg = zmsg_recv(socket);
+    assert(msg);
+    size_t n = zmsg_size(msg);
+    assert(n>2);
 
-    zmsg_t* reply = zmsg_new();
-    zmsg_addstr(reply, rc==0 ? "200 OK" : "400 RTFM");
-    rc = zmsg_send_and_destroy(&reply, sock);
+    zmsg_dump(msg);
+
+    zframe_t *sender_id = zmsg_pop(msg);
+    zframe_t *empty = zmsg_first(msg);
+
+    // if the second frame is empty, we need to send a reply
+    if (zframe_size(empty) > 0)
+        zframe_destroy(&sender_id);
+    else {
+        // pop the empty frame
+        empty = zmsg_pop(msg);
+        zmsg_t *reply = zmsg_new();
+        zmsg_append(reply, &sender_id);
+        zmsg_append(reply, &empty);
+
+        // return bad request if we don't receive 4 frames and meta frame can't be decoded
+        msg_meta_t meta;
+        bool decodable = n==4 && msg_extract_meta_info(msg, &meta);
+        zmsg_addstr(reply, decodable ? "202 Accepted" : "400 Bad Request");
+
+        int rc = zmsg_send_and_destroy(&reply, socket);
+        if (rc)
+            fprintf(stderr, "[E] could not send response (%d: %s)\n", errno, zmq_strerror(errno));
+    }
+
+    // put message back on to the event loop
+    // TODO: this is slow. refactor to forward directly.
+    int rc = zmsg_send_and_destroy(&msg, state->router_output);
     if (rc)
-        fprintf(stderr, "[E] could not send response (%d: %s)\n", errno, zmq_strerror(errno));
+        fprintf(stderr, "[E] could not forward router message (%d: %s)\n", errno, zmq_strerror(errno));
 
     return 0;
 }
@@ -254,7 +278,7 @@ static void print_usage(char * const *argv)
             "  -q, --quiet                supress most output\n"
             "  -r, --rabbit R             rabbitmq broker to connect to\n"
             "  -s, --compressors N        number of compressor threads\n"
-            "  -t, --events-port N        port number of zeromq events socket\n"
+            "  -t, --router-port N        port number of zeromq router socket\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "  -x, --compress M           compress logjam traffic using (snappy|zlib)\n"
             "  -P, --output-port N        port number of zeromq ouput socket\n"
@@ -281,7 +305,7 @@ static void process_arguments(int argc, char * const *argv)
         { "config",        required_argument, 0, 'c' },
         { "device-id",     required_argument, 0, 'd' },
         { "env",           required_argument, 0, 'E' },
-        { "events-port",   required_argument, 0, 't' },
+        { "router-port",   required_argument, 0, 't' },
         { "help",          no_argument,       0,  0  },
         { "input-port",    required_argument, 0, 'p' },
         { "io-threads",    required_argument, 0, 'i' },
@@ -339,7 +363,7 @@ static void process_arguments(int argc, char * const *argv)
             }
             break;
         case 't':
-            events_port = atoi(optarg);
+            router_port = atoi(optarg);
             break;
         case 'x':
             compression_method = string_to_compression_method(optarg);
@@ -407,12 +431,12 @@ int main(int argc, char * const *argv)
     printf("[I] started %s\n"
            "[I] pull-port:   %d\n"
            "[I] pub-port:    %d\n"
-           "[I] events-port: %d\n"
+           "[I] router-port: %d\n"
            "[I] rabbit-host: %s\n"
            "[I] io-threads:  %lu\n"
            "[I] rcv-hwm:     %d\n"
            "[I] snd-hwm:     %d\n"
-           , argv[0], pull_port, pub_port, events_port, rabbit_host, io_threads, rcv_hwm, snd_hwm);
+           , argv[0], pull_port, pub_port, router_port, rabbit_host, io_threads, rcv_hwm, snd_hwm);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
@@ -465,16 +489,16 @@ int main(int argc, char * const *argv)
     rc = zsock_bind(receiver, "inproc://receiver");
     assert_x(rc != -1, "receiver socket: internal bind failed", __FILE__, __LINE__);
 
-    // create and bind socket for receiving logjam events (LogjamAgent.send_event)
-    zsock_t *events_receiver = zsock_new(ZMQ_REP);
-    assert_x(events_receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
-    rc = zsock_bind(events_receiver, "tcp://%s:%d", "*", events_port);
-    assert_x(rc == events_port, "receiver socket: external bind failed", __FILE__, __LINE__);
+    // create and bind socket for receiving logjam messages
+    zsock_t *router_receiver = zsock_new(ZMQ_ROUTER);
+    assert_x(router_receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
+    rc = zsock_bind(router_receiver, "tcp://%s:%d", "*", router_port);
+    assert_x(rc == router_port, "receiver socket: external bind failed", __FILE__, __LINE__);
 
-    // create events output socket and connect to the inproc receiver
-    zsock_t *events_output = zsock_new(ZMQ_PUSH);
-    assert_x(events_output != NULL, "zmq socket creation failed", __FILE__, __LINE__);
-    rc = zsock_connect(events_output, "inproc://receiver");
+    // create router output socket and connect to the inproc receiver
+    zsock_t *router_output = zsock_new(ZMQ_PUSH);
+    assert_x(router_output != NULL, "zmq socket creation failed", __FILE__, __LINE__);
+    rc = zsock_connect(router_output, "inproc://receiver");
     assert(rc == 0);
 
     // create socket for publishing
@@ -517,8 +541,8 @@ int main(int argc, char * const *argv)
     // setup publisher state
     publisher_state_t publisher_state = {
         .receiver = zsock_resolve(receiver),
-        .events_receiver = zsock_resolve(events_receiver),
-        .events_output = zsock_resolve(events_output),
+        .router_receiver = zsock_resolve(router_receiver),
+        .router_output = zsock_resolve(router_output),
         .publisher = zsock_resolve(publisher),
         .compressor_input = zsock_resolve(compressor_input),
         .compressor_output = zsock_resolve(compressor_output),
@@ -539,9 +563,9 @@ int main(int argc, char * const *argv)
     zloop_reader_set_tolerant(loop, receiver);
 
     // setup handler for event messages (all from the outside)
-    rc = zloop_reader(loop, events_receiver, read_event_message_and_forward_and_reply, &publisher_state);
+    rc = zloop_reader(loop, router_receiver, read_router_message_and_forward, &publisher_state);
     assert(rc == 0);
-    zloop_reader_set_tolerant(loop, events_receiver);
+    zloop_reader_set_tolerant(loop, router_receiver);
 
     // initialize clock
     global_time = zclock_time();
@@ -569,8 +593,8 @@ int main(int argc, char * const *argv)
 
     zactor_destroy(&rabbit_listener);
     zsock_destroy(&receiver);
-    zsock_destroy(&events_receiver);
-    zsock_destroy(&events_output);
+    zsock_destroy(&router_receiver);
+    zsock_destroy(&router_output);
     zsock_destroy(&publisher);
     zsock_destroy(&compressor_input);
     zsock_destroy(&compressor_output);

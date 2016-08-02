@@ -8,7 +8,7 @@
 int snd_hwm = -1;
 int rcv_hwm = -1;
 int pull_port = -1;
-int rep_port = -1;
+int router_port = -1;
 int sub_port = -1;
 char* live_stream_connection_spec = NULL;
 zlist_t *hosts = NULL;
@@ -58,7 +58,7 @@ void print_usage(char * const *argv)
             "  -u, --updaters N           number of db stats updater threads\n"
             "  -q, --quiet                supress most output\n"
             "  -s, --subscribe S          only process streams with S as substring\n"
-            "  -t, --events-port N        port number of zeromq events socket\n"
+            "  -t, --router-port N        port number of zeromq router socket\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "  -w, --writers N            number of db request writer threads\n"
             "  -D, --device-port N        port for connecting to logjam devices\n"
@@ -86,7 +86,7 @@ void process_arguments(int argc, char * const *argv)
         { "device-id",        required_argument, 0, 'd' },
         { "device-port",      required_argument, 0, 'D' },
         { "dryrun",           no_argument,       0,  0  },
-        { "events-port",      required_argument, 0, 't' },
+        { "router-port",      required_argument, 0, 't' },
         { "help",             no_argument,       0,  0  },
         { "hosts",            required_argument, 0, 'h' },
         { "input-port",       required_argument, 0, 'P' },
@@ -177,7 +177,7 @@ void process_arguments(int argc, char * const *argv)
             pull_port = atoi(optarg);
             break;
         case 't':
-            rep_port = atoi(optarg);
+            router_port = atoi(optarg);
             break;
         case 'D':
             sub_port = atoi(optarg);
@@ -208,8 +208,8 @@ void process_arguments(int argc, char * const *argv)
         pull_port = DEFAULT_PULL_PORT;
     if (sub_port == -1)
         sub_port = DEFAULT_SUB_PORT;
-    if (rep_port == -1)
-        rep_port = DEFAULT_REP_PORT;
+    if (router_port == -1)
+        router_port = DEFAULT_ROUTER_PORT;
 
     if (hosts == NULL && (v = getenv("LOGJAM_DEVICES")))
         hosts = split_delimited_string(v);

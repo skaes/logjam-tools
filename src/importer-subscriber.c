@@ -6,10 +6,10 @@
 /*
  * connections: n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
  *
- *                               controller     v REQ synchronous events
+ *                               controller     v REQ|DEALER sync/async protocol version 1
  *                                   |         /
  *                                  PIPE      /
- *                 PUB      SUB      |       o REP
+ *                 PUB      SUB      |       o ROUTER
  *  logjam device  o----------<  subscriber  o----------<   direct connections
  *                              PUSH o        \PULL  PUSH
  *                                  /          \
@@ -28,7 +28,7 @@ typedef struct {
     zsock_t *sub_socket;                      // incoming data from logjam devices
     zsock_t *push_socket;                     // outgoing data for parsers
     zsock_t *pull_socket;                     // pull for direct connections (apps)
-    zsock_t *rep_socket;                      // REP socket for logjam event sending (apps)
+    zsock_t *router_socket;                   // ROUTER socket for direct connections (apps)
     zsock_t *pub_socket;                      // republish all incoming messages (optional)
     size_t message_count;                     // messages processed (since last tick)
     size_t messages_dev_zero;                 // messages arrived from device 0 (since last tick)
@@ -92,7 +92,7 @@ zsock_t* subscriber_pull_socket_new(zconfig_t* config)
     zsock_set_reconnect_ivl(socket, 100); // 100 ms
     zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
-    char *pull_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/rep", "tcp://*");
+    char *pull_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pull", "tcp://*");
     char *full_spec = augment_zmq_connection_spec(pull_spec, pull_port);
     if (!quiet)
         printf("[I] subscriber: binding PULL socket to %s\n", full_spec);
@@ -110,18 +110,18 @@ zsock_t* subscriber_pull_socket_new(zconfig_t* config)
 }
 
 static
-zsock_t* subscriber_rep_socket_new(zconfig_t* config)
+zsock_t* subscriber_router_socket_new(zconfig_t* config)
 {
-    zsock_t *socket = zsock_new(ZMQ_REP);
+    zsock_t *socket = zsock_new(ZMQ_ROUTER);
     assert(socket);
     zsock_set_linger(socket, 0);
     zsock_set_reconnect_ivl(socket, 100); // 100 ms
     zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
-    char *rep_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/reply", "tcp://*");
-    char *full_spec = augment_zmq_connection_spec(rep_spec, rep_port);
+    char *router_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/router", "tcp://*");
+    char *full_spec = augment_zmq_connection_spec(router_spec, router_port);
     if (!quiet)
-        printf("[I] subscriber: binding REP socket to %s\n", full_spec);
+        printf("[I] subscriber: binding ROUTER socket to %s\n", full_spec);
     int rc = zsock_bind(socket, "%s", full_spec);
     assert(rc != -1);
     free(full_spec);
@@ -246,7 +246,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
 }
 
 static
-int read_rep_request_forward_and_answer(zloop_t *loop, zsock_t *socket, void *callback_data)
+int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
@@ -254,6 +254,27 @@ int read_rep_request_forward_and_answer(zloop_t *loop, zsock_t *socket, void *ca
     int ok = true;
     state->message_count++;
     int n = zmsg_size(msg);
+    assert(n>2);
+
+    zmsg_dump(msg);
+
+    // pop the sender id added by the router socket
+    zframe_t *sender_id = zmsg_pop(msg);
+    zframe_t *empty = zmsg_first(msg);
+    zmsg_t *reply = NULL;
+
+    // if the second frame is not empty, we don't need to send a reply
+    if (zframe_size(empty) > 0)
+        zframe_destroy(&sender_id);
+    else {
+        // prepare reply
+        reply = zmsg_new();
+        zmsg_append(reply, &sender_id);
+        // pop the empty frame
+        empty = zmsg_pop(msg);
+        zmsg_append(reply, &empty);
+    }
+
     if (n < 3 || n > 4) {
         fprintf(stderr, "[E] subscriber: dropped invalid message\n");
         my_zmsg_fprint(msg, "[E] FRAME= ", stderr);
@@ -279,13 +300,12 @@ int read_rep_request_forward_and_answer(zloop_t *loop, zsock_t *socket, void *ca
         if (!state->message_drops++)
             fprintf(stderr, "[E] subscriber: dropped message on push socket (%d: %s)\n", errno, zmq_strerror(errno));
     }
- answer: {
-        zmsg_t *answer = zmsg_new();
-        zmsg_addstr(answer, ok ? "200 OK" : "400 RTFM");
-        int rc = zmsg_send_and_destroy(&answer, socket);
-        if (rc) {
-            fprintf(stderr, "[E] subscriber: could not response (%d: %s)\n", errno, zmq_strerror(errno));
-        }
+ answer:
+    if (reply) {
+        zmsg_addstr(reply, ok ? "202 Accepted" : "400 Bad Request");
+        int rc = zmsg_send_and_destroy(&reply, socket);
+        if (rc)
+            fprintf(stderr, "[E] subscriber: could not send response (%d: %s)\n", errno, zmq_strerror(errno));
     }
     return 0;
 }
@@ -344,7 +364,7 @@ subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config, zlist
     state->sub_socket = subscriber_sub_socket_new(config, state->devices);
     state->tracker = device_tracker_new(devices, state->sub_socket);
     state->pull_socket = subscriber_pull_socket_new(config);
-    state->rep_socket = subscriber_rep_socket_new(config);
+    state->router_socket = subscriber_router_socket_new(config);
     state->push_socket = subscriber_push_socket_new(config);
     if (PUBLISH_DUPLICATES)
         state->pub_socket = subscriber_pub_socket_new(config);
@@ -357,7 +377,7 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
     subscriber_state_t *state = *state_p;
     zsock_destroy(&state->sub_socket);
     zsock_destroy(&state->pull_socket);
-    zsock_destroy(&state->rep_socket);
+    zsock_destroy(&state->router_socket);
     zsock_destroy(&state->push_socket);
     if (PUBLISH_DUPLICATES)
         zsock_destroy(&state->pub_socket);
@@ -400,8 +420,8 @@ void subscriber(zsock_t *pipe, void *args)
     rc = zloop_reader(loop, state->sub_socket, read_request_and_forward, state);
     assert(rc == 0);
 
-    // setup handler for the rep socket
-    rc = zloop_reader(loop, state->rep_socket, read_rep_request_forward_and_answer, state);
+    // setup handler for the router socket
+    rc = zloop_reader(loop, state->router_socket, read_router_request_forward, state);
     assert(rc == 0);
 
     // setup handler for the pull socket

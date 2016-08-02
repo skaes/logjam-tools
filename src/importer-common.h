@@ -23,7 +23,7 @@ extern unsigned long num_updaters;
 #define DEFAULT_SND_HWM       10000
 #define DEFAULT_SND_HWM_STR  "10000"
 
-#define DEFAULT_REP_PORT 9604
+#define DEFAULT_ROUTER_PORT 9604
 #define DEFAULT_PULL_PORT 9605
 #define DEFAULT_SUB_PORT 9606
 #define DEFAULT_LIVE_STREAM_PORT 9607
@@ -34,7 +34,7 @@ extern unsigned long num_updaters;
 #define DEFAULT_LIVE_STREAM_CONNECTION "tcp://*:9607"
 
 extern char* live_stream_connection_spec;
-extern int rep_port;
+extern int router_port;
 extern int pull_port;
 extern int sub_port;
 extern int rcv_hwm;
