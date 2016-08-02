@@ -29,7 +29,7 @@ intensive than the ruby code and a _lot_ faster.
 ## logjam-httpd
 
 A daemon which takes frontend performance data via HTTP GET requests
-and publishes it on on ZeroMQ PUB socket for the importer to pick up.
+and publishes it on a ZeroMQ PUB socket for the importer to pick up.
 
 ## logjam-graylog-forwarder
 
@@ -64,39 +64,42 @@ displays lines matching an optional list of topics on stdout.
 
 ## Default ports
 
-This is the list ports to which various programs bind.
+This is the list of ports to which various programs bind, along with
+the ZeroMQ socket types behind the ports.
 
 ### 9604
 
-A zeromq REP socket for synchronous publishing of logjam events
-(logjam-device, logjam-importer)
+A ZeroMQ BROKER socket for which implements the server side of the
+logjam producer protocol (logjam-device, logjam-importer). See
+[producer_protocol.md](specs/producer_protocol.md).
 
 ### 9605
 
-A zeromq PUSH socket to which logjam messages can be sent
-(logjam-device, logjam-importer)
+A ZeroMQ PUSH socket to which logjam messages can be sent
+(logjam-device, logjam-importer).
 
 ### 9606
 
-A zeromq PUB socket on which logjam messages are published
-(logjam-device)
+A ZeroMQ PUB socket on which logjam messages are published
+(logjam-device). Messages sent over this socket follow the logjam
+consumer protocol. See
+[consumer_protocol.md](specs/consumer_protocol.md).
 
 ### 9607
 
-A zeromq PUB socket on which live stream messages are published
-(logjam-importer)
+A ZeroMQ PUB socket on which live stream messages are published
+(logjam-importer).
 
 ### 9608 (8080)
 
 A websocket which listens for connects from logjam livestream clients
 running in browsers (livestream server, currently in ruby, see
-https://githum.com/skaes/logjam-core)
+https://githum.com/skaes/logjam-core).
 
 ### 9609
 
-A zeromq PUSH socket for graylog to connect to
-(logjam-graylog-forwarder)
-
+A ZeroMQ PUSH socket for graylog to connect to
+(logjam-graylog-forwarder).
 
 
 # Dependencies
