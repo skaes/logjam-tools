@@ -78,7 +78,7 @@ topic /= events *( ALPHA / "." )         ; logjam event
 topic /= frontend.page                   ; frontend metric (page render)
 topic /= frontend.ajax                   ; frontend metric (ajax call)
 
-body = *OCTET                            ; JSON string, possibly compressed
+json-body = *OCTET                       ; JSON string, possibly compressed
 
 meta-info = tag compression-method version device-number created-ms sequence-number
 
