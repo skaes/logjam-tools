@@ -96,7 +96,7 @@ void process_arguments(int argc, char * const *argv)
         { "quiet",            no_argument,       0, 'q' },
         { "rcv-hwm",          required_argument, 0, 'R' },
         { "snd-hwm",          required_argument, 0, 'S' },
-        { "subscribe",        required_argument, 0, 'e' },
+        { "subscribe",        required_argument, 0, 's' },
         { "verbose",          no_argument,       0, 'v' },
         { 0,                  0,                 0,  0  }
     };
