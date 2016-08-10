@@ -408,7 +408,7 @@ json_object* parse_json_data(const char *json_data, size_t json_data_len, json_t
     {
         // Handle extra characters after parsed object as desired.
         fprintf(stderr, "[W] parse_json_body: %s\n", "extranoeus data in message payload");
-        fprintf(stderr, "[W] MSGBODY=%.*s", (int)json_data_len, json_data);
+        fprintf(stderr, "[W] MSGBODY=%.*s\n", (int)json_data_len, json_data);
     }
     // if (strnlen(json_data, json_data_len) < json_data_len) {
     //     fprintf(stderr, "[W] parse_json_body: json payload has null bytes\ndata: %*s\n", json_data_len, json_data);
