@@ -9,10 +9,10 @@ multiple clients and a single server process.
 
 ## Terminology
 
-Any program wishing to send logjam data MUST open a DEALER socket and
-connect to either a logjam-device or a logjam-importer and follow the
-rules outlined below. We'll call such a program a CLIENT and the other
-endpoint the SERVER.
+Any program wishing to send logjam data MUST open either a DEALER or a
+PUSH socket and connect to either a logjam-device or a logjam-importer
+and follow the rules outlined below. We'll call such a program a
+CLIENT and the other endpoint the SERVER.
 
 ### Language
 
@@ -98,9 +98,13 @@ sequence-number    = 8OCTET              ; uint64, network byte order
 
 ## Constraints
 
-* The client MUST use a DEALER socket.
+* The client MUST use either PUSH or a DEALER socket. If a push socket
+  is used, the message stream is restricted to messages described by
+  the async-data-msg rule above.
 
-* The server MUST use a ROUTER socket.
+* The server MUST use offer a ROUTER socket for clients to connect to.
+
+* The server MAY offer a PULL socket for clients to connect to.
 
 * When the client sends a request-msg, the server MUST respond as soon
   as it starts processing the message.
