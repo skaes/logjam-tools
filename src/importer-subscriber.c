@@ -218,7 +218,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
         state->message_count++;
         int n = zmsg_size(msg);
         if (n < 3 || n > 4) {
-            fprintf(stderr, "[E] subscriber: dropped invalid message\n");
+            fprintf(stderr, "[E] subscriber: (%s:%d): dropped invalid message of size %d\n", __FILE__, __LINE__, n);
             my_zmsg_fprint(msg, "[E] FRAME= ", stderr);
             return 0;
         }
@@ -253,8 +253,6 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
     assert(msg);
     int ok = true;
     state->message_count++;
-    int n = zmsg_size(msg);
-    assert(n>1);
 
     // pop the sender id added by the router socket
     zframe_t *sender_id = zmsg_pop(msg);
@@ -273,8 +271,9 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
         zmsg_append(reply, &empty);
     }
 
+    int n = zmsg_size(msg);
     if (n < 3 || n > 4) {
-        fprintf(stderr, "[E] subscriber: dropped invalid message\n");
+        fprintf(stderr, "[E] subscriber: (%s:%d): dropped invalid message of size %d\n", __FILE__, __LINE__, n);
         my_zmsg_fprint(msg, "[E] FRAME= ", stderr);
         ok = false;
         goto answer;

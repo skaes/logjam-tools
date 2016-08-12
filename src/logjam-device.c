@@ -227,8 +227,6 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
     publisher_state_t *state = (publisher_state_t*)callback_data;
     zmsg_t* msg = zmsg_recv(socket);
     assert(msg);
-    size_t n = zmsg_size(msg);
-    assert(n>1);
 
     zframe_t *sender_id = zmsg_pop(msg);
     zframe_t *empty = zmsg_first(msg);
@@ -244,6 +242,7 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
         zmsg_append(reply, &empty);
 
         // return bad request if we don't receive 4 frames and meta frame can't be decoded
+        size_t n = zmsg_size(msg);
         msg_meta_t meta;
         bool decodable = n==4 && msg_extract_meta_info(msg, &meta);
         zmsg_addstr(reply, decodable ? "202 Accepted" : "400 Bad Request");
