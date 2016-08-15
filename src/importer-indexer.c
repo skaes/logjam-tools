@@ -104,7 +104,7 @@ void add_request_collection_indexes(const char* db_name, mongoc_collection_t *re
     add_request_field_index("severity",      requests_collection);
     add_request_field_index("minute",        requests_collection);
     add_request_field_index("exceptions",    requests_collection);
-    add_request_field_index("started_ms",    requests_collection);
+    // add_request_field_index("started_ms",    requests_collection);
 }
 
 static
