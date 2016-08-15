@@ -57,7 +57,7 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     bson_error_t error;
     bson_t *index_keys;
 
-    // collection.create_index([ [f, 1] ], :background => true, :sparse => true)
+    // collection.indexes.create_one({ field => 1 }, :background => true, :sparse => true)
     index_keys = bson_new();
     bson_append_int32(index_keys, field, strlen(field), 1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_sparse, &error)) {
@@ -65,9 +65,28 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     }
     bson_destroy(index_keys);
 
-    // collection.create_index([ ["page", 1], [f, 1] ], :background => true)
+    // collection.indexes.create_one({ "minute" => -1, field => 1 }, :background => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "minute", 6, -1);
+    bson_append_int32(index_keys, field, strlen(field), 1);
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    }
+    bson_destroy(index_keys);
+
+    // collection.indexes.create_one({ "page" => 1, field => 1 }, :background => true)
     index_keys = bson_new();
     bson_append_int32(index_keys, "page", 4, 1);
+    bson_append_int32(index_keys, field, strlen(field), 1);
+    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
+        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    }
+    bson_destroy(index_keys);
+
+    // collection.indexes.create_one({ "page" => 1, "minute" => -1, field => 1 }, :background => true)
+    index_keys = bson_new();
+    bson_append_int32(index_keys, "page", 4, 1);
+    bson_append_int32(index_keys, "minute", 6, -1);
     bson_append_int32(index_keys, field, strlen(field), 1);
     if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
         fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
@@ -102,7 +121,6 @@ void add_request_collection_indexes(const char* db_name, mongoc_collection_t *re
 
     add_request_field_index("response_code", requests_collection);
     add_request_field_index("severity",      requests_collection);
-    add_request_field_index("minute",        requests_collection);
     add_request_field_index("exceptions",    requests_collection);
     // add_request_field_index("started_ms",    requests_collection);
 }
