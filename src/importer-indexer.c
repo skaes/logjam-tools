@@ -57,13 +57,14 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     bson_error_t error;
     bson_t *index_keys;
 
+    // this index seems to be obsolete
     // collection.indexes.create_one({ field => 1 }, :background => true, :sparse => true)
-    index_keys = bson_new();
-    bson_append_int32(index_keys, field, strlen(field), 1);
-    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_sparse, &error)) {
-        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
-    }
-    bson_destroy(index_keys);
+    // index_keys = bson_new();
+    // bson_append_int32(index_keys, field, strlen(field), 1);
+    // if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_sparse, &error)) {
+    //     fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    // }
+    // bson_destroy(index_keys);
 
     // collection.indexes.create_one({ "minute" => -1, field => 1 }, :background => true)
     index_keys = bson_new();
@@ -74,14 +75,15 @@ void add_request_field_index(const char* field, mongoc_collection_t *requests_co
     }
     bson_destroy(index_keys);
 
+    // this index seems to be obsolete
     // collection.indexes.create_one({ "page" => 1, field => 1 }, :background => true)
-    index_keys = bson_new();
-    bson_append_int32(index_keys, "page", 4, 1);
-    bson_append_int32(index_keys, field, strlen(field), 1);
-    if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
-        fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
-    }
-    bson_destroy(index_keys);
+    // index_keys = bson_new();
+    // bson_append_int32(index_keys, "page", 4, 1);
+    // bson_append_int32(index_keys, field, strlen(field), 1);
+    // if (!mongoc_collection_create_index(requests_collection, index_keys, &index_opt_default, &error)) {
+    //     fprintf(stderr, "[E] index creation failed: (%d) %s\n", error.code, error.message);
+    // }
+    // bson_destroy(index_keys);
 
     // collection.indexes.create_one({ "page" => 1, "minute" => -1, field => 1 }, :background => true)
     index_keys = bson_new();
