@@ -349,8 +349,10 @@ subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config, zlist
     // figure out devices specs
     if (devices == NULL)
         devices = zlist_new();
-    if (zlist_size(devices) == 0)
+    if (zlist_size(devices) == 0) {
+        zlist_destroy(&devices);
         devices = extract_devices_from_config(config);
+    }
     if (zlist_size(devices) == 0)
         zlist_append(devices, augment_zmq_connection_spec("localhost", sub_port));
 
