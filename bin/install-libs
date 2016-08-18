@@ -82,7 +82,7 @@ function handle_mongoc()
     test -d $d || git clone https://github.com/mongodb/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="89d779efd5a82e42ac2604f7af97c9acf2bcb8d0" # 1.1.10
+    expected_revision="b391c273622b8f8b2fae9b43021cda546c0c3486" # 1.3.5
     if [ "$revision" != "$expected_revision" ]; then
         git reset --hard
         git fetch
@@ -123,7 +123,7 @@ function handle_sodium()
 {
     d=libsodium-1.0.3
     f=${d}.tar.gz
-    test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.3/$f
+    test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.11/$f
     test -d $d || tar xzvf $f
     cd $d
     [ $forced == "1" ] && rm -f config.status

@@ -107,7 +107,7 @@ A ZeroMQ PUSH socket for graylog to connect to
 * librabbitmq (0.7.0)
 * libzmq (4.1.4)
 * libczmq (3.0.2)
-* mongo-c-driver (1.1.2)
+* mongo-c-driver (1.3.5)
 * libbson (included in mongo-c-driver as a submodule)
 * json-c (0.12 patched)
 * libsnappy (1.1.3)
@@ -159,10 +159,11 @@ Or install them manually:
 * Download and install rabbitmq-c 0.7.0 from https://github.com/alanxz/rabbitmq-c/releases/tag/v0.7.0
 * Download and install zmq 4.1.4 from http://zeromq.org/intro:get-the-software
 * Dowmload and install czmq 3.0.2 from http://czmq.zeromq.org/page:get-the-software
+* Dowmload and install libsodium 1.0.11 from https://github.com/jedisct1/libsodium/releases/tag/1.0.11
 * Clone https://github.com/skaes/json-c.git, checkout
   36be1c4c7ade78fae8ef67280cd4f98ff9f81016, build and install
 * Clone https://github.com/mongodb/mongo-c-driver, checkout
-  048c851919dc32c98b5f8a9a0270e69af9385db3, build and install
+  b391c273622b8f8b2fae9b43021cda546c0c3486, build and install
 * Clone https://github.com/skaes/snappy.git, checkout
   10c7088336f490e646de7d40e9ace0958b269047, build and install
 
