@@ -473,8 +473,18 @@ bool interesting_request(request_data_t *request_data, json_object *request, str
         return true;
     if (request_data->severity > 1)
         return true;
-    if (request_data->response_code >= 400)
-        return true;
+    double sampling_rate_threshold = info ? info->sampling_rate_400s_threshold : global_sampling_rate_400s_threshold;
+    if (request_data->response_code >= 400) {
+        if (sampling_rate_threshold == MAX_RANDOM_VALUE) {
+            // printf("[D] processor: %s: taking 400 since sampling all requests\n", info ? info->key : "");
+            return true;
+        } else if (random() <= sampling_rate_threshold) {
+            // printf("[D] processor: %s: taking 400 since it matched threshold\n", info ? info->key : "");
+            return true;
+        } else {
+            // printf("[D] processor: %s: rejecting 400 since it exceeded threshold\n", info ? info->key : "");
+        }
+    }
     if (request_data->exceptions != NULL)
         return true;
     if (request_data->heap_growth > 0)

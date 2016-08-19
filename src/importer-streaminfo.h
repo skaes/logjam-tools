@@ -24,6 +24,8 @@ typedef struct {
     int db;
     int import_threshold;
     int module_threshold_count;
+    double sampling_rate_400s;
+    long sampling_rate_400s_threshold;
     module_threshold_t *module_thresholds;
     const char *ignored_request_prefix;
     const char **backend_only_requests;
@@ -34,6 +36,9 @@ typedef struct {
 
 extern int global_total_time_import_threshold;
 extern const char* global_ignored_request_prefix;
+extern double global_sampling_rate_400s;
+extern long int global_sampling_rate_400s_threshold;
+#define MAX_RANDOM_VALUE ((1L<<31) - 1)
 
 // all configured streams
 extern zhash_t *configured_streams;

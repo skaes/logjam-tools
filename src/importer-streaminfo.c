@@ -3,6 +3,8 @@
 
 int global_total_time_import_threshold = 0;
 const char* global_ignored_request_prefix = NULL;
+double global_sampling_rate_400s = 1.0;
+long int global_sampling_rate_400s_threshold = MAX_RANDOM_VALUE;
 
 // all configured streams
 zhash_t *configured_streams = NULL;
@@ -41,7 +43,7 @@ zlist_t* get_stream_settings(zconfig_t* config, stream_info_t *info, const char*
 }
 
 static
-void add_threshold_settings(zconfig_t* config, stream_info_t* info)
+void add_import_threshold_settings(zconfig_t* config, stream_info_t* info)
 {
     info->import_threshold = global_total_time_import_threshold;
     zlist_t *settings = get_stream_settings(config, info, "import_threshold");
@@ -124,6 +126,22 @@ void add_backend_only_requests_settings(zconfig_t* config, stream_info_t* info)
 }
 
 static
+void add_sampling_rate_400s_threshold_settings(zconfig_t* config, stream_info_t* info)
+{
+    info->sampling_rate_400s = global_sampling_rate_400s;
+    info->sampling_rate_400s_threshold = global_sampling_rate_400s_threshold;
+    zlist_t *settings = get_stream_settings(config, info, "sampling_rate_400s");
+    zconfig_t *setting = zlist_first(settings);
+    while (setting) {
+        info->sampling_rate_400s = atof(zconfig_value(setting));
+        info->sampling_rate_400s_threshold = MAX_RANDOM_VALUE * info->sampling_rate_400s;
+        setting = zlist_next(settings);
+    }
+    // printf("[D] %s: %f, %ld\n", info->key, info->sampling_rate_400s, info->sampling_rate_400s_threshold);
+    zlist_destroy(&settings);
+}
+
+static
 stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
 {
     stream_info_t *info = zmalloc(sizeof(stream_info_t));
@@ -161,9 +179,10 @@ stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
         assert(db_num < num_databases);
         info->db = db_num;
     }
-    add_threshold_settings(config, info);
+    add_import_threshold_settings(config, info);
     add_ignored_request_settings(config, info);
     add_backend_only_requests_settings(config, info);
+    add_sampling_rate_400s_threshold_settings(config, info);
 
     info->known_modules = zhash_new();
     assert(info->known_modules);
