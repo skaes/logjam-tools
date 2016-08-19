@@ -473,6 +473,8 @@ bool interesting_request(request_data_t *request_data, json_object *request, str
         return true;
     if (request_data->severity > 1)
         return true;
+    if (request_data->response_code >= 500)
+        return true;
     double sampling_rate_threshold = info ? info->sampling_rate_400s_threshold : global_sampling_rate_400s_threshold;
     if (request_data->response_code >= 400) {
         if (sampling_rate_threshold == MAX_RANDOM_VALUE) {
