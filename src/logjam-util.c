@@ -617,6 +617,7 @@ const char* my_fqdn()
 
     struct addrinfo *p;
     for (p = info; p != NULL; p = p->ai_next) {
+        if (fqdn) free(fqdn);
         fqdn = strdup(p->ai_canonname);
         // printf("hostname: %s\n", p->ai_canonname);
     }
