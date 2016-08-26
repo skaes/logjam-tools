@@ -32,17 +32,22 @@ by the client and "S:" is used to mark server output. ZeroMQ frame
 delimiters are left out in order to simplify the presentation.
 
 ```
-stream = *(request-reply / async-data-msg)
+stream = *(request-reply / ping-pong / async-data)
 
-request-reply  = C: request-msg S: reply-msg
-async-data-msg = C: data-msg
+request-reply = C: request-msg S: reply-msg
+ping-pong     = C: ping-msg S: pong-msg
+async-data    = C: data-msg
 
-request-msg = empty-message-frame data-msg
-empty-message-frame = %s""
+request-msg   = empty-frame data-msg
+empty-frame   = %s""
 
-reply-msg    = accepted / bad-request
-accepted     = %s"202 Accepted"
-bad-request  = %s"400 Bad Request"
+reply-msg     = accepted / bad-request
+accepted      = %s"202 Accepted"
+bad-request   = %s"400 Bad Request"
+
+ping-msg      = %s"ping" empty-frame json-body meta-info
+pong-msg      = %s"200 OK" fqdn
+fqdn          = *( ALPHA / "." )
 ```
 
 The client signals its desire to receive a response for a given
@@ -54,6 +59,14 @@ sequence number). For this reason, the app-env field is the first one
 in the four frame sequence so that the incoming data can be forwarded
 without reordering. The order of the remaining fields has historical
 reasons.
+
+The ping message can be sent by the client to verify that it has a
+proper connection to the server. The server answers directly with a
+pong message. This dialog can be used by clients during start up, shut
+down or any time in between and is especially useful if the ZeroMQ
+client implementation does not support setting a linger period on
+ZeroMQ sockets.
+
 
 ### Data frames
 
@@ -82,7 +95,7 @@ json-body = *OCTET                       ; JSON string, possibly compressed
 
 meta-info = tag compression-method version device-number created-ms sequence-number
 
-tag = %xCABD                             ; tag is used internally to detect programming errors
+tag = %xCABD                             ; used internally to detect programming errors
 
 compression-method = no-compression / zlib-compression / snappy-compression
 no-compression     = %x0
@@ -98,7 +111,7 @@ sequence-number    = 8OCTET              ; uint64, network byte order
 
 ## Constraints
 
-* The client MUST use either PUSH or a DEALER socket. If a push socket
+* The client MUST use either DEALER or a push socket. If a push socket
   is used, the message stream is restricted to messages described by
   the async-data-msg rule above.
 
@@ -110,7 +123,9 @@ sequence-number    = 8OCTET              ; uint64, network byte order
   as it starts processing the message.
 
 * The server SHOULD send a bad-request response when it a receives a
-  request when it detects an invalid or missing meta frame.
+  malformed request: e.g. when message frames are missing, when the
+  JSON body isn't parseable or when the meta info cannot be properly
+  decoded.
 
 * The client SHOULD number messages starting with 1 and start again at 1
   when the number space for 64bit unsigned integers in the client's

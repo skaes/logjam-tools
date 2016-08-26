@@ -245,11 +245,24 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
         size_t n = zmsg_size(msg);
         msg_meta_t meta;
         bool decodable = n==4 && msg_extract_meta_info(msg, &meta);
-        zmsg_addstr(reply, decodable ? "202 Accepted" : "400 Bad Request");
+
+        zframe_t *app_env = zmsg_first(msg);
+        bool is_ping = zframe_streq(app_env, "ping");
+        if (is_ping) {
+            if (decodable) {
+                zmsg_addstr(reply, "200 Pong");
+                zmsg_addstr(reply, my_fqdn());
+            } else
+                zmsg_addstr(reply, "400 Bad Request");
+        } else
+            zmsg_addstr(reply, decodable ? "202 Accepted" : "400 Bad Request");
 
         int rc = zmsg_send_and_destroy(&reply, socket);
         if (rc)
             fprintf(stderr, "[E] could not send response (%d: %s)\n", errno, zmq_strerror(errno));
+
+        // don't forward pings
+        if (is_ping) return 0;
     }
 
     // put message back on to the event loop

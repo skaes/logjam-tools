@@ -251,7 +251,8 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
     assert(msg);
-    int ok = true;
+    bool ok = true;
+    bool is_ping = false;
     state->message_count++;
 
     // pop the sender id added by the router socket
@@ -284,6 +285,9 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
             zmsg_destroy(&msg);
             goto answer;
         }
+        is_ping = zframe_streq(zmsg_first(msg), "ping");
+        if (is_ping)
+            goto answer;
     }
 
     if (PUBLISH_DUPLICATES)
@@ -299,7 +303,15 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
     }
  answer:
     if (reply) {
-        zmsg_addstr(reply, ok ? "202 Accepted" : "400 Bad Request");
+        if (is_ping) {
+            if (ok) {
+                zmsg_addstr(reply, "200 Pong");
+                zmsg_addstr(reply, my_fqdn());
+            } else {
+                zmsg_addstr(reply, "400 Bad Request");
+            }
+        } else
+            zmsg_addstr(reply, ok ? "202 Accepted" : "400 Bad Request");
         int rc = zmsg_send_and_destroy(&reply, socket);
         if (rc)
             fprintf(stderr, "[E] subscriber: could not send response (%d: %s)\n", errno, zmq_strerror(errno));
