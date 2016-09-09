@@ -136,7 +136,14 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
     }
     const char *date_str = json_object_get_string(started_at_value);
     if (INVALID_DATE == valid_database_date(date_str)) {
-        fprintf(stderr, "[E] dropped request for %s with invalid started_at date: %s\n", db_name, date_str);
+        db_name[n+7] = '\0';
+        json_object* action_object;
+        const char* action = NULL;
+        if (json_object_object_get_ex(request, "action", &action_object)
+            || json_object_object_get_ex(request, "logjam_action", &action_object)
+            || json_object_object_get_ex(request, "page", &action_object))
+            action = json_object_get_string(action_object);
+        fprintf(stderr, "[E] dropped request for %*s with invalid started_at date: %s. action: %s\n", (int)(n + 7), db_name, date_str, action);
         return NULL;
     }
     strncpy(&db_name[n+7+1], date_str, 10);
