@@ -433,34 +433,75 @@ void add_quant(const char* namespace, size_t resource_idx, char kind, size_t qua
     stored[resource_idx]++;
 }
 
+static double buckets[] = {
+    1,            //    1   ms               1 object            1   KB
+    3,            //    3   ms               3 objects           3   KB
+    10,           //   10   ms              10 objects          10   KB
+    30,           //   30   ms              30 objects          30   KB
+    100,          //  100   ms             100 objects         100   KB
+    300,          //  300   ms             300 objects         300   KB
+    1000,         //    1   second          1K objects       ~   1   MB
+    3000,         //    3   seconds         2K objects       ~   2.9 MB
+    10000,        //   10   seconds        10K objects       ~   9.7 MB
+    30000,        //   30   seconds        30K objects       ~  29.3 MB
+    100000,       //  100   seconds       100K objects       ~  97.6 MB
+    300000,       //    5   minutes       300K objects       ~ 293   MB
+    1000000,      // ~ 17   minutes         1M objects       ~ 976   MB
+    3000000,      //   50   minutes         3M objects       ~   2.9 GB
+    10000000,     //  ~ 2.6 hours          10M objects       ~   9.7 GB
+    30000000,     //  ~ 8.3 hours          30M objects       ~  28.9 GB
+    100000000,    //  ~ 1.2 days          100M objects       ~  96.3 GB
+    300000000,    //    3.5 days          300M objects       ~ 289   GB
+    1000000000,   //   11.6 days            1B objects       ~ 963   GB
+    3000000000,   //   34.7 days            3B objects       ~   2.8 TB
+    10000000000,  //  116   days           10B objects       ~   9.4 TB
+    30000000000,  //  347   days           30B objects       ~  28.2 TB
+    0
+};
+
+
+static inline size_t find_bucket(double value)
+{
+    double *p = buckets;
+    while (*p < value && *(p+1) != 0) p++;
+    assert(*p);
+    return *p;
+}
+
 static
 void processor_add_quants(processor_state_t *self, const char* namespace, increments_t *increments)
 {
-    for (int i=0; i<=last_resource_offset; i++){
+    for (size_t i=0; i<=last_resource_offset; i++){
         double val = increments->metrics[i].val;
         if (val > 0) {
             char kind;
             double d;
-            // printf("[D] trying to add quant: %d=%s\n", i, i2r(i));
+            double bucket;
+            // printf("[D] trying to add quant: %zu=%s\n", i, i2r(i));
             if (i <= last_time_resource_offset) {
                 kind = 't';
-                d = 100.0;
+                bucket = find_bucket(val);
+                d = 1;
             } else if (i == allocated_objects_index) {
                 kind = 'm';
-                d = 10000.0;
+                d = 1;
             } else if (i == allocated_bytes_index) {
                 kind = 'm';
-                d = 100000.0;
+                d = 1024;
             } else if ((i > last_heap_resource_offset) && (i <= last_frontend_resource_offset)) {
                 kind = 'f';
-                d = 100.0;
+                d = 1;
             } else {
                 // printf("[D] skipping quant: %s\n", i2r(i));
                 continue;
             }
-            size_t x = (ceil(floor(val/d))+1) * d;
-            add_quant(namespace, i, kind, x, self->quants);
-            add_quant("all_pages", i, kind, x, self->quants);
+            if (d != 1)
+                bucket = find_bucket(val/d) * d;
+            else
+                bucket = find_bucket(val);
+            // printf("[D] determined bucket for %s, kind %c, for %f to be %f (factor %f)\n", i2r(i), kind, val, bucket, d);
+            add_quant(namespace, i, kind, bucket, self->quants);
+            add_quant("all_pages", i, kind, bucket, self->quants);
         }
     }
 }

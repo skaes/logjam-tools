@@ -119,8 +119,8 @@ void setup_resource_maps(zconfig_t* config)
     add_resources_of_type(config, "dom", dom_resources, &last_dom_resource_index, &last_dom_resource_offset);
     last_resource_offset--;
 
-    allocated_objects_index = r2i("allocated_memory");
+    allocated_objects_index = r2i("allocated_objects");
     allocated_bytes_index = r2i("allocated_bytes");
 
-    if (0) dump_resource_maps();
+    if (debug) dump_resource_maps();
 }
