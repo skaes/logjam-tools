@@ -8,9 +8,11 @@ static char *dump_file_name = "logjam-stream.dump";
 static size_t io_threads = 1;
 static bool verbose = false;
 static bool debug = false;
+static bool quiet = false;
 
 static int sub_port = -1;
 static zlist_t *connection_specs = NULL;
+static zlist_t *subscriptions = NULL;
 
 #define DEFAULT_SUB_PORT 9606
 #define DEFAULT_CONNECTION_SPEC "tcp://localhost:9606"
@@ -87,7 +89,7 @@ static void print_usage(char * const *argv)
     fprintf(stderr,
             "usage: %s [options] [dump-file-name]\n"
             "\nOptions:\n"
-            "  -e, --subscribe A,B        subscription patterns\n"
+            "  -s, --subscribe A,B        subscription patterns\n"
             "  -h, --hosts H,I            specs of devices to connect to\n"
             "  -i, --io-threads N         zeromq io threads\n"
             "  -p, --input-port N         port number of zeromq input socket\n"
@@ -105,13 +107,14 @@ static void process_arguments(int argc, char * const *argv)
     static struct option long_options[] = {
         { "help",          no_argument,       0,  0  },
         { "hosts",         required_argument, 0, 'h' },
+        { "subscribe",     required_argument, 0, 's' },
         { "input-port",    required_argument, 0, 'p' },
         { "io-threads",    required_argument, 0, 'i' },
         { "verbose",       no_argument,       0, 'v' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vc:i:h:p:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vi:h:p:s:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -127,6 +130,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'h':
             connection_specs = split_delimited_string(optarg);
+            break;
+        case 's':
+            subscriptions = split_delimited_string(optarg);
             break;
         case 0:
             print_usage(argv);
@@ -204,7 +210,21 @@ int main(int argc, char * const *argv)
     }
 
     // receive everything
-    zsock_set_subscribe(receiver, "");
+    // setup subscriptions
+    if (subscriptions == NULL || zlist_size(subscriptions) == 0) {
+        if (!quiet)
+            printf("[I] subscribing to all log messages\n");
+        zsock_set_subscribe(receiver, "");
+    } else {
+        char *subscription = zlist_first(subscriptions);
+        while (subscription) {
+            if (!quiet)
+                printf("[I] subscribing to %s\n", subscription);
+            zsock_set_subscribe(receiver, subscription);
+            subscription = zlist_next(subscriptions);
+        }
+        zsock_set_subscribe(receiver, "heartbeat");
+    }
 
     // configure the socket
     zsock_set_rcvhwm(receiver, 100000);
@@ -225,6 +245,7 @@ int main(int argc, char * const *argv)
     int timer_id = zloop_timer(loop, 1000, 0, timer_event, receiver);
     assert(timer_id != -1);
 
+    // run the loop
     if (!zsys_interrupted) {
         if (verbose) printf("[I] starting main event loop\n");
         bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
