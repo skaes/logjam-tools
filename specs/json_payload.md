@@ -50,10 +50,10 @@ The following fields are mandatory:
 Note: the logjam interface benefits from using http response codes
 even for non http requests.
 
-All other fields are optional. Their meaning depends on the logjam
-application handling the request message.  The lines field, if
-present, is a JSON array representation of the log lines produced
-during request handling. Each element is a triple of (log severity,
+All other fields are OPTIONAL. Their meaning depends on the logjam
+application handling the request message. The lines field, if present,
+is a JSON array representation of the log lines produced during
+request handling. Each element MUST be a triple of (log severity,
 timestamp, logged info). Here's an example message:
 
 ```javascript
@@ -112,7 +112,6 @@ timestamp, logged info). Here's an example message:
   code: 302,
   severity: 1,
   db_time: 2.385859,
-  other_time: 23.6725409999999,
   total_time: 1412.57119962024,
   wait_time: 1386.51279962024,
   db_calls: 1,
@@ -123,6 +122,19 @@ timestamp, logged info). Here's an example message:
   live_data_set_size: 131446
 }
 ```
+
+If the field `request_info` is present, it MUST be an JSON object,
+which SHOULD contain the following subfields:
+
+| Field  | Format | Description |
+|:-------|:-------|:------------|
+|method  | String | HTTP method (SHOULD be uppercase) |
+|url     | String | url accessed (SHOULD be relative to server root) |
+|headers | Object | HTTP request headers |
+
+If the field `query_parameters` is present its value SHOULD be a JSON
+object representing the parsed query parameters of the request.
+
 
 ### Topic javascript...
 
