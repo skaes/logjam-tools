@@ -228,11 +228,10 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     const char *request_id = NULL;
     if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
         request_id = json_object_get_string(request_id_obj);
-        int len = strlen(request_id);
-        if (len != 32) {
+        if (request_id==NULL || strlen(request_id) != 32) {
             // this can't be a UUID
-            fprintf(stderr, "[W] invalid request_id: %s (stream: %s)\n", request_id, stream_info->key);
-            dump_json_object(stderr, "[W]", request);
+            fprintf(stderr, "[E] invalid request_id: %s (stream: %s)\n", request_id, stream_info->key);
+            dump_json_object(stderr, "[E]", request);
             request_id = NULL;
             request_id_obj = NULL;
         } else {
