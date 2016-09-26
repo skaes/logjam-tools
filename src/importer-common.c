@@ -4,6 +4,7 @@ bool dryrun = false;
 bool verbose = false;
 bool debug = false;
 bool quiet = false;
+bool send_statsd_msgs = true;
 
 // utf8 conversion
 static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };

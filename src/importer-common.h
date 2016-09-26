@@ -55,6 +55,7 @@ extern bool dryrun;
 extern bool verbose;
 extern bool debug;
 extern bool quiet;
+extern bool send_statsd_msgs;
 
 #define ISO_DATE_STR_LEN 11
 extern char iso_date_today[ISO_DATE_STR_LEN];

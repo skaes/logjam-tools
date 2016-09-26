@@ -62,6 +62,7 @@ void print_usage(char * const *argv)
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "  -w, --writers N            number of db request writer threads\n"
             "  -D, --device-port N        port for connecting to logjam devices\n"
+            "  -N, --no-statsd            don't send statsd updates\n"
             "  -P, --input-port N         pull port for receiving logjam messages\n"
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
@@ -85,23 +86,24 @@ void process_arguments(int argc, char * const *argv)
         { "config",           required_argument, 0, 'c' },
         { "device-id",        required_argument, 0, 'd' },
         { "device-port",      required_argument, 0, 'D' },
-        { "dryrun",           no_argument,       0,  0  },
-        { "router-port",      required_argument, 0, 't' },
+        { "dryrun",           no_argument,       0, 'n' },
         { "help",             no_argument,       0,  0  },
         { "hosts",            required_argument, 0, 'h' },
         { "input-port",       required_argument, 0, 'P' },
         { "io-threads",       required_argument, 0, 'i' },
         { "live-stream",      required_argument, 0, 'l' },
+        { "no-statsd",        no_argument,       0, 'N' },
         { "output-port",      required_argument, 0, 'P' },
         { "quiet",            no_argument,       0, 'q' },
         { "rcv-hwm",          required_argument, 0, 'R' },
+        { "router-port",      required_argument, 0, 't' },
         { "snd-hwm",          required_argument, 0, 'S' },
         { "subscribe",        required_argument, 0, 's' },
         { "verbose",          no_argument,       0, 'v' },
         { 0,                  0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "a:c:f:np:qs:u:vw:i:P:R:S:l:h:D:t:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "a:c:f:np:qs:u:vw:i:P:R:S:l:h:D:t:N", long_options, &longindex)) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -181,6 +183,9 @@ void process_arguments(int argc, char * const *argv)
             break;
         case 'D':
             sub_port = atoi(optarg);
+            break;
+        case 'N':
+            send_statsd_msgs = false;
             break;
         case 'l':
             live_stream_connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_LIVE_STREAM_PORT);

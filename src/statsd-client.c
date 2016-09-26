@@ -1,4 +1,5 @@
 #include "statsd-client.h"
+#include "importer-common.h"
 
 struct _statsd_client_t {
     const char *owner;              // owner log identification
@@ -60,6 +61,9 @@ void statsd_client_destroy(statsd_client_t **self_p)
 static inline
 int send_update(statsd_client_t *self, const char *name, const char *stats_type, size_t value)
 {
+    if (!send_statsd_msgs)
+        return 0;
+
     if (output_socket_ready(self->updates, 0)) {
         return zstr_sendf(self->updates, "%s%s:%zu|%s", self->namespace, name, value, stats_type);
     } else {
@@ -98,6 +102,9 @@ int statsd_client_timing(statsd_client_t *self, char *name, size_t ms)
 static
 void setup_statsd_udp_socket_and_sever_address(statsd_server_state_t* state,  zconfig_t *config)
 {
+    if (!send_statsd_msgs)
+        return;
+
     if ((state->statsd_socket = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         fprintf(stderr, "[E] statsd[0]: cannot create statsd UDP socket");
         return;
@@ -155,7 +162,8 @@ statsd_server_state_t* statsd_server_state_new(zsock_t *pipe, size_t id, zconfig
     int rc = zsock_bind(state->updates, "inproc://statsd-updates");
     assert(rc == 0);
 
-    setup_statsd_udp_socket_and_sever_address(state, config);
+    if (send_statsd_msgs)
+        setup_statsd_udp_socket_and_sever_address(state, config);
 
     return state;
 }
