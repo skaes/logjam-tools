@@ -192,7 +192,7 @@ clean-local:
 	rm -rf go/pkg go/bin logjam-livestream
 
 GO_DEPS = github.com/gorilla/websocket github.com/pebbe/zmq4
-GO_ENV = GOPATH=$(GO_PATH) CGO_LDFLAGS='$(OPTDIR_LDFLAGS)'
+GO_ENV = GOPATH=$(GO_PATH) CGO_LDFLAGS='$(OPTDIR_LDFLAGS)' PKG_CONFIG_PATH=$(PKG_CONFIG_PATH)
 GO_PKG = github.com/skaes/logjam-livestream
 GO_SRC = go/src/$(GO_PKG)
 

@@ -51,8 +51,9 @@ AC_ARG_WITH(opt-dir,
 AS_IF([test "x$prefix" != "x"],
       [ PKG_CONFIG_PATH="$prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
         export PKG_CONFIG_PATH
+        AC_SUBST([PKG_CONFIG_PATH], [$PKG_CONFIG_PATH])
         AC_SUBST([OPTDIR_LDFLAGS], ["-Wl,-rpath -Wl,$libdir"])
-        ])
+      ])
 
 AS_IF([test "x$with_opt_dir" == "x"],
       [
