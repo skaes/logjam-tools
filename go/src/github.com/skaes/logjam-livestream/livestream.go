@@ -17,6 +17,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	zmq "github.com/pebbe/zmq4"
+	"gopkg.in/tylerb/graceful.v1"
 )
 
 func genSym(prefix string) func() string {
@@ -382,14 +383,15 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 }
 
 func clientHandler() {
-	http.HandleFunc("/", serveWs)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", serveWs)
 	web_socket_port := 8080
 	if runtime.GOOS == "darwin" {
 		web_socket_port = 9608
 	}
 	logInfo("starting web socket server on port %d", web_socket_port)
 	web_socket_spec := ":" + strconv.Itoa(web_socket_port)
-	http.ListenAndServe(web_socket_spec, nil)
+	graceful.Run(web_socket_spec, 10*time.Second, mux)
 }
 
 //*******************************************************************************

@@ -41,6 +41,7 @@ stamp-h1
 logjam-logger
 logjam-tail
 logjam-livestream
-go/pkg/
-go/src/github.com/gorilla/websocket
-go/src/github.com/pebbe/zmq4
+/go/pkg
+/go/src/github.com/gorilla/websocket
+/go/src/github.com/pebbe/zmq4
+/go/src/gopkg.in
