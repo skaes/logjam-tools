@@ -1,7 +1,7 @@
 package main
 
 import (
-	// "errors"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -19,6 +19,8 @@ import (
 	zmq "github.com/pebbe/zmq4"
 	"gopkg.in/tylerb/graceful.v1"
 )
+
+var channelBlocked = errors.New("channel blocked")
 
 func genSym(prefix string) func() string {
 	var i uint64
@@ -67,10 +69,17 @@ func (b *StringBuffer) ForEach(f func(int, string)) {
 	}
 }
 
-func (b *StringBuffer) Send(c chan string) {
+func (b *StringBuffer) Send(c chan string) (err error) {
 	b.ForEach(func(i int, s string) {
-		c <- s
+		select {
+		case c <- s:
+		default:
+			if err == nil {
+				err = channelBlocked
+			}
+		}
 	})
+	return err
 }
 
 type AppEnvBufferMap map[string]*StringBuffer
@@ -88,8 +97,8 @@ func (m *AppEnvBufferMap) Add(key, val string) {
 	m.Get(key).Add(val)
 }
 
-func (m *AppEnvBufferMap) Send(key string, c chan string) {
-	m.Get(key).Send(c)
+func (m *AppEnvBufferMap) Send(key string, c chan string) error {
+	return m.Get(key).Send(c)
 }
 
 type (
@@ -203,8 +212,8 @@ type WsMsg struct {
 // subscribed to the particular message.
 
 var (
-	ws_channel  = make(chan *WsMsg, 100)
-	zmq_channel = make(chan *ZmqMsg, 100)
+	ws_channel  = make(chan *WsMsg, 10000)
+	zmq_channel = make(chan *ZmqMsg, 10000)
 )
 
 func dispatcher() {
@@ -232,13 +241,18 @@ func handleZeromqMsg(msg *ZmqMsg) {
 	atomic.AddInt64(&processed, 1)
 }
 
-func sendToWebSockets(msg *ZmqMsg) {
+func sendToWebSockets(msg *ZmqMsg) (err error) {
 	channels := channel_map[msg.app_env]
 	if channels != nil {
 		for _, c := range *channels {
-			c <- msg.data
+			select {
+			case c <- msg.data:
+			default:
+				err = channelBlocked
+			}
 		}
 	}
+	return err
 }
 
 func handleWebSocketMsg(msg *WsMsg) {
@@ -246,8 +260,12 @@ func handleWebSocketMsg(msg *WsMsg) {
 	case subscribeMsg:
 		logInfo("adding subscription to %s for %s", msg.app_env, msg.name)
 		channel_map.Add(msg.app_env, msg.name, msg.channel)
-		perf_buffers.Send(msg.app_env, msg.channel)
-		error_buffers.Send(msg.app_env, msg.channel)
+		if err := perf_buffers.Send(msg.app_env, msg.channel); err != nil {
+			logError("%v", err)
+		}
+		if err := error_buffers.Send(msg.app_env, msg.channel); err != nil {
+			logError("%v", err)
+		}
 	case unsubscribeMsg:
 		logInfo("removing subscription to %s for %s", msg.app_env, msg.name)
 		channel_map.Remove(msg.app_env, msg.name, msg.channel)
@@ -326,7 +344,7 @@ var upgrader = websocket.Upgrader{
 }
 
 func wsReader(ws *websocket.Conn) {
-	var dispatcher_input = make(chan string)
+	var dispatcher_input = make(chan string, 1000)
 	// channel will be closed by dispatcher, to avoid sending on a closed channel
 
 	var app_env string
@@ -408,9 +426,9 @@ func main() {
 
 	installSignalHandler()
 	go statsReporter()
-	go clientHandler()
 	go zmqMsgHandler()
-	dispatcher()
+	go dispatcher()
+	clientHandler()
 
 	logInfo("%s shutting down", os.Args[0])
 }
