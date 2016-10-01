@@ -15,8 +15,7 @@ bin_PROGRAMS = \
     logjam-replay \
     logjam-pubsub-bridge \
     logjam-logger \
-    logjam-tail \
-    logjam-livestream
+    logjam-tail
 
 noinst_PROGRAMS = \
     test_publisher \
@@ -188,13 +187,22 @@ analyze: clean
 check: checker
 	./checker
 
-clean-local:
-	rm -rf go/pkg go/bin logjam-livestream
-
 GO_DEPS = github.com/gorilla/websocket github.com/pebbe/zmq4
 GO_ENV = GOPATH=$(GO_PATH) CGO_LDFLAGS='$(OPTDIR_LDFLAGS)' PKG_CONFIG_PATH=$(PKG_CONFIG_PATH)
 GO_PKG = github.com/skaes/logjam-livestream
 GO_SRC = go/src/$(GO_PKG)
+GO_TARGETS = logjam-livestream
+
+all-local: $(GO_TARGETS)
+
+clean-local:
+	rm -rf go/pkg go/bin logjam-livestream
+
+install-exec-local: $(GO_TARGETS)
+	$(INSTALL_PROGRAM) logjam-livestream $(bindir)
+
+uninstall-local:
+	cd $(bindir) && rm -f $(GO_TARGETS)
 
 logjam-livestream: $(GO_SRC)/livestream.go
 	$(GO_ENV) go get $(GO_DEPS)
