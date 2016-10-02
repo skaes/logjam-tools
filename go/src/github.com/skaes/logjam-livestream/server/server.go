@@ -16,9 +16,16 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/jessevdk/go-flags"
 	zmq "github.com/pebbe/zmq4"
 	"gopkg.in/tylerb/graceful.v1"
 )
+
+var opts struct {
+	AnomalyHost  string `short:"a" long:"anomaly-host" default:"127.0.0.1" description:"anomaly host"`
+	BindIp       string `short:"b" long:"bind-ip" default:"127.0.0.1" description:"ip address to bind to"`
+	ImporterHost string `short:"i" long:"importer-host" default:"127.0.0.1" description:"importer host"`
+}
 
 var channelBlocked = errors.New("channel blocked")
 
@@ -128,9 +135,6 @@ var (
 	error_buffers = make(AppEnvBufferMap)
 	channel_map   = make(ChannelMap)
 	// @anomaly_scores = Hash.new(0)
-	bind_ip        string = "127.0.0.1"
-	anomaly_host   string = "127.0.0.1"
-	importer_host  string = "127.0.0.1"
 	bind_spec      string
 	anomaly_spec   string
 	importer_spec  string
@@ -140,18 +144,22 @@ var (
 )
 
 func init() {
-	if len(os.Args) > 1 {
-		bind_ip = os.Args[1]
+	args, err := flags.ParseArgs(&opts, os.Args)
+	if err != nil {
+		os.Exit(1)
 	}
-	if len(os.Args) > 2 {
-		anomaly_host = os.Args[2]
+	if len(args) > 0 {
+		opts.BindIp = args[0]
 	}
-	if len(os.Args) > 3 {
-		importer_host = os.Args[3]
+	if len(args) > 1 {
+		opts.AnomalyHost = args[1]
 	}
-	bind_spec = fmt.Sprintf("tcp://%s:9611", bind_ip)
-	anomaly_spec = fmt.Sprintf("tcp://%s:9610", anomaly_host)
-	importer_spec = fmt.Sprintf("tcp://%s:9607", importer_host)
+	if len(args) > 2 {
+		opts.ImporterHost = args[2]
+	}
+	bind_spec = fmt.Sprintf("tcp://%s:9611", opts.BindIp)
+	anomaly_spec = fmt.Sprintf("tcp://%s:9610", opts.AnomalyHost)
+	importer_spec = fmt.Sprintf("tcp://%s:9607", opts.ImporterHost)
 }
 
 func installSignalHandler() {
@@ -277,27 +285,28 @@ func handleWebSocketMsg(msg *WsMsg) {
 
 func setupSockets() (*zmq.Socket, *zmq.Socket) {
 	subscriber, _ := zmq.NewSocket(zmq.SUB)
-	subscriber.Connect(importer_spec)
 	subscriber.SetLinger(100)
 	subscriber.SetRcvhwm(1000)
 	subscriber.SetSubscribe("")
+	subscriber.Connect(importer_spec)
 
-	opad, _ := zmq.NewSocket(zmq.SUB)
-	opad.SetLinger(100)
-	opad.SetRcvhwm(1000)
-	opad.SetSubscribe("")
-	return subscriber, opad
+	anomalies, _ := zmq.NewSocket(zmq.SUB)
+	anomalies.SetLinger(100)
+	anomalies.SetRcvhwm(1000)
+	anomalies.Connect(anomaly_spec)
+	anomalies.SetSubscribe("")
+	return subscriber, anomalies
 }
 
 // run zmq event loop
 func zmqMsgHandler() {
-	subscriber, opad := setupSockets()
+	subscriber, anomalies := setupSockets()
 	defer subscriber.Close()
-	defer opad.Close()
+	defer anomalies.Close()
 
 	poller := zmq.NewPoller()
 	poller.Add(subscriber, zmq.POLLIN)
-	poller.Add(opad, zmq.POLLIN)
+	poller.Add(anomalies, zmq.POLLIN)
 
 	for !interrupted {
 		sockets, _ := poller.Poll(1 * time.Second)
@@ -317,7 +326,7 @@ func zmqMsgHandler() {
 				} else {
 					msgType = errorMsg
 				}
-			case opad:
+			case anomalies:
 				msgType = anomalyMsg
 			}
 			zmq_channel <- &ZmqMsg{msgType: msgType, app_env: app_env, data: data}

@@ -168,7 +168,7 @@ checker_SOURCES = \
 TEST_PUBLISHERS=1
 ULIMIT=20000
 
-.PHONY: test run cov-build analyze check
+.PHONY: test run cov-build analyze check godeps
 
 test: tester
 	for i in $(TEST_PUBLISHERS); do (ulimit -n $(ULIMIT); ./tester 200 100000&); done
@@ -187,25 +187,38 @@ analyze: clean
 check: checker
 	./checker
 
-GO_DEPS = github.com/gorilla/websocket github.com/pebbe/zmq4 gopkg.in/tylerb/graceful.v1
+GO_DEPS = \
+	github.com/gorilla/websocket \
+	github.com/jessevdk/go-flags \
+	github.com/nu7hatch/gouuid \
+	github.com/pebbe/zmq4 \
+	gopkg.in/tylerb/graceful.v1
+
+godeps:
+	$(GO_ENV) go get $(GO_DEPS)
+
 GO_ENV = GOPATH=$(GO_PATH) CGO_LDFLAGS='$(OPTDIR_LDFLAGS)' PKG_CONFIG_PATH=$(PKG_CONFIG_PATH)
 GO_PKG = github.com/skaes/logjam-livestream
 GO_SRC = go/src/$(GO_PKG)
-GO_TARGETS = logjam-livestream
+GO_NOINSTALL_TARGETS = livestream-generator
+GO_INSTALL_TARGETS = logjam-livestream
+GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
 
 all-local: $(GO_TARGETS)
 
 clean-local:
-	rm -rf go/pkg go/bin logjam-livestream
+	rm -rf go/pkg go/bin $(GO_TARGETS)
 
-install-exec-local: $(GO_TARGETS)
+install-exec-local: $(GO_INSTALL_TARGETS)
 	$(INSTALL_PROGRAM) logjam-livestream $(bindir)
 
 uninstall-local:
-	cd $(bindir) && rm -f $(GO_TARGETS)
+	cd $(bindir) && rm -f $(GO_INSTALL_TARGETS)
 
-logjam-livestream: $(GO_SRC)/livestream.go
-	$(GO_ENV) go get $(GO_DEPS)
-	$(GO_ENV) go test $(GO_PKG)
-	$(GO_ENV) go build -o $@ $^
+logjam-livestream: $(GO_SRC)/server/server.go godeps
+	$(GO_ENV) go test $(GO_PKG)/server
+	$(GO_ENV) go build -o $@ $<
+
+livestream-generator: $(GO_SRC)/generator/generator.go godeps
+	$(GO_ENV) go build -o $@ $<
 
