@@ -113,7 +113,7 @@ type AnomalyData struct {
 	Score   float32 `json:"score"`
 }
 
-func generateAnamolyData() AnomalyData {
+func generateAnomalyData() AnomalyData {
 	p := AnomalyData{Score: rnd.Float32()}
 	p.Anomaly = p.Score > 0.5
 	return p
@@ -127,10 +127,10 @@ func sendData(socket *zmq.Socket, key string, data interface{}, kind string) {
 	encoded_data := string(bs)
 	msg_key := fmt.Sprintf("%s-%s,%s", opts.App, opts.Env, key)
 	if _, err := socket.Send(msg_key, zmq.DONTWAIT|zmq.SNDMORE); err != nil {
-		abort(err, "cound not send message part 1")
+		abort(err, "could not send message part 1")
 	}
 	if _, err := socket.Send(encoded_data, zmq.DONTWAIT); err != nil {
-		abort(err, "cound not send message part 2")
+		abort(err, "could not send message part 2")
 	}
 	if opts.Verbose {
 		fmt.Printf("KEY: %s\n%s: %s\n", key, kind, encoded_data)
@@ -170,7 +170,7 @@ func main() {
 			}
 			if tick%5 == 0 {
 				for _, key := range keys {
-					sendData(anomalies, key, generateAnamolyData(), "ANOMALY")
+					sendData(anomalies, key, generateAnomalyData(), "ANOMALY")
 				}
 			}
 		}
