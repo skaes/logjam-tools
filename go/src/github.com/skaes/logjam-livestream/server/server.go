@@ -148,18 +148,15 @@ func init() {
 	if err != nil {
 		os.Exit(1)
 	}
-	if len(args) > 0 {
-		opts.BindIp = args[0]
-	}
 	if len(args) > 1 {
-		opts.AnomalyHost = args[1]
+		opts.BindIp = args[1]
 	}
 	if len(args) > 2 {
-		opts.ImporterHost = args[2]
+		opts.AnomalyHost = args[2]
 	}
-	bind_spec = fmt.Sprintf("tcp://%s:9611", opts.BindIp)
-	anomaly_spec = fmt.Sprintf("tcp://%s:9610", opts.AnomalyHost)
-	importer_spec = fmt.Sprintf("tcp://%s:9607", opts.ImporterHost)
+	if len(args) > 3 {
+		opts.ImporterHost = args[3]
+	}
 }
 
 func installSignalHandler() {
@@ -425,6 +422,12 @@ func clientHandler() {
 
 func main() {
 	logInfo("%s starting", os.Args[0])
+	bind_spec = fmt.Sprintf("tcp://%s:9611", opts.BindIp)
+	anomaly_spec = fmt.Sprintf("tcp://%s:9610", opts.AnomalyHost)
+	importer_spec = fmt.Sprintf("tcp://%s:9607", opts.ImporterHost)
+	logInfo("bind-spec:     %s", bind_spec)
+	logInfo("anomaly-spec:  %s", anomaly_spec)
+	logInfo("importer-spec: %s", importer_spec)
 
 	// f, err := os.Create("profile.prof")
 	// if err != nil {
