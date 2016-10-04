@@ -4,6 +4,7 @@
 *.log
 *.dump
 .deps
+.godeps
 autom4te.cache
 Makefile.in
 configure
