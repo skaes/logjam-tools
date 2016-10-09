@@ -166,11 +166,12 @@ type (
 	ChannelSet map[string]chan string
 
 	AppInfo struct {
-		errors     StringRing
-		metrics    StringRing
-		lastMinute Float64Ring
-		lastHour   Float64Ring
-		channels   ChannelSet
+		errors         StringRing
+		metrics        StringRing
+		lastMinute     Float64Ring
+		lastHour       Float64Ring
+		channels       ChannelSet
+		lastAnomalyMsg string
 	}
 
 	AppEnvBufferMap map[string]*AppInfo
@@ -198,6 +199,18 @@ func (ai *AppInfo) SendToWebSockets(data string) (err error) {
 		default:
 			err = channelBlocked
 		}
+	}
+	return
+}
+
+func (ai *AppInfo) SendLastAnomalyMsg(c chan string) (err error) {
+	if ai.lastAnomalyMsg == "" {
+		return
+	}
+	select {
+	case c <- ai.lastAnomalyMsg:
+	default:
+		err = channelBlocked
 	}
 	return
 }
@@ -343,7 +356,8 @@ func handleZeromqMsg(msg *ZmqMsg) {
 					logError("could not encode anomaly data as json: %v", err)
 				} else {
 					// logInfo("ANOMALY DATA: %s", string(data))
-					ai.SendToWebSockets(string(data))
+					ai.lastAnomalyMsg = string(data)
+					ai.SendToWebSockets(ai.lastAnomalyMsg)
 				}
 			}
 			ai.lastMinute.Add(tt)
@@ -365,6 +379,9 @@ func handleWebSocketMsg(msg *WsMsg) {
 			logError("%v", err)
 		}
 		if err := ai.errors.Send(msg.channel); err != nil {
+			logError("%v", err)
+		}
+		if err := ai.SendLastAnomalyMsg(msg.channel); err != nil {
 			logError("%v", err)
 		}
 	case unsubscribeMsg:
