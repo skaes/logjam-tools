@@ -179,7 +179,13 @@ type (
 func (m *AppEnvBufferMap) Get(key string) *AppInfo {
 	b := (*m)[key]
 	if b == nil {
-		b = &AppInfo{}
+		b = &AppInfo{
+			errors:     *newStringRing(),
+			metrics:    *newStringRing(),
+			lastMinute: *newFloat64Ring(),
+			lastHour:   *newFloat64Ring(),
+			channels:   ChannelSet{},
+		}
 		(*m)[key] = b
 	}
 	return b
