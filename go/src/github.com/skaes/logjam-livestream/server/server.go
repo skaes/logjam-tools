@@ -9,6 +9,8 @@ import (
 	"os/signal"
 	"runtime"
 	// "runtime/pprof"
+	"encoding/json"
+	"math"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -22,13 +24,15 @@ import (
 )
 
 var opts struct {
-	AnomalyHost  string `short:"a" long:"anomaly-host" default:"127.0.0.1" description:"anomaly host"`
 	BindIp       string `short:"b" long:"bind-ip" default:"127.0.0.1" description:"ip address to bind to"`
 	ImporterHost string `short:"i" long:"importer-host" default:"127.0.0.1" description:"importer host"`
 }
 
 var channelBlocked = errors.New("channel blocked")
 
+//**********************************************************************************
+// symbol generator generator
+//**********************************************************************************
 func genSym(prefix string) func() string {
 	var i uint64
 	return func() string {
@@ -37,23 +41,27 @@ func genSym(prefix string) func() string {
 	}
 }
 
+// channel name generator
 var nextChannelName = genSym("c-")
 
+//**********************************************************************************
+// Ring buffer of strings
+//**********************************************************************************
 const bufSize = 60
 
-type StringBuffer struct {
+type StringRing struct {
 	buf  [bufSize]string
 	last int // points to the most recently added element
 	size int // current size
 }
 
-func newStringBuffer() *StringBuffer {
-	p := new(StringBuffer)
+func newStringRing() *StringRing {
+	p := new(StringRing)
 	p.last = -1
 	return p
 }
 
-func (b *StringBuffer) Add(val string) {
+func (b *StringRing) Add(val string) {
 	if b.size < bufSize {
 		b.size += 1
 	}
@@ -62,7 +70,7 @@ func (b *StringBuffer) Add(val string) {
 }
 
 // returns oldest elements first
-func (b *StringBuffer) ForEach(f func(int, string)) {
+func (b *StringRing) ForEach(f func(int, string)) {
 	if b.size == 0 {
 		return
 	}
@@ -76,7 +84,7 @@ func (b *StringBuffer) ForEach(f func(int, string)) {
 	}
 }
 
-func (b *StringBuffer) Send(c chan string) (err error) {
+func (b *StringRing) Send(c chan string) (err error) {
 	b.ForEach(func(i int, s string) {
 		select {
 		case c <- s:
@@ -89,58 +97,116 @@ func (b *StringBuffer) Send(c chan string) (err error) {
 	return err
 }
 
-type AppEnvBufferMap map[string]*StringBuffer
+//**********************************************************************************
+// Buffer of float64s.
+// Incidentally, it shares the bufSize constant of 60, which
+// is used for seconds and minutes.
+//**********************************************************************************
 
-func (m *AppEnvBufferMap) Get(key string) *StringBuffer {
+type Float64Ring struct {
+	buf  [bufSize]float64
+	last int // points to the most recently added element
+	size int // current size
+}
+
+func newFloat64Ring() *Float64Ring {
+	p := new(Float64Ring)
+	p.last = -1
+	return p
+}
+
+func (b *Float64Ring) Size() int {
+	return b.size
+}
+
+func (b *Float64Ring) IsFull() bool {
+	return b.size == bufSize
+}
+
+func (b *Float64Ring) Reset() {
+	b.size = 0
+	b.last = -1
+}
+
+func (b *Float64Ring) Add(val float64) {
+	if b.size < bufSize {
+		b.size += 1
+	}
+	b.last = (b.last + 1) % bufSize
+	b.buf[b.last] = val
+}
+
+func (b *Float64Ring) Mean() (res float64) {
+	if b.size == 0 {
+		return
+	}
+	if b.size-1 == b.last {
+		for _, v := range b.buf {
+			res += v
+		}
+		res /= float64(b.size)
+		return
+	}
+	p := (b.last - b.size + 1) % bufSize
+	if p < 0 {
+		p = p + bufSize
+	}
+	for i := 0; i < b.size; i++ {
+		res += b.buf[p]
+		p = (p + 1) % bufSize
+	}
+	res /= float64(b.size)
+	return
+}
+
+//**********************************************************************************
+//
+//**********************************************************************************
+type (
+	ChannelSet map[string]chan string
+
+	AppInfo struct {
+		errors     StringRing
+		metrics    StringRing
+		lastMinute Float64Ring
+		lastHour   Float64Ring
+		channels   ChannelSet
+	}
+
+	AppEnvBufferMap map[string]*AppInfo
+)
+
+func (m *AppEnvBufferMap) Get(key string) *AppInfo {
 	b := (*m)[key]
 	if b == nil {
-		b = newStringBuffer()
+		b = &AppInfo{}
 		(*m)[key] = b
 	}
 	return b
 }
 
-func (m *AppEnvBufferMap) Add(key, val string) {
-	m.Get(key).Add(val)
-}
-
-func (m *AppEnvBufferMap) Send(key string, c chan string) error {
-	return m.Get(key).Send(c)
-}
-
-type (
-	ChannelSet map[string]chan string
-	ChannelMap map[string]*ChannelSet
-)
-
-func (m *ChannelMap) Add(key string, name string, val chan string) {
-	s := (*m)[key]
-	if s == nil {
-		s = &ChannelSet{}
-		(*m)[key] = s
+func (ai *AppInfo) SendToWebSockets(data string) (err error) {
+	for _, c := range ai.channels {
+		select {
+		case c <- data:
+		default:
+			err = channelBlocked
+		}
 	}
-	(*s)[name] = val
+	return
 }
 
-func (m *ChannelMap) Remove(key string, name string, val chan string) {
-	s := (*m)[key]
-	if s == nil {
-		return
-	}
-	delete(*s, name)
-}
+//**********************************************************************************
+// main program
+//**********************************************************************************
 
 var (
-	perf_buffers  = make(AppEnvBufferMap)
-	error_buffers = make(AppEnvBufferMap)
-	channel_map   = make(ChannelMap)
-	// @anomaly_scores = Hash.new(0)
 	bind_spec      string
-	anomaly_spec   string
 	importer_spec  string
 	processed      int64
 	ws_connections int64
-	interrupted    bool = false
+	app_info       = make(AppEnvBufferMap)
+	interrupted    = false
 )
 
 func init() {
@@ -149,13 +215,8 @@ func init() {
 		os.Exit(1)
 	}
 	if len(args) > 1 {
-		opts.BindIp = args[1]
-	}
-	if len(args) > 2 {
-		opts.AnomalyHost = args[2]
-	}
-	if len(args) > 3 {
-		opts.ImporterHost = args[3]
+		logError("%s: passing arguments is obsolete. please use options instead.", args[0])
+		os.Exit(1)
 	}
 }
 
@@ -185,9 +246,8 @@ func logWarn(format string, args ...interface{}) {
 }
 
 const (
-	perfMsg    = 1
-	errorMsg   = 2
-	anomalyMsg = 3
+	perfMsg  = 1
+	errorMsg = 2
 )
 
 type ZmqMsg struct {
@@ -234,76 +294,98 @@ func dispatcher() {
 	}
 }
 
+type MetricsData struct {
+	TotalTime float64 `json:"total_time"`
+}
+
+func extractTotalTime(msg_data string) (res float64, err error) {
+	var m MetricsData
+	err = json.Unmarshal([]byte(msg_data), &m)
+	if err == nil {
+		res = m.TotalTime
+	}
+	return
+}
+
+type AnomalyData struct {
+	Score     float64 `json:"score"`
+	IsAnomaly bool    `json:"anomaly"`
+}
+
 func handleZeromqMsg(msg *ZmqMsg) {
+	ai := app_info.Get(msg.app_env)
 	switch msg.msgType {
 	case perfMsg:
-		perf_buffers.Add(msg.app_env, msg.data)
+		ai.metrics.Add(msg.data)
+		if tt, err := extractTotalTime(msg.data); err != nil {
+			logError("could not extract total time: %v", err)
+		} else {
+			if ai.lastMinute.IsFull() {
+				mean := ai.lastMinute.Mean()
+				forecast := ai.lastHour.Mean()
+				var ad AnomalyData
+				if ai.lastHour.Size() > 0 {
+					sum := forecast + mean
+					if sum > 0 {
+						ad.Score = math.Abs(forecast-mean) / (forecast + mean)
+					}
+				}
+				ad.IsAnomaly = ad.Score > 0.24
+				ai.lastHour.Add(mean)
+				ai.lastMinute.Reset()
+				if data, err := json.Marshal(ad); err != nil {
+					logError("could not encode anomaly data as json: %v", err)
+				} else {
+					// logInfo("ANOMALY DATA: %s", string(data))
+					ai.SendToWebSockets(string(data))
+				}
+			}
+			ai.lastMinute.Add(tt)
+		}
 	case errorMsg:
-		error_buffers.Add(msg.app_env, msg.data)
-	case anomalyMsg:
+		ai.errors.Add(msg.data)
 	}
-	sendToWebSockets(msg)
+	ai.SendToWebSockets(msg.data)
 	atomic.AddInt64(&processed, 1)
 }
 
-func sendToWebSockets(msg *ZmqMsg) (err error) {
-	channels := channel_map[msg.app_env]
-	if channels != nil {
-		for _, c := range *channels {
-			select {
-			case c <- msg.data:
-			default:
-				err = channelBlocked
-			}
-		}
-	}
-	return err
-}
-
 func handleWebSocketMsg(msg *WsMsg) {
+	ai := app_info.Get(msg.app_env)
 	switch msg.msgType {
 	case subscribeMsg:
 		logInfo("adding subscription to %s for %s", msg.app_env, msg.name)
-		channel_map.Add(msg.app_env, msg.name, msg.channel)
-		if err := perf_buffers.Send(msg.app_env, msg.channel); err != nil {
+		ai.channels[msg.name] = msg.channel
+		if err := ai.metrics.Send(msg.channel); err != nil {
 			logError("%v", err)
 		}
-		if err := error_buffers.Send(msg.app_env, msg.channel); err != nil {
+		if err := ai.errors.Send(msg.channel); err != nil {
 			logError("%v", err)
 		}
 	case unsubscribeMsg:
 		logInfo("removing subscription to %s for %s", msg.app_env, msg.name)
-		channel_map.Remove(msg.app_env, msg.name, msg.channel)
+		delete(ai.channels, msg.name)
 		close(msg.channel)
 	}
 }
 
 //*****************************************************************
 
-func setupSockets() (*zmq.Socket, *zmq.Socket) {
+func setupSocket() *zmq.Socket {
 	subscriber, _ := zmq.NewSocket(zmq.SUB)
 	subscriber.SetLinger(100)
 	subscriber.SetRcvhwm(1000)
 	subscriber.SetSubscribe("")
 	subscriber.Connect(importer_spec)
-
-	anomalies, _ := zmq.NewSocket(zmq.SUB)
-	anomalies.SetLinger(100)
-	anomalies.SetRcvhwm(1000)
-	anomalies.Connect(anomaly_spec)
-	anomalies.SetSubscribe("")
-	return subscriber, anomalies
+	return subscriber
 }
 
 // run zmq event loop
 func zmqMsgHandler() {
-	subscriber, anomalies := setupSockets()
+	subscriber := setupSocket()
 	defer subscriber.Close()
-	defer anomalies.Close()
 
 	poller := zmq.NewPoller()
 	poller.Add(subscriber, zmq.POLLIN)
-	poller.Add(anomalies, zmq.POLLIN)
 
 	for !interrupted {
 		sockets, _ := poller.Poll(1 * time.Second)
@@ -316,15 +398,10 @@ func zmqMsgHandler() {
 			}
 			var app_env, data = msg[0], msg[1]
 			var msgType int
-			switch s {
-			case subscriber:
-				if strings.Contains(data, "total_time") {
-					msgType = perfMsg
-				} else {
-					msgType = errorMsg
-				}
-			case anomalies:
-				msgType = anomalyMsg
+			if strings.Contains(data, "total_time") {
+				msgType = perfMsg
+			} else {
+				msgType = errorMsg
 			}
 			zmq_channel <- &ZmqMsg{msgType: msgType, app_env: app_env, data: data}
 		}
@@ -423,10 +500,8 @@ func clientHandler() {
 func main() {
 	logInfo("%s starting", os.Args[0])
 	bind_spec = fmt.Sprintf("tcp://%s:9611", opts.BindIp)
-	anomaly_spec = fmt.Sprintf("tcp://%s:9610", opts.AnomalyHost)
 	importer_spec = fmt.Sprintf("tcp://%s:9607", opts.ImporterHost)
 	logInfo("bind-spec:     %s", bind_spec)
-	logInfo("anomaly-spec:  %s", anomaly_spec)
 	logInfo("importer-spec: %s", importer_spec)
 
 	// f, err := os.Create("profile.prof")

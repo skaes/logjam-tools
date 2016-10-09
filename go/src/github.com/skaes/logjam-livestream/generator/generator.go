@@ -25,7 +25,6 @@ var opts struct {
 
 var (
 	publisher *zmq.Socket
-	anomalies *zmq.Socket
 )
 
 func abort(err error, s string) {
@@ -33,7 +32,7 @@ func abort(err error, s string) {
 	panic(s)
 }
 
-func setupSockets() {
+func setupSocket() {
 	var err error
 	if publisher, err = zmq.NewSocket(zmq.PUB); err != nil {
 		abort(err, "could not create socket")
@@ -41,13 +40,6 @@ func setupSockets() {
 	publisher.SetLinger(100)
 	publisher.SetSndhwm(1000)
 	publisher.Bind("tcp://127.0.0.1:9607")
-
-	if anomalies, err = zmq.NewSocket(zmq.PUB); err != nil {
-		abort(err, "could not create socket")
-	}
-	anomalies.SetLinger(100)
-	anomalies.SetSndhwm(1000)
-	anomalies.Bind("tcp://127.0.0.1:9610")
 }
 
 func installSignalHandler() {
@@ -108,17 +100,6 @@ func generateErrorData() []ErrorData {
 	return []ErrorData{p}
 }
 
-type AnomalyData struct {
-	Anomaly bool    `json:"anomaly"`
-	Score   float32 `json:"score"`
-}
-
-func generateAnomalyData() AnomalyData {
-	p := AnomalyData{Score: rnd.Float32()}
-	p.Anomaly = p.Score > 0.5
-	return p
-}
-
 func sendData(socket *zmq.Socket, key string, data interface{}, kind string) {
 	bs, err := json.Marshal(data)
 	if err != nil {
@@ -142,9 +123,8 @@ func main() {
 	if err != nil {
 		os.Exit(1)
 	}
-	setupSockets()
+	setupSocket()
 	defer publisher.Close()
-	defer anomalies.Close()
 
 	keys := strings.Split(opts.Keys, ",")
 
@@ -166,11 +146,6 @@ func main() {
 			if tick%2 == 0 {
 				for _, key := range keys {
 					sendData(publisher, key, generateErrorData(), "ERRORS")
-				}
-			}
-			if tick%5 == 0 {
-				for _, key := range keys {
-					sendData(anomalies, key, generateAnomalyData(), "ANOMALY")
 				}
 			}
 		}

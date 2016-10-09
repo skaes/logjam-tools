@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/signal"
 	"strconv"
@@ -10,7 +11,7 @@ import (
 	"time"
 )
 
-func (b *StringBuffer) dumpBuffer() {
+func (b *StringRing) dumpBuffer() {
 	fmt.Println("===============")
 	fmt.Printf("b.last: %d\n", b.last)
 	fmt.Printf("b.size: %d\n", b.size)
@@ -18,7 +19,7 @@ func (b *StringBuffer) dumpBuffer() {
 	fmt.Println("===============")
 }
 
-func (b *StringBuffer) content() []string {
+func (b *StringRing) content() []string {
 	result := make([]string, 0, b.size)
 	b.ForEach(func(_ int, s string) {
 		result = append(result, s)
@@ -26,7 +27,7 @@ func (b *StringBuffer) content() []string {
 	return result
 }
 
-func (b *StringBuffer) hasContent(a []string) bool {
+func (b *StringRing) hasContent(a []string) bool {
 	// fmt.Printf("checking for: %v\n", a)
 	if b.size != len(a) {
 		fmt.Printf("wrong length: %d, %d\n", b.size, len(a))
@@ -51,8 +52,8 @@ func makeSlice(a, b int) []string {
 	return res
 }
 
-func TestStringBuffer(t *testing.T) {
-	b := newStringBuffer()
+func TestStringRing(t *testing.T) {
+	b := newStringRing()
 	// b.dumpBuffer()
 	if !b.hasContent([]string{}) {
 		t.Error("Empty buffer is broken: ", b.content())
@@ -70,7 +71,7 @@ func TestStringBuffer(t *testing.T) {
 		t.Error("Adding 2 elements doesn't work: ", b.content())
 	}
 
-	b = newStringBuffer()
+	b = newStringRing()
 	results := []string{}
 	for i := 0; i < 61; i++ {
 		b.Add(strconv.Itoa(i))
@@ -82,6 +83,40 @@ func TestStringBuffer(t *testing.T) {
 		t.Error("Adding 61 elements is broken: ", b.content())
 	}
 
+}
+
+func TestFloat64Ring(t *testing.T) {
+	b := newFloat64Ring()
+	// b.dumpBuffer()
+	if m := b.Mean(); m != 0.0 {
+		t.Error("Empty float 64 buffer should have a mean of zero: ", m)
+	}
+	b.Add(1.1)
+	if m := b.Mean(); math.Abs(m-1.1) > 1e-12 {
+		t.Error("Float 64 buffer containing a single 1.1, should have a mean of 1.1: ", m)
+	}
+	b.Add(1.1)
+	if m := b.Mean(); math.Abs(m-1.1) > 1e-12 {
+		t.Error("Float 64 buffer containing two 1.1s, should have a mean of 1.1: ", m)
+	}
+	b.Add(0.1)
+	b.Add(0.2)
+	b.Add(0.5)
+	if m := b.Mean(); math.Abs(m-0.6) > 1e-12 {
+		t.Errorf("Float 64 buffer containing {1.1 1.1 0.1 0.2 0.3} should have a mean of 0.6, but is %v", m)
+	}
+	if b.Size() != 5 {
+		t.Errorf("Float 64 buffer should have size 5 but it's %d", b.Size())
+	}
+	for i := 0; i < 55; i++ {
+		b.Add(0.2)
+	}
+	if b.Size() != 60 {
+		t.Errorf("Float 64 buffer should have size 60 but it's %d", b.Size())
+	}
+	if !b.IsFull() {
+		t.Errorf("Float 64 buffer should be full but is not")
+	}
 }
 
 func waitSig(t *testing.T, c <-chan os.Signal, sig os.Signal) {
