@@ -121,6 +121,10 @@ func sendData(socket *zmq.Socket, key string, data interface{}, kind string) {
 func main() {
 	_, err := flags.ParseArgs(&opts, os.Args)
 	if err != nil {
+		e := err.(*flags.Error)
+		if e.Type != flags.ErrHelp {
+			fmt.Println(err)
+		}
 		os.Exit(1)
 	}
 	setupSocket()

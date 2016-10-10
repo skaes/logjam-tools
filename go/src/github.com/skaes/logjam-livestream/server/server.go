@@ -231,6 +231,10 @@ var (
 func init() {
 	args, err := flags.ParseArgs(&opts, os.Args)
 	if err != nil {
+		e := err.(*flags.Error)
+		if e.Type != flags.ErrHelp {
+			fmt.Println(err)
+		}
 		os.Exit(1)
 	}
 	if len(args) > 1 {
