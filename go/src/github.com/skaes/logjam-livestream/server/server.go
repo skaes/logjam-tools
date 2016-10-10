@@ -26,9 +26,11 @@ import (
 var opts struct {
 	BindIp       string `short:"b" long:"bind-ip" default:"127.0.0.1" description:"ip address to bind to"`
 	ImporterHost string `short:"i" long:"importer-host" default:"127.0.0.1" description:"importer host"`
+	Verbose      bool   `short:"v" long:"verbose" description:"be verbose"`
 }
 
 var channelBlocked = errors.New("channel blocked")
+var verbose = false
 
 //**********************************************************************************
 // symbol generator generator
@@ -336,6 +338,9 @@ type AnomalyData struct {
 }
 
 func handleZeromqMsg(msg *ZmqMsg) {
+	if verbose {
+		logInfo("ZMQ msg: %v", *msg)
+	}
 	ai := app_info.Get(msg.app_env)
 	switch msg.msgType {
 	case perfMsg:
@@ -528,6 +533,7 @@ func main() {
 	logInfo("%s starting", os.Args[0])
 	bind_spec = fmt.Sprintf("tcp://%s:9611", opts.BindIp)
 	importer_spec = fmt.Sprintf("tcp://%s:9607", opts.ImporterHost)
+	verbose = opts.Verbose
 	logInfo("bind-spec:     %s", bind_spec)
 	logInfo("importer-spec: %s", importer_spec)
 
