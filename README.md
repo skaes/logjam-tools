@@ -111,6 +111,7 @@ A ZeroMQ PUSH socket for graylog to connect to
 * libbson (included in mongo-c-driver as a submodule)
 * json-c (0.12 patched)
 * libsnappy (1.1.3)
+* go (1.7.1)
 
 # Installation
 
@@ -166,6 +167,7 @@ Or install them manually:
   b391c273622b8f8b2fae9b43021cda546c0c3486, build and install
 * Clone https://github.com/skaes/snappy.git, checkout
   10c7088336f490e646de7d40e9ace0958b269047, build and install
+* Install go (https://golang.org/doc/install) and set up PATH for it
 
 Finally
 ```
