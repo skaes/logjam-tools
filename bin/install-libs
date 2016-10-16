@@ -121,7 +121,7 @@ function handle_json_c()
 
 function handle_sodium()
 {
-    d=libsodium-1.0.3
+    d=libsodium-1.0.11
     f=${d}.tar.gz
     test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.11/$f
     test -d $d || tar xzvf $f
