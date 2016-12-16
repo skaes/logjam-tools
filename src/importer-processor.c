@@ -324,6 +324,20 @@ json_object* processor_setup_exceptions(processor_state_t *self, json_object *re
 }
 
 static
+json_object* processor_setup_soft_exceptions(processor_state_t *self, json_object *request)
+{
+  json_object* soft_exceptions;
+  if (json_object_object_get_ex(request, "soft_exceptions", &soft_exceptions)) {
+    int num_ex = json_object_array_length(soft_exceptions);
+    if (num_ex == 0) {
+      json_object_object_del(request, "soft_exceptions");
+      return NULL;
+    }
+  }
+  return soft_exceptions;
+}
+
+static
 void processor_add_totals(processor_state_t *self, const char* namespace, increments_t *increments)
 {
     increments_t *stored_increments = zhash_lookup(self->totals, namespace);
@@ -597,6 +611,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     request_data.total_time = processor_setup_time(self, request, "total_time", NULL);
 
     request_data.exceptions = processor_setup_exceptions(self, request);
+    request_data.soft_exceptions = processor_setup_soft_exceptions(self, request);
     processor_setup_other_time(self, request, request_data.total_time);
     processor_setup_allocated_memory(self, request);
     request_data.heap_growth = processor_setup_heap_growth(self, request);
@@ -609,6 +624,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     increments_fill_severity(increments, &request_data);
     increments_fill_caller_info(increments, request);
     increments_fill_exceptions(increments, request_data.exceptions);
+    increments_fill_soft_exceptions(increments, request_data.soft_exceptions);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
