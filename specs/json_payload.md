@@ -96,6 +96,9 @@ timestamp, logged info). Here's an example message:
       "Completed 302 Found in 1412.6ms (Mongo: 2.386ms(1) | GC: 0.000(0) | HP: 0(499800,5096,2556312,131446))"
     ]
   ],
+  exceptions: [
+    "RuntimeError"
+  ],
   started_at: "2016-08-01T03:33:02+02:00",
   started_ms: 1470015182149,
   ip: "62.75.163.XXX",
@@ -135,6 +138,10 @@ which SHOULD contain the following subfields:
 If the field `query_parameters` is present its value SHOULD be a JSON
 object representing the parsed query parameters of the request.
 
+The field exceptions, if present, SHOULD be an array of strings. Any
+string value is allowed, but usually the values are names of
+exceptions which occurred during processing of the request by the
+message producer.
 
 ### Topic javascript...
 
