@@ -52,6 +52,12 @@ A utility program which subscribes to a logjam-device PUB socket,
 decompresses and forwards messages to a PUSH socket. Only to be used
 when writing the decompression logic is to cmplex for a consumer.
 
+## logjam-forwarder
+
+A utility program which subscribes to a logjam-device PUB socket, and
+forwards messages to a DEALER socket. Can be used to forward messages
+from one logjam installation to another.
+
 ## logjam-logger
 
 A utility program which reads lines from stdin and publishes them on

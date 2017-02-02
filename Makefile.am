@@ -14,6 +14,7 @@ bin_PROGRAMS = \
     logjam-dump \
     logjam-replay \
     logjam-pubsub-bridge \
+    logjam-forwarder \
     logjam-logger \
     logjam-tail
 
@@ -130,6 +131,14 @@ logjam_pubsub_bridge_SOURCES = \
     src/logjam-util.h \
     src/message-compressor.c \
     src/message-compressor.h \
+    src/device-tracker.c \
+    src/device-tracker.h
+
+logjam_forwarder_SOURCES = \
+    config.h \
+    src/logjam-forwarder.c \
+    src/logjam-util.c \
+    src/logjam-util.h \
     src/device-tracker.c \
     src/device-tracker.h
 

@@ -36,18 +36,20 @@ stamp-h1
 /go/src/github.com/jessevdk/go-flags/
 /go/src/github.com/nu7hatch/gouuid/
 # programs
-/logjam-logger
-/logjam-tail
-/logjam-livestream
 /livestream-generator
 /logjam-device
 /logjam-dump
+/logjam-forwarder
 /logjam-graylog-forwarder
 /logjam-httpd
 /logjam-importer
+/logjam-livestream
+/logjam-logger
 /logjam-pubsub-bridge
 /logjam-replay
-/tester
+/logjam-tail
+# test programs
+/checker
 /test_publisher
 /test_subscriber
-/checker
+/tester
