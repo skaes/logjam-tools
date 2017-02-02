@@ -204,6 +204,7 @@ static void print_usage(char * const *argv)
             "usage: %s [options]\n"
             "\nOptions:\n"
             "  -c, --config C              zeromq config file\n"
+            "  -d, --device-id N           device id (integer)\n"
             "  -e, --subscribe A,B         subscription patterns\n"
             "  -f, --forward A,B           specs of devices to forward messages to\n"
             "  -h, --hosts H,I             specs of devices to retrieve messages from\n"
