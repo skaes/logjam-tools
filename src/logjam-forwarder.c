@@ -182,7 +182,7 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
             printf("[D] received heartbeat message from device %u\n", msg_meta.device_number);
         pub_spec = strndup(zmq_msg_data(&message_parts[1]), zmq_msg_size(&message_parts[1]));
     }
-    device_tracker_calculate_gap(tracker, &msg_meta, pub_spec);
+    device_tracker_calculate_gap(tracker, &meta, pub_spec);
     if (!is_heartbeat) {
         int rc = publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
         if (rc == -1) {
