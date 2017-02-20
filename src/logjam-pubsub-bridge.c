@@ -39,6 +39,8 @@ static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
 
+static size_t dropped_messages_count = 0;
+
 static size_t decompressed_messages_count = 0;
 static size_t decompressed_messages_bytes = 0;
 static size_t decompressed_messages_max_bytes = 0;
@@ -87,27 +89,30 @@ static bool config_file_has_changed()
 
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
-    static size_t last_received_count   = 0;
-    static size_t last_received_bytes   = 0;
+    static size_t last_received_count = 0;
+    static size_t last_received_bytes = 0;
     static size_t last_decompressed_count = 0;
     static size_t last_decompressed_bytes = 0;
+    static size_t last_dropped_count = 0;
 
-    size_t message_count    = received_messages_count - last_received_count;
-    size_t message_bytes    = received_messages_bytes - last_received_bytes;
+    size_t message_count = received_messages_count - last_received_count;
+    size_t message_bytes = received_messages_bytes - last_received_bytes;
     size_t decompressed_count = decompressed_messages_count - last_decompressed_count;
     size_t decompressed_bytes = decompressed_messages_bytes - last_decompressed_bytes;
+    size_t dropped_messages = dropped_messages_count - last_dropped_count;
 
-    double avg_msg_size        = message_count ? (message_bytes / 1024.0) / message_count : 0;
-    double max_msg_size        = received_messages_max_bytes / 1024.0;
+    double avg_msg_size = message_count ? (message_bytes / 1024.0) / message_count : 0;
+    double max_msg_size = received_messages_max_bytes / 1024.0;
     double avg_decompressed_size = decompressed_count ? (decompressed_bytes / 1024.0) / decompressed_count : 0;
     double max_decompressed_size = decompressed_messages_max_bytes / 1024.0;
 
     if (!quiet) {
         printf("[I] processed    %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
                message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
-
         printf("[I] decompressed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
                decompressed_count, decompressed_bytes/1024.0, avg_decompressed_size, max_decompressed_size);
+        if (dropped_messages > 0)
+            printf("[W] dropped      %zu messages\n", message_count);
     }
 
     last_received_count = received_messages_count;
@@ -116,6 +121,7 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     last_decompressed_count = decompressed_messages_count;
     last_decompressed_bytes = decompressed_messages_bytes;
     decompressed_messages_max_bytes = 0;
+    last_dropped_count = dropped_messages_count;
 
     global_time = zclock_time();
 
@@ -210,8 +216,12 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
             pub_spec = strndup(zmq_msg_data(&message_parts[1]), zmq_msg_size(&message_parts[1]));
         }
         device_tracker_calculate_gap(tracker, &msg_meta, pub_spec);
-        if (!is_heartbeat)
-            publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
+        if (!is_heartbeat) {
+            int rc = publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
+            if (rc == -1) {
+                dropped_messages_count++;
+            }
+        }
     }
 
  cleanup:
@@ -510,7 +520,7 @@ int main(int argc, char * const *argv)
     assert(loop == NULL);
 
     if (!quiet) {
-        printf("[I] received %zu messages\n", received_messages_count);
+        printf("[I] received %zu messages [dropped: %zu]\n", received_messages_count, dropped_messages_count);
         printf("[I] shutting down\n");
     }
 
