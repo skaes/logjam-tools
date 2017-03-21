@@ -4,6 +4,7 @@ set -e
 build_dir="builds/repos"
 forced=0
 prefix=/usr/local
+cached=0
 
 test -z "$LSUDO" && LSUDO="sudo"
 test "$(whoami)" = "root" && LSUDO=""
@@ -11,9 +12,11 @@ test "$(whoami)" = "root" && LSUDO=""
 while (( $# > 0 )); do
     case "$1" in
         --help)
-            echo "$0 [--force] [--build-dir dir] [--prefix dir] [install|uninstall]"; exit 0;;
+            echo "$0 [--force] [--cached] [--build-dir dir] [--prefix dir] [install|uninstall]"; exit 0;;
         --force)
             forced=1; shift;;
+        --cached)
+            cached=1; shift;;
         --build-dir)
             build_dir="$2"; shift 2;;
         --build-dir=*)
@@ -65,7 +68,7 @@ function handle_rabbitmq()
     expected_revision="4a33bd4602740a88a4f00e7cad094fe736b3f38d" # use-std-gnu99
     if [ "$revision" != $expected_revision ]; then
         git reset --hard
-        git fetch
+        [ $cached = 0 ] && git fetch
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfd
@@ -85,9 +88,9 @@ function handle_mongoc()
     expected_revision="b391c273622b8f8b2fae9b43021cda546c0c3486" # 1.3.5
     if [ "$revision" != "$expected_revision" ]; then
         git reset --hard
-        git fetch
+        [ $cached = 0 ] && git fetch
         git checkout $expected_revision
-        git submodule update
+        [ $cached = 0 ] && git submodule update
     fi
     [ $forced == "1" ] && git clean -qfd
     test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --with-libbson=bundled)
@@ -107,7 +110,7 @@ function handle_json_c()
     expected_revision="36be1c4c7ade78fae8ef67280cd4f98ff9f81016"
     if [ "$revision" != $expected_revision ]; then
         git reset --hard
-        git fetch
+        [ $cached = 0 ] && git fetch
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfd
@@ -143,7 +146,7 @@ function handle_zeromq()
     expected_revision="973d8c9f52cef68e729f0122adc023ceaf3e85bf" # 4.1.5 with thread name patch
     if [ "$revision" != "" ]; then
         git reset --hard
-        git fetch
+        [ $cached = 0 ] && git fetch
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfd
@@ -163,7 +166,7 @@ function handle_czmq()
     expected_revision="a76ef039d10f17326281768fd60bcfec35c07122" # 3.0.2 with fixes
     if [ "$revision" != "" ]; then
         git reset --hard
-        git fetch
+        [ $cached = 0 ] && git fetch
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfd
@@ -183,7 +186,7 @@ function handle_snappy()
     expected_revision="10c7088336f490e646de7d40e9ace0958b269047" # 1.1.3 with pkg-config patch
     if [ "$revision" != "" ]; then
         git reset --hard
-        git fetch
+        [ $cached = 0 ] && git fetch
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfd

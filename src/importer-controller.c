@@ -446,6 +446,46 @@ void controller_destroy_actors(controller_state_t *state)
     zsock_destroy(&state->adder_socket);
 }
 
+
+#define MAX_ALLOWED_SHUTDOWN_TIME_SECONDS 10
+
+static void alarm_handler(int sig, siginfo_t *si, void *uc) {
+    printf("[W] controller: aborting shutdown sequence\n");
+    signal(sig, SIG_IGN);
+    abort();
+}
+
+static int start_shutdown_timer() {
+    struct itimerval its;
+    struct sigaction sa;
+
+    // Establish handler for timer signal
+    sa.sa_flags = SA_SIGINFO;
+    sa.sa_sigaction = alarm_handler;
+    sigemptyset(&sa.sa_mask);
+    if (sigaction(SIGALRM, &sa, NULL) == -1)
+        return -1;
+
+    // Start the timer
+    its.it_value.tv_sec = MAX_ALLOWED_SHUTDOWN_TIME_SECONDS;
+    its.it_value.tv_usec = 0;
+    its.it_interval.tv_sec = 0;
+    its.it_interval.tv_usec = 0;
+
+    return setitimer(ITIMER_REAL, &its, NULL);
+}
+
+static int stop_shutdown_timer() {
+    struct itimerval its;
+
+    its.it_value.tv_sec = 0;
+    its.it_value.tv_usec = 0;
+    its.it_interval.tv_sec = 0;
+    its.it_interval.tv_usec = 0;
+
+    return setitimer(ITIMER_REAL, &its, NULL);
+}
+
 int run_controller_loop(zconfig_t* config, size_t io_threads)
 {
     set_thread_name("controller[0]");
@@ -500,7 +540,21 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
 
  exit:
     controller_destroy_actors(&state);
+
+    // create apocalypse timer
+    if (start_shutdown_timer() == -1)
+         printf("[W] controller: could not start shutdown timer\n");
+
+    // wait for actors to finish
     zsys_shutdown();
+
+    // uncomment this to debug shutdown timer
+    // make sure timer fires
+    // sleep(MAX_ALLOWED_SHUTDOWN_TIME_SECONDS + 2);
+
+    // delete the timer
+    if (stop_shutdown_timer() == -1)
+        printf("[W] controller: could not clear shutdown timer\n");
 
     printf("[I] controller: terminated\n");
     return 0;
