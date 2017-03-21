@@ -539,14 +539,14 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     assert(loop == NULL);
 
  exit:
-    controller_destroy_actors(&state);
-
     // create apocalypse timer
     if (start_shutdown_timer() == -1)
         printf("[W] controller: could not start shutdown timer\n");
     else
         printf("[I] controller: started shutdown timer\n");
 
+    // destroy controllers
+    controller_destroy_actors(&state);
     // wait for actors to finish
     zsys_shutdown();
 
