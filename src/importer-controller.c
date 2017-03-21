@@ -543,7 +543,9 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
 
     // create apocalypse timer
     if (start_shutdown_timer() == -1)
-         printf("[W] controller: could not start shutdown timer\n");
+        printf("[W] controller: could not start shutdown timer\n");
+    else
+        printf("[I] controller: started shutdown timer\n");
 
     // wait for actors to finish
     zsys_shutdown();
@@ -555,6 +557,8 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     // delete the timer
     if (stop_shutdown_timer() == -1)
         printf("[W] controller: could not clear shutdown timer\n");
+    else
+        printf("[I] controller: cleared shutdown timer\n");
 
     printf("[I] controller: terminated\n");
     return 0;
