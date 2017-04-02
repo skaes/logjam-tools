@@ -13,6 +13,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -458,7 +459,29 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
+// Graceful shutdown package does not handle hijacked connections (like
+// websockets).  Thus we use WaitGroup to count readers amd writers and only exit
+// when all are finished.  But we also make sure we won't wait forever.
+
+var wg sync.WaitGroup
+
+func waitForWaitGrouptWithTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		wg.Wait()
+	}()
+	select {
+	case <-c:
+		return false
+	case <-time.After(timeout):
+		return true
+	}
+}
+
 func wsReader(ws *websocket.Conn) {
+	wg.Add(1)
+	defer wg.Done()
 	var dispatcher_input = make(chan string, 1000)
 	// channel will be closed by dispatcher, to avoid sending on a closed channel
 
@@ -484,6 +507,8 @@ func wsReader(ws *websocket.Conn) {
 }
 
 func wsWriter(app_env string, ws *websocket.Conn, input_from_dispatcher chan string) {
+	wg.Add(1)
+	defer wg.Done()
 	defer ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(1000, ""))
 	for !interrupted {
 		select {
@@ -551,5 +576,10 @@ func main() {
 	go dispatcher()
 	clientHandler()
 
-	logInfo("%s shutting down", os.Args[0])
+	logInfo("% shutting down", os.Args[0])
+	if waitForWaitGrouptWithTimeout(&wg, 3*time.Second) {
+		logInfo("shut down timed out!")
+	} else {
+		logInfo("shut down cleanly")
+	}
 }
