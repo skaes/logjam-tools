@@ -484,6 +484,7 @@ func wsReader(ws *websocket.Conn) {
 }
 
 func wsWriter(app_env string, ws *websocket.Conn, input_from_dispatcher chan string) {
+	defer ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(1000, ""))
 	for !interrupted {
 		select {
 		case data, ok := <-input_from_dispatcher:
