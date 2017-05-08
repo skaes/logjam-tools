@@ -117,7 +117,7 @@ A ZeroMQ PUSH socket for graylog to connect to
 * libbson (included in mongo-c-driver as a submodule)
 * json-c (0.12 patched)
 * libsnappy (1.1.3)
-* go (1.7.1)
+* go (1.8.1)
 
 # Installation
 
