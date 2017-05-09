@@ -31,6 +31,7 @@ typedef struct {
     int minute;
     int heap_growth;
     json_object* exceptions;
+    json_object* soft_exceptions;
 } request_data_t;
 
 extern increments_t* increments_new();
@@ -46,6 +47,7 @@ extern const char* increments_fill_ajax_apdex(increments_t *increments, double t
 extern void increments_fill_response_code(increments_t *increments, request_data_t *request_data);
 extern void increments_fill_severity(increments_t *increments, request_data_t *request_data);
 extern void increments_fill_exceptions(increments_t *increments, json_object *exceptions);
+extern void increments_fill_soft_exceptions(increments_t *increments, json_object *soft_exceptions);
 extern void increments_fill_js_exception(increments_t *increments, const char *js_exception);
 extern void increments_fill_caller_info(increments_t *increments, json_object *request);
 

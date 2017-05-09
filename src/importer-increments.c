@@ -213,6 +213,31 @@ void increments_fill_exceptions(increments_t *increments, json_object *exception
     }
 }
 
+void increments_fill_soft_exceptions(increments_t *increments, json_object *soft_exceptions)
+{
+  if (soft_exceptions == NULL)
+    return;
+  int n = json_object_array_length(soft_exceptions);
+  if (n == 0)
+    return;
+
+  for (int i=0; i<n; i++) {
+    json_object* ex_obj = json_object_array_get_idx(soft_exceptions, i);
+    const char *ex_str = json_object_get_string(ex_obj);
+    size_t n = strlen(ex_str);
+    char ex_str_dup[n+17];
+    strcpy(ex_str_dup, "soft_exceptions.");
+    strcpy(ex_str_dup+16, ex_str);
+    int replaced_count = replace_dots_and_dollars(ex_str_dup+16);
+    // printf("[D] EXCEPTION: %s\n", ex_str_dup);
+    if (replaced_count > 0) {
+      json_object* new_ex = json_object_new_string(ex_str_dup+16);
+      json_object_array_put_idx(soft_exceptions, i, new_ex);
+    }
+    json_object_object_add(increments->others, ex_str_dup, NEW_INT1);
+  }
+}
+
 void increments_fill_js_exception(increments_t *increments, const char *js_exception)
 {
     size_t n = strlen(js_exception);
