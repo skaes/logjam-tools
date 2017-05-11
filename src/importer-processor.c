@@ -312,7 +312,7 @@ int processor_setup_heap_growth(processor_state_t *self, json_object *request)
 static
 json_object* processor_setup_exceptions(processor_state_t *self, json_object *request)
 {
-    json_object* exceptions;
+    json_object* exceptions = NULL;
     if (json_object_object_get_ex(request, "exceptions", &exceptions)) {
         int num_ex = json_object_array_length(exceptions);
         if (num_ex == 0) {
@@ -326,7 +326,7 @@ json_object* processor_setup_exceptions(processor_state_t *self, json_object *re
 static
 json_object* processor_setup_soft_exceptions(processor_state_t *self, json_object *request)
 {
-  json_object* soft_exceptions;
+  json_object* soft_exceptions = NULL;
   if (json_object_object_get_ex(request, "soft_exceptions", &soft_exceptions)) {
     int num_ex = json_object_array_length(soft_exceptions);
     if (num_ex == 0) {
