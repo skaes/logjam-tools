@@ -320,6 +320,7 @@ json_object* processor_setup_exceptions(processor_state_t *self, json_object *re
             return NULL;
         }
     }
+    // dump_json_object(stdout, "[D] HARD EXCEPTIONS", exceptions);
     return exceptions;
 }
 
@@ -334,6 +335,7 @@ json_object* processor_setup_soft_exceptions(processor_state_t *self, json_objec
       return NULL;
     }
   }
+  // dump_json_object(stdout, "[D] SOFT EXCEPTIONS", soft_exceptions);
   return soft_exceptions;
 }
 
@@ -601,7 +603,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
 {
     if (ignore_request(request, self->stream_info)) return;
 
-    // dump_json_object(stdout, "[D]", request);
+    // dump_json_object(stdout, "[D] REQUEST", request);
     request_data_t request_data;
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
