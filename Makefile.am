@@ -9,7 +9,7 @@ LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS) $(OPT_PROFILER_FLAGS) -lm
 bin_PROGRAMS = \
     logjam-device \
     logjam-importer \
-    logjam-httpd \
+    logjam-fhttpd \
     logjam-graylog-forwarder \
     logjam-dump \
     logjam-replay \
@@ -80,9 +80,9 @@ logjam_importer_SOURCES = \
     src/device-tracker.h
 
 
-logjam_httpd_SOURCES = \
+logjam_fhttpd_SOURCES = \
     config.h \
-    src/logjam-httpd.c \
+    src/logjam-fhttpd.c \
     src/logjam-util.c \
     src/logjam-util.h
 

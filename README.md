@@ -26,7 +26,7 @@ A multithreaded daemon using CZMQ's actor framework which has replaced
 all of the ruby importer code in logjam. It's much less resource
 intensive than the ruby code and a _lot_ faster.
 
-## logjam-httpd
+## logjam-fhttpd
 
 A daemon which takes frontend performance data via HTTP GET requests
 and publishes it on a ZeroMQ PUB socket for the importer to pick up.

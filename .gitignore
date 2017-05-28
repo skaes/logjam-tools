@@ -39,9 +39,9 @@ stamp-h1
 /livestream-generator
 /logjam-device
 /logjam-dump
+/logjam-fhttpd
 /logjam-forwarder
 /logjam-graylog-forwarder
-/logjam-httpd
 /logjam-importer
 /logjam-livestream
 /logjam-logger
