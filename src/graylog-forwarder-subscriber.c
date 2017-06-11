@@ -156,7 +156,7 @@ int process_meta_information_and_handle_heartbeat(subscriber_state_t *state, zms
     }
     if (is_heartbeat) {
         if (debug)
-            printf("received heartbeat form device %d\n", meta.device_number);
+            printf("received heartbeat from device %d\n", meta.device_number);
         zmsg_first(msg); // msg_extract_meta_info repositions the pointer, so reset
         zframe_t *spec_frame = zmsg_next(msg);
         pub_spec = zframe_strdup(spec_frame);
