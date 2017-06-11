@@ -276,6 +276,33 @@ void increments_fill_caller_info(increments_t *increments, json_object *request)
     }
 }
 
+void increments_fill_sender_info(increments_t *increments, json_object *request)
+{
+    json_object *sender_action_obj;
+    if (json_object_object_get_ex(request, "sender_action", &sender_action_obj)) {
+        const char *sender_action = json_object_get_string(sender_action_obj);
+        if (sender_action == NULL || *sender_action == '\0') return;
+        json_object *sender_id_obj;
+        if (json_object_object_get_ex(request, "sender_id", &sender_id_obj)) {
+            const char *sender_id = json_object_get_string(sender_id_obj);
+            if (sender_id == NULL || *sender_id == '\0') return;
+            size_t n = strlen(sender_id) + 1;
+            char app[n], env[n], rid[n];
+            if (3 == sscanf(sender_id, "%[^-]-%[^-]-%[^-]", app, env, rid)) {
+                size_t app_len = strlen(app) + 1;
+                size_t action_len = strlen(sender_action) + 1;
+                char sender_name[4*(app_len + action_len) + 2 + 8];
+                strcpy(sender_name, "senders.");
+                int real_app_len = copy_replace_dots_and_dollars(sender_name + 8, app);
+                sender_name[real_app_len + 8] = '-';
+                copy_replace_dots_and_dollars(sender_name + 8 + real_app_len + 1, sender_action);
+                // printf("[D] SENDER: %s\n", sender_name);
+                json_object_object_add(increments->others, sender_name, NEW_INT1);
+            }
+        }
+    }
+}
+
 void increments_add(increments_t *stored_increments, increments_t* increments)
 {
     stored_increments->backend_request_count += increments->backend_request_count;

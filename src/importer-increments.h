@@ -50,6 +50,7 @@ extern void increments_fill_exceptions(increments_t *increments, json_object *ex
 extern void increments_fill_soft_exceptions(increments_t *increments, json_object *soft_exceptions);
 extern void increments_fill_js_exception(increments_t *increments, const char *js_exception);
 extern void increments_fill_caller_info(increments_t *increments, json_object *request);
+extern void increments_fill_sender_info(increments_t *increments, json_object *request);
 
 extern void dump_metrics(metric_pair_t *metrics);
 extern void dump_increments(const char *action, increments_t *increments);

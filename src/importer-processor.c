@@ -625,6 +625,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     increments_fill_response_code(increments, &request_data);
     increments_fill_severity(increments, &request_data);
     increments_fill_caller_info(increments, request);
+    increments_fill_sender_info(increments, request);
     increments_fill_exceptions(increments, request_data.exceptions);
     increments_fill_soft_exceptions(increments, request_data.soft_exceptions);
 
