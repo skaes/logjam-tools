@@ -6,9 +6,9 @@ FILE* dump_file = NULL;
 static char *dump_file_name = "logjam-stream.dump";
 
 static size_t io_threads = 1;
-static bool verbose = false;
-static bool debug = false;
-static bool quiet = false;
+bool verbose = false;
+bool debug = false;
+bool quiet = false;
 
 static int sub_port = -1;
 static zlist_t *connection_specs = NULL;
@@ -33,8 +33,10 @@ static int timer_event( zloop_t *loop, int timer_id, void *arg)
     size_t message_bytes = received_messages_bytes - last_received_bytes;
     double avg_msg_size = message_count ? (message_bytes / 1024.0) / message_count : 0;
     double max_msg_size = received_messages_max_bytes / 1024.0;
-    printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB (gaps: %zu)\n",
-           message_count, message_bytes/1024.0, avg_msg_size, max_msg_size, message_gaps);
+    if (!quiet) {
+        printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB (gaps: %zu)\n",
+               message_count, message_bytes/1024.0, avg_msg_size, max_msg_size, message_gaps);
+    }
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
@@ -93,6 +95,7 @@ static void print_usage(char * const *argv)
             "  -h, --hosts H,I            specs of devices to connect to\n"
             "  -i, --io-threads N         zeromq io threads\n"
             "  -p, --input-port N         port number of zeromq input socket\n"
+            "  -q, --quiet                don't log anything\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "      --help                 display this message\n"
             , argv[0]);
@@ -110,17 +113,23 @@ static void process_arguments(int argc, char * const *argv)
         { "subscribe",     required_argument, 0, 's' },
         { "input-port",    required_argument, 0, 'p' },
         { "io-threads",    required_argument, 0, 'i' },
+        { "quiet",         no_argument,       0, 'q' },
         { "verbose",       no_argument,       0, 'v' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vi:h:p:s:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqi:h:p:s:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
                 debug= true;
             else
                 verbose = true;
+            break;
+        case 'q':
+            quiet = true;
+            verbose = false;
+            debug= false;
             break;
         case 'i':
             io_threads = atoi(optarg);
@@ -202,7 +211,8 @@ int main(int argc, char * const *argv)
     // connect socket
     char *spec = zlist_first(connection_specs);
     while (spec) {
-        printf("[I] connecting SUB socket to %s\n", spec);
+        if (!quiet)
+            printf("[I] connecting SUB socket to %s\n", spec);
         int rc = zsock_connect(receiver, "%s", spec);
         log_zmq_error(rc, __FILE__, __LINE__);
         assert(rc == 0);
@@ -257,7 +267,8 @@ int main(int argc, char * const *argv)
         if (verbose) printf("[I] main event loop terminated with return code %d\n", rc);
     }
 
-    printf("[I] received %zu messages\n", received_messages_count);
+    if (!quiet)
+        printf("[I] received %zu messages\n", received_messages_count);
 
     // clean up
     if (verbose) printf("[I] shutting down\n");

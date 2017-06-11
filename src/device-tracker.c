@@ -1,5 +1,7 @@
 #include "device-tracker.h"
 
+extern bool quiet;
+
 typedef struct {
     uint32_t device_number;
     uint64_t sequence_number;
@@ -74,7 +76,8 @@ int64_t device_tracker_calculate_gap(device_tracker_t* tracker, msg_meta_t* meta
     device_info_t *info = zhashx_lookup(tracker->seen_devices, (const void*) device_number);
 
     if (info == NULL) {
-        printf("[I] counting gaps for device %" PRIu64 "\n", device_number);
+        if (!quiet)
+            printf("[I] counting gaps for device %" PRIu64 "\n", device_number);
         info = zmalloc(sizeof(*info));
         assert(info);
         info->device_number = device_number;
@@ -89,13 +92,15 @@ int64_t device_tracker_calculate_gap(device_tracker_t* tracker, msg_meta_t* meta
         int64_t gap = sequence_number - info->sequence_number - 1;
         if (gap > 0) {
             info->lost += gap;
-            fprintf(stderr, "[W] lost %" PRIu64 " messages from device %" PRIu64 " (%" PRIu64 "-%" PRIu64 ")\n",
-                    gap, device_number, info->sequence_number + 1, sequence_number - 1);
+            if (!quiet)
+                fprintf(stderr, "[W] lost %" PRIu64 " messages from device %" PRIu64 " (%" PRIu64 "-%" PRIu64 ")\n",
+                        gap, device_number, info->sequence_number + 1, sequence_number - 1);
         }
         info->sequence_number = sequence_number;
         info->credit = INITIAL_HEARTBEAT_CREDIT;
         if (pub_spec != NULL) {
-            printf("[I] received heartbeat for connection: %s\n", pub_spec);
+            if (!quiet)
+                printf("[I] received heartbeat for connection: %s\n", pub_spec);
             if (info->pub_spec)
                 free((void*)info->pub_spec);
             info->pub_spec = pub_spec;
