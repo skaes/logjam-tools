@@ -111,7 +111,7 @@ sequence-number    = 8OCTET              ; uint64, network byte order
 
 ## Constraints
 
-* The client MUST use either DEALER or a push socket. If a push socket
+* The client MUST use either DEALER or a PUSH socket. If a PUSH socket
   is used, the message stream is restricted to messages described by
   the async-data-msg rule above.
 
