@@ -4,6 +4,7 @@
 zhash_t* resource_to_int = NULL;
 char *int_to_resource[MAX_RESOURCE_COUNT];
 char *int_to_resource_sq[MAX_RESOURCE_COUNT];
+char *int_to_resource_max[MAX_RESOURCE_COUNT];
 size_t last_resource_offset = 0;
 
 char *time_resources[MAX_RESOURCE_COUNT];
@@ -53,7 +54,11 @@ void add_resources_of_type(zconfig_t* config, const char *type, char **type_map,
         char resource_sq[256] = {'\0'};
         strcpy(resource_sq, resource);
         strcpy(resource_sq+strlen(resource), "_sq");
-        int_to_resource_sq[last_resource_offset++] = strdup(resource_sq);
+        int_to_resource_sq[last_resource_offset] = strdup(resource_sq);
+        char resource_max[256] = {'\0'};
+        strcpy(resource_max, resource);
+        strcpy(resource_max+strlen(resource), "_max");
+        int_to_resource_max[last_resource_offset++] = strdup(resource_max);
         type_map[(*type_idx)++] = resource;
         metric = zconfig_next(metric);
         assert(last_resource_offset < MAX_RESOURCE_COUNT);

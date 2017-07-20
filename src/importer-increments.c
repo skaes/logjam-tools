@@ -7,7 +7,7 @@ void dump_metrics(metric_pair_t *metrics)
 {
     for (size_t i=0; i<=last_resource_offset; i++) {
         if (metrics[i].val > 0) {
-            printf("[D] %s:%f:%f\n", int_to_resource[i], metrics[i].val, metrics[i].val_squared);
+            printf("[D] %s:%f:sq(%f):max(%f)\n", int_to_resource[i], metrics[i].val, metrics[i].val_squared, metrics[i].val_max);
         }
     }
 }
@@ -72,6 +72,7 @@ void increments_fill_metrics(increments_t *increments, json_object *request)
             metric_pair_t *p = &increments->metrics[i];
             p->val = v;
             p->val_squared = v*v;
+            p->val_max = v;
         }
     }
 }
@@ -313,6 +314,8 @@ void increments_add(increments_t *stored_increments, increments_t* increments)
         metric_pair_t *addend = &(increments->metrics[i]);
         stored->val += addend->val;
         stored->val_squared += addend->val_squared;
+        if (stored->val_max < addend->val_max)
+            stored->val_max = addend->val_max;
     }
     json_object_object_foreach(increments->others, key, value) {
         json_object *stored_obj = NULL;

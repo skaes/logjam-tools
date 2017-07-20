@@ -47,9 +47,11 @@ typedef struct {
 static
 bson_t* increments_to_bson(const char* namespace, increments_t* increments)
 {
-    // dump_increments(namespace, increments, NULL);
+    // dump_increments(namespace, increments);
 
     bson_t *incs = bson_new();
+    bson_t *maxs = bson_new();
+
     if (increments->backend_request_count)
         bson_append_int32(incs, "count", 5, increments->backend_request_count);
     size_t frontend_request_count = 0;
@@ -73,6 +75,8 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
             bson_append_double(incs, name, strlen(name), val);
             const char *name_sq = int_to_resource_sq[i];
             bson_append_double(incs, name_sq, strlen(name_sq), increments->metrics[i].val_squared);
+            const char *name_max = int_to_resource_max[i];
+            bson_append_double(maxs, name_max, strlen(name_max), increments->metrics[i].val_max);
         }
     }
 
@@ -93,6 +97,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
 
     bson_t *document = bson_new();
     bson_append_document(document, "$inc", 4, incs);
+    bson_append_document(document, "$max", 4, maxs);
 
     // size_t n;
     // char* bs = bson_as_json(document, &n);
@@ -100,6 +105,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
     // bson_free(bs);
 
     bson_destroy(incs);
+    bson_destroy(maxs);
 
     return document;
 }

@@ -12,6 +12,7 @@ extern "C" {
 typedef struct {
     double val;
     double val_squared;
+    double val_max;
 } metric_pair_t;
 
 typedef struct {

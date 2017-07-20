@@ -12,6 +12,7 @@ extern "C" {
 extern zhash_t* resource_to_int;
 extern char *int_to_resource[MAX_RESOURCE_COUNT];
 extern char *int_to_resource_sq[MAX_RESOURCE_COUNT];
+extern char *int_to_resource_max[MAX_RESOURCE_COUNT];
 extern size_t last_resource_offset;
 
 extern char *time_resources[MAX_RESOURCE_COUNT];

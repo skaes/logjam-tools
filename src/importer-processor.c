@@ -1126,7 +1126,7 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
 
     processor_add_quants(self, request_data.page, increments);
 
-    // dump_increments("add_frontend_data", increments, NULL);
+    // dump_increments("add_frontend_data", increments);
 
     send_statsd_updates_for_page(self->stream_info->yek, pstate->statsd_client, mtimes, satisfaction);
 
@@ -1223,7 +1223,7 @@ enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_
 
     send_statsd_updates_for_ajax(self->stream_info->yek, pstate->statsd_client, request_data.total_time, satisfaction);
 
-    // dump_increments("add_ajax_data", increments, NULL);
+    // dump_increments("add_ajax_data", increments);
 
     increments_destroy(increments);
 
