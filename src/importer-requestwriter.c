@@ -3,6 +3,7 @@
 #include "importer-indexer.h"
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
+#include "statsd-client.h"
 
 
 /*
@@ -31,6 +32,7 @@ typedef struct {
     zsock_t *live_stream_socket;
     int updates_count;     // updates performend since last tick
     int update_time;       // processing time since last tick (micro seconds)
+    statsd_client_t *statsd_client;
 } request_writer_state_t;
 
 
@@ -517,6 +519,7 @@ request_writer_state_t* request_writer_state_new(zconfig_t *config, size_t id)
     state->request_collections = zhash_new();
     state->jse_collections = zhash_new();
     state->events_collections = zhash_new();
+    state->statsd_client = statsd_client_new(config, state->me);
     return state;
 }
 
@@ -533,6 +536,7 @@ void request_writer_state_destroy(request_writer_state_t **state_p)
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state->mongo_clients[i]);
     }
+    statsd_client_destroy(&state->statsd_client);
     free(state);
     *state_p = NULL;
 }
@@ -566,6 +570,8 @@ static void request_writer(zsock_t *pipe, void *args)
             if (streq(cmd, "tick")) {
                 if (verbose && (state->updates_count || state->update_time))
                     printf("[I] writer [%zu]: tick (%d requests, %d ms)\n", id, state->updates_count, state->update_time/1000);
+                statsd_client_count(state->statsd_client, "importer.inserts.count", state->updates_count);
+                statsd_client_timing(state->statsd_client, "importer.inserts.time", state->update_time/1000);
                 if (ticks++ % PING_INTERVAL == 0) {
                     // ping mongodb to reestablish connection if it got lost
                     for (int i=0; i<num_databases; i++) {

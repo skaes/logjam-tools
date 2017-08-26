@@ -23,13 +23,15 @@
 
 typedef struct {
     size_t id;
+    char me[16];
     mongoc_client_t *mongo_clients[MAX_DATABASES];
     mongoc_collection_t *global_collection;
     zhash_t *stats_collections;
-    zsock_t *controller_socket;
+    zsock_t *pipe;
     zsock_t *pull_socket;
     int updates_count;     // updates performend since last tick
     int update_time;       // processing time since last tick (micro seconds)
+    statsd_client_t *statsd_client;
 } stats_updater_state_t;
 
 typedef struct {
@@ -397,11 +399,11 @@ stats_collections_t *stats_updater_get_collections(stats_updater_state_t *self, 
 }
 
 static
-stats_updater_state_t* stats_updater_state_new(zsock_t *pipe, size_t id)
+stats_updater_state_t* stats_updater_state_new(zconfig_t *config, size_t id)
 {
     stats_updater_state_t *state = zmalloc(sizeof(*state));
     state->id = id;
-    state->controller_socket = pipe;
+    snprintf(state->me, 16, "updater[%zu]", id);
     state->pull_socket = zsock_new(ZMQ_PULL);
     zsock_set_rcvhwm(state->pull_socket, 5000);
     assert(state->pull_socket);
@@ -414,6 +416,7 @@ stats_updater_state_t* stats_updater_state_new(zsock_t *pipe, size_t id)
         assert(state->mongo_clients[i]);
     }
     state->stats_collections = zhash_new();
+    state->statsd_client = statsd_client_new(config, state->me);
     return state;
 }
 
@@ -426,6 +429,7 @@ void stats_updater_state_destroy(stats_updater_state_t **state_p)
     for (int i = 0; i<num_databases; i++) {
         mongoc_client_destroy(state->mongo_clients[i]);
     }
+    statsd_client_destroy(&state->statsd_client);
     free(state);
     *state_p = NULL;
 }
@@ -442,23 +446,21 @@ void update_collection(zhash_t *updates, zhash_foreach_fn *fn, collection_update
 }
 
 
-void stats_updater(zsock_t *pipe, void *args)
+static void stats_updater(zsock_t *pipe, void *args)
 {
-    size_t id = (size_t)args;
-    char thread_name[16];
-    memset(thread_name, 0, 16);
-    snprintf(thread_name, 16, "updater[%zu]", id);
-    set_thread_name(thread_name);
+    stats_updater_state_t *state = (stats_updater_state_t*)args;
+    state->pipe = pipe;
+    set_thread_name(state->me);
+    size_t id = state->id;
 
     if (!quiet)
         printf("[I] updater[%zu]: starting\n", id);
 
     size_t ticks = 0;
-    stats_updater_state_t *state = stats_updater_state_new(pipe, id);
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);
 
-    zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
+    zpoller_t *poller = zpoller_new(state->pipe, state->pull_socket, NULL);
     assert(poller);
 
     while (!zsys_interrupted) {
@@ -466,14 +468,16 @@ void stats_updater(zsock_t *pipe, void *args)
         // wait at most one second
         void *socket = zpoller_wait(poller, 1000);
         zmsg_t *msg = NULL;
-        if (socket == state->controller_socket) {
-            msg = zmsg_recv(state->controller_socket);
+        if (socket == state->pipe) {
+            msg = zmsg_recv(state->pipe);
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {
                 if (verbose && (state->updates_count || state->update_time)) {
                     printf("[I] updater[%zu]: tick (%d updates, %d ms)\n", id, state->updates_count, state->update_time/1000);
                 }
+                statsd_client_count(state->statsd_client, "importer.updates.count", state->updates_count);
+                statsd_client_timing(state->statsd_client, "importer.updates.time", state->update_time/1000);
                 // ping the server
                 if (ticks++ % PING_INTERVAL == 0) {
                     for (int i=0; i<num_databases; i++) {
@@ -572,4 +576,10 @@ void stats_updater(zsock_t *pipe, void *args)
 
     if (!quiet)
         printf("[I] updater[%zu]: terminated\n", id);
+}
+
+zactor_t* stats_updater_new(zconfig_t *config, size_t id)
+{
+    stats_updater_state_t *state = stats_updater_state_new(config, id);
+    return zactor_new(stats_updater, state);
 }

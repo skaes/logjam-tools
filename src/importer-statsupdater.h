@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-extern void stats_updater(zsock_t *pipe, void *args);
+extern zactor_t* stats_updater_new(zconfig_t *config, size_t id);
 
 #ifdef __cplusplus
 }

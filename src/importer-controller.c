@@ -379,7 +379,7 @@ bool controller_create_actors(controller_state_t *state)
         state->writers[i] = request_writer_new(state->config, i);
     }
     for (size_t i=0; i<num_updaters; i++) {
-        state->updaters[i] = zactor_new(stats_updater, (void*)i);
+        state->updaters[i] = stats_updater_new(state->config, i);
     }
     for (size_t i=0; i<num_parsers; i++) {
         state->parsers[i] = parser_new(state->config, i);
