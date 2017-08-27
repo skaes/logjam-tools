@@ -70,6 +70,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
         bson_append_int32(incs, "frontend_count", 14, frontend_request_count);
     }
 
+    bool have_maxs = false;
     for (size_t i=0; i<=last_resource_offset; i++) {
         double val = increments->metrics[i].val;
         if (val > 0) {
@@ -77,6 +78,7 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
             bson_append_double(incs, name, strlen(name), val);
             const char *name_sq = int_to_resource_sq[i];
             bson_append_double(incs, name_sq, strlen(name_sq), increments->metrics[i].val_squared);
+            have_maxs = true;
             const char *name_max = int_to_resource_max[i];
             bson_append_double(maxs, name_max, strlen(name_max), increments->metrics[i].val_max);
         }
@@ -99,7 +101,8 @@ bson_t* increments_to_bson(const char* namespace, increments_t* increments)
 
     bson_t *document = bson_new();
     bson_append_document(document, "$inc", 4, incs);
-    bson_append_document(document, "$max", 4, maxs);
+    if (have_maxs)
+        bson_append_document(document, "$max", 4, maxs);
 
     // size_t n;
     // char* bs = bson_as_json(document, &n);
