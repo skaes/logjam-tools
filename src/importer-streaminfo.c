@@ -1,5 +1,6 @@
 #include "importer-streaminfo.h"
 #include "importer-mongoutils.h"
+#include "device-tracker.h"
 
 int global_total_time_import_threshold = 0;
 const char* global_ignored_request_prefix = NULL;
@@ -218,6 +219,8 @@ void dump_stream_info(stream_info_t *stream)
 void setup_stream_config(zconfig_t *config, const char *pattern)
 {
     bool have_subscription_pattern = strcmp("", pattern);
+    if (have_subscription_pattern)
+        log_gaps = false;
 
     zconfig_t *import_threshold_config = zconfig_locate(config, "backend/defaults/import_threshold");
     if (import_threshold_config) {

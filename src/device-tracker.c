@@ -2,6 +2,8 @@
 
 extern bool quiet;
 
+bool log_gaps = true;
+
 typedef struct {
     uint32_t device_number;
     uint64_t sequence_number;
@@ -92,7 +94,7 @@ int64_t device_tracker_calculate_gap(device_tracker_t* tracker, msg_meta_t* meta
         int64_t gap = sequence_number - info->sequence_number - 1;
         if (gap > 0) {
             info->lost += gap;
-            if (!quiet)
+            if (!quiet && log_gaps)
                 fprintf(stderr, "[W] lost %" PRIu64 " messages from device %" PRIu64 " (%" PRIu64 "-%" PRIu64 ")\n",
                         gap, device_number, info->sequence_number + 1, sequence_number - 1);
         }
