@@ -1,9 +1,9 @@
 #include "importer-watchdog.h"
 
 // the watchdog actor aborts the process if does not receive ticks for
-// 10 consecutive ticks
+// 60 consecutive ticks
 
-#define CREDIT 10
+#define CREDIT 60
 
 typedef struct {
     int credit;                     // number of ticks left before we shut down
