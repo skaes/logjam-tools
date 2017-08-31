@@ -565,19 +565,22 @@ bool interesting_request(request_data_t *request_data, json_object *request, str
 static
 int ignore_request(json_object *request, stream_info_t* info)
 {
-    int rc = 0;
     json_object *req_info;
     if (json_object_object_get_ex(request, "request_info", &req_info)) {
         json_object *url_obj;
         if (json_object_object_get_ex(req_info, "url", &url_obj)) {
             const char *url = json_object_get_string(url_obj);
+            if (url == NULL) {
+                dump_json_object(stderr, "[E] request with NULL url", request);
+                return 0;
+            }
             const char *prefix = info ? info->ignored_request_prefix : global_ignored_request_prefix;
             if (prefix != NULL && strstr(url, prefix) == url) {
-                rc = 1;
+                return 1;
             }
         }
     }
-    return rc;
+    return 0;
 }
 
 static int
