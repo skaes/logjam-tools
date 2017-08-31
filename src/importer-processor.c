@@ -570,8 +570,10 @@ int ignore_request(json_object *request, stream_info_t* info)
         json_object *url_obj;
         if (json_object_object_get_ex(req_info, "url", &url_obj)) {
             const char *url = json_object_get_string(url_obj);
-            if (url == NULL) {
-                dump_json_object(stderr, "[E] request with NULL url", request);
+            if (url == NULL || *url == '\0') {
+                if (info)
+                    fprintf(stderr, "[W] got request with NULL or empty url from %s\n", info->key);
+                dump_json_object(stderr, "[W] REQUEST", request);
                 return 0;
             }
             const char *prefix = info ? info->ignored_request_prefix : global_ignored_request_prefix;
