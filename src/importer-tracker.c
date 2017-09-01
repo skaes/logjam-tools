@@ -65,8 +65,8 @@ uuid_tracker_t* tracker_new()
 
     tracker->deletions = zsock_new(ZMQ_REQ);
     assert(tracker->deletions);
-    zsock_set_sndtimeo(tracker->deletions, 10);
-    zsock_set_rcvtimeo(tracker->deletions, 1000);
+    // zsock_set_sndtimeo(tracker->deletions, 10);
+    // zsock_set_rcvtimeo(tracker->deletions, 1000);
     zsock_connect(tracker->deletions, "inproc://tracker-deletions");
     assert(rc != -1);
 
@@ -105,15 +105,15 @@ int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t* origi
     }
 
     msg = zmsg_recv(tracker->deletions);
+    assert(msg);
     int deleted = 0;
-    if (msg) {
-        zframe_t *rcf = zmsg_first(msg);
-        if (rcf) {
-            assert(zframe_size(rcf) == sizeof(int));
-            deleted = *((int*)zframe_data(rcf));
-        }
-        zmsg_destroy(&msg);
+    zframe_t *rcf = zmsg_first(msg);
+    if (rcf) {
+        assert(zframe_size(rcf) == sizeof(int));
+        deleted = *((int*)zframe_data(rcf));
     }
+    zmsg_destroy(&msg);
+
     return deleted;
 }
 
