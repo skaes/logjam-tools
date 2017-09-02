@@ -20,7 +20,7 @@
 // The indexer therefore creates databases along with all their indexes one day in advance.
 // On startup, databases and indexes for the current day are created synchronously. The completion
 // of this is signalled to the controller by sending a started message to the controller.
-// Databases and indexes for dates in the future are alaways created via a fresh background
+// Databases and indexes for dates in the future are always created via a fresh background
 // thread, spawned from the indexer.
 
 typedef struct {
@@ -152,6 +152,76 @@ void add_jse_collection_indexes(const char* db_name, mongoc_collection_t *jse_co
 }
 
 static
+int64_t extract_storage_size(bson_t *doc)
+{
+    bson_iter_t iter;
+    if (bson_iter_init_find (&iter, doc, "storageSize")) {
+        bson_type_t bit = bson_iter_type (&iter);
+        switch (bit) {
+        case BSON_TYPE_DOUBLE:
+            return bson_iter_double(&iter);
+        case BSON_TYPE_INT64:
+            return bson_iter_int64(&iter);
+        case BSON_TYPE_INT32:
+            return bson_iter_int32(&iter);
+        default:
+            fprintf(stderr, "unexpected bson type when reading databse stats: %d\n", bit);
+        }
+    }
+    return 0;
+}
+
+static
+void indexer_check_disk_usage(indexer_state_t *state, const char *db_name, stream_info_t *stream_info)
+{
+    // if (dryrun) return;
+
+    bson_t *cmd = bson_new();
+    bson_append_int32(cmd, "dbStats", 7, 1);
+    bson_append_int32(cmd, "scale", 5, 1);
+
+    mongoc_client_t *client = state->mongo_clients[stream_info->db];
+    mongoc_database_t *database = mongoc_client_get_database(client, db_name);
+    bson_t *reply = bson_new();
+    bson_error_t error;
+    bool ok = mongoc_database_command_simple(database, cmd, NULL, reply, &error);
+    if (!ok) {
+        fprintf(stderr, "[E] could not retrieve database statistics: (%d) %s\n", error.code, error.message);
+        return;
+    }
+
+    // size_t n;
+    // char* bjs = bson_as_json(reply, &n);
+    // printf("[D] database stats for (%s): %s\n", db_name, bjs);
+    // bson_free(bjs);
+
+    stream_info->storage_size = extract_storage_size(reply);
+    printf("[D] database storage size for %s: %" PRIi64 "\n", db_name, stream_info->storage_size);
+
+    bson_destroy(cmd);
+    bson_destroy(reply);
+}
+
+static
+void indexer_refresh_storage_sizes(indexer_state_t *self)
+{
+    zlist_t *streams = zhash_keys(configured_streams);
+    char *stream = zlist_first(streams);
+    bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
+    while (stream && !zsys_interrupted) {
+        stream_info_t *info = zhash_lookup(configured_streams, stream);
+        assert(info);
+        if (!have_subscriptions || zhash_lookup(stream_subscriptions, stream)) {
+            char db_name[1000];
+            sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date_today);
+            indexer_check_disk_usage(self, db_name, info);
+        }
+        stream = zlist_next(streams);
+    }
+    zlist_destroy(&streams);
+}
+
+static
 void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_info_t *stream_info)
 {
     mongoc_client_t *client = state->mongo_clients[stream_info->db];
@@ -230,6 +300,7 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
             char db_name[1000];
             sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
             indexer_create_indexes(self, db_name, info);
+            indexer_check_disk_usage(self, db_name, info);
             if (delay) {
                 zclock_sleep(1000 * delay);
             }
@@ -383,6 +454,10 @@ void indexer(zsock_t *pipe, void *args)
                     for (int i=0; i<num_databases; i++) {
                         mongo_client_ping(state->mongo_clients[i]);
                     }
+                }
+                if (ticks++ % DATABASE_INFO_REFRESH_INTERVAL == 0) {
+                    // retrieve current database storage sizew
+                    indexer_refresh_storage_sizes(state);
                 }
                 // free collection pointers every hour
                 if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {

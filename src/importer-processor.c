@@ -586,6 +586,18 @@ int ignore_request(json_object *request, stream_info_t* info)
     return 0;
 }
 
+static
+bool throttle_request(stream_info_t *stream)
+{
+    if (stream->storage_size > HARD_LIMIT_STORAGE_SIZE) {
+        return true;
+    } else if (stream->storage_size > SOFT_LIMIT_STORAGE_SIZE) {
+        return random() <= TEN_PERCENT_OF_MAX_RANDOM;
+    } else {
+        return false;
+    }
+}
+
 static int
 backend_only_request(const char *action, stream_info_t *stream)
 {
@@ -670,7 +682,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         }
     }
 
-    if (interesting_request(&request_data, request, self->stream_info)) {
+    if (interesting_request(&request_data, request, self->stream_info) && !throttle_request(self->stream_info)) {
         json_object_get(request);
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, self->db_name);

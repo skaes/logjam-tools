@@ -12,7 +12,6 @@ typedef struct {
     size_t value;
 } module_threshold_t;
 
-
 typedef struct {
     const char *key;      // [app,env].join('-')
     const char *yek;      // [env,app].join('.')
@@ -24,6 +23,7 @@ typedef struct {
     int db;
     int import_threshold;
     int module_threshold_count;
+    int64_t storage_size;
     double sampling_rate_400s;
     long sampling_rate_400s_threshold;
     module_threshold_t *module_thresholds;
@@ -39,6 +39,11 @@ extern const char* global_ignored_request_prefix;
 extern double global_sampling_rate_400s;
 extern long int global_sampling_rate_400s_threshold;
 #define MAX_RANDOM_VALUE ((1L<<31) - 1)
+#define TEN_PERCENT_OF_MAX_RANDOM 214748364
+
+// request storage size soft limit is 10 GB, hard limit 20 GB, per app
+#define SOFT_LIMIT_STORAGE_SIZE 10737418240
+#define HARD_LIMIT_STORAGE_SIZE 21474836480
 
 // all configured streams
 extern zhash_t *configured_streams;
