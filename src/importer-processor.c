@@ -525,14 +525,14 @@ void processor_add_quants(processor_state_t *self, const char* namespace, increm
 static
 bool interesting_request(request_data_t *request_data, json_object *request, stream_info_t* info)
 {
-    int time_threshold = info ? info->import_threshold : global_total_time_import_threshold;
+    int time_threshold = info->import_threshold;
     if (request_data->total_time > time_threshold)
         return true;
     if (request_data->severity > 1)
         return true;
     if (request_data->response_code >= 500)
         return true;
-    double sampling_rate_threshold = info ? info->sampling_rate_400s_threshold : global_sampling_rate_400s_threshold;
+    double sampling_rate_threshold = info->sampling_rate_400s_threshold;
     if (request_data->response_code >= 400) {
         if (sampling_rate_threshold == MAX_RANDOM_VALUE) {
             // printf("[D] processor: %s: taking 400 since sampling all requests\n", info ? info->key : "");
