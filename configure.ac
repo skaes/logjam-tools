@@ -72,6 +72,13 @@ AS_IF([test "x$with_opt_dir" == "x"],
                          )
       ])
 
+dnl AS_IF([test "x$DEPS_LIBS" != "x"],
+dnl       [ echo $DEPS_LIBS
+dnl         val=`echo $DEPS_LIBS | sed 's|-L\(/[[^ ]*]\)| -L\1 -Wl,-rpath -Wl,\1|g'`
+dnl         echo $val
+dnl         AC_SUBST([DEPS_LIBS], $val)
+dnl       ])
+
 AS_IF([test `uname -s` == "Linux"], AC_SUBST([OPT_PTHREAD_FLAGS], ["-pthread"]), AC_SUBST([OPT_PTHREAD_FLAGS]))
 
 AS_IF([test "x$CPUPROFILE" == "x"], AC_SUBST([OPT_PROFILER_FLAGS]), AC_SUBST([OPT_PROFILER_FLAGS], ["-lprofiler"]))

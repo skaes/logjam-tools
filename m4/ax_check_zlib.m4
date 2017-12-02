@@ -70,7 +70,11 @@ AC_DEFUN([AX_CHECK_ZLIB],
 # Handle user hints
 #
 [AC_MSG_CHECKING(if zlib is wanted)
-zlib_places="/usr/local /usr /opt/local /sw"
+if test `uname -s` == Darwin; then
+zlib_places="/usr/local /opt/local /sw /usr"
+else
+zlib_places="/usr/local /usr"
+fi
 AC_ARG_WITH([zlib],
 [  --with-zlib=DIR         root directory path of zlib installation @<:@defaults to
                           /usr/local or /usr if not found in /usr/local@:>@
@@ -119,8 +123,10 @@ then
     # If both library and header were found, action-if-found
     #
     m4_ifblank([$1],[
-                CPPFLAGS="$CPPFLAGS -I${ZLIB_HOME}/include"
-                LDFLAGS="$LDFLAGS -L${ZLIB_HOME}/lib"
+                if test "${ZLIB_HOME}" != "/usr"; then
+                  CPPFLAGS="$CPPFLAGS -I${ZLIB_HOME}/include"
+                  LDFLAGS="$LDFLAGS -L${ZLIB_HOME}/lib"
+                fi
                 LIBS="-lz $LIBS"
                 AC_DEFINE([HAVE_LIBZ], [1],
                           [Define to 1 if you have `z' library (-lz)])
