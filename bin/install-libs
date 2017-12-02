@@ -190,7 +190,7 @@ function handle_snappy()
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfdx
-    test -f config.status || (./configure --prefix=$prefix)
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
