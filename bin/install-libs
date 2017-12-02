@@ -93,7 +93,7 @@ function handle_mongoc()
         [ $cached = 0 ] && git submodule update
     fi
     [ $forced == "1" ] && git clean -qfdx
-    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --with-libbson=bundled)
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --with-libbson=bundled --enable-automatic-init-and-cleanup=no)
     [ $forced == "1" ] && make clean
     make -j4
     $LSUDO make $cmd

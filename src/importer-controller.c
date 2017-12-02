@@ -346,6 +346,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 static
 bool controller_create_actors(controller_state_t *state)
 {
+    // initialize mongo client
+    mongoc_init();
+
     // start the statsd updater
     state->statsd_server = zactor_new(statsd_actor_fn, state->config);
     // start the live stream publisher
@@ -444,6 +447,9 @@ void controller_destroy_actors(controller_state_t *state)
 
     if (verbose) printf("[D] controller: destroying adder socket\n");
     zsock_destroy(&state->adder_socket);
+
+    // shut down mongo client
+    mongoc_cleanup();
 }
 
 
