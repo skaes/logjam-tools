@@ -11,9 +11,12 @@ static bool debug = false;
 
 static size_t io_threads = 1;
 static char *connection_spec = NULL;
+static int socket_type = ZMQ_PUB;
 
-#define DEFAULT_CONNECTION_PORT 9606
-#define DEFAULT_CONNECTION_SPEC "tcp://*:9606"
+#define DEFAULT_CONNECTION_PORT_PUB 9606
+#define DEFAULT_CONNECTION_SPEC_PUB "tcp://*:9606"
+#define DEFAULT_CONNECTION_PORT_DEALER 9604
+#define DEFAULT_CONNECTION_SPEC_DEALER "tcp://localhost:9604"
 
 static bool endless_loop = false;
 static int messages_per_second = 100000;
@@ -91,7 +94,8 @@ void print_usage(char * const *argv)
             "  -l, --loop                 loop the dump file\n"
             "  -r, --msg-rate N           output message rate (per second)\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
-            "  -p, --pub S                zmq specification for pub socket\n"
+            "  -d, --dealer               use zqm DEALER socket for publishing\n"
+            "  -p, --pub S                zmq specification for publishing socket\n"
             "      --help                 display this message\n"
             , argv[0]);
 }
@@ -109,10 +113,11 @@ void process_arguments(int argc, char * const *argv)
         { "io-threads",    required_argument, 0, 'i' },
         { "pub",           required_argument, 0, 'p' },
         { "verbose",       no_argument,       0, 'v' },
+        { "dealer",        no_argument,       0, 'd' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vlr:i:p:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vdlr:i:p:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -126,11 +131,14 @@ void process_arguments(int argc, char * const *argv)
         case 'r':
             messages_per_second = atoi(optarg);
             break;
+        case 'd':
+            socket_type = ZMQ_DEALER;
+            break;
         case 'i':
             io_threads = atoi(optarg);
             break;
         case 'p':
-            connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_CONNECTION_PORT);
+            connection_spec = optarg;
             break;
         case 0:
             print_usage(argv);
@@ -159,8 +167,17 @@ void process_arguments(int argc, char * const *argv)
         dump_file_name = argv[argc-1];
     }
 
-    if (connection_spec == NULL)
-        connection_spec = DEFAULT_CONNECTION_SPEC;
+    if (socket_type == ZMQ_PUB) {
+        if (connection_spec == NULL)
+            connection_spec = DEFAULT_CONNECTION_SPEC_PUB;
+        else
+            connection_spec = augment_zmq_connection_spec(connection_spec, DEFAULT_CONNECTION_PORT_PUB);
+    } else {
+        if (connection_spec == NULL)
+            connection_spec = DEFAULT_CONNECTION_SPEC_DEALER;
+        else
+            connection_spec = augment_zmq_connection_spec(connection_spec, DEFAULT_CONNECTION_PORT_DEALER);
+    }
 }
 
 int main(int argc, char * const *argv)
@@ -189,17 +206,25 @@ int main(int argc, char * const *argv)
     zsys_set_io_threads(io_threads);
 
     // create socket to push messages to
-    zsock_t* publisher = zsock_new(ZMQ_PUB);
+    zsock_t* publisher = zsock_new(socket_type);
     assert_x(publisher != NULL, "[E] zmq socket creation failed", __FILE__, __LINE__);
 
     // configure the push socket
     zsock_set_sndhwm(publisher, 1000000);
 
-    // bind pub socket
-    printf("[I] binding PUB socket to %s\n", connection_spec);
-    int rc = zsock_bind(publisher, "%s", connection_spec);
-    // log_zmq_error(rc, __FILE__, __LINE__);
-    assert(rc != -1);
+    if (socket_type == ZMQ_PUB) {
+        // bind pub socket
+        printf("[I] binding PUB socket to %s\n", connection_spec);
+        int rc = zsock_bind(publisher, "%s", connection_spec);
+        log_zmq_error(rc, __FILE__, __LINE__);
+        assert(rc != -1);
+    } else {
+        // connect dealer socket
+        printf("[I] connecting DEALER socket to %s\n", connection_spec);
+        int rc = zsock_connect(publisher, "%s", connection_spec);
+        log_zmq_error(rc, __FILE__, __LINE__);
+        assert(rc == 0);
+    }
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -211,7 +236,7 @@ int main(int argc, char * const *argv)
         .fd = fileno(dump_file),
         .events = ZMQ_POLLIN
     };
-    rc = zloop_poller(loop, &dump_file_item, file_consume_message_and_forward, publisher);
+    int rc = zloop_poller(loop, &dump_file_item, file_consume_message_and_forward, publisher);
     assert(rc==0);
 
     // calculate statistics every 1000 ms
