@@ -25,9 +25,11 @@ import (
 )
 
 var opts struct {
-	BindIp       string `short:"b" long:"bind-ip" default:"127.0.0.1" description:"ip address to bind to"`
-	ImporterHost string `short:"i" long:"importer-host" default:"127.0.0.1" description:"importer host"`
 	Verbose      bool   `short:"v" long:"verbose" description:"be verbose"`
+	ImporterHost string `short:"i" long:"importer-host" default:"127.0.0.1" description:"importer host"`
+	BindIP       string `short:"b" long:"bind-ip" env:"LOGJAM_BIND_IP" default:"127.0.0.1" description:"ip address to bind to"`
+	CertFile     string `short:"c" long:"cert-file" env:"LOGJAM_CERT_FILE" description:"certificate file to use"`
+	KeyFile      string `short:"k" long:"key-file" env:"LOGJAM_KEY_FILE" description:"key file to use"`
 }
 
 var channelBlocked = errors.New("channel blocked")
@@ -544,20 +546,41 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 func clientHandler() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", serveWs)
-	web_socket_port := 8080
+	port := 8080
 	if runtime.GOOS == "darwin" {
-		web_socket_port = 9608
+		port = 9608
 	}
-	logInfo("starting web socket server on port %d", web_socket_port)
-	web_socket_spec := ":" + strconv.Itoa(web_socket_port)
-	graceful.Run(web_socket_spec, 10*time.Second, mux)
+	logInfo("starting web socket server on port %d", port)
+	spec := ":" + strconv.Itoa(port)
+	srv := &graceful.Server{
+		Timeout: 10 * time.Second,
+		Server: &http.Server{
+			Addr:    spec,
+			Handler: mux,
+		},
+	}
+	if opts.KeyFile != "" && opts.CertFile != "" {
+		err := srv.ListenAndServeTLS(opts.CertFile, opts.KeyFile)
+		if err != nil {
+			logError("Cannot list and serve TLS: %s", err)
+		}
+	} else if opts.KeyFile != "" {
+		logError("cert-file given but no key-file!")
+	} else if opts.CertFile != "" {
+		logError("key-file given but no cert-file!")
+	} else {
+		err := srv.ListenAndServe()
+		if err != nil {
+			logError("Cannot list and serve TLS: %s", err)
+		}
+	}
 }
 
 //*******************************************************************************
 
 func main() {
 	logInfo("%s starting", os.Args[0])
-	bind_spec = fmt.Sprintf("tcp://%s:9611", opts.BindIp)
+	bind_spec = fmt.Sprintf("tcp://%s:9611", opts.BindIP)
 	importer_spec = fmt.Sprintf("tcp://%s:9607", opts.ImporterHost)
 	verbose = opts.Verbose
 	logInfo("bind-spec:     %s", bind_spec)
