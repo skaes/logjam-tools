@@ -115,7 +115,7 @@ sequence-number    = 8OCTET              ; uint64, network byte order
   is used, the message stream is restricted to messages described by
   the async-data-msg rule above.
 
-* The server MUST use offer a ROUTER socket for clients to connect to.
+* The server MUST offer a ROUTER socket for clients to connect to.
 
 * The server MAY offer a PULL socket for clients to connect to.
 

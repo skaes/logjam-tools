@@ -108,6 +108,19 @@ https://githum.com/skaes/logjam-core).
 A ZeroMQ PUSH socket for graylog to connect to
 (logjam-graylog-forwarder).
 
+### 9705
+
+HTTP listening port for logjam-fhttpd
+
+### 9706
+
+ZMQ pub port for logjam-fhttpd
+
+### 9708
+
+HTTPS listening port for nginx SSL proxy for logjam-fhttpd port
+
+
 
 # Dependencies
 
@@ -118,7 +131,7 @@ A ZeroMQ PUSH socket for graylog to connect to
 * libbson (included in mongo-c-driver as a submodule)
 * json-c (0.12 patched)
 * libsnappy (1.1.3)
-* go (1.8.1)
+* go (1.9.2)
 
 # Installation
 
