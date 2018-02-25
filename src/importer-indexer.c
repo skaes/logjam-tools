@@ -347,7 +347,11 @@ void spawn_bg_indexer_for_date(size_t id, const char* iso_date)
     assert(indexer_args != NULL);
     indexer_args->id = id;
     strcpy(indexer_args->iso_date, iso_date);
-    zthread_new(create_indexes_for_date, indexer_args);
+    pthread_t thread;
+    int rc = pthread_create (&thread, NULL, create_indexes_for_date, indexer_args);
+    assert(rc == 0);
+    rc = pthread_detach (thread);
+    assert(rc == 0);
 }
 
 static
