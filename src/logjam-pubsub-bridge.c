@@ -156,7 +156,7 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
             zmq_msg_init(&message_parts[i]);
             zmq_recvmsg(socket, &message_parts[i], 0);
         }
-        if (!zsocket_rcvmore(socket))
+        if (!zsock_rcvmore(socket))
             break;
         i++;
     }
