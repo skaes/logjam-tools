@@ -46,6 +46,8 @@ typedef struct {
     mongoc_collection_t *collection;
 } collection_update_callback_t;
 
+typedef int (updater_foreach_fn) (const char *key, void *item, void *argument);
+
 static
 bson_t* increments_to_bson(const char* namespace, increments_t* increments)
 {
@@ -438,7 +440,7 @@ void stats_updater_state_destroy(stats_updater_state_t **state_p)
 }
 
 static
-void update_collection(zhash_t *updates, zhash_foreach_fn *fn, collection_update_callback_t *cb)
+void update_collection(zhash_t *updates, updater_foreach_fn *fn, collection_update_callback_t *cb)
 {
     void *update = zhash_first(updates);
     while (update) {
