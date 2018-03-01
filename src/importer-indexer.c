@@ -182,24 +182,25 @@ void indexer_check_disk_usage(indexer_state_t *state, const char *db_name, strea
 
     mongoc_client_t *client = state->mongo_clients[stream_info->db];
     mongoc_database_t *database = mongoc_client_get_database(client, db_name);
-    bson_t *reply = bson_new();
+    bson_t reply;
+    bson_init(&reply);
     bson_error_t error;
-    bool ok = mongoc_database_command_simple(database, cmd, NULL, reply, &error);
+
+    bool ok = mongoc_database_command_simple(database, cmd, NULL, &reply, &error);
     if (!ok) {
         fprintf(stderr, "[E] could not retrieve database statistics: (%d) %s\n", error.code, error.message);
-        return;
+    } else {
+        // size_t n;
+        // char* bjs = bson_as_json(reply, &n);
+        // printf("[D] database stats for (%s): %s\n", db_name, bjs);
+        // bson_free(bjs);
+        stream_info->storage_size = extract_storage_size(&reply);
+        printf("[D] database storage size for %s: %" PRIi64 "\n", db_name, stream_info->storage_size);
     }
 
-    // size_t n;
-    // char* bjs = bson_as_json(reply, &n);
-    // printf("[D] database stats for (%s): %s\n", db_name, bjs);
-    // bson_free(bjs);
-
-    stream_info->storage_size = extract_storage_size(reply);
-    printf("[D] database storage size for %s: %" PRIi64 "\n", db_name, stream_info->storage_size);
-
     bson_destroy(cmd);
-    bson_destroy(reply);
+    bson_destroy(&reply);
+    mongoc_database_destroy(database);
 }
 
 static
