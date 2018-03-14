@@ -18,23 +18,21 @@ int main(int argc, char const * const *argv)
 {
   int rc;
 
-  zctx_t *context = zctx_new();
-  assert(context);
-  zctx_set_rcvhwm(context, 1000);
-  zctx_set_linger(context, 100);
+  zsys_set_rcvhwm(1000);
+  zsys_set_linger(100);
 
-  void *socket = zsocket_new(context, ZMQ_PULL);
+  void *socket = zsock_new(ZMQ_PULL);
   assert(socket);
 
-  zsocket_set_rcvhwm(socket, 100000);
-  zsocket_set_linger(socket, 500);
-  zsocket_set_reconnect_ivl(socket, 100); // 100 ms
-  zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
+  zsock_set_rcvhwm(socket, 100000);
+  zsock_set_linger(socket, 500);
+  zsock_set_reconnect_ivl(socket, 100); // 100 ms
+  zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
 
   const char* host = "localhost";
   if (argc>1) host = argv[1];
 
-  rc = zsocket_connect(socket, "tcp://%s:9651", host);
+  rc = zsock_connect(socket, "tcp://%s:9651", host);
   assert(rc==0);
 
   zmsg_t *msg = NULL;
@@ -61,8 +59,7 @@ int main(int argc, char const * const *argv)
     zmsg_destroy(&msg);
   }
 
-  zsocket_destroy(context, socket);
-  zctx_destroy(&context);
+  zsock_destroy(socket);
 
   printf("\nlost:     %7zu\nreceived: %7zu\n", lost, received);
 

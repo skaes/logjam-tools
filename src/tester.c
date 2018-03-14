@@ -49,10 +49,8 @@ int main(int argc, char const * const *argv)
   int message_count = argc>2 ? atoi(argv[2]) : 100000;
   int rc;
 
-  zctx_t *context = zctx_new();
-  assert(context);
-  zctx_set_sndhwm(context, 1);
-  zctx_set_linger(context, 100);
+  zsys_set_sndhwm(1);
+  zsys_set_linger(100);
 
   // zmq 2.2 only supports up to 512 sockets
   assert_x(ZMQ_VERSION <= 20200 && socket_count > 512,
@@ -62,25 +60,25 @@ int main(int argc, char const * const *argv)
 
   int j;
   for (j=0; j<socket_count; j++) {
-    void *socket = zsocket_new(context, ZMQ_PUSH);
+    void *socket = zsock_new(ZMQ_PUSH);
     if (NULL==socket) {
-      printf("Error occurred during %dth call to zsocket_new: %s\n", j, zmq_strerror (errno));
+      printf("Error occurred during %dth call to zsock_new: %s\n", j, zmq_strerror (errno));
       exit(1);
     }
-    // zsocket_set_sndtimeo(socket, 10);
-    zsocket_set_sndhwm(socket, 10);
-    zsocket_set_linger(socket, 50);
-    zsocket_set_reconnect_ivl(socket, 100); // 100 ms
-    zsocket_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
-    // printf("hwm %d\n", zsocket_hwm(socket));
-    // printf("sndbuf %d\n", zsocket_sndbuf(socket));
-    // printf("swap %d\n", zsocket_swap(socket));
-    // printf("linger %d\n", zsocket_linger(socket));
-    // printf("sndtimeo %d\n", zsocket_sndtimeo(socket));
-    // printf("reconnect_ivl %d\n", zsocket_reconnect_ivl(socket));
-    // printf("reconnect_ivl_max %d\n", zsocket_reconnect_ivl_max(socket));
+    // zsock_set_sndtimeo(socket, 10);
+    zsock_set_sndhwm(socket, 10);
+    zsock_set_linger(socket, 50);
+    zsock_set_reconnect_ivl(socket, 100); // 100 ms
+    zsock_set_reconnect_ivl_max(socket, 10 * 1000); // 10 s
+    // printf("hwm %d\n", zsock_hwm(socket));
+    // printf("sndbuf %d\n", zsock_sndbuf(socket));
+    // printf("swap %d\n", zsock_swap(socket));
+    // printf("linger %d\n", zsock_linger(socket));
+    // printf("sndtimeo %d\n", zsock_sndtimeo(socket));
+    // printf("reconnect_ivl %d\n", zsock_reconnect_ivl(socket));
+    // printf("reconnect_ivl_max %d\n", zsock_reconnect_ivl_max(socket));
 
-    rc = zsocket_connect(socket, "tcp://localhost:12345");
+    rc = zsock_connect(socket, "tcp://localhost:12345");
     assert(rc==0);
     sockets[j] = socket;
     zclock_sleep(10); // sleep 10 ms
@@ -116,10 +114,9 @@ int main(int argc, char const * const *argv)
   printf("rejected: %8d\n", rejected);
 
   for (i=0;i<socket_count;i++) {
-    zsocket_destroy(context, sockets[i]);
+    zsock_destroy(sockets[i]);
   }
   free(sockets);
-  zctx_destroy(&context);
 
   return 0;
 }

@@ -44,33 +44,31 @@ int main(int argc, char const * const *argv)
 {
   int rc;
 
-  zctx_t *context = zctx_new();
-  assert(context);
-  zctx_set_sndhwm(context, 1);
-  zctx_set_linger(context, 100);
+  zsys_set_sndhwm(1);
+  zsys_set_linger(100);
 
-  void *pusher = zsocket_new(context, ZMQ_PUSH);
+  void *pusher = zsock_new(ZMQ_PUSH);
   assert(pusher);
-  zsocket_set_sndhwm(pusher, 1000);
-  zsocket_set_linger(pusher, 500);
-  rc = zsocket_connect(pusher, "tcp://localhost:12345");
+  zsock_set_sndhwm(pusher, 1000);
+  zsock_set_linger(pusher, 500);
+  rc = zsock_connect(pusher, "tcp://localhost:12345");
   assert(rc==0);
 
-  void *puller = zsocket_new(context, ZMQ_PULL);
+  void *puller = zsock_new(ZMQ_PULL);
   assert(puller);
-  zsocket_set_rcvhwm(puller, 1000);
-  zsocket_set_linger(puller, 500);
-  rc = zsocket_bind(puller, "tcp://*:12345");
+  zsock_set_rcvhwm(puller, 1000);
+  zsock_set_linger(puller, 500);
+  rc = zsock_bind(puller, "tcp://*:12345");
   if (rc != 12345){
     printf("bind failed: %s\n", zmq_strerror(errno));
   }
   assert(rc == 12345);
 
-  void *publisher = zsocket_new(context, ZMQ_PUB);
+  void *publisher = zsock_new(ZMQ_PUB);
   assert(publisher);
-  zsocket_set_sndhwm(publisher, 1000);
-  zsocket_set_linger(publisher, 500);
-  rc = zsocket_bind(publisher, "tcp://*:12346");
+  zsock_set_sndhwm(publisher, 1000);
+  zsock_set_linger(publisher, 500);
+  rc = zsock_bind(publisher, "tcp://*:12346");
   assert(rc==12346);
 
   // set up event loop
@@ -93,9 +91,6 @@ int main(int argc, char const * const *argv)
 
   zloop_destroy(&loop);
   assert(loop == NULL);
-
-  // cleanup
-  zctx_destroy(&context);
 
   return 0;
 }
