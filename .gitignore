@@ -30,11 +30,13 @@ config.h.in
 stamp-h1
 # go sources
 /go/pkg
+/go/src/github.com/ShowMax/go-fqdn/
+/go/src/github.com/golang/snappy/
 /go/src/github.com/gorilla/websocket
-/go/src/github.com/pebbe/zmq4
-/go/src/gopkg.in
 /go/src/github.com/jessevdk/go-flags/
 /go/src/github.com/nu7hatch/gouuid/
+/go/src/github.com/pebbe/zmq4
+/go/src/gopkg.in
 # programs
 /livestream-generator
 /logjam-device
@@ -48,6 +50,7 @@ stamp-h1
 /logjam-pubsub-bridge
 /logjam-replay
 /logjam-tail
+/logjam-http-forwarder
 # test programs
 /checker
 /test_publisher

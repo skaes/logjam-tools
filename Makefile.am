@@ -197,6 +197,8 @@ check: checker
 	./checker
 
 GO_DEPS = \
+	github.com/ShowMax/go-fqdn \
+	github.com/golang/snappy \
 	github.com/gorilla/websocket \
 	github.com/jessevdk/go-flags \
 	github.com/nu7hatch/gouuid \
@@ -208,10 +210,10 @@ GO_DEPS = \
 	touch .godeps
 
 GO_ENV = GOPATH=$(GO_PATH) CGO_LDFLAGS='$(OPTDIR_LDFLAGS)' PKG_CONFIG_PATH=$(PKG_CONFIG_PATH)
-GO_PKG = github.com/skaes/logjam-livestream
+GO_PKG = github.com/skaes/logjam-gotools
 GO_SRC = go/src/$(GO_PKG)
 GO_NOINSTALL_TARGETS = livestream-generator
-GO_INSTALL_TARGETS = logjam-livestream
+GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
 
 all-local: $(GO_TARGETS)
@@ -220,15 +222,18 @@ clean-local:
 	rm -rf go/pkg go/bin $(GO_TARGETS) .godeps
 
 install-exec-local: $(GO_INSTALL_TARGETS)
-	$(INSTALL_PROGRAM) logjam-livestream $(bindir)
+	$(INSTALL_PROGRAM) $^ $(bindir)
 
 uninstall-local:
 	cd $(bindir) && rm -f $(GO_INSTALL_TARGETS)
 
-logjam-livestream: $(GO_SRC)/server/server.go .godeps
-	$(GO_ENV) go test $(GO_PKG)/server
+logjam-livestream: $(GO_SRC)/livestream-server/server.go .godeps
+	$(GO_ENV) go test $(GO_PKG)/livestream-server
 	$(GO_ENV) go build -o $@ $<
 
-livestream-generator: $(GO_SRC)/generator/generator.go .godeps
+livestream-generator: $(GO_SRC)/livestream-generator/generator.go .godeps
 	$(GO_ENV) go build -o $@ $<
 
+logjam-http-forwarder: $(GO_SRC)/http-forwarder/forwarder.go .godeps
+#	$(GO_ENV) go test $(GO_PKG)/forwarder
+	$(GO_ENV) go build -o $@ $<

@@ -31,6 +31,14 @@ intensive than the ruby code and a _lot_ faster.
 A daemon which takes frontend performance data via HTTP GET requests
 and publishes it on a ZeroMQ PUB socket for the importer to pick up.
 
+## logjam-http-forwarder
+
+A daemon which offers a HTTP endpoint where it accepts either frontend
+performance messages via HTTP GET requests or logjam event messages via POST
+requests and publishes them on a ZeroMQ PUB socket for the importer to pick
+up. For security reasons, it can only do one of those things at a time
+(specified as a program parameter).
+
 ## logjam-graylog-forwarder
 
 A daemon which subscribes to PUB sockets of logjam-devices and
