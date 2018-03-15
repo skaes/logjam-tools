@@ -30,11 +30,11 @@ var opts struct {
 	Verbose     bool   `short:"v" long:"verbose" description:"be verbose"`
 	Quiet       bool   `short:"q" long:"quiet" description:"be quiet"`
 	BindIP      string `short:"b" long:"bind-ip" env:"LOGJAM_BIND_IP" default:"127.0.0.1" description:"ip address to bind to"`
-	InputPort   int    `short:"p" long:"input-port" default:"9705" description:"port number of http input socket"`
+	InputPort   int    `short:"p" long:"input-port" default:"9805" description:"port number of http input socket"`
 	CertFile    string `short:"c" long:"cert-file" env:"LOGJAM_CERT_FILE" description:"certificate file to use"`
 	KeyFile     string `short:"k" long:"key-file" env:"LOGJAM_KEY_FILE" description:"key file to use"`
 	DeviceId    int    `short:"d" long:"device-id" description:"device id"`
-	OutputPort  int    `short:"P" long:"output-port" default:"9706" description:"port number of zeromq output socket"`
+	OutputPort  int    `short:"P" long:"output-port" default:"9806" description:"port number of zeromq output socket"`
 	SendHwm     int    `short:"S" long:"snd-hwm" env:"LOGJAM_SND_HWM" default:"100000" description:"high water mark for zeromq output socket"`
 	IoThreads   int    `short:"i" long:"io-threads" default:"1" description:"number of zeromq io threads"`
 	Compression string `short:"x" long:"compress" description:"compression method to use"`

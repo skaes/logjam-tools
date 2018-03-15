@@ -128,6 +128,14 @@ ZMQ pub port for logjam-fhttpd
 
 HTTPS listening port for nginx SSL proxy for logjam-fhttpd port
 
+### 9805
+
+HTTP listening port for logjam-http-forwarder
+
+### 9806
+
+ZMQ pub port for logjam-http-forwarder
+
 
 
 # Dependencies
