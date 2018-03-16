@@ -239,7 +239,7 @@ func packInfo(seqNum uint64, compression byte) []byte {
 	binary.BigEndian.PutUint16(data, MetaInfoTag)
 	data[2] = compression
 	data[3] = MetaInfoVersion
-	binary.BigEndian.PutUint32(data[5:9], uint32(opts.DeviceId))
+	binary.BigEndian.PutUint32(data[4:8], uint32(opts.DeviceId))
 	binary.BigEndian.PutUint64(data[8:16], zclockTime())
 	binary.BigEndian.PutUint64(data[16:24], seqNum)
 	return data
