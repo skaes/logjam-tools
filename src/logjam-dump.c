@@ -15,7 +15,6 @@ static zlist_t *connection_specs = NULL;
 static zlist_t *subscriptions = NULL;
 
 #define DEFAULT_SUB_PORT 9606
-#define DEFAULT_CONNECTION_SPEC "tcp://localhost:9606"
 
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
@@ -175,7 +174,7 @@ static void process_arguments(int argc, char * const *argv)
 
     if (connection_specs == NULL) {
         connection_specs = zlist_new();
-        zlist_append(connection_specs, strdup(DEFAULT_CONNECTION_SPEC));
+        zlist_append(connection_specs, strdup("localhost"));
     }
     augment_zmq_connection_specs(&connection_specs, sub_port);
 }
