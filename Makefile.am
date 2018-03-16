@@ -215,6 +215,7 @@ GO_SRC = go/src/$(GO_PKG)
 GO_NOINSTALL_TARGETS = livestream-generator
 GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
+GO_TESTS = http-client-test
 
 all-local: $(GO_TARGETS)
 
@@ -235,5 +236,8 @@ livestream-generator: $(GO_SRC)/livestream-generator/generator.go .godeps
 	$(GO_ENV) go build -o $@ $<
 
 logjam-http-forwarder: $(GO_SRC)/http-forwarder/forwarder.go .godeps
-#	$(GO_ENV) go test $(GO_PKG)/forwarder
 	$(GO_ENV) go build -o $@ $<
+
+.PHONY: http-client-test
+http-client-test:
+	$(GO_ENV) go test $(GO_PKG)/http-client

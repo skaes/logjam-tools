@@ -499,7 +499,6 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ct := r.Header.Get("Content-Type")
-	logInfo("Content-Type: %s", ct)
 	if ct != "application/json" {
 		w.WriteHeader(415)
 		io.WriteString(w, "Content-Type needs to be application/json\n")
