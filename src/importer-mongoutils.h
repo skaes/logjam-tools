@@ -11,6 +11,7 @@ extern "C" {
 #define USE_BACKGROUND_INDEX_BUILDS 1
 #define TOKU_TX_LOCK_FAILED 16759
 #define TOKU_TX_RETRIES 2
+#define MONGOC_ERROR_DUPLICATE_KEY 11000
 
 #if USE_UNACKNOWLEDGED_WRITES == 1
 #define USE_PINGS true
@@ -25,6 +26,7 @@ extern mongoc_write_concern_t *wc_no_wait;
 extern mongoc_write_concern_t *wc_wait;
 extern mongoc_index_opt_t index_opt_default;
 extern mongoc_index_opt_t index_opt_sparse;
+extern mongoc_index_opt_t index_opt_unique;
 
 extern void initialize_mongo_db_globals(zconfig_t* config);
 extern void ensure_known_database(mongoc_client_t *client, const char* db_name);

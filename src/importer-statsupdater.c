@@ -314,15 +314,16 @@ int histograms_add_histograms(const char* namespace, void* data, void* arg)
     bson_t *selector = bson_new();
     bson_append_utf8(selector, "page", 4, p, strlen(p));
     bson_append_int32(selector, "minute", 6, minute);
-    bson_append_null(selector, resource, strlen(resource));
+    bson_append_utf8(selector, "resource", 8, resource, strlen(resource));
+    bson_append_null(selector, "histogram", 9);
 
     // create empty histogram
     bson_t *empty = bson_new();
     bson_t array;
     char key[100];
-    bson_append_array_begin(empty, resource, strlen(resource), &array);
+    bson_append_array_begin(empty, "histogram", 9, &array);
     for (int i=0; i < HISTOGRAM_SIZE; i++) {
-        int keylen = snprintf(key, sizeof(key), "%s.%d", resource, i);
+        int keylen = snprintf(key, sizeof(key), "%s.%d", "histogram", i);
         bson_append_int64(&array, key, keylen, 0);
     }
     bson_append_array_end(empty, &array);
@@ -343,7 +344,8 @@ int histograms_add_histograms(const char* namespace, void* data, void* arg)
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
                 fprintf(stderr, "[W] retrying 'histogram exists' operation on %s\n", db_name);
                 goto retry_empty;
-            } else {
+            } else if (error.code != MONGOC_ERROR_DUPLICATE_KEY) {
+                // duplicate key errors are normal because several updaters perform this operation in parallel
                 size_t n;
                 char* bjs = bson_as_json(document, &n);
                 fprintf(stderr,
@@ -362,13 +364,14 @@ int histograms_add_histograms(const char* namespace, void* data, void* arg)
     selector = bson_new();
     bson_append_utf8(selector, "page", 4, p, strlen(p));
     bson_append_int32(selector, "minute", 6, minute);
+    bson_append_utf8(selector, "resource", 8, resource, strlen(resource));
 
     bson_t *incs = bson_new();
     size_t *histogram = data;
     for (int i=0; i < HISTOGRAM_SIZE; i++) {
         if (histogram[i] > 0) {
             char key[256];
-            int keylen = snprintf(key, sizeof(key), "%s.%d", resource, i);
+            int keylen = snprintf(key, sizeof(key), "%s.%d", "histogram", i);
             bson_append_int32(incs, key, keylen, histogram[i]);
         }
     }
