@@ -38,6 +38,7 @@ typedef struct {
     mongoc_collection_t *totals;
     mongoc_collection_t *minutes;
     mongoc_collection_t *quants;
+    mongoc_collection_t *histograms;
     mongoc_collection_t *agents;
 } stats_collections_t;
 
@@ -283,6 +284,128 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 }
 
 static
+int histograms_add_histograms(const char* namespace, void* data, void* arg)
+{
+    collection_update_callback_t *cb = arg;
+    mongoc_collection_t *collection = cb->collection;
+    const char *db_name = cb->db_name;
+
+    // extract details from key: minute-resource-page
+    char* p = (char*) namespace;
+    // extract minute
+    size_t minute = 0;
+    while (isdigit(*p)) {
+        minute *= 10;
+        minute += *(p++) - '0';
+    }
+    p++; // skip '-'
+    // p now points to the resource
+    char resource[256];
+    char *r = resource;
+    while (*p != '-') {
+        *(r++) = *(p++);
+    }
+    *r = 0;
+    p++; // skip '-'
+
+    // printf("[D] %s: %zu-%s-%s\n", db_name, minute, resource, p);
+
+    // ensure array is initialized
+    bson_t *selector = bson_new();
+    bson_append_utf8(selector, "page", 4, p, strlen(p));
+    bson_append_int32(selector, "minute", 6, minute);
+    bson_append_null(selector, resource, strlen(resource));
+
+    // create empty histogram
+    bson_t *empty = bson_new();
+    bson_t array;
+    char key[100];
+    bson_append_array_begin(empty, resource, strlen(resource), &array);
+    for (int i=0; i < HISTOGRAM_SIZE; i++) {
+        int keylen = snprintf(key, sizeof(key), "%s.%d", resource, i);
+        bson_append_int64(&array, key, keylen, 0);
+    }
+    bson_append_array_end(empty, &array);
+
+    bson_t *document = bson_new();
+    bson_append_document(document, "$set", 4, empty);
+
+    // size_t n;
+    // char* bs = bson_as_json(empty, &n);
+    // printf("[D] empty. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
+
+    if (!dryrun) {
+        bson_error_t error;
+        int tries = TOKU_TX_RETRIES;
+    retry_empty:
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
+            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
+                fprintf(stderr, "[W] retrying 'histogram exists' operation on %s\n", db_name);
+                goto retry_empty;
+            } else {
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr,
+                        "[E] ensuring 'histogram exists' failed for %s on histograms: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
+            }
+        }
+    }
+    bson_destroy(selector);
+    bson_destroy(empty);
+    bson_destroy(document);
+
+    // now add the increments
+    selector = bson_new();
+    bson_append_utf8(selector, "page", 4, p, strlen(p));
+    bson_append_int32(selector, "minute", 6, minute);
+
+    bson_t *incs = bson_new();
+    size_t *histogram = data;
+    for (int i=0; i < HISTOGRAM_SIZE; i++) {
+        if (histogram[i] > 0) {
+            char key[256];
+            int keylen = snprintf(key, sizeof(key), "%s.%d", resource, i);
+            bson_append_int32(incs, key, keylen, histogram[i]);
+        }
+    }
+    document = bson_new();
+    bson_append_document(document, "$inc", 4, incs);
+
+    // size_t n; char*
+    // bs = bson_as_json(document, &n);
+    // printf("[D] document. size: %zu; value:%s\n", n, bs);
+    // bson_free(bs);
+
+    if (!dryrun) {
+        bson_error_t error;
+        int tries = TOKU_TX_RETRIES;
+    retry:
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_NONE, selector, document, wc_no_wait, &error)) {
+            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
+                fprintf(stderr, "[W] retrying histograms update operation on %s\n", db_name);
+                goto retry;
+            } else {
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr,
+                        "[E] update failed for %s on histograms: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
+            }
+        }
+    }
+    bson_destroy(selector);
+    bson_destroy(incs);
+    bson_destroy(document);
+    return 0;
+}
+
+static
 int agents_add_agent(const char* agent, void* data, void* arg)
 {
     collection_update_callback_t *cb = arg;
@@ -369,6 +492,7 @@ stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* 
     collections->totals = mongoc_client_get_collection(client, db_name, "totals");
     collections->minutes = mongoc_client_get_collection(client, db_name, "minutes");
     collections->quants = mongoc_client_get_collection(client, db_name, "quants");
+    collections->histograms = mongoc_client_get_collection(client, db_name, "histograms");
     collections->agents = mongoc_client_get_collection(client, db_name, "agents");
 
     return collections;
@@ -383,6 +507,8 @@ void destroy_stats_collections(stats_collections_t* collections)
         mongoc_collection_destroy(collections->minutes);
     if (collections->quants != NULL)
         mongoc_collection_destroy(collections->quants);
+    if (collections->histograms != NULL)
+        mongoc_collection_destroy(collections->histograms);
     if (collections->agents != NULL)
         mongoc_collection_destroy(collections->agents);
     free(collections);
@@ -547,6 +673,10 @@ static void stats_updater(zsock_t *pipe, void *args)
             case 'q':
                 cb.collection = collections->quants;
                 update_collection(updates, quants_add_quants, &cb);
+                break;
+            case 'h':
+                cb.collection = collections->histograms;
+                update_collection(updates, histograms_add_histograms, &cb);
                 break;
             case 'a':
                 cb.collection = collections->agents;

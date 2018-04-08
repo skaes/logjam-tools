@@ -34,6 +34,7 @@ processor_state_t* processor_new(char *db_name)
     p->minutes = zhash_new();
     p->quants = zhash_new();
     p->agents = zhash_new();
+    p->histograms = zhash_new();
     return p;
 }
 
@@ -48,6 +49,7 @@ void processor_destroy(void* processor)
     zhash_destroy(&p->minutes);
     zhash_destroy(&p->quants);
     zhash_destroy(&p->agents);
+    zhash_destroy(&p->histograms);
     free(p);
 }
 
@@ -381,7 +383,8 @@ void processor_add_agent(processor_state_t *self, json_object *request)
         if (agent_stats == NULL) {
             agent_stats = zmalloc(sizeof(user_agent_stats_t));
             assert(agent_stats);
-            zhash_insert(self->agents, agent, agent_stats);
+            int rc = zhash_insert(self->agents, agent, agent_stats);
+            assert(rc == 0);
             zhash_freefn(self->agents, agent, free);
         }
         agent_stats->received_backend++;
@@ -406,7 +409,8 @@ void processor_add_user_agent(processor_state_t *self, const char* agent, enum f
         if (agent_stats == NULL) {
             agent_stats = zmalloc(sizeof(user_agent_stats_t));
             assert(agent_stats);
-            zhash_insert(self->agents, agent, agent_stats);
+            int rc = zhash_insert(self->agents, agent, agent_stats);
+            assert(rc == 0);
             zhash_freefn(self->agents, agent, free);
         }
         agent_stats->received_frontend++;
@@ -449,7 +453,7 @@ void add_quant(const char* namespace, size_t resource_idx, char kind, size_t qua
     stored[resource_idx]++;
 }
 
-static double buckets[] = {
+static double buckets[HISTOGRAM_SIZE+1] = {
     1,            //    1   ms               1 object            1   KB
     3,            //    3   ms               3 objects           3   KB
     10,           //   10   ms              10 objects          10   KB
@@ -484,6 +488,18 @@ static inline size_t find_bucket(double value)
     return *p;
 }
 
+static inline size_t find_bucket_index(double value)
+{
+    double *p = buckets;
+    size_t i = 0;
+    while (*p < value && *(p+1) != 0) {
+        i++;
+        p++;
+    }
+    assert(*p);
+    return i;
+}
+
 static
 void processor_add_quants(processor_state_t *self, const char* namespace, increments_t *increments)
 {
@@ -511,6 +527,8 @@ void processor_add_quants(processor_state_t *self, const char* namespace, increm
                 // printf("[D] skipping quant: %s\n", i2r(i));
                 continue;
             }
+            // This is stupid, but historic. We should actually store just the bucket
+            // index and let the API in logjam convert bucket indexes to real values.
             if (d != 1)
                 bucket = find_bucket(val/d) * d;
             else
@@ -521,6 +539,53 @@ void processor_add_quants(processor_state_t *self, const char* namespace, increm
         }
     }
 }
+
+void dump_histogram(const char* key, size_t *h)
+{
+    char line[2000];
+    int n = 0;
+    for (int i = 0 ; i < HISTOGRAM_SIZE; i++) {
+        n += sprintf(line+n, "%zu", h[i]);
+        if (i < HISTOGRAM_SIZE - 1)
+            n += sprintf(line+n, ", ");
+    }
+    printf("[D] HISTOGRAM: %s = [%s]\n", key, line);
+}
+
+void dump_histograms(zhash_t* histograms)
+{
+    size_t *h = zhash_first(histograms);
+    while (h) {
+        const char* key = zhash_cursor(histograms);
+        dump_histogram(key, h);
+        h = zhash_next(histograms);
+    }
+}
+
+
+static
+void processor_add_histogram(processor_state_t *self, const char* namespace, int minute, increments_t *increments)
+{
+    char key[2000];
+    snprintf(key, 2000, "%d-%s-%s", minute, "total_time", namespace);
+    // printf("[D] HISTOGRAM-KEY: %s\n", key);
+
+    double total_time = increments->metrics[total_time_index].val;
+    assert(total_time);
+
+    size_t *histogram = zhash_lookup(self->histograms, key);
+    if (histogram == NULL) {
+        histogram = zmalloc(HISTOGRAM_SIZE * sizeof(size_t));
+        zhash_insert(self->histograms, key, histogram);
+        zhash_freefn(self->histograms, key, free);
+    }
+    size_t i = find_bucket_index(total_time);
+    assert(i < HISTOGRAM_SIZE);
+    histogram[i]++;
+    // dump_histogram(key, histogram);
+    // dump_histograms(self->histograms);
+}
+
 
 static
 bool interesting_request(request_data_t *request_data, json_object *request, stream_info_t* info)
@@ -656,6 +721,9 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     processor_add_minutes(self, "all_pages", request_data.minute, increments);
 
     processor_add_quants(self, request_data.page, increments);
+
+    processor_add_histogram(self, request_data.module, request_data.minute, increments);
+    processor_add_histogram(self, "all_pages", request_data.minute, increments);
 
     increments_destroy(increments);
 

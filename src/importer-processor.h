@@ -16,6 +16,7 @@ typedef struct {
     zhash_t *totals;
     zhash_t *minutes;
     zhash_t *quants;
+    zhash_t *histograms;
     zhash_t *agents;
 } processor_state_t;
 
@@ -27,6 +28,8 @@ extern void processor_add_event(processor_state_t *self, parser_state_t *pstate,
 extern enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
 extern enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
 extern int processor_set_frontend_apdex_attribute(const char *attr);
+extern void dump_histogram(const char* key, size_t *h);
+extern void dump_histograms(zhash_t* histograms);
 
 #ifdef __cplusplus
 }

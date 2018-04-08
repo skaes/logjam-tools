@@ -41,10 +41,36 @@ void merge_quants(zhash_t *target, zhash_t *source)
         size_t *dest = zhash_lookup(target, key);
         if (dest) {
             for (int i=0; i <= last_resource_offset; i++) {
-                dest[i] += source_quants[i];
+                size_t c = source_quants[i];
+                if (c)
+                    dest[i] += c;
             }
         } else {
             zhash_insert(target, key, source_quants);
+            zhash_freefn(target, key, free);
+            zhash_freefn(source, key, NULL);
+        }
+        zhash_delete(source, key);
+    }
+}
+
+static
+void merge_histograms(zhash_t *target, zhash_t *source)
+{
+    size_t *source_histogram = NULL;
+
+    while ( (source_histogram = zhash_first(source)) ) {
+        const char* key = zhash_cursor(source);
+        assert(key);
+        size_t *dest = zhash_lookup(target, key);
+        if (dest) {
+            for (int i=0; i < HISTOGRAM_SIZE; i++) {
+                size_t c = source_histogram[i];
+                if (c)
+                    dest[i] += c;
+            }
+        } else {
+            zhash_insert(target, key, source_histogram);
             zhash_freefn(target, key, free);
             zhash_freefn(source, key, NULL);
         }
@@ -132,6 +158,7 @@ void merge_processors(zhash_t *target, zhash_t *source)
             merge_increments(dest_processor->totals, source_processor->totals);
             merge_increments(dest_processor->minutes, source_processor->minutes);
             merge_quants(dest_processor->quants, source_processor->quants);
+            merge_histograms(dest_processor->histograms, source_processor->histograms);
             merge_agents(dest_processor->agents, source_processor->agents);
         } else {
             zhash_insert(target, db_name, source_processor);

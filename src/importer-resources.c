@@ -34,7 +34,7 @@ char *dom_resources[MAX_RESOURCE_COUNT];
 size_t last_dom_resource_index = 0;
 size_t last_dom_resource_offset = 0;
 
-size_t allocated_objects_index, allocated_bytes_index;
+size_t allocated_objects_index, allocated_bytes_index, total_time_index;
 
 
 static
@@ -66,11 +66,13 @@ void add_resources_of_type(zconfig_t* config, const char *type, char **type_map,
     (*type_idx) -= 1;
     *type_offset = last_resource_offset-1;
 
-    // set up other_time_resources
+    // set up other_time_resources and total time index
     if (!strcmp(type, "time")) {
         for (size_t k = 0; k <= *type_idx; k++) {
             char *r = type_map[k];
-            if (strcmp(r, "total_time") && strcmp(r, "gc_time") && strcmp(r, "other_time")) {
+            if (!strcmp(r, "total_time")) {
+                total_time_index = k;
+            } else if (strcmp(r, "gc_time") && strcmp(r, "other_time")) {
                 other_time_resources[last_other_time_resource_index++] = r;
             }
         }

@@ -284,6 +284,19 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
 
+        // send histogram updates
+        stats_msg = zmsg_new();
+        zmsg_addstr(stats_msg, "h");
+        zmsg_addstr(stats_msg, proc->db_name);
+        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addptr(stats_msg, proc->histograms);
+        proc->histograms = NULL;
+        if (!output_socket_ready(state->updates_socket, 0)) {
+            if (!state->updates_blocked++)
+                fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
+        }
+        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
+
         // send agents updates
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "a");
