@@ -42,7 +42,8 @@ extern char *dom_resources[MAX_RESOURCE_COUNT];
 extern size_t last_dom_resource_index;
 extern size_t last_dom_resource_offset;
 
-extern size_t allocated_objects_index, allocated_bytes_index, total_time_index;
+extern size_t allocated_objects_index, allocated_bytes_index;
+extern size_t total_time_index, page_time_index, ajax_time_index;
 
 // setup bidirectional mapping between resource names and small integers
 extern void setup_resource_maps(zconfig_t* config);

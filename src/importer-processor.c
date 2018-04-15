@@ -564,14 +564,14 @@ void dump_histograms(zhash_t* histograms)
 
 
 static
-void processor_add_histogram(processor_state_t *self, const char* namespace, int minute, increments_t *increments)
+void processor_add_histogram(processor_state_t *self, const char* namespace, int minute, const char* resource, int time_index, const increments_t *increments)
 {
     char key[2000];
-    snprintf(key, 2000, "%d-%s-%s", minute, "total_time", namespace);
+    snprintf(key, 2000, "%d-%s-%s", minute, resource, namespace);
     // printf("[D] HISTOGRAM-KEY: %s\n", key);
 
-    double total_time = increments->metrics[total_time_index].val;
-    assert(total_time);
+    double time = increments->metrics[time_index].val;
+    assert(time);
 
     size_t *histogram = zhash_lookup(self->histograms, key);
     if (histogram == NULL) {
@@ -579,7 +579,7 @@ void processor_add_histogram(processor_state_t *self, const char* namespace, int
         zhash_insert(self->histograms, key, histogram);
         zhash_freefn(self->histograms, key, free);
     }
-    size_t i = find_bucket_index(total_time);
+    size_t i = find_bucket_index(time);
     assert(i < HISTOGRAM_SIZE);
     histogram[i]++;
     // dump_histogram(key, histogram);
@@ -722,8 +722,9 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
 
     processor_add_quants(self, request_data.page, increments);
 
-    processor_add_histogram(self, request_data.module, request_data.minute, increments);
-    processor_add_histogram(self, "all_pages", request_data.minute, increments);
+    processor_add_histogram(self, request_data.page, request_data.minute, "total_time", total_time_index, increments);
+    processor_add_histogram(self, request_data.module, request_data.minute, "total_time", total_time_index, increments);
+    processor_add_histogram(self, "all_pages", request_data.minute, "total_time", total_time_index, increments);
 
     increments_destroy(increments);
 
@@ -1212,6 +1213,10 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
 
     processor_add_quants(self, request_data.page, increments);
 
+    processor_add_histogram(self, request_data.page, request_data.minute, "page_time", page_time_index, increments);
+    processor_add_histogram(self, request_data.module, request_data.minute, "page_time", page_time_index, increments);
+    processor_add_histogram(self, "all_pages", request_data.minute, "page_time", page_time_index, increments);
+
     // dump_increments("add_frontend_data", increments);
 
     send_statsd_updates_for_page(self->stream_info->yek, pstate->statsd_client, mtimes, satisfaction);
@@ -1306,6 +1311,10 @@ enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_
     processor_add_minutes(self, "all_pages", request_data.minute, increments);
 
     processor_add_quants(self, request_data.page, increments);
+
+    processor_add_histogram(self, request_data.page, request_data.minute, "ajax_time", ajax_time_index, increments);
+    processor_add_histogram(self, request_data.module, request_data.minute, "ajax_time", ajax_time_index, increments);
+    processor_add_histogram(self, "all_pages", request_data.minute, "ajax_time", ajax_time_index, increments);
 
     send_statsd_updates_for_ajax(self->stream_info->yek, pstate->statsd_client, request_data.total_time, satisfaction);
 

@@ -34,8 +34,8 @@ char *dom_resources[MAX_RESOURCE_COUNT];
 size_t last_dom_resource_index = 0;
 size_t last_dom_resource_offset = 0;
 
-size_t allocated_objects_index, allocated_bytes_index, total_time_index;
-
+size_t allocated_objects_index, allocated_bytes_index;
+size_t total_time_index, page_time_index, ajax_time_index;
 
 static
 void add_resources_of_type(zconfig_t* config, const char *type, char **type_map, size_t *type_idx, size_t *type_offset)
@@ -72,6 +72,10 @@ void add_resources_of_type(zconfig_t* config, const char *type, char **type_map,
             char *r = type_map[k];
             if (!strcmp(r, "total_time")) {
                 total_time_index = k;
+            } else if (!strcmp(r, "page_time")) {
+                page_time_index = k;
+            } else if (!strcmp(r, "ajax_time")) {
+                ajax_time_index = k;
             } else if (strcmp(r, "gc_time") && strcmp(r, "other_time")) {
                 other_time_resources[last_other_time_resource_index++] = r;
             }
