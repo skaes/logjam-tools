@@ -147,7 +147,7 @@ ZMQ pub port for logjam-http-forwarder
 * libbson (included in mongo-c-driver as a submodule)
 * json-c (0.12 patched)
 * libsnappy (1.1.3)
-* go (1.9.2)
+* go (1.9.4)
 
 # Installation
 
