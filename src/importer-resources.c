@@ -66,17 +66,11 @@ void add_resources_of_type(zconfig_t* config, const char *type, char **type_map,
     (*type_idx) -= 1;
     *type_offset = last_resource_offset-1;
 
-    // set up other_time_resources and total time index
+    // set up other_time_resources
     if (!strcmp(type, "time")) {
         for (size_t k = 0; k <= *type_idx; k++) {
             char *r = type_map[k];
-            if (!strcmp(r, "total_time")) {
-                total_time_index = k;
-            } else if (!strcmp(r, "page_time")) {
-                page_time_index = k;
-            } else if (!strcmp(r, "ajax_time")) {
-                ajax_time_index = k;
-            } else if (strcmp(r, "gc_time") && strcmp(r, "other_time")) {
+            if (strcmp(r, "total_time") && strcmp(r, "gc_time") && strcmp(r, "other_time")) {
                 other_time_resources[last_other_time_resource_index++] = r;
             }
         }
@@ -114,6 +108,12 @@ void dump_resource_maps()
     printf("[D] %s = %zu\n", "last_heap_resource_offset", last_heap_resource_offset);
     printf("[D] %s = %zu\n", "last_frontend_resource_offset", last_frontend_resource_offset);
     printf("[D] %s = %zu\n", "last_dom_resource_offset", last_dom_resource_offset);
+
+    printf("[D] %s = %zu\n", "allocated_objects_index", allocated_objects_index);
+    printf("[D] %s = %zu\n", "allocated_bytes_index", allocated_bytes_index);
+    printf("[D] %s = %zu\n", "total_time_index", total_time_index);
+    printf("[D] %s = %zu\n", "page_time_index", page_time_index);
+    printf("[D] %s = %zu\n", "ajax_time_index", ajax_time_index);
 }
 
 void setup_resource_maps(zconfig_t* config)
@@ -132,6 +132,9 @@ void setup_resource_maps(zconfig_t* config)
 
     allocated_objects_index = r2i("allocated_objects");
     allocated_bytes_index = r2i("allocated_bytes");
+    total_time_index = r2i("total_time");
+    page_time_index = r2i("page_time");
+    ajax_time_index = r2i("ajax_time");
 
     if (debug) dump_resource_maps();
 }
