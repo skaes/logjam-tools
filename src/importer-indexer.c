@@ -275,15 +275,8 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minute", 6, 1));
     assert(bson_append_int32(keys, "resource", 8, 1));
-    int drops = 0;
- retry:
     if (!mongoc_collection_create_index(collection, keys, &index_opt_unique, &error)) {
         fprintf(stderr, "[E] indexer[%zu]: index creation failed: (%d) %s\n", id, error.code, error.message);
-        mongoc_collection_drop(collection, &error);
-        drops++;
-        goto retry;
-    } else if (drops) {
-        fprintf(stderr, "[E] indexer[%zu]: index creation succeded after %d collection drops\n", id, drops);
     }
     bson_destroy(keys);
     mongoc_collection_destroy(collection);
