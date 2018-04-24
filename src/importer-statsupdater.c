@@ -286,6 +286,7 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 static
 int histograms_add_histograms(const char* namespace, void* data, void* arg)
 {
+#if 0
     collection_update_callback_t *cb = arg;
     mongoc_collection_t *collection = cb->collection;
     const char *db_name = cb->db_name;
@@ -405,6 +406,7 @@ int histograms_add_histograms(const char* namespace, void* data, void* arg)
     bson_destroy(selector);
     bson_destroy(incs);
     bson_destroy(document);
+#endif
     return 0;
 }
 
