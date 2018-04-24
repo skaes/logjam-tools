@@ -7,18 +7,6 @@
 extern "C" {
 #endif
 
-#define USE_UNACKNOWLEDGED_WRITES 0
-#define USE_BACKGROUND_INDEX_BUILDS 1
-#define TOKU_TX_LOCK_FAILED 16759
-#define TOKU_TX_RETRIES 2
-#define MONGOC_ERROR_DUPLICATE_KEY 11000
-
-#if USE_UNACKNOWLEDGED_WRITES == 1
-#define USE_PINGS true
-#else
-#define USE_PINGS false
-#endif
-
 extern size_t num_databases;
 extern const char *databases[MAX_DATABASES];
 
