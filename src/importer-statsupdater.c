@@ -286,7 +286,6 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 static
 int histograms_add_histograms(const char* namespace, void* data, void* arg)
 {
-#if 0
     collection_update_callback_t *cb = arg;
     mongoc_collection_t *collection = cb->collection;
     const char *db_name = cb->db_name;
@@ -309,86 +308,40 @@ int histograms_add_histograms(const char* namespace, void* data, void* arg)
     *r = 0;
     p++; // skip '-'
 
-    // printf("[D] %s: %zu-%s-%s\n", db_name, minute, resource, p);
+    printf("[D] %s: %zu-%s-%s\n", db_name, minute, resource, p);
 
-    // ensure array is initialized
+    // add the increments
     bson_t *selector = bson_new();
     bson_append_utf8(selector, "page", 4, p, strlen(p));
     bson_append_int32(selector, "minute", 6, minute);
-    bson_append_utf8(selector, "resource", 8, resource, strlen(resource));
-    bson_append_null(selector, "histogram", 9);
 
-    // create empty histogram
-    bson_t *empty = bson_new();
-    bson_t array;
-    char key[100];
-    bson_append_array_begin(empty, "histogram", 9, &array);
-    for (int i=0; i < HISTOGRAM_SIZE; i++) {
-        int keylen = snprintf(key, sizeof(key), "%s.%d", "histogram", i);
-        bson_append_int64(&array, key, keylen, 0);
-    }
-    bson_append_array_end(empty, &array);
-
-    bson_t *document = bson_new();
-    bson_append_document(document, "$set", 4, empty);
-
-    // size_t n;
-    // char* bs = bson_as_json(empty, &n);
-    // printf("[D] empty. size: %zu; value:%s\n", n, bs);
-    // bson_free(bs);
-
-    if (!dryrun) {
-        bson_error_t error;
-        int tries = TOKU_TX_RETRIES;
-    retry_empty:
-        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "[W] retrying 'histogram exists' operation on %s\n", db_name);
-                goto retry_empty;
-            } else if (error.code != MONGOC_ERROR_DUPLICATE_KEY) {
-                // duplicate key errors are normal because several updaters perform this operation in parallel
-                size_t n;
-                char* bjs = bson_as_json(document, &n);
-                fprintf(stderr,
-                        "[E] ensuring 'histogram exists' failed for %s on histograms: (%d) %s\n"
-                        "[E] document size: %zu; value: %s\n",
-                        db_name, error.code, error.message, n, bjs);
-                bson_free(bjs);
-            }
-        }
-    }
-    bson_destroy(selector);
-    bson_destroy(empty);
-    bson_destroy(document);
-
-    // now add the increments
-    selector = bson_new();
-    bson_append_utf8(selector, "page", 4, p, strlen(p));
-    bson_append_int32(selector, "minute", 6, minute);
-    bson_append_utf8(selector, "resource", 8, resource, strlen(resource));
+    // size_t n1;
+    // char* bs1 = bson_as_json(selector, &n1);
+    // printf("[D] selector. size: %zu; value:%s\n", n1, bs1);
+    // bson_free(bs1);
 
     bson_t *incs = bson_new();
     size_t *histogram = data;
     for (int i=0; i < HISTOGRAM_SIZE; i++) {
         if (histogram[i] > 0) {
             char key[256];
-            int keylen = snprintf(key, sizeof(key), "%s.%d", "histogram", i);
+            int keylen = snprintf(key, sizeof(key), "%s.%d", resource, i);
             bson_append_int32(incs, key, keylen, histogram[i]);
         }
     }
-    document = bson_new();
+    bson_t *document = bson_new();
     bson_append_document(document, "$inc", 4, incs);
 
-    // size_t n; char*
-    // bs = bson_as_json(document, &n);
-    // printf("[D] document. size: %zu; value:%s\n", n, bs);
-    // bson_free(bs);
+    // size_t n2;
+    // char* bs2 = bson_as_json(document, &n2);
+    // printf("[D] document. size: %zu; value:%s\n", n2, bs2);
+    // bson_free(bs2);
 
     if (!dryrun) {
         bson_error_t error;
         int tries = TOKU_TX_RETRIES;
     retry:
-        if (!mongoc_collection_update(collection, MONGOC_UPDATE_NONE, selector, document, wc_no_wait, &error)) {
+        if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
             if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
                 fprintf(stderr, "[W] retrying histograms update operation on %s\n", db_name);
                 goto retry;
@@ -406,7 +359,7 @@ int histograms_add_histograms(const char* namespace, void* data, void* arg)
     bson_destroy(selector);
     bson_destroy(incs);
     bson_destroy(document);
-#endif
+
     return 0;
 }
 
@@ -497,7 +450,7 @@ stats_collections_t *stats_collections_new(mongoc_client_t* client, const char* 
     collections->totals = mongoc_client_get_collection(client, db_name, "totals");
     collections->minutes = mongoc_client_get_collection(client, db_name, "minutes");
     collections->quants = mongoc_client_get_collection(client, db_name, "quants");
-    collections->histograms = mongoc_client_get_collection(client, db_name, "histograms");
+    collections->histograms = mongoc_client_get_collection(client, db_name, "heatmaps");
     collections->agents = mongoc_client_get_collection(client, db_name, "agents");
 
     return collections;
