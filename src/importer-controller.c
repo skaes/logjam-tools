@@ -62,6 +62,7 @@ typedef struct {
     zsock_t *adder_socket;
     zsock_t *live_stream_socket;
     size_t ticks;
+    void *statsd_client;
 } controller_state_t;
 
 
@@ -257,6 +258,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
+        __sync_add_and_fetch(&queued_updates, 1);
 
         // send minutes updates
         stats_msg = zmsg_new();
@@ -270,6 +272,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
+        __sync_add_and_fetch(&queued_updates, 1);
 
         // send quants updates
         stats_msg = zmsg_new();
@@ -283,6 +286,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
+        __sync_add_and_fetch(&queued_updates, 1);
 
         // send histogram updates
         stats_msg = zmsg_new();
@@ -296,6 +300,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
+        __sync_add_and_fetch(&queued_updates, 1);
 
         // send agents updates
         stats_msg = zmsg_new();
@@ -309,6 +314,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
         zmsg_send_and_destroy(&stats_msg, state->updates_socket);
+        __sync_add_and_fetch(&queued_updates, 1);
 
         db_name = zlist_next(db_names);
     }
@@ -326,10 +332,16 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     int next_tick = runtime > 999 ? 1 : 1000 - runtime;
     double received_percent = parsed_msgs_count == 0 ? 0 : ((double) front_stats.received / parsed_msgs_count) * 100;
     double dropped_percent  = front_stats.received == 0 ? 0 : ((double) front_stats.dropped / front_stats.received) * 100;
-    printf("[I] controller: %5zu messages (%3d ms); frontend: %3zu [%4.1f%%] (dropped: %2zu [%4.1f%%])\n",
+    int updates = __sync_add_and_fetch(&queued_updates, 0);
+    int inserts = __sync_add_and_fetch(&queued_inserts, 0);
+    printf("[I] controller: %5zu messages (%3d ms); frontend: %3zu [%4.1f%%] (dropped: %2zu [%4.1f%%]); queued updates/inserts: %4d/%4d\n",
            parsed_msgs_count, runtime,
            front_stats.received, received_percent,
-           front_stats.dropped, dropped_percent) ;
+           front_stats.dropped, dropped_percent,
+           updates, inserts) ;
+
+    statsd_client_count(state->statsd_client, "importer.queued_updates.count", updates);
+    statsd_client_count(state->statsd_client, "importer.queued_inserts.count", inserts);
 
     // log a warning about the number of blocked updates
     if (state->updates_blocked) {
@@ -526,6 +538,7 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     zsys_set_linger(0);
 
     controller_state_t state = {.ticks = 0, .config = config, .updates_blocked = 0};
+    state.statsd_client = statsd_client_new(config, "controller[0]");
     bool start_up_complete = controller_create_actors(&state);
 
     if (!start_up_complete)

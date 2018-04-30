@@ -6,6 +6,9 @@ bool debug = false;
 bool quiet = false;
 bool send_statsd_msgs = true;
 
+int queued_updates = 0;
+int queued_inserts = 0;
+
 // utf8 conversion
 static char UTF8_DOT[4] = {0xE2, 0x80, 0xA4, '\0' };
 static char UTF8_CURRENCY[3] = {0xC2, 0xA4, '\0'};

@@ -768,6 +768,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
             fprintf(stderr, "[W] parser [%zu]: push socket not ready\n", pstate->id);
         }
         zmsg_send_with_retry(&msg, pstate->push_socket);
+        __sync_add_and_fetch(&queued_inserts, 1);
     }
 }
 

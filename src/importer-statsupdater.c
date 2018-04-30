@@ -645,6 +645,7 @@ static void stats_updater(zsock_t *pipe, void *args)
                 assert(false);
             }
             zhash_destroy(&updates);
+            __sync_sub_and_fetch(&queued_updates, 1);
 
             int64_t end_time_us = zclock_usecs();
             int runtime = end_time_us - start_time_us;

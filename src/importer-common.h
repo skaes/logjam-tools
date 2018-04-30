@@ -18,6 +18,9 @@ extern unsigned long num_parsers;
 extern unsigned long num_writers;
 extern unsigned long num_updaters;
 
+extern int queued_updates;
+extern int queued_inserts;
+
 #define DEFAULT_RCV_HWM      100000
 #define DEFAULT_RCV_HWM_STR "100000"
 #define DEFAULT_SND_HWM       10000
