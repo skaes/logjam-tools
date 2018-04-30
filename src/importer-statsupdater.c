@@ -308,7 +308,7 @@ int histograms_add_histograms(const char* namespace, void* data, void* arg)
     *r = 0;
     p++; // skip '-'
 
-    printf("[D] %s: %zu-%s-%s\n", db_name, minute, resource, p);
+    // printf("[D] %s: %zu-%s-%s\n", db_name, minute, resource, p);
 
     // add the increments
     bson_t *selector = bson_new();
