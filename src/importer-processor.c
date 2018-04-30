@@ -853,6 +853,7 @@ void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate,
     zmsg_addptr(msg, request);
     zmsg_addptr(msg, self->stream_info);
     zmsg_send_with_retry(&msg, pstate->push_socket);
+    __sync_add_and_fetch(&queued_inserts, 1);
 }
 
 void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request)
@@ -866,6 +867,7 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
     zmsg_addptr(msg, request);
     zmsg_addptr(msg, self->stream_info);
     zmsg_send_with_retry(&msg, pstate->push_socket);
+    __sync_add_and_fetch(&queued_inserts, 1);
 }
 
 static inline
