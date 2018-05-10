@@ -77,7 +77,7 @@ extern int set_thread_name(const char* name);
 
 
 #define USE_UNACKNOWLEDGED_WRITES 0
-#define USE_BACKGROUND_INDEX_BUILDS 0
+#define USE_BACKGROUND_INDEX_BUILDS 1
 #define TOKU_TX_LOCK_FAILED 16759
 #define TOKU_TX_RETRIES 2
 
@@ -93,7 +93,7 @@ extern int set_thread_name(const char* name);
 #define CONFIG_FILE_CHECK_INTERVAL 10
 #define DATABASE_INFO_REFRESH_INTERVAL 60
 
-// size of histograms stored in mongo
+// maximum size of histograms stored in mongo
 #define HISTOGRAM_SIZE 22
 
 #ifdef __cplusplus
