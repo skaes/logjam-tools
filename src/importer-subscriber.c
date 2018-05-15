@@ -2,6 +2,7 @@
 #include "importer-streaminfo.h"
 #include "logjam-util.h"
 #include "device-tracker.h"
+#include "statsd-client.h"
 
 /*
  * connections: n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
@@ -36,6 +37,7 @@ typedef struct {
     size_t message_gap_size;                  // messages missed due to gaps in the stream (since last tick)
     size_t message_drops;                     // messages dropped because push_socket wasn't ready (since last tick)
     size_t message_blocks;                    // how often the subscriber blocked on the push_socket (since last tick)
+    statsd_client_t *statsd_client;
 } subscriber_state_t;
 
 
@@ -337,6 +339,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
                    "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
                    state->message_count, state->message_gap_size, state->meta_info_failures,
                    state->messages_dev_zero, state->message_blocks, state->message_drops);
+            statsd_client_count(state->statsd_client, "subscriber.messsages.count", state->message_count);
+            statsd_client_count(state->statsd_client, "subscriber.messsages.gap_size", state->message_gap_size);
             state->message_count = 0;
             state->message_gap_size = 0;
             state->meta_info_failures = 0;
@@ -379,6 +383,7 @@ subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config, zlist
     state->push_socket = subscriber_push_socket_new(config);
     if (PUBLISH_DUPLICATES)
         state->pub_socket = subscriber_pub_socket_new(config);
+    state->statsd_client = statsd_client_new(config, "subscriber[0]");
     return state;
 }
 
@@ -393,6 +398,7 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
     if (PUBLISH_DUPLICATES)
         zsock_destroy(&state->pub_socket);
     device_tracker_destroy(&state->tracker);
+    statsd_client_destroy(&state->statsd_client);
     *state_p = NULL;
 }
 
