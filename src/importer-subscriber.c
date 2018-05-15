@@ -339,8 +339,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
                    "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
                    state->message_count, state->message_gap_size, state->meta_info_failures,
                    state->messages_dev_zero, state->message_blocks, state->message_drops);
-            statsd_client_count(state->statsd_client, "subscriber.messsages.count", state->message_count);
-            statsd_client_count(state->statsd_client, "subscriber.messsages.gap_size", state->message_gap_size);
+            statsd_client_count(state->statsd_client, "subscriber.messsages.received.count", state->message_count);
+            statsd_client_count(state->statsd_client, "subscriber.messsages.missed.count", state->message_gap_size);
             state->message_count = 0;
             state->message_gap_size = 0;
             state->meta_info_failures = 0;
