@@ -94,9 +94,8 @@ size_t device_tracker_calculate_gap(device_tracker_t* tracker, msg_meta_t* meta,
         int64_t gap = sequence_number - info->sequence_number - 1;
         if (gap) {
             if (gap < 0) {
-                if (!quiet)
-                    fprintf(stderr, "[W] sequence number for device %" PRIu64 " wrapped to %" PRIu64 " from %" PRIu64 ")\n",
-                            device_number, sequence_number, info->sequence_number);
+                fprintf(stderr, "[W] sequence number for device %" PRIu64 " wrapped to %" PRIu64 " from %" PRIu64 ")\n",
+                        device_number, sequence_number, info->sequence_number);
                 gap = 0;
             } else if (gap > 0) {
                 info->lost += gap;
