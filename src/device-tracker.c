@@ -68,7 +68,7 @@ void device_tracker_destroy(device_tracker_t** tracker)
     *tracker = NULL;
 }
 
-int64_t device_tracker_calculate_gap(device_tracker_t* tracker, msg_meta_t* meta, const char* pub_spec)
+size_t device_tracker_calculate_gap(device_tracker_t* tracker, msg_meta_t* meta, const char* pub_spec)
 {
     uint64_t device_number = meta->device_number;
     if (device_number == 0)
@@ -92,11 +92,18 @@ int64_t device_tracker_calculate_gap(device_tracker_t* tracker, msg_meta_t* meta
         return 0;
     } else {
         int64_t gap = sequence_number - info->sequence_number - 1;
-        if (gap > 0) {
-            info->lost += gap;
-            if (!quiet && log_gaps)
-                fprintf(stderr, "[W] lost %" PRIu64 " messages from device %" PRIu64 " (%" PRIu64 "-%" PRIu64 ")\n",
-                        gap, device_number, info->sequence_number + 1, sequence_number - 1);
+        if (gap) {
+            if (gap < 0) {
+                if (!quiet)
+                    fprintf(stderr, "[W] sequence number for device %" PRIu64 " wrapped to %" PRIu64 " from %" PRIu64 ")\n",
+                            device_number, sequence_number, info->sequence_number);
+                gap = 0;
+            } else if (gap > 0) {
+                info->lost += gap;
+                if (!quiet && log_gaps)
+                    fprintf(stderr, "[W] lost %" PRIu64 " messages from device %" PRIu64 " (%" PRIu64 "-%" PRIu64 "-1)\n",
+                            gap, device_number, sequence_number, info->sequence_number);
+            }
         }
         info->sequence_number = sequence_number;
         info->credit = INITIAL_HEARTBEAT_CREDIT;

@@ -636,6 +636,24 @@ void send_heartbeat(zsock_t *socket, msg_meta_t *meta, int pub_port)
     zmsg_send_and_destroy(&msg, socket);
 }
 
+
+static void test_uint64wrap (int verbose)
+{
+    uint64_t i = 0xffffffffffffffff;
+    assert(i+1 == 0);
+}
+
+static void test_gap_calc (int verbose)
+{
+    uint64_t i = 0xffffffffffffffff;
+    uint64_t j = 0xfffffffffffffffe;
+    int64_t k = i - j -1 ;
+    printf ("%" PRId64 "\n", k);
+    assert (k == 0);
+    k = i - i - 1;
+    assert (k == -1);
+}
+
 static void test_htonll (int verbose)
 {
     assert(ntohll(htonll(0))                    == 0);
@@ -670,7 +688,9 @@ void logjam_util_test (int verbose)
     if (verbose)
         printf("\n");
 
-    test_htonll(verbose);
+    test_htonll (verbose);
+    test_uint64wrap (verbose);
+    test_gap_calc (verbose);
     test_my_fqdn (verbose);
 
     printf ("OK\n");
