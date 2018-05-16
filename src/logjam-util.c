@@ -636,6 +636,21 @@ void send_heartbeat(zsock_t *socket, msg_meta_t *meta, int pub_port)
     zmsg_send_and_destroy(&msg, socket);
 }
 
+static void test_htonll (int verbose)
+{
+    assert(ntohll(htonll(0))                    == 0);
+    assert(ntohll(htonll(0x1))                  == 0x1);
+    assert(ntohll(htonll(0x1ff))                == 0x1ff);
+    assert(ntohll(htonll(0x1ffff))              == 0x1ffff);
+    assert(ntohll(htonll(0x1ffffff))            == 0x1ffffff);
+    assert(ntohll(htonll(0x1fffffff))           == 0x1fffffff);
+    assert(ntohll(htonll(0x1fffffffff))         == 0x1fffffffff);
+    assert(ntohll(htonll(0x1fffffffffff))       == 0x1fffffffffff);
+    assert(ntohll(htonll(0x1fffffffffffff))     == 0x1fffffffffffff);
+    assert(ntohll(htonll(0x1fffffffffffffff))   == 0x1fffffffffffffff);
+    assert(ntohll(htonll(0xffffffffffffffff))   == 0xffffffffffffffff);
+}
+
 static void test_my_fqdn (int verbose)
 {
     for (int i=0; i++ < 30;) {
@@ -655,6 +670,7 @@ void logjam_util_test (int verbose)
     if (verbose)
         printf("\n");
 
+    test_htonll(verbose);
     test_my_fqdn (verbose);
 
     printf ("OK\n");
