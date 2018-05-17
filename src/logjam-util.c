@@ -643,12 +643,20 @@ static void test_uint64wrap (int verbose)
     assert(i+1 == 0);
 }
 
+static void test_negative_numbers_conversion_to_sizet (int verbose)
+{
+    size_t i = (int)-1;
+    // printf("%zu\n", i);
+    assert(i > 0);
+}
+
+
 static void test_gap_calc (int verbose)
 {
     uint64_t i = 0xffffffffffffffff;
     uint64_t j = 0xfffffffffffffffe;
     int64_t k = i - j -1 ;
-    printf ("%" PRId64 "\n", k);
+    // printf ("%" PRId64 "\n", k);
     assert (k == 0);
     k = i - i - 1;
     assert (k == -1);
@@ -691,6 +699,7 @@ void logjam_util_test (int verbose)
     test_htonll (verbose);
     test_uint64wrap (verbose);
     test_gap_calc (verbose);
+    test_negative_numbers_conversion_to_sizet (verbose);
     test_my_fqdn (verbose);
 
     printf ("OK\n");
