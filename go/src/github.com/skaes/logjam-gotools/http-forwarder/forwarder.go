@@ -1,18 +1,17 @@
 package main
 
 import (
-	"errors"
-	"fmt"
-	"io"
-	"net/http"
-	"os"
-	"os/signal"
-	// "runtime"
-	// "runtime/pprof"
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	_ "net/http/pprof"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
 	"sync"
@@ -39,6 +38,7 @@ var opts struct {
 	IoThreads   int    `short:"i" long:"io-threads" default:"1" description:"number of zeromq io threads"`
 	Compression string `short:"x" long:"compress" description:"compression method to use"`
 	Frontend    bool   `short:"f" long:"frontend" description:"whether to process frontend metrics or forward requests"`
+	DebugPort   int    `short:"D" long:"debug-port" default:"6060" description:"port number of http debug port (pprof)"`
 }
 
 var (
@@ -573,6 +573,10 @@ func webServer() {
 	}
 }
 
+func runProfiler(debugSpec string) {
+	fmt.Println(http.ListenAndServe(debugSpec, nil))
+}
+
 func main() {
 	logInfo("%s starting", os.Args[0])
 	outputSpec = fmt.Sprintf("tcp://%s:%d", opts.BindIP, opts.OutputPort)
@@ -580,6 +584,8 @@ func main() {
 	quiet = opts.Quiet
 	logInfo("device-id: %d", opts.DeviceId)
 	logInfo("output-spec: %s", outputSpec)
+	debugSpec := fmt.Sprintf("localhost:%d", opts.DebugPort)
+	logInfo("debug-spec: %s", debugSpec)
 
 	// f, err := os.Create("profile.prof")
 	// if err != nil {
@@ -591,6 +597,7 @@ func main() {
 	installSignalHandler()
 	go statsReporter()
 	go publisher(&wg)
+	go runProfiler(debugSpec)
 	// Run web server in the foreground. It has its own signal handler.
 	webServer()
 	// Wait for publisher and stats reporter to finsh.
