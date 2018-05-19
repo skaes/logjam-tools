@@ -226,49 +226,49 @@ void processor_add_quants(504,17579
 void dump_histogram(543,19159
 void dump_histograms(555,19474
 void processor_add_histogram(567,19712
-bool interesting_request(591,20530
-int ignore_request(631,22132
-bool throttle_request(655,22990
-backend_only_request(667,23290
-void processor_add_request(685,23712
-char* extract_page_for_jse(770,27667
-char* exctract_key_from_jse_description(792,28393
-void processor_add_js_exception(805,28793
-void processor_add_event(852,30343
-bool sorted_ascending(866,30776
-bool all_zero(876,30942
-void auto_correct_prefix(891,31258
-void make_relative(903,31443
-int extract_frontend_timings(912,31591
-#define NUM_TIMINGS 964,33277
-#define navigationStart 965,33300
-#define fetchStart 970,33440
-#define domainLookupStart 971,33461
-#define domainLookupEnd 972,33489
-#define connectStart 973,33515
-#define connectEnd 974,33538
-#define requestStart 976,33595
-#define responseStart 977,33618
-#define responseEnd 978,33642
-#define domLoading 979,33664
-#define domInteractive 980,33685
-#define domContentLoadedEventStart 981,33711
-#define domContentLoadedEventEnd 982,33749
-#define domComplete 983,33785
-#define loadEventStart 984,33808
-#define loadEventEnd 985,33834
-static int fe_apdex_attr_index 987,33859
-int processor_set_frontend_apdex_attribute(988,33906
-enum fe_msg_drop_reason convert_frontend_timings_to_json(1002,34211
-int check_frontend_request_validity(1068,37289
-void send_statsd_updates_for_page(1095,38358
-static const char* str_fe_reason(1131,39638
-void print_fe_drop_reason(1145,40119
-enum fe_msg_drop_reason processor_add_frontend_data(1151,40315
-void send_statsd_updates_for_ajax(1233,43690
-enum fe_msg_drop_reason processor_add_ajax_data(1248,44182
+bool interesting_request(596,20763
+int ignore_request(636,22365
+bool throttle_request(660,23223
+backend_only_request(672,23523
+void processor_add_request(690,23945
+char* extract_page_for_jse(776,27977
+char* exctract_key_from_jse_description(798,28703
+void processor_add_js_exception(811,29103
+void processor_add_event(859,30699
+bool sorted_ascending(874,31178
+bool all_zero(884,31344
+void auto_correct_prefix(899,31660
+void make_relative(911,31845
+int extract_frontend_timings(920,31993
+#define NUM_TIMINGS 972,33679
+#define navigationStart 973,33702
+#define fetchStart 978,33842
+#define domainLookupStart 979,33863
+#define domainLookupEnd 980,33891
+#define connectStart 981,33917
+#define connectEnd 982,33940
+#define requestStart 984,33997
+#define responseStart 985,34020
+#define responseEnd 986,34044
+#define domLoading 987,34066
+#define domInteractive 988,34087
+#define domContentLoadedEventStart 989,34113
+#define domContentLoadedEventEnd 990,34151
+#define domComplete 991,34187
+#define loadEventStart 992,34210
+#define loadEventEnd 993,34236
+static int fe_apdex_attr_index 995,34261
+int processor_set_frontend_apdex_attribute(996,34308
+enum fe_msg_drop_reason convert_frontend_timings_to_json(1010,34613
+int check_frontend_request_validity(1076,37691
+void send_statsd_updates_for_page(1103,38760
+static const char* str_fe_reason(1139,40040
+void print_fe_drop_reason(1153,40521
+enum fe_msg_drop_reason processor_add_frontend_data(1159,40717
+void send_statsd_updates_for_ajax(1241,44119
+enum fe_msg_drop_reason processor_add_ajax_data(1256,44611
 
-src/importer-controller.c,1318
+src/importer-controller.c,1365
 unsigned long num_parsers 43,1610
 unsigned long num_writers 44,1641
 unsigned long num_updaters 45,1673
@@ -289,28 +289,22 @@ unsigned long num_adders 46,1706
     zsock_t *adder_socket;adder_socket62,2140
     zsock_t *live_stream_socket;live_stream_socket63,2167
     size_t ticks;64,2200
-} controller_state_t;65,2218
-void extract_parser_state(69,2249
-void publish_totals(84,2857
-void publish_totals_for_every_known_stream(124,4749
-int collect_stats_and_forward(151,5790
-bool controller_create_actors(360,13924
-void controller_destroy_actors(415,15770
-#define MAX_ALLOWED_SHUTDOWN_TIME_SECONDS 469,17577
-static void alarm_handler(471,17623
-static int start_shutdown_timer(477,17787
-static int stop_shutdown_timer(497,18309
-int run_controller_loop(508,18546
+    void *statsd_client;statsd_client65,2218
+} controller_state_t;66,2243
+void extract_parser_state(70,2274
+void publish_totals(85,2882
+void publish_totals_for_every_known_stream(125,4774
+int collect_stats_and_forward(152,5815
+bool controller_create_actors(372,14560
+void controller_destroy_actors(427,16406
+#define MAX_ALLOWED_SHUTDOWN_TIME_SECONDS 481,18213
+static void alarm_handler(483,18259
+static int start_shutdown_timer(489,18423
+static int stop_shutdown_timer(509,18945
+int run_controller_loop(520,19182
 
-src/importer-mongoutils.h,305
+src/importer-mongoutils.h,56
 #define __LOGJAM_IMPORTER_MONGO_UTILS_H_INCLUDED__2,51
-#define USE_UNACKNOWLEDGED_WRITES 10,173
-#define USE_BACKGROUND_INDEX_BUILDS 11,209
-#define TOKU_TX_LOCK_FAILED 12,247
-#define TOKU_TX_RETRIES 13,281
-#define MONGOC_ERROR_DUPLICATE_KEY 14,307
-#define USE_PINGS 17,384
-#define USE_PINGS 19,413
 
 src/importer-processor.h,410
 #define __LOGJAM_IMPORTER_PROCESSOR_H_INCLUDED__2,49
@@ -325,7 +319,7 @@ src/importer-processor.h,410
     zhash_t *agents;agents20,407
 } processor_state_t;21,428
 
-src/device-tracker.c,709
+src/device-tracker.c,708
 bool log_gaps 5,49
     uint32_t device_number;8,89
     uint64_t sequence_number;9,117
@@ -343,8 +337,8 @@ static int uint64_comparator(27,437
 static void device_info_destroy(32,542
 device_tracker_t* device_tracker_new(40,692
 void device_tracker_destroy(64,1619
-int64_t device_tracker_calculate_gap(71,1795
-void device_tracker_reconnect_stale_devices(114,3447
+size_t device_tracker_calculate_gap(71,1795
+void device_tracker_reconnect_stale_devices(120,3753
 
 src/graylog-forwarder-subscriber.c,1242
     zconfig_t *config;config7,131
@@ -799,7 +793,7 @@ void handle_request_msg(455,16868
 request_writer_state_t* request_writer_state_new(507,18733
 void request_writer_state_destroy(527,19501
 static void request_writer(544,20099
-zactor_t* request_writer_new(632,23760
+zactor_t* request_writer_new(633,23818
 
 src/importer-adder.h,50
 #define __LOGJAM_IMPORTER_ADDER_H_INCLUDED__2,45
@@ -837,19 +831,19 @@ src/importer-indexer.c,1070
 #define INDEXER_DELAY 42,1519
 zsock_t *indexer_pull_socket_new(indexer_pull_socket_new45,1551
 void add_request_field_index(55,1754
-void add_request_collection_indexes(100,3881
-void add_jse_collection_indexes(132,5373
-int64_t extract_storage_size(155,6314
-void indexer_check_disk_usage(175,6881
-void indexer_refresh_storage_sizes(207,8007
-void indexer_create_indexes(226,8719
-void indexer_create_all_indexes(310,12310
-void* create_indexes_for_date(333,13186
-void spawn_bg_indexer_for_date(363,13986
-void handle_indexer_request(377,14425
-indexer_state_t* indexer_state_new(402,15284
-void indexer_state_destroy(417,15730
-void indexer(429,16048
+void add_request_collection_indexes(100,3917
+void add_jse_collection_indexes(132,5445
+int64_t extract_storage_size(155,6473
+void indexer_check_disk_usage(175,7040
+void indexer_refresh_storage_sizes(207,8166
+void indexer_create_indexes(226,8878
+void indexer_create_all_indexes(302,12247
+void* create_indexes_for_date(325,13123
+void spawn_bg_indexer_for_date(355,13923
+void handle_indexer_request(369,14362
+indexer_state_t* indexer_state_new(394,15221
+void indexer_state_destroy(409,15667
+void indexer(421,15985
 
 src/logjam-logger.c,823
 static bool verbose 4,46
@@ -1032,68 +1026,71 @@ int timer_event(17,289
 int forward(32,684
 int main(43,882
 
-src/importer-common.c,1007
+src/importer-common.c,1060
 bool dryrun 3,30
 bool verbose 4,51
 bool debug 5,73
 bool quiet 6,93
 bool send_statsd_msgs 7,113
-static char UTF8_DOT[UTF8_DOT10,163
-static char UTF8_CURRENCY[UTF8_CURRENCY11,216
-static char *URI_ESCAPED_DOT URI_ESCAPED_DOT12,267
-static char *URI_ESCAPED_DOLLAR URI_ESCAPED_DOLLAR13,305
-int replace_dots_and_dollars(15,347
-int copy_replace_dots_and_dollars(30,607
-int uri_replace_dots_and_dollars(58,1280
-static char *win1252_to_utf8[win1252_to_utf887,1998
-int convert_to_win1252(218,9863
-zconfig_t* config 248,10604
-char iso_date_today[iso_date_today249,10630
-char iso_date_tomorrow[iso_date_tomorrow250,10677
-time_t time_last_tick 251,10727
-static zfile_t *config_file config_file253,10755
-static const char *config_file_name config_file_name254,10791
-static time_t config_file_last_modified 255,10835
-static char *config_file_digest config_file_digest256,10880
-void config_file_init(258,10919
-bool config_file_has_changed(266,11170
-bool config_update_date_info(278,11575
+int queued_updates 9,144
+int queued_inserts 10,168
+static char UTF8_DOT[UTF8_DOT13,212
+static char UTF8_CURRENCY[UTF8_CURRENCY14,265
+static char *URI_ESCAPED_DOT URI_ESCAPED_DOT15,316
+static char *URI_ESCAPED_DOLLAR URI_ESCAPED_DOLLAR16,354
+int replace_dots_and_dollars(18,396
+int copy_replace_dots_and_dollars(33,656
+int uri_replace_dots_and_dollars(61,1329
+static char *win1252_to_utf8[win1252_to_utf890,2047
+int convert_to_win1252(221,9912
+zconfig_t* config 251,10653
+char iso_date_today[iso_date_today252,10679
+char iso_date_tomorrow[iso_date_tomorrow253,10726
+time_t time_last_tick 254,10776
+static zfile_t *config_file config_file256,10804
+static const char *config_file_name config_file_name257,10840
+static time_t config_file_last_modified 258,10884
+static char *config_file_digest config_file_digest259,10929
+void config_file_init(261,10968
+bool config_file_has_changed(269,11219
+bool config_update_date_info(281,11624
 
-src/importer-subscriber.c,1373
-#define MAX_DEVICES 21,793
-    zsock_t *pipe;pipe25,851
-    zlist_t *devices;devices26,915
-    device_tracker_t *tracker;tracker27,1013
-    zsock_t *sub_socket;sub_socket28,1119
-    zsock_t *push_socket;push_socket29,1202
-    zsock_t *pull_socket;pull_socket30,1277
-    zsock_t *router_socket;router_socket31,1361
-    zsock_t *pub_socket;pub_socket32,1454
-    size_t message_count;33,1546
-    size_t messages_dev_zero;34,1632
-    size_t meta_info_failures;35,1730
-    size_t message_gap_size;36,1829
-    size_t message_drops;37,1938
-    size_t message_blocks;38,2055
-} subscriber_state_t;39,2174
-zlist_t* extract_devices_from_config(43,2205
-zsock_t* subscriber_sub_socket_new(63,2799
-zsock_t* subscriber_pull_socket_new(87,3505
-zsock_t* subscriber_router_socket_new(113,4383
-zsock_t* subscriber_push_socket_new(133,5045
-zsock_t* subscriber_pub_socket_new(144,5307
-#undef PUBLISH_DUPLICATES158,5776
-#define PUBLISH_DUPLICATES 159,5802
-#define PUBLISH_DUPLICATES 161,5837
-void subscriber_publish_duplicate(165,5881
-int process_meta_information_and_handle_heartbeat(182,6382
-int read_request_and_forward(213,7445
-int read_router_request_forward(249,8713
-int actor_command(323,11104
-subscriber_state_t* subscriber_state_new(359,12431
-void subscriber_state_destroy(386,13446
-void setup_subscriptions(400,13858
-void subscriber(407,14087
+src/importer-subscriber.c,1431
+#define MAX_DEVICES 22,820
+    zsock_t *pipe;pipe26,878
+    zlist_t *devices;devices27,942
+    device_tracker_t *tracker;tracker28,1040
+    zsock_t *sub_socket;sub_socket29,1146
+    zsock_t *push_socket;push_socket30,1229
+    zsock_t *pull_socket;pull_socket31,1304
+    zsock_t *router_socket;router_socket32,1388
+    zsock_t *pub_socket;pub_socket33,1481
+    size_t message_count;34,1573
+    size_t messages_dev_zero;35,1659
+    size_t meta_info_failures;36,1757
+    size_t message_gap_size;37,1856
+    size_t message_drops;38,1965
+    size_t message_blocks;39,2082
+    statsd_client_t *statsd_client;statsd_client40,2201
+} subscriber_state_t;41,2237
+zlist_t* extract_devices_from_config(45,2268
+zsock_t* subscriber_sub_socket_new(65,2862
+zsock_t* subscriber_pull_socket_new(89,3568
+zsock_t* subscriber_router_socket_new(115,4446
+zsock_t* subscriber_push_socket_new(135,5108
+zsock_t* subscriber_pub_socket_new(146,5370
+#undef PUBLISH_DUPLICATES160,5839
+#define PUBLISH_DUPLICATES 161,5865
+#define PUBLISH_DUPLICATES 163,5900
+void subscriber_publish_duplicate(167,5944
+int process_meta_information_and_handle_heartbeat(184,6445
+int read_request_and_forward(215,7508
+int read_router_request_forward(251,8776
+int actor_command(325,11167
+subscriber_state_t* subscriber_state_new(363,12727
+void subscriber_state_destroy(391,13813
+void setup_subscriptions(406,14275
+void subscriber(413,14504
 
 src/importer-statsupdater.c,1549
     size_t id;25,802
@@ -1122,15 +1119,15 @@ int minutes_add_increments(122,4190
 int totals_add_increments(172,5853
 int quants_add_quants(215,7340
 int histograms_add_histograms(287,9588
-int agents_add_agent(412,13987
-stats_collections_t *stats_collections_new(stats_collections_new489,16963
-void destroy_stats_collections(505,17629
-stats_collections_t *stats_updater_get_collections(stats_updater_get_collections521,18204
-stats_updater_state_t* stats_updater_state_new(536,18893
-void stats_updater_state_destroy(558,19617
-void update_collection(572,20020
-static void stats_updater(583,20309
-zactor_t* stats_updater_new(719,25749
+int agents_add_agent(367,12087
+stats_collections_t *stats_collections_new(stats_collections_new444,15063
+void destroy_stats_collections(460,15727
+stats_collections_t *stats_updater_get_collections(stats_updater_get_collections476,16302
+stats_updater_state_t* stats_updater_state_new(491,16991
+void stats_updater_state_destroy(513,17715
+void update_collection(527,18118
+static void stats_updater(538,18407
+zactor_t* stats_updater_new(675,23901
 
 src/gelf-message.c,267
 gelf_message* gelf_message_new(3,27
@@ -1179,39 +1176,39 @@ src/importer-common.h,1208
 #define MAX_ADDERS 13,220
 #define MAX_WRITERS 14,242
 #define MAX_UPDATERS 15,265
-#define DEFAULT_RCV_HWM 21,394
-#define DEFAULT_RCV_HWM_STR 22,430
-#define DEFAULT_SND_HWM 23,467
-#define DEFAULT_SND_HWM_STR 24,503
-#define DEFAULT_ROUTER_PORT 26,541
-#define DEFAULT_PULL_PORT 27,574
-#define DEFAULT_SUB_PORT 28,605
-#define DEFAULT_LIVE_STREAM_PORT 29,635
-#define DEFAULT_REP_CONNECTION_SPEC 31,674
-#define DEFAULT_PULL_CONNECTION_SPEC 32,733
-#define DEFAULT_SUB_CONNECTION_SPEC 33,793
-#define DEFAULT_LIVE_STREAM_CONNECTION 34,852
-#define INVALID_DATE 45,1111
-#define INVALID_MSG_AGE_THRESHOLD 49,1263
-#define MAX_DATABASES 51,1304
-#define DEFAULT_MONGO_URI 52,1330
-#define ISO_DATE_STR_LEN 60,1496
-#define USE_UNACKNOWLEDGED_WRITES 76,2087
-#define USE_BACKGROUND_INDEX_BUILDS 77,2123
-#define TOKU_TX_LOCK_FAILED 78,2161
-#define TOKU_TX_RETRIES 79,2195
-#define USE_PINGS 82,2257
-#define USE_PINGS 84,2286
-#define PING_INTERVAL 88,2347
-#define COLLECTION_REFRESH_INTERVAL 89,2371
-#define CONFIG_FILE_CHECK_INTERVAL 90,2412
-#define DATABASE_INFO_REFRESH_INTERVAL 91,2450
-#define HISTOGRAM_SIZE 94,2531
+#define DEFAULT_RCV_HWM 24,449
+#define DEFAULT_RCV_HWM_STR 25,485
+#define DEFAULT_SND_HWM 26,522
+#define DEFAULT_SND_HWM_STR 27,558
+#define DEFAULT_ROUTER_PORT 29,596
+#define DEFAULT_PULL_PORT 30,629
+#define DEFAULT_SUB_PORT 31,660
+#define DEFAULT_LIVE_STREAM_PORT 32,690
+#define DEFAULT_REP_CONNECTION_SPEC 34,729
+#define DEFAULT_PULL_CONNECTION_SPEC 35,788
+#define DEFAULT_SUB_CONNECTION_SPEC 36,848
+#define DEFAULT_LIVE_STREAM_CONNECTION 37,907
+#define INVALID_DATE 48,1166
+#define INVALID_MSG_AGE_THRESHOLD 52,1317
+#define MAX_DATABASES 54,1359
+#define DEFAULT_MONGO_URI 55,1385
+#define ISO_DATE_STR_LEN 63,1551
+#define USE_UNACKNOWLEDGED_WRITES 79,2142
+#define USE_BACKGROUND_INDEX_BUILDS 80,2178
+#define TOKU_TX_LOCK_FAILED 81,2216
+#define TOKU_TX_RETRIES 82,2250
+#define USE_PINGS 85,2312
+#define USE_PINGS 87,2341
+#define PING_INTERVAL 91,2402
+#define COLLECTION_REFRESH_INTERVAL 92,2426
+#define CONFIG_FILE_CHECK_INTERVAL 93,2467
+#define DATABASE_INFO_REFRESH_INTERVAL 94,2505
+#define HISTOGRAM_SIZE 97,2594
 
 src/importer-subscriber.h,55
 #define __LOGJAM_IMPORTER_SUBSCRIBER_H_INCLUDED__2,50
 
-src/logjam-util.c,1333
+src/logjam-util.c,1444
 zlist_t *split_delimited_string(split_delimited_string8,121
 char* augment_zmq_connection_spec(28,547
 void augment_zmq_connection_specs(53,1227
@@ -1246,8 +1243,11 @@ zmsg_loadx 518,16274
 void setup_subscriptions_for_sub_socket(561,17618
 const char* my_fqdn(588,18635
 void send_heartbeat(629,19662
-static void test_my_fqdn 639,19983
-void logjam_util_test 652,20297
+static void test_uint64wrap 640,19984
+static void test_gap_calc 646,20090
+static void test_htonll 657,20331
+static void test_my_fqdn 672,21081
+void logjam_util_test 685,21395
 
 src/importer-statsupdater.h,58
 #define __LOGJAM_IMPORTER_STATS_UPDATER_H_INCLUDED__2,53
@@ -1370,8 +1370,8 @@ size_t total_time_index,38,1126
 size_t total_time_index, page_time_index,38,1126
 size_t total_time_index, page_time_index, ajax_time_index;38,1126
 void add_resources_of_type(41,1193
-void dump_resource_maps(98,3399
-void setup_resource_maps(119,4607
+void dump_resource_maps(92,3142
+void setup_resource_maps(119,4711
 
 src/importer-tracker.h,106
 #define __LOGJAM_IMPORTER_TRACKER_H_INCLUDED__2,47
