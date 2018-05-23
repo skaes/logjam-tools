@@ -233,7 +233,7 @@ var (
 	interrupted    = false
 )
 
-func init() {
+func initialize() {
 	args, err := flags.ParseArgs(&opts, os.Args)
 	if err != nil {
 		e := err.(*flags.Error)
@@ -579,6 +579,7 @@ func clientHandler() {
 //*******************************************************************************
 
 func main() {
+	initialize()
 	logInfo("%s starting", os.Args[0])
 	bind_spec = fmt.Sprintf("tcp://%s:9611", opts.BindIP)
 	importer_spec = fmt.Sprintf("tcp://%s:9607", opts.ImporterHost)
