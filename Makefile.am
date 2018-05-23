@@ -217,6 +217,10 @@ GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
 GO_TESTS = http-client-test
 
+# Extend generated Makefile with rules for compiling the go part. See
+# https://www.gnu.org/software/automake/manual/html_node/Extending.html for why
+# it's all-local, check-local, clean-local, etc.
+
 all-local: $(GO_TARGETS)
 
 clean-local:
@@ -229,7 +233,6 @@ uninstall-local:
 	cd $(bindir) && rm -f $(GO_INSTALL_TARGETS)
 
 logjam-livestream: $(GO_SRC)/livestream-server/server.go .godeps
-	$(GO_ENV) go test $(GO_PKG)/livestream-server
 	$(GO_ENV) go build -o $@ $<
 
 livestream-generator: $(GO_SRC)/livestream-generator/generator.go .godeps
@@ -239,5 +242,11 @@ logjam-http-forwarder: $(GO_SRC)/http-forwarder/forwarder.go .godeps
 	$(GO_ENV) go build -o $@ $<
 
 .PHONY: http-client-test
+
 http-client-test:
 	$(GO_ENV) go test $(GO_PKG)/http-client
+
+check-local: livestream-test
+
+livestream-test: logjam-livestream
+	$(GO_ENV) go test $(GO_PKG)/livestream-server
