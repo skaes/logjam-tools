@@ -5,24 +5,26 @@
 #include "statsd-client.h"
 
 /*
- * connections: n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
+ * connections: n_s = num_subscribers, n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
  *
- *                               controller     v REQ|DEALER sync/async protocol version 1
- *                                   |         /
- *                                  PIPE      /
- *                 PUB      SUB      |       o ROUTER
- *  logjam device  o----------<  subscriber  o----------<   direct connections
- *                              PUSH o        \PULL  PUSH
- *                                  /          \
- *                                 /            ^ PUSH
- *                           PULL ^             tracker
- *                         parser(n_p)
+ *                                 controller          v REQ|DEALER sync/async protocol version 1
+ *                                     |              /
+ *                                    PIPE           /
+ *                 PUB      SUB        |            o ROUTER
+ *  logjam device  o----------<  subscriber(n_s)  o----------<  direct connections (only for subscriber_0)
+ *                                PUSH o            o PULL  PUSH
+ *                                    /              \
+ *                                   /                ^ PUSH
+ *                             PULL ^                 tracker
+ *                           parser(n_p)
 */
 
 #define MAX_DEVICES 4096
 
 // actor state
 typedef struct {
+    size_t id;                                // subscriber id (value < num_subcribers)
+    char me[16];                              // thread name
     zsock_t *pipe;                            // actor commands
     zlist_t *devices;                         // list of devices to connect to (overrides config)
     device_tracker_t *tracker;                // tracks sequence numbers, gaps and heartbeats for devices
@@ -62,7 +64,7 @@ zlist_t* extract_devices_from_config(zconfig_t* config)
 }
 
 static
-zsock_t* subscriber_sub_socket_new(zconfig_t* config, zlist_t* devices)
+zsock_t* subscriber_sub_socket_new(zconfig_t* config, zlist_t* devices, size_t id)
 {
     zsock_t *socket = zsock_new(ZMQ_SUB);
     assert(socket);
@@ -73,12 +75,16 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config, zlist_t* devices)
 
     // connect socket to endpoints
     char* spec = zlist_first(devices);
+    size_t pos = 0;
     while (spec) {
-        if (!quiet)
-            printf("[I] subscriber: connecting SUB socket to: %s\n", spec);
-        int rc = zsock_connect(socket, "%s", spec);
-        log_zmq_error(rc, __FILE__, __LINE__);
-        assert(rc == 0);
+        // only connect to the subset of devices meant for this subscriber
+        if (pos++ % num_subscribers == id) {
+            if (!quiet)
+                printf("[I] subscriber[%zu]: connecting SUB socket to: %s\n", id, spec);
+            int rc = zsock_connect(socket, "%s", spec);
+            log_zmq_error(rc, __FILE__, __LINE__);
+            assert(rc == 0);
+        }
         spec = zlist_next(devices);
     }
 
@@ -86,7 +92,7 @@ zsock_t* subscriber_sub_socket_new(zconfig_t* config, zlist_t* devices)
 }
 
 static
-zsock_t* subscriber_pull_socket_new(zconfig_t* config)
+zsock_t* subscriber_pull_socket_new(zconfig_t* config, size_t id)
 {
     zsock_t *socket = zsock_new(ZMQ_PULL);
     assert(socket);
@@ -97,14 +103,14 @@ zsock_t* subscriber_pull_socket_new(zconfig_t* config)
     char *pull_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pull", "tcp://*");
     char *full_spec = augment_zmq_connection_spec(pull_spec, pull_port);
     if (!quiet)
-        printf("[I] subscriber: binding PULL socket to %s\n", full_spec);
+        printf("[I] subscriber[%zu]: binding PULL socket to %s\n", id, full_spec);
     int rc = zsock_bind(socket, "%s", full_spec);
     assert(rc != -1);
     free(full_spec);
 
     const char *inproc_binding = "inproc://subscriber-pull";
     if (!quiet)
-        printf("[I] subscriber: binding PULL socket to %s\n", inproc_binding);
+        printf("[I] subscriber[%zu]: binding PULL socket to %s\n", id, inproc_binding);
     rc = zsock_bind(socket, "%s", inproc_binding);
     assert(rc != -1);
 
@@ -112,7 +118,7 @@ zsock_t* subscriber_pull_socket_new(zconfig_t* config)
 }
 
 static
-zsock_t* subscriber_router_socket_new(zconfig_t* config)
+zsock_t* subscriber_router_socket_new(zconfig_t* config, size_t id)
 {
     zsock_t *socket = zsock_new(ZMQ_ROUTER);
     assert(socket);
@@ -123,7 +129,7 @@ zsock_t* subscriber_router_socket_new(zconfig_t* config)
     char *router_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/router", "tcp://*");
     char *full_spec = augment_zmq_connection_spec(router_spec, router_port);
     if (!quiet)
-        printf("[I] subscriber: binding ROUTER socket to %s\n", full_spec);
+        printf("[I] subscriber[%zu]: binding ROUTER socket to %s\n", id, full_spec);
     int rc = zsock_bind(socket, "%s", full_spec);
     assert(rc != -1);
     free(full_spec);
@@ -132,52 +138,14 @@ zsock_t* subscriber_router_socket_new(zconfig_t* config)
 }
 
 static
-zsock_t* subscriber_push_socket_new(zconfig_t* config)
+zsock_t* subscriber_push_socket_new(zconfig_t* config, size_t id)
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
     zsock_set_sndtimeo(socket, 10);
-    int rc = zsock_bind(socket, "inproc://subscriber");
+    int rc = zsock_bind(socket, "inproc://subscriber-%zu", id);
     assert(rc == 0);
     return socket;
-}
-
-static
-zsock_t* subscriber_pub_socket_new(zconfig_t* config)
-{
-    zsock_t *socket = zsock_new(ZMQ_PUB);
-    assert(socket);
-    zsock_set_sndhwm(socket, 10000);
-    char *pub_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/pub", "tcp://127.0.0.1:9651");
-    if (!quiet)
-        printf("[I] subscriber: binding PUB socket to %s\n", pub_spec);
-    int rc = zsock_bind(socket, "%s", pub_spec);
-    assert(rc != -1);
-    return socket;
-}
-
-#ifdef PUBLISH_DUPLICATES
-#undef PUBLISH_DUPLICATES
-#define PUBLISH_DUPLICATES 1
-#else
-#define PUBLISH_DUPLICATES 0
-#endif
-
-static
-void subscriber_publish_duplicate(zmsg_t *msg, void *socket)
-{
-    static size_t seq = 0;
-    zmsg_t *msg_copy = zmsg_dup(msg);
-    zmsg_addstrf(msg_copy, "%zu", ++seq);
-    zframe_t *frame = zmsg_pop(msg_copy);
-    while (frame != NULL) {
-        zframe_t *next_frame = zmsg_pop(msg_copy);
-        int more = next_frame ? ZFRAME_MORE : 0;
-        if (zframe_send(&frame, socket, ZFRAME_DONTWAIT|more) == -1)
-            break;
-        frame = next_frame;
-    }
-    zmsg_destroy(&msg_copy);
 }
 
 static
@@ -192,7 +160,7 @@ int process_meta_information_and_handle_heartbeat(subscriber_state_t *state, zms
     if (!rc) {
         // dump_meta_info(&meta);
         if (!state->meta_info_failures++)
-            fprintf(stderr, "[E] subscriber: received invalid meta info\n");
+            fprintf(stderr, "[E] subscriber[%zu]: received invalid meta info\n", state->id);
         return is_heartbeat;
     }
     if (meta.device_number == 0) {
@@ -202,7 +170,7 @@ int process_meta_information_and_handle_heartbeat(subscriber_state_t *state, zms
     }
     if (is_heartbeat) {
         if (debug)
-            printf("received heartbeat form device %d\n", meta.device_number);
+            printf("[D] subscriber[%zu]: received heartbeat from device %d\n", state->id, meta.device_number);
         zmsg_first(msg); // msg_extract_meta_info repositions the pointer, so reset
         zframe_t *spec_frame = zmsg_next(msg);
         pub_spec = zframe_strdup(spec_frame);
@@ -220,7 +188,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
         state->message_count++;
         int n = zmsg_size(msg);
         if (n < 3 || n > 4) {
-            fprintf(stderr, "[E] subscriber: (%s:%d): dropped invalid message of size %d\n", __FILE__, __LINE__, n);
+            fprintf(stderr, "[E] subscriber[%zu]: (%s:%d): dropped invalid message of size %d\n", state->id, __FILE__, __LINE__, n);
             my_zmsg_fprint(msg, "[E] FRAME= ", stderr);
             return 0;
         }
@@ -232,16 +200,13 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
             }
         }
 
-        if (PUBLISH_DUPLICATES)
-            subscriber_publish_duplicate(msg, state->pub_socket);
-
         if (!output_socket_ready(state->push_socket, 0) && !state->message_blocks++)
-            fprintf(stderr, "[W] subscriber: push socket not ready. blocking!\n");
+            fprintf(stderr, "[W] subscriber[%zu]: push socket not ready. blocking!\n", state->id);
 
         int rc = zmsg_send_and_destroy(&msg, state->push_socket);
         if (rc) {
             if (!state->message_drops++)
-                fprintf(stderr, "[E] subscriber: dropped message on push socket (%d: %s)\n", errno, zmq_strerror(errno));
+                fprintf(stderr, "[E] subscriber[%zu]: dropped message on push socket (%d: %s)\n", state->id, errno, zmq_strerror(errno));
         }
     }
     return 0;
@@ -276,7 +241,7 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
 
     int n = zmsg_size(msg);
     if (n < 3 || n > 4) {
-        fprintf(stderr, "[E] subscriber: (%s:%d): dropped invalid message of size %d\n", __FILE__, __LINE__, n);
+        fprintf(stderr, "[E] subscriber[%zu]: (%s:%d): dropped invalid message of size %d\n", state->id, __FILE__, __LINE__, n);
         my_zmsg_fprint(msg, "[E] FRAME= ", stderr);
         ok = false;
         goto answer;
@@ -292,16 +257,13 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
             goto answer;
     }
 
-    if (PUBLISH_DUPLICATES)
-        subscriber_publish_duplicate(msg, state->pub_socket);
-
     if (!output_socket_ready(state->push_socket, 0) && !state->message_blocks++)
-        fprintf(stderr, "[W] subscriber: push socket not ready. blocking!\n");
+        fprintf(stderr, "[W] subscriber[%zu]: push socket not ready. blocking!\n", state->id);
 
     int rc = zmsg_send_and_destroy(&msg, state->push_socket);
     if (rc) {
         if (!state->message_drops++)
-            fprintf(stderr, "[E] subscriber: dropped message on push socket (%d: %s)\n", errno, zmq_strerror(errno));
+            fprintf(stderr, "[E] subscriber[%zu]: dropped message on push socket (%d: %s)\n", state->id, errno, zmq_strerror(errno));
     }
  answer:
     if (reply) {
@@ -316,7 +278,7 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
             zmsg_addstr(reply, ok ? "202 Accepted" : "400 Bad Request");
         int rc = zmsg_send_and_destroy(&reply, socket);
         if (rc)
-            fprintf(stderr, "[E] subscriber: could not send response (%d: %s)\n", errno, zmq_strerror(errno));
+            fprintf(stderr, "[E] subscriber[%zu]: could not send response (%d: %s)\n", state->id, errno, zmq_strerror(errno));
     }
     return 0;
 }
@@ -335,8 +297,9 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             rc = -1;
         }
         else if (streq(cmd, "tick")) {
-            printf("[I] subscriber: %5zu messages "
+            printf("[I] subscriber[%zu]: %5zu messages "
                    "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
+                   state->id,
                    state->message_count, state->message_gap_size, state->meta_info_failures,
                    state->messages_dev_zero, state->message_blocks, state->message_drops);
             statsd_client_count(state->statsd_client, "subscriber.messsages.received.count", state->message_count);
@@ -350,7 +313,7 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             if (++ticks % HEART_BEAT_INTERVAL == 0)
                 device_tracker_reconnect_stale_devices(state->tracker);
         } else {
-            fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
+            fprintf(stderr, "[E] subscriber[%zu]: received unknown actor command: %s\n", state->id, cmd);
         }
         free(cmd);
         zmsg_destroy(&msg);
@@ -360,7 +323,7 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
 
 
 static
-subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config, zlist_t *devices)
+subscriber_state_t* subscriber_state_new(zconfig_t* config, size_t id, zlist_t *devices)
 {
     // figure out devices specs
     if (devices == NULL)
@@ -374,16 +337,17 @@ subscriber_state_t* subscriber_state_new(zsock_t *pipe, zconfig_t* config, zlist
 
     //create the state
     subscriber_state_t *state = zmalloc(sizeof(*state));
-    state->pipe = pipe;
+    state->id = id;
+    snprintf(state->me, 16, "subscriber[%zu]", id);
     state->devices = devices;
-    state->sub_socket = subscriber_sub_socket_new(config, state->devices);
+    state->sub_socket = subscriber_sub_socket_new(config, state->devices, state->id);
     state->tracker = device_tracker_new(devices, state->sub_socket);
-    state->pull_socket = subscriber_pull_socket_new(config);
-    state->router_socket = subscriber_router_socket_new(config);
-    state->push_socket = subscriber_push_socket_new(config);
-    if (PUBLISH_DUPLICATES)
-        state->pub_socket = subscriber_pub_socket_new(config);
-    state->statsd_client = statsd_client_new(config, "subscriber[0]");
+    if (state->id == 0) {
+        state->pull_socket = subscriber_pull_socket_new(config, id);
+        state->router_socket = subscriber_router_socket_new(config, id);
+    }
+    state->push_socket = subscriber_push_socket_new(config, state->id);
+    state->statsd_client = statsd_client_new(config, state->me);
     return state;
 }
 
@@ -392,11 +356,11 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
 {
     subscriber_state_t *state = *state_p;
     zsock_destroy(&state->sub_socket);
-    zsock_destroy(&state->pull_socket);
-    zsock_destroy(&state->router_socket);
+    if (state->id == 0) {
+        zsock_destroy(&state->pull_socket);
+        zsock_destroy(&state->router_socket);
+    }
     zsock_destroy(&state->push_socket);
-    if (PUBLISH_DUPLICATES)
-        zsock_destroy(&state->pub_socket);
     device_tracker_destroy(&state->tracker);
     statsd_client_destroy(&state->statsd_client);
     *state_p = NULL;
@@ -406,17 +370,17 @@ static
 void setup_subscriptions(subscriber_state_t *state)
 {
     zlist_t *subscriptions = zhash_keys(stream_subscriptions);
-    setup_subscriptions_for_sub_socket(subscriptions, state->sub_socket);
+    setup_subscriptions_for_sub_socket(subscriptions, state->sub_socket, state->id);
     zlist_destroy(&subscriptions);
 }
 
-void subscriber(zsock_t *pipe, void *args)
+static void subscriber(zsock_t *pipe, void *args)
 {
-    set_thread_name("subscriber[0]");
-
+    subscriber_state_t *state = (subscriber_state_t*)args;
+    state->pipe = pipe;
+    set_thread_name(state->me);
+    size_t id = state->id;
     int rc;
-    zconfig_t* config = args;
-    subscriber_state_t *state = subscriber_state_new(pipe, config, hosts);
 
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);
@@ -430,24 +394,26 @@ void subscriber(zsock_t *pipe, void *args)
     zloop_set_verbose(loop, 0);
 
     // setup handler for actor messages
-    rc = zloop_reader(loop, state->pipe, actor_command, state);
+    rc = zloop_reader(loop, pipe, actor_command, state);
     assert(rc == 0);
 
      // setup handler for the sub socket
     rc = zloop_reader(loop, state->sub_socket, read_request_and_forward, state);
     assert(rc == 0);
 
-    // setup handler for the router socket
-    rc = zloop_reader(loop, state->router_socket, read_router_request_forward, state);
-    assert(rc == 0);
+    if (state->id == 0) {
+        // setup handler for the router socket
+        rc = zloop_reader(loop, state->router_socket, read_router_request_forward, state);
+        assert(rc == 0);
 
-    // setup handler for the pull socket
-    rc = zloop_reader(loop, state->pull_socket, read_request_and_forward, state);
-    assert(rc == 0);
+        // setup handler for the pull socket
+        rc = zloop_reader(loop, state->pull_socket, read_request_and_forward, state);
+        assert(rc == 0);
+    }
 
     // run the loop
     if (!quiet)
-        fprintf(stdout, "[I] subscriber: listening\n");
+        fprintf(stdout, "[I] subscriber[%zu]: listening\n", id);
 
     bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
     do {
@@ -457,7 +423,7 @@ void subscriber(zsock_t *pipe, void *args)
     } while (should_continue_to_run);
 
     if (!quiet)
-        fprintf(stdout, "[I] subscriber: shutting down\n");
+        fprintf(stdout, "[I] subscriber[%zu]: shutting down\n", id);
 
     // shutdown
     subscriber_state_destroy(&state);
@@ -465,5 +431,16 @@ void subscriber(zsock_t *pipe, void *args)
     assert(loop == NULL);
 
     if (!quiet)
-        fprintf(stdout, "[I] subscriber: terminated\n");
+        fprintf(stdout, "[I] subscriber[%zu]: terminated\n", id);
+}
+
+zactor_t* subscriber_new(zconfig_t *config, size_t id)
+{
+    subscriber_state_t *state = subscriber_state_new(config, id, hosts);
+    return zactor_new(subscriber, state);
+}
+
+void subscriber_destroy(zactor_t **subscriber_p)
+{
+    zactor_destroy(subscriber_p);
 }

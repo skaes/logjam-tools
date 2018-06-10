@@ -558,17 +558,17 @@ zmsg_loadx (zmsg_t *self, FILE *file)
     return self;
 }
 
-void setup_subscriptions_for_sub_socket(zlist_t *subscriptions, zsock_t *socket)
+void setup_subscriptions_for_sub_socket(zlist_t *subscriptions, zsock_t *socket, size_t id)
 {
     if (subscriptions==NULL || zlist_size(subscriptions)==0) {
-        printf("[I] subscriber: subscribing to all streams\n");
+        printf("[I] subscriber[%zu]: subscribing to all streams\n", id);
         zsock_set_subscribe(socket, "");
         return;
     }
     // setup subscriptions for only a subset
     char *stream = zlist_first(subscriptions);
     while (stream != NULL)  {
-        printf("[I] subscriber: subscribing to stream: %s\n", stream);
+        printf("[I] subscriber[%zu]: subscribing to stream: %s\n", id, stream);
         zsock_set_subscribe(socket, stream);
         size_t n = strlen(stream);
         if (n > 15 && !strncmp(stream, "request-stream-", 15)) {

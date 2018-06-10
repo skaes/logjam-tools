@@ -9,11 +9,13 @@
 extern "C" {
 #endif
 
+#define MAX_SUBSCRIBERS 10
 #define MAX_PARSERS 20
 #define MAX_ADDERS 10
 #define MAX_WRITERS 20
 #define MAX_UPDATERS 20
 
+extern unsigned long num_subscribers;
 extern unsigned long num_parsers;
 extern unsigned long num_writers;
 extern unsigned long num_updaters;

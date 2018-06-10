@@ -12,10 +12,10 @@
 #include "statsd-client.h"
 
 /*
- * connections: n_w = num_writers, n_p = num_parsers, n_u= num_updaters, n_a = num_adders "[<>^v]" = connect, "o" = bind
+ * connections: n_s = num_subscribers, n_w = num_writers, n_p = num_parsers, n_u= num_updaters, n_a = num_adders "[<>^v]" = connect, "o" = bind
  *
  *                 --- PIPE ---  indexer
- *                 --- PIPE ---  subscriber
+ *                 --- PIPE ---  subscribers(n_s)
  *                 --- PIPE ---  parsers(n_p)
  *                 --- PIPE ---  adders(n_s)
  *  controller:    --- PIPE ---  writers(n_w)
@@ -40,6 +40,7 @@
 // independent socket for this. The controller send ticks to the watchdog, which aborts
 // the whole process if it doesn't receive ticks for ten consecutive seconds.
 
+unsigned long num_subscribers = 1;
 unsigned long num_parsers = 8;
 unsigned long num_writers = 10;
 unsigned long num_updaters = 10;
@@ -48,10 +49,10 @@ unsigned long num_adders = 4;
 typedef struct {
     zconfig_t *config;
     zactor_t *statsd_server;
-    zactor_t *subscriber;
     zactor_t *indexer;
     zactor_t *tracker;
     zactor_t *watchdog;
+    zactor_t *subscribers[MAX_SUBSCRIBERS];
     zactor_t *parsers[MAX_PARSERS];
     zactor_t *adders[MAX_ADDERS];
     zactor_t *writers[MAX_WRITERS];
@@ -159,9 +160,11 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     state->ticks++;
 
-    // tell tracker, subscriber, live stream publisher and  stats server to tick
+    // tell tracker, subscribers, live stream publisher and  stats server to tick
     zstr_send(state->statsd_server, "tick");
-    zstr_send(state->subscriber, "tick");
+    for (size_t i=0; i<num_subscribers; i++) {
+        zstr_send(state->subscribers[i], "tick");
+    }
     zstr_send(state->tracker, "tick");
     zstr_send(state->live_stream_publisher, "tick");
 
@@ -389,8 +392,10 @@ bool controller_create_actors(controller_state_t *state)
     state->live_stream_publisher = zactor_new(live_stream_actor_fn, state->config);
     // start the indexer
     state->indexer = zactor_new(indexer, NULL);
-    // create subscriber
-    state->subscriber = zactor_new(subscriber, state->config);
+    // create subscribers
+    for (size_t i=0; i<num_subscribers; i++) {
+        state->subscribers[i] = subscriber_new(state->config, i);
+    }
     //start the tracker
     state->tracker = zactor_new(tracker, NULL);
 
@@ -438,8 +443,10 @@ void controller_destroy_actors(controller_state_t *state)
     if (verbose) printf("[D] controller: destroying watchdog\n");
     zactor_destroy(&state->watchdog);
 
-    if (verbose) printf("[D] controller: destroying subscriber\n");
-    zactor_destroy(&state->subscriber);
+    for (size_t i=0; i<num_subscribers; i++) {
+        if (verbose) printf("[D] controller: destroying subscriber[%zu]\n", i);
+        subscriber_destroy(&state->subscribers[i]);
+    }
 
     for (size_t i=0; i<num_parsers; i++) {
         if (verbose) printf("[D] controller: destroying parser[%zu]\n", i);

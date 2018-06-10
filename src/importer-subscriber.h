@@ -7,7 +7,8 @@
 extern "C" {
 #endif
 
-extern void subscriber(zsock_t *pipe, void *args);
+extern zactor_t* subscriber_new(zconfig_t *config, size_t id);
+extern void subscriber_destroy(zactor_t **subscriber_p);
 
 #ifdef __cplusplus
 }

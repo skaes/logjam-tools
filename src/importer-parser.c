@@ -45,10 +45,13 @@ zsock_t* parser_pull_socket_new()
     assert(socket);
     // connect socket, taking thread startup time into account
     // TODO: this is a hack. better let controller coordinate this
-    for (int i=0; i<10; i++) {
-        rc = zsock_connect(socket, "inproc://subscriber");
-        if (rc == 0) break;
-        zclock_sleep(100);
+    for (int j = 0; j < num_subscribers; j++) {
+        for (int i=0; i<10; i++) {
+            rc = zsock_connect(socket, "inproc://subscriber-%d", j);
+            if (rc == 0) break;
+            zclock_sleep(100);
+        }
+        if (rc) break;
     }
     log_zmq_error(rc, __FILE__, __LINE__);
     assert(rc == 0);

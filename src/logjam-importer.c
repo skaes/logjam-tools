@@ -20,6 +20,7 @@ FILE* frontend_timings = NULL;
 static char *frontend_timings_file_name = NULL;
 static char *frontend_timings_apdex_attr = NULL;
 
+static char* num_subscribers_arg_value = NULL;
 static char* num_parsers_arg_value = NULL;
 static char* num_updaters_arg_value = NULL;
 static char* num_writers_arg_value = NULL;
@@ -27,6 +28,11 @@ static size_t io_threads = 1;
 
 static void setup_thread_counts(zconfig_t* config)
 {
+    if (!num_subscribers_arg_value)
+        num_subscribers_arg_value = zconfig_resolve(config, "frontend/threads/subscribers", NULL);
+    if (num_subscribers_arg_value)
+        num_subscribers = strtoul(num_subscribers_arg_value, NULL, 0);
+
     if (!num_parsers_arg_value)
         num_parsers_arg_value = zconfig_resolve(config, "frontend/threads/parsers", NULL);
     if (num_parsers_arg_value)
@@ -55,6 +61,7 @@ void print_usage(char * const *argv)
             "  -i, --io-threads N         zeromq io threads\n"
             "  -l, --live-stream S        zmq bind spec for publishing live stream data\n"
             "  -p, --parsers N            number of parser threads\n"
+            "  -b, --subscribers N        number of subscriber threads\n"
             "  -u, --updaters N           number of db stats updater threads\n"
             "  -q, --quiet                supress most output\n"
             "  -s, --subscribe S          only process streams with S as substring\n"
@@ -103,7 +110,7 @@ void process_arguments(int argc, char * const *argv)
         { 0,                  0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "a:c:f:np:qs:u:vw:i:P:R:S:l:h:D:t:N", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "a:b:c:f:np:qs:u:vw:i:P:R:S:l:h:D:t:N", long_options, &longindex)) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -155,6 +162,16 @@ void process_arguments(int argc, char * const *argv)
                 num_writers_arg_value = strdup(optarg);
             else {
                 fprintf(stderr, "[E] parameter value 'w' cannot be larger than %d\n", MAX_UPDATERS);
+                exit(1);
+            }
+            break;
+        }
+        case 'b': {
+            unsigned long n = strtoul(optarg, NULL, 0);
+            if (n <= MAX_SUBSCRIBERS)
+                num_subscribers_arg_value = strdup(optarg);
+            else {
+                fprintf(stderr, "[E] parameter value 'b' cannot be larger than %d\n", MAX_SUBSCRIBERS);
                 exit(1);
             }
             break;
