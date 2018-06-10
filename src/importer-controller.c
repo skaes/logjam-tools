@@ -62,7 +62,7 @@ typedef struct {
     zsock_t *adder_socket;
     zsock_t *live_stream_socket;
     size_t ticks;
-    void *statsd_client;
+    statsd_client_t *statsd_client;
 } controller_state_t;
 
 
@@ -587,8 +587,10 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     else
         printf("[I] controller: started shutdown timer\n");
 
-    // destroy controllers
+    // destroy actors and statsd_client
     controller_destroy_actors(&state);
+    statsd_client_destroy(&state.statsd_client);
+
     // wait for actors to finish
     zsys_shutdown();
 
