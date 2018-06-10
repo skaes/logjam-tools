@@ -380,7 +380,8 @@ static
 bool controller_create_actors(controller_state_t *state)
 {
     // initialize mongo client
-    mongoc_init();
+    if (!dryrun)
+        mongoc_init();
 
     // start the statsd updater
     state->statsd_server = zactor_new(statsd_actor_fn, state->config);
@@ -482,7 +483,8 @@ void controller_destroy_actors(controller_state_t *state)
     zsock_destroy(&state->adder_socket);
 
     // shut down mongo client
-    mongoc_cleanup();
+    if (!dryrun)
+        mongoc_cleanup();
 }
 
 

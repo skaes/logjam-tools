@@ -174,7 +174,7 @@ int64_t extract_storage_size(bson_t *doc)
 static
 void indexer_check_disk_usage(indexer_state_t *state, const char *db_name, stream_info_t *stream_info)
 {
-    // if (dryrun) return;
+    if (dryrun) return;
 
     bson_t *cmd = bson_new();
     bson_append_int32(cmd, "dbStats", 7, 1);
@@ -206,6 +206,8 @@ void indexer_check_disk_usage(indexer_state_t *state, const char *db_name, strea
 static
 void indexer_refresh_storage_sizes(indexer_state_t *self)
 {
+    if (dryrun) return;
+
     zlist_t *streams = zhash_keys(configured_streams);
     char *stream = zlist_first(streams);
     bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
@@ -225,13 +227,13 @@ void indexer_refresh_storage_sizes(indexer_state_t *self)
 static
 void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_info_t *stream_info)
 {
+    if (dryrun) return;
+
     mongoc_client_t *client = state->mongo_clients[stream_info->db];
     mongoc_collection_t *collection;
     bson_error_t error;
     bson_t *keys;
     size_t id = state->id;
-
-    if (dryrun) return;
 
     // if it is a db of today, then make it known
     if (strstr(db_name, iso_date_today)) {
@@ -301,6 +303,8 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
 static
 void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int delay)
 {
+    if (dryrun) return;
+
     zlist_t *streams = zhash_keys(configured_streams);
     char *stream = zlist_first(streams);
     bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
@@ -324,6 +328,8 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
 static
 void* create_indexes_for_date(void* args)
 {
+    if (dryrun) return NULL;
+
     indexer_state_t state;
     memset(&state, 0, sizeof(state));
     bg_indexer_args_t *indexer_args = args;
@@ -397,9 +403,11 @@ indexer_state_t* indexer_state_new(zsock_t *pipe, size_t id)
     state->id = id;
     state->controller_socket = pipe;
     state->pull_socket = indexer_pull_socket_new();
-    for (int i=0; i<num_databases; i++) {
-        state->mongo_clients[i] = mongoc_client_new(databases[i]);
-        assert(state->mongo_clients[i]);
+    if (!dryrun) {
+        for (int i=0; i<num_databases; i++) {
+            state->mongo_clients[i] = mongoc_client_new(databases[i]);
+            assert(state->mongo_clients[i]);
+        }
     }
     state->databases = zhash_new();
     return state;
@@ -411,8 +419,10 @@ void indexer_state_destroy(indexer_state_t **state_p)
     indexer_state_t *state = *state_p;
     zsock_destroy(&state->pull_socket);
     zhash_destroy(&state->databases);
-    for (int i=0; i<num_databases; i++) {
-        mongoc_client_destroy(state->mongo_clients[i]);
+    if (!dryrun) {
+        for (int i=0; i<num_databases; i++) {
+            mongoc_client_destroy(state->mongo_clients[i]);
+        }
     }
     free(state);
     *state_p = NULL;
