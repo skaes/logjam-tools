@@ -6,15 +6,15 @@
 /*
  * connections: n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
  *
- *                            controller
- *                                |
- *                               PIPE
- *              PUSH    PULL      |        PUSH       PULL
- *  subscriber  o----------<  parser(n_p)  >-------------o  request_writer(n_w)
- *                       PUSH v   REQ v v PUSH
- *                            |        \ \
- *                       PULL o     REP o o PULL
- *                      indexer         tracker
+ *                               controller
+ *                                  |
+ *                                 PIPE
+ *              PUSH    PULL        |              PUSH       PULL
+ *  subscriber  o----------<    parser(n_p)        >-------------o  request_writer(n_w)
+ *                       PUSH v   REQ v v PUSH  v PUSH
+ *                            |       | |       |
+ *                       PULL o   REP o o PULL  o PULL
+ *                      indexer      tracker    prometheus collector
 */
 
 // Q: Why do we connect to the writers instead of connecting the writers to the parser?
@@ -75,6 +75,17 @@ zsock_t* parser_indexer_socket_new()
     assert(socket);
     zsock_set_sndtimeo(socket, 10);
     int rc = zsock_connect(socket, "inproc://indexer");
+    assert (rc == 0);
+    return socket;
+}
+
+static
+zsock_t* parser_prom_collector_socket_new()
+{
+    zsock_t *socket = zsock_new(ZMQ_PUSH);
+    assert(socket);
+    zsock_set_sndtimeo(socket, 10);
+    int rc = zsock_connect(socket, "inproc://prom-collector");
     assert (rc == 0);
     return socket;
 }
@@ -270,6 +281,7 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     snprintf(state->me, 16, "parser[%zu]", id);
     state->pull_socket = parser_pull_socket_new();
     state->push_socket = parser_push_socket_new();
+    state->prom_collector_socket = parser_prom_collector_socket_new();
     state->indexer_socket = parser_indexer_socket_new();
     assert( state->tokener = json_tokener_new() );
     state->processors = processor_hash_new();
@@ -287,6 +299,7 @@ void parser_state_destroy(parser_state_t **state_p)
     zsock_destroy(&state->pull_socket);
     zsock_destroy(&state->push_socket);
     zsock_destroy(&state->indexer_socket);
+    zsock_destroy(&state->prom_collector_socket);
     zhash_destroy(&state->processors);
     tracker_destroy(&state->tracker);
     statsd_client_destroy(&state->statsd_client);

@@ -30,12 +30,16 @@ config.h.in
 stamp-h1
 # go sources
 /go/pkg
-/go/src/github.com/ShowMax/go-fqdn/
-/go/src/github.com/golang/snappy/
-/go/src/github.com/gorilla/websocket
-/go/src/github.com/jessevdk/go-flags/
-/go/src/github.com/nu7hatch/gouuid/
-/go/src/github.com/pebbe/zmq4
+/go/src/github.com/ShowMax/
+/go/src/github.com/beorn7/
+/go/src/github.com/golang/
+/go/src/github.com/gorilla/
+/go/src/github.com/jessevdk/
+/go/src/github.com/matttproud/
+/go/src/github.com/nu7hatch/
+/go/src/github.com/pebbe/
+/go/src/github.com/prometheus/
+/go/src/github.com/protobuf/
 /go/src/gopkg.in
 # programs
 /livestream-generator
@@ -44,13 +48,14 @@ stamp-h1
 /logjam-fhttpd
 /logjam-forwarder
 /logjam-graylog-forwarder
+/logjam-http-forwarder
 /logjam-importer
 /logjam-livestream
 /logjam-logger
+/logjam-prometheus-exporter
 /logjam-pubsub-bridge
 /logjam-replay
 /logjam-tail
-/logjam-http-forwarder
 # test programs
 /checker
 /test_publisher

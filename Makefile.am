@@ -77,8 +77,9 @@ logjam_importer_SOURCES = \
     src/zring.c \
     src/zring.h \
     src/device-tracker.c \
-    src/device-tracker.h
-
+    src/device-tracker.h \
+    src/prom-collector.c \
+    src/prom-collector.h
 
 logjam_fhttpd_SOURCES = \
     config.h \
@@ -203,7 +204,8 @@ GO_DEPS = \
 	github.com/jessevdk/go-flags \
 	github.com/nu7hatch/gouuid \
 	github.com/pebbe/zmq4 \
-	gopkg.in/tylerb/graceful.v1
+	gopkg.in/tylerb/graceful.v1 \
+        github.com/prometheus/client_golang/prometheus
 
 .godeps:
 	$(GO_ENV) go get $(GO_DEPS)
@@ -213,7 +215,7 @@ GO_ENV = GOPATH=$(GO_PATH) CGO_LDFLAGS='$(OPTDIR_LDFLAGS)' PKG_CONFIG_PATH=$(PKG
 GO_PKG = github.com/skaes/logjam-gotools
 GO_SRC = go/src/$(GO_PKG)
 GO_NOINSTALL_TARGETS = livestream-generator
-GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder
+GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-prometheus-exporter
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
 GO_TESTS = http-client-test
 
@@ -239,6 +241,9 @@ livestream-generator: $(GO_SRC)/livestream-generator/generator.go .godeps
 	$(GO_ENV) go build -o $@ $<
 
 logjam-http-forwarder: $(GO_SRC)/http-forwarder/forwarder.go .godeps
+	$(GO_ENV) go build -o $@ $<
+
+logjam-prometheus-exporter: $(GO_SRC)/prometheus-exporter/exporter.go .godeps
 	$(GO_ENV) go build -o $@ $<
 
 .PHONY: http-client-test

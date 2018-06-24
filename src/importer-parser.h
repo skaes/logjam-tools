@@ -51,6 +51,7 @@ typedef struct {
     uuid_tracker_t *tracker;
     statsd_client_t *statsd_client;
     zchunk_t *decompression_buffer;
+    zsock_t *prom_collector_socket;
 } parser_state_t;
 
 extern zactor_t* parser_new(zconfig_t *config, size_t id);

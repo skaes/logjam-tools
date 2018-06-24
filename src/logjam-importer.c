@@ -11,6 +11,7 @@ int pull_port = -1;
 int router_port = -1;
 int sub_port = -1;
 char* live_stream_connection_spec = NULL;
+char* prom_collector_connection_spec = NULL;
 zlist_t *hosts = NULL;
 
 static char *subscription_pattern = NULL;
@@ -99,6 +100,7 @@ void process_arguments(int argc, char * const *argv)
         { "input-port",       required_argument, 0, 'P' },
         { "io-threads",       required_argument, 0, 'i' },
         { "live-stream",      required_argument, 0, 'l' },
+        { "prom-export",      required_argument, 0, 'x' },
         { "no-statsd",        no_argument,       0, 'N' },
         { "output-port",      required_argument, 0, 'P' },
         { "quiet",            no_argument,       0, 'q' },
@@ -110,7 +112,7 @@ void process_arguments(int argc, char * const *argv)
         { 0,                  0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "a:b:c:f:np:qs:u:vw:i:P:R:S:l:h:D:t:N", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "a:b:c:f:np:qs:u:vw:x:i:P:R:S:l:h:D:t:N", long_options, &longindex)) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -207,6 +209,9 @@ void process_arguments(int argc, char * const *argv)
         case 'l':
             live_stream_connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_LIVE_STREAM_PORT);
             break;
+        case 'x':
+            prom_collector_connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_PROM_COLLECTOR_PORT);
+            break;
         case 0:
             print_usage(argv);
             exit(0);
@@ -295,6 +300,9 @@ int main(int argc, char * const *argv)
 
     if (live_stream_connection_spec == NULL)
         live_stream_connection_spec = zconfig_resolve(config, "frontend/endpoints/livestream/pub", DEFAULT_LIVE_STREAM_CONNECTION);
+
+    if (prom_collector_connection_spec == NULL)
+        prom_collector_connection_spec = zconfig_resolve(config, "frontend/endpoints/promcollector/pub", DEFAULT_PROM_COLLECTOR_CONNECTION);
 
     setup_thread_counts(config);
 

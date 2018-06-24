@@ -559,7 +559,7 @@ func webServer() {
 	if opts.KeyFile != "" && opts.CertFile != "" {
 		err := srv.ListenAndServeTLS(opts.CertFile, opts.KeyFile)
 		if err != nil {
-			logError("Cannot list and serve TLS: %s", err)
+			logError("Cannot listen and serve TLS: %s", err)
 		}
 	} else if opts.KeyFile != "" {
 		logError("cert-file given but no key-file!")
@@ -568,7 +568,7 @@ func webServer() {
 	} else {
 		err := srv.ListenAndServe()
 		if err != nil {
-			logError("Cannot list and serve TLS: %s", err)
+			logError("Cannot listen and serve TLS: %s", err)
 		}
 	}
 }
