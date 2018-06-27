@@ -27,7 +27,7 @@ static void print_usage(char * const *argv)
             "  -i, --interface I          zmq spec of interface on which to listen\n"
             "  -n, --dryrun               don't send data to graylog\n"
             "  -p, --parsers N            use N threads for parsing log messages\n"
-            "  -z, --compress M           compress data sent to graylog\n"
+            "  -z, --compress             compress data sent to graylog\n"
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "      --help                 display this message\n"
