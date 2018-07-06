@@ -33,7 +33,7 @@ This topic is used for performance data, log lines and various
 aggregated information about an action which has been performed by the
 given aplication in the given environment.
 
-The following fields are mandatory:
+The following fields, with the exception of `caller_id` and `caller_action`, are mandatory:
 
 | Field          | Format | Description |
 |:---------------|:-------|:------------|
