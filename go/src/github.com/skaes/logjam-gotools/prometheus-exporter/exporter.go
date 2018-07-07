@@ -52,6 +52,8 @@ var (
 		[]string{"application", "action", "code", "instance", "cluster", "datacenter"},
 	)
 	registry = prometheus.NewRegistry()
+	// map from instance names to last seen timestamps
+	knownInstances = make(map[string]time.Time)
 )
 
 func initialize() {
@@ -167,6 +169,7 @@ func recordMetrics(data string) {
 	}
 	// fmt.Printf("map: %v\n", m)
 	metric := m["metric"]
+	instance := m["instance"]
 	value, err := strconv.ParseFloat(m["value"], 64)
 	if err != nil {
 		logError("could not parse float: %s", err)
@@ -178,8 +181,32 @@ func recordMetrics(data string) {
 	switch metric {
 	case "http":
 		httpRequestHistogramVec.With(m).Observe(value)
+		knownInstances[instance] = time.Now()
 	case "job":
 		jobExecutionHistogramVec.With(m).Observe(value)
+		knownInstances[instance] = time.Now()
+	}
+}
+
+func cleanOldInstances() {
+	ticker := time.NewTicker(1 * time.Minute)
+	for range ticker.C {
+		if interrupted {
+			break
+		}
+		threshold := time.Now().Add(-1 * time.Hour)
+		for i, v := range knownInstances {
+			if interrupted {
+				break
+			}
+			if v.Before(threshold) {
+				logInfo("removing instance: %s", i)
+				delete(knownInstances, i)
+				labels := prometheus.Labels{"instance": i}
+				httpRequestHistogramVec.Delete(labels)
+				jobExecutionHistogramVec.Delete(labels)
+			}
+		}
 	}
 }
 
@@ -239,6 +266,7 @@ func main() {
 	installSignalHandler()
 	go zmqMsgHandler()
 	go statsReporter()
+	go cleanOldInstances()
 	webServer()
 	logInfo("% shutting down", os.Args[0])
 }
