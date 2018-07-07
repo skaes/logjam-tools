@@ -14,6 +14,7 @@ import (
 	// "runtime"
 	// "runtime/pprof"
 
+	"github.com/cornelk/hashmap"
 	"github.com/jessevdk/go-flags"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/prometheus/client_golang/prometheus"
@@ -53,7 +54,7 @@ var (
 	)
 	registry = prometheus.NewRegistry()
 	// map from instance names to last seen timestamps
-	knownInstances = make(map[string]time.Time)
+	knownInstances = hashmap.New(1000)
 )
 
 func initialize() {
@@ -169,7 +170,6 @@ func recordMetrics(data string) {
 	}
 	// fmt.Printf("map: %v\n", m)
 	metric := m["metric"]
-	instance := m["instance"]
 	value, err := strconv.ParseFloat(m["value"], 64)
 	if err != nil {
 		logError("could not parse float: %s", err)
@@ -178,14 +178,20 @@ func recordMetrics(data string) {
 	delete(m, "metric")
 	delete(m, "value")
 	// fmt.Printf("metric: %s, value: %f\n", metric, value)
+	instance := m["instance"]
 	switch metric {
 	case "http":
 		httpRequestHistogramVec.With(m).Observe(value)
-		knownInstances[instance] = time.Now()
+		registerInstance(instance)
 	case "job":
 		jobExecutionHistogramVec.With(m).Observe(value)
-		knownInstances[instance] = time.Now()
+		registerInstance(instance)
 	}
+}
+
+func registerInstance(i string) {
+	t := time.Now()
+	knownInstances.Set(i, t)
 }
 
 func cleanOldInstances() {
@@ -195,13 +201,12 @@ func cleanOldInstances() {
 			break
 		}
 		threshold := time.Now().Add(-1 * time.Hour)
-		for i, v := range knownInstances {
-			if interrupted {
-				break
-			}
+		for kv := range knownInstances.Iter() {
+			i := kv.Key.(string)
+			v := kv.Value.(time.Time)
 			if v.Before(threshold) {
 				logInfo("removing instance: %s", i)
-				delete(knownInstances, i)
+				knownInstances.Del(i)
 				labels := prometheus.Labels{"instance": i}
 				httpRequestHistogramVec.Delete(labels)
 				jobExecutionHistogramVec.Delete(labels)
