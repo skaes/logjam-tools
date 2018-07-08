@@ -32,7 +32,6 @@ stamp-h1
 /go/pkg
 /go/src/github.com/ShowMax/
 /go/src/github.com/beorn7/
-/go/src/github.com/cornelk/hashmap/
 /go/src/github.com/golang/
 /go/src/github.com/gorilla/
 /go/src/github.com/jessevdk/

@@ -205,8 +205,7 @@ GO_DEPS = \
 	github.com/nu7hatch/gouuid \
 	github.com/pebbe/zmq4 \
 	gopkg.in/tylerb/graceful.v1 \
-        github.com/prometheus/client_golang/prometheus \
-	github.com/cornelk/hashmap
+        github.com/prometheus/client_golang/prometheus
 
 .godeps:
 	$(GO_ENV) go get $(GO_DEPS)
