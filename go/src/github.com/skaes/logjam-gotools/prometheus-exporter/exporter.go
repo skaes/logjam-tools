@@ -51,9 +51,8 @@ var (
 		},
 		[]string{"application", "action", "code", "instance", "cluster", "datacenter"},
 	)
-	registry = prometheus.NewRegistry()
-	// map from instance names to last seen timestamps
-	knownInstances = make(map[string]time.Time)
+	registry         = prometheus.NewRegistry()
+	instanceRegistry = make(chan string, 10000)
 )
 
 func initialize() {
@@ -181,30 +180,33 @@ func recordMetrics(data string) {
 	switch metric {
 	case "http":
 		httpRequestHistogramVec.With(m).Observe(value)
-		knownInstances[instance] = time.Now()
+		instanceRegistry <- instance
 	case "job":
 		jobExecutionHistogramVec.With(m).Observe(value)
-		knownInstances[instance] = time.Now()
+		instanceRegistry <- instance
 	}
 }
 
-func cleanOldInstances() {
+func instanceRegistryHandler() {
+	// map from instance names to last seen timestamps
+	knownInstances := make(map[string]time.Time)
+	// cleaning every minute
 	ticker := time.NewTicker(1 * time.Minute)
-	for range ticker.C {
-		if interrupted {
-			break
-		}
-		threshold := time.Now().Add(-1 * time.Hour)
-		for i, v := range knownInstances {
-			if interrupted {
-				break
-			}
-			if v.Before(threshold) {
-				logInfo("removing instance: %s", i)
-				delete(knownInstances, i)
-				labels := prometheus.Labels{"instance": i}
-				httpRequestHistogramVec.Delete(labels)
-				jobExecutionHistogramVec.Delete(labels)
+	// until we are interrupted
+	for !interrupted {
+		select {
+		case instance := <-instanceRegistry:
+			knownInstances[instance] = time.Now()
+		case <-ticker.C:
+			threshold := time.Now().Add(-1 * time.Hour)
+			for i, v := range knownInstances {
+				if v.Before(threshold) {
+					logInfo("removing instance: %s", i)
+					delete(knownInstances, i)
+					labels := prometheus.Labels{"instance": i}
+					httpRequestHistogramVec.Delete(labels)
+					jobExecutionHistogramVec.Delete(labels)
+				}
 			}
 		}
 	}
@@ -266,7 +268,7 @@ func main() {
 	installSignalHandler()
 	go zmqMsgHandler()
 	go statsReporter()
-	go cleanOldInstances()
+	go instanceRegistryHandler()
 	webServer()
 	logInfo("% shutting down", os.Args[0])
 }
