@@ -307,5 +307,5 @@ func main() {
 	go zmqMsgHandler()
 	go statsReporter()
 	webServer()
-	logInfo("% shutting down", os.Args[0])
+	logInfo("%s shutting down", os.Args[0])
 }
