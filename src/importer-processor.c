@@ -796,6 +796,7 @@ void append_null_byte(zchunk_t* buffer)
 static
 void forward_request_to_prom_collector(processor_state_t *self, parser_state_t *pstate, json_object *request, request_data_t *request_data)
 {
+    const char* app = self->stream_info->app;
     const char* env = self->stream_info->env;
     const char* host = processor_setup_host(self, request);
     const char* cluster = processor_setup_cluster(self, request);
@@ -813,7 +814,8 @@ void forward_request_to_prom_collector(processor_state_t *self, parser_state_t *
         append_line(buffer, "metric:job\n");
     }
     append_line(buffer, "value:%.*e\n", OP_DBL_DIGS-1, request_data->total_time/1000);
-    append_line(buffer, "application:%s\n", self->stream_info->app);
+    append_line(buffer, "application:%s\n", app);
+    append_line(buffer, "environment:%s\n", env);
     append_line(buffer, "action:%s\n", request_data->page);
     append_line(buffer, "code:%d\n", request_data->response_code);
     append_line(buffer, "instance:%s\n", host);
