@@ -2,7 +2,9 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -24,10 +26,11 @@ import (
 )
 
 var opts struct {
-	Verbose  bool   `short:"v" long:"verbose" description:"be verbose"`
-	Importer string `short:"i" long:"importer" default:"127.0.0.1:9612" description:"importer host:port pair"`
-	Env      string `short:"e" long:"env" description:"logjam environments to process"`
-	Port     string `short:"p" long:"port" default:"8081" description:"port to expose metrics on"`
+	Verbose   bool   `short:"v" long:"verbose" description:"be verbose"`
+	Importer  string `short:"i" long:"importer" default:"127.0.0.1:9612" description:"importer host:port pair"`
+	Env       string `short:"e" long:"env" description:"logjam environments to process"`
+	Port      string `short:"p" long:"port" default:"8081" description:"port to expose metrics on"`
+	StreamURL string `short:"s" long:"stream-url" default:"" description:"Logjam endpoint for retrieveing stream definitions"`
 }
 
 var (
@@ -125,6 +128,44 @@ func initialize() {
 	if len(args) > 1 {
 		logError("%s: passing arguments is not supported. please use options instead.", args[0])
 		os.Exit(1)
+	}
+	if opts.StreamURL != "" {
+		retrieveStreams(opts.StreamURL + "")
+	}
+}
+
+func retrieveStreams(url string) {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		logError("could not create http request: %s", err)
+		return
+	}
+	req.Header.Add("Accept", "application/json")
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		logError("could not retrieve stream: %s", err)
+		return
+	}
+	if res.StatusCode != 200 {
+		logError("unexpected response: %d", res.Status)
+		return
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		logError("couls not read response body: %s", err)
+		return
+	}
+	defer res.Body.Close()
+	var streams map[string]interface{}
+	err = json.Unmarshal(body, &streams)
+	if err != nil {
+		logError("could not parse stream: %s", err)
+		return
+	}
+	for s := range streams {
+		logInfo("adding stream: %s", s)
+		getCollector(s, true)
 	}
 }
 
