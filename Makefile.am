@@ -200,6 +200,7 @@ check: checker
 GO_DEPS = \
 	github.com/ShowMax/go-fqdn \
 	github.com/golang/snappy \
+	github.com/gorilla/mux \
 	github.com/gorilla/websocket \
 	github.com/jessevdk/go-flags \
 	github.com/nu7hatch/gouuid \

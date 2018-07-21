@@ -8,12 +8,14 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 	// "runtime"
 	// "runtime/pprof"
 
+	"github.com/gorilla/mux"
 	"github.com/jessevdk/go-flags"
 	zmq "github.com/pebbe/zmq4"
 	"github.com/prometheus/client_golang/prometheus"
@@ -24,36 +26,92 @@ import (
 var opts struct {
 	Verbose  bool   `short:"v" long:"verbose" description:"be verbose"`
 	Importer string `short:"i" long:"importer" default:"127.0.0.1:9612" description:"importer host:port pair"`
-	Env      string `short:"e" long:"env" default:"production" description:"logjam environment to use"`
+	Env      string `short:"e" long:"env" description:"logjam environments to process"`
 	Port     string `short:"p" long:"port" default:"8081" description:"port to expose metrics on"`
 }
 
 var (
-	verbose                 = false
-	interrupted             = false
-	importerSpec            string
-	processed               int64
-	dropped                 int64
-	missed                  int64
-	httpRequestHistogramVec = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "http_request_duration_seconds",
-			Help:    "http response time distribution",
-			Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
-		},
-		[]string{"application", "action", "code", "http_method", "instance", "cluster", "datacenter"},
-	)
-	jobExecutionHistogramVec = prometheus.NewHistogramVec(
-		prometheus.HistogramOpts{
-			Name:    "job_execution_duration_seconds",
-			Help:    "background job execution time distribution",
-			Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
-		},
-		[]string{"application", "action", "code", "instance", "cluster", "datacenter"},
-	)
-	registry         = prometheus.NewRegistry()
-	instanceRegistry = make(chan string, 10000)
+	verbose      = false
+	interrupted  = false
+	importerSpec string
+	processed    int64
+	dropped      int64
+	missed       int64
+	collectors   = make(map[string]*collector)
+	mutex        sync.Mutex
 )
+
+func getCollector(appEnv string, create bool) *collector {
+	mutex.Lock()
+	defer mutex.Unlock()
+	c := collectors[appEnv]
+	if c == nil && create {
+		c = newCollector()
+		collectors[appEnv] = c
+	}
+	return c
+}
+
+type collector struct {
+	httpRequestHistogramVec  *prometheus.HistogramVec
+	jobExecutionHistogramVec *prometheus.HistogramVec
+	registry                 *prometheus.Registry
+	instanceRegistry         chan string
+	requestHandler           http.Handler
+}
+
+func newCollector() *collector {
+	c := collector{
+		httpRequestHistogramVec: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "http_request_duration_seconds",
+				Help:    "http response time distribution",
+				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
+			},
+			[]string{"application", "action", "code", "http_method", "instance", "cluster", "datacenter"},
+		),
+		jobExecutionHistogramVec: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "job_execution_duration_seconds",
+				Help:    "background job execution time distribution",
+				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
+			},
+			[]string{"application", "action", "code", "instance", "cluster", "datacenter"},
+		),
+		registry:         prometheus.NewRegistry(),
+		instanceRegistry: make(chan string, 10000),
+	}
+	c.registry.MustRegister(c.httpRequestHistogramVec)
+	c.registry.MustRegister(c.jobExecutionHistogramVec)
+	c.requestHandler = promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{})
+	go c.instanceRegistryHandler()
+	return &c
+}
+
+func (c *collector) instanceRegistryHandler() {
+	// map from instance names to last seen timestamps
+	knownInstances := make(map[string]time.Time)
+	// cleaning every minute
+	ticker := time.NewTicker(1 * time.Minute)
+	// until we are interrupted
+	for !interrupted {
+		select {
+		case instance := <-c.instanceRegistry:
+			knownInstances[instance] = time.Now()
+		case <-ticker.C:
+			threshold := time.Now().Add(-1 * time.Hour)
+			for i, v := range knownInstances {
+				if v.Before(threshold) {
+					logInfo("removing instance: %s", i)
+					delete(knownInstances, i)
+					labels := prometheus.Labels{"instance": i}
+					c.httpRequestHistogramVec.Delete(labels)
+					c.jobExecutionHistogramVec.Delete(labels)
+				}
+			}
+		}
+	}
+}
 
 func initialize() {
 	args, err := flags.ParseArgs(&opts, os.Args)
@@ -68,12 +126,6 @@ func initialize() {
 		logError("%s: passing arguments is not supported. please use options instead.", args[0])
 		os.Exit(1)
 	}
-	setupPrometheus()
-}
-
-func setupPrometheus() {
-	registry.MustRegister(httpRequestHistogramVec)
-	registry.MustRegister(jobExecutionHistogramVec)
 }
 
 func installSignalHandler() {
@@ -177,38 +229,14 @@ func recordMetrics(data string) {
 	delete(m, "metric")
 	delete(m, "value")
 	// fmt.Printf("metric: %s, value: %f\n", metric, value)
+	c := getCollector(m["application"]+"-"+m["environment"], true)
 	switch metric {
 	case "http":
-		httpRequestHistogramVec.With(m).Observe(value)
-		instanceRegistry <- instance
+		c.httpRequestHistogramVec.With(m).Observe(value)
+		c.instanceRegistry <- instance
 	case "job":
-		jobExecutionHistogramVec.With(m).Observe(value)
-		instanceRegistry <- instance
-	}
-}
-
-func instanceRegistryHandler() {
-	// map from instance names to last seen timestamps
-	knownInstances := make(map[string]time.Time)
-	// cleaning every minute
-	ticker := time.NewTicker(1 * time.Minute)
-	// until we are interrupted
-	for !interrupted {
-		select {
-		case instance := <-instanceRegistry:
-			knownInstances[instance] = time.Now()
-		case <-ticker.C:
-			threshold := time.Now().Add(-1 * time.Hour)
-			for i, v := range knownInstances {
-				if v.Before(threshold) {
-					logInfo("removing instance: %s", i)
-					delete(knownInstances, i)
-					labels := prometheus.Labels{"instance": i}
-					httpRequestHistogramVec.Delete(labels)
-					jobExecutionHistogramVec.Delete(labels)
-				}
-			}
-		}
+		c.jobExecutionHistogramVec.With(m).Observe(value)
+		c.instanceRegistry <- instance
 	}
 }
 
@@ -229,22 +257,32 @@ func statsReporter() {
 // web server
 
 func webServer() {
-	mux := http.NewServeMux()
-	promHandler := promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
-	handlerFunc := func(w http.ResponseWriter, r *http.Request) { promHandler.ServeHTTP(w, r) }
-	mux.HandleFunc("/metrics", handlerFunc)
+	r := mux.NewRouter()
+	r.HandleFunc("/metrics/{application}/{environment}", serveAppMetrics)
 	logInfo("starting http server on port %s", opts.Port)
 	spec := ":" + opts.Port
 	srv := &graceful.Server{
 		Timeout: 10 * time.Second,
 		Server: &http.Server{
 			Addr:    spec,
-			Handler: mux,
+			Handler: r,
 		},
 	}
 	err := srv.ListenAndServe()
 	if err != nil {
 		logError("Cannot listen and serve: %s", err)
+	}
+}
+
+func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	app := vars["application"]
+	env := vars["environment"]
+	c := getCollector(app+"-"+env, false)
+	if c == nil {
+		http.NotFound(w, r)
+	} else {
+		c.requestHandler.ServeHTTP(w, r)
 	}
 }
 
@@ -268,7 +306,6 @@ func main() {
 	installSignalHandler()
 	go zmqMsgHandler()
 	go statsReporter()
-	go instanceRegistryHandler()
 	webServer()
 	logInfo("% shutting down", os.Args[0])
 }
