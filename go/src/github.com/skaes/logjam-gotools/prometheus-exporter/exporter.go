@@ -68,7 +68,7 @@ func newCollector() *collector {
 				Help:    "http response time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
-			[]string{"application", "action", "code", "http_method", "instance", "cluster", "datacenter"},
+			[]string{"application", "environment", "action", "code", "http_method", "instance", "cluster", "datacenter"},
 		),
 		jobExecutionHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -76,7 +76,7 @@ func newCollector() *collector {
 				Help:    "background job execution time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
-			[]string{"application", "action", "code", "instance", "cluster", "datacenter"},
+			[]string{"application", "environment", "action", "code", "instance", "cluster", "datacenter"},
 		),
 		registry:         prometheus.NewRegistry(),
 		instanceRegistry: make(chan string, 10000),
