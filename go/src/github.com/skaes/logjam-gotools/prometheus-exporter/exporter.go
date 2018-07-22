@@ -134,7 +134,7 @@ func initialize() {
 	}
 }
 
-func retrieveStreams(url string) {
+func retrieveStreams(url, env string) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		logError("could not create http request: %s", err)
@@ -153,7 +153,7 @@ func retrieveStreams(url string) {
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		logError("couls not read response body: %s", err)
+		logError("could not read response body: %s", err)
 		return
 	}
 	defer res.Body.Close()
@@ -163,9 +163,12 @@ func retrieveStreams(url string) {
 		logError("could not parse stream: %s", err)
 		return
 	}
+	suffix := "-" + env
 	for s := range streams {
-		logInfo("adding stream: %s", s)
-		getCollector(s, true)
+		if env == "" || strings.HasSuffix(s, suffix) {
+			logInfo("adding stream: %s", s)
+			getCollector(s, true)
+		}
 	}
 }
 
