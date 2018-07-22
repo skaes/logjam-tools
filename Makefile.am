@@ -6,6 +6,8 @@ AM_CFLAGS = --std=gnu99 -Wall -fno-fast-math
 AM_LDFLAGS = $(OPT_PTHREAD_FLAGS)
 LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS) $(OPT_PROFILER_FLAGS) -lm
 
+dist_bin_SCRIPTS = logjam-prometheus-config
+
 bin_PROGRAMS = \
     logjam-device \
     logjam-importer \

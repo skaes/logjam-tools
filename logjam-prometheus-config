@@ -1,0 +1,79 @@
+#!/bin/bash
+
+# set -e
+
+url="http://localhost"
+included=""
+streams=""
+
+function usage() {
+    echo "$(basename $0) [ -i|--include streams to include ] [ -l|--logjam-url url ]"
+    echo "use -l to specify the logjam enpoint"
+    echo "use -i to specify a string which is used to select a subset of streams (substring match)"
+    exit 1
+}
+
+while true; do
+    case "$1" in
+        -i | --include ) included="$2"; shift 2 ;;
+        -l | --logjam-url ) url="$2"; shift 2 ;;
+        -h | --help ) usage ;;
+        * ) break ;;
+    esac
+done
+
+if [ "$included" == "" ]; then
+    streams=$(curl -s $url/admin/streams | jq -r 'keys | .[]')
+else
+    streams=$(curl -s $url/admin/streams | jq -r 'keys | .[]' | grep "$included")
+fi
+if [ "$streams" == "" ]; then
+    echo "could not retrieve any streams from $url/admin/streams"
+    usage
+fi
+
+cat <<'EOF'
+# my global config
+global:
+  scrape_interval:     15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+  evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
+  # scrape_timeout is set to the global default (10s).
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+  - static_configs:
+    - targets:
+      # - alertmanager:9093
+
+# Load rules once and periodically evaluate them according to the global 'evaluation_interval'.
+rule_files:
+  # - "first_rules.yml"
+  # - "second_rules.yml"
+
+# A scrape configuration containing exactly one endpoint to scrape:
+# Here it's Prometheus itself.
+scrape_configs:
+  # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+  - job_name: 'prometheus'
+
+    # metrics_path defaults to '/metrics'
+    # scheme defaults to 'http'.
+
+    static_configs:
+    - targets: ['localhost:9090']
+EOF
+for stream in $streams; do
+    app=$(echo $stream | cut -d'-' -f1)
+    env=$(echo $stream | cut -d'-' -f2)
+    cat <<EOF
+
+  - job_name: '$stream'
+    scrape_interval: 60s
+    scrape_timeout: 60s
+    honor_labels: true
+    metrics_path: 'metrics/$app/$env'
+    - static_configs:
+      targets: ["localhost:8081"]
+EOF
+done
