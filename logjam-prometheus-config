@@ -73,7 +73,7 @@ for stream in $streams; do
     scrape_timeout: 60s
     honor_labels: true
     metrics_path: 'metrics/$app/$env'
-    - static_configs:
-      targets: ["localhost:8081"]
+    static_configs:
+    - targets: ["localhost:8081"]
 EOF
 done
