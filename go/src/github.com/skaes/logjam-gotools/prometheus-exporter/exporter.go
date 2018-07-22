@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -130,7 +132,13 @@ func initialize() {
 		os.Exit(1)
 	}
 	if opts.StreamURL != "" {
-		retrieveStreams(opts.StreamURL + "")
+		u, err := url.Parse(opts.StreamURL)
+		if err != nil {
+			logError("could not parse stream url: %s", err)
+			os.Exit(1)
+		}
+		u.Path = path.Join(u.Path, "admin/streams")
+		retrieveStreams(u.String(), opts.Env)
 	}
 }
 
