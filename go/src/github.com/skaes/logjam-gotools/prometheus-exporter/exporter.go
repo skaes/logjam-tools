@@ -46,15 +46,17 @@ var (
 	mutex        sync.Mutex
 )
 
-func getCollector(appEnv string, create bool) *collector {
+func createCollector(appEnv string, apiRequests []string) {
+	c := newCollector(apiRequests)
 	mutex.Lock()
 	defer mutex.Unlock()
-	c := collectors[appEnv]
-	if c == nil && create {
-		c = newCollector()
-		collectors[appEnv] = c
-	}
-	return c
+	collectors[appEnv] = c
+}
+
+func getCollector(appEnv string) *collector {
+	mutex.Lock()
+	defer mutex.Unlock()
+	return collectors[appEnv]
 }
 
 type collector struct {
@@ -63,9 +65,19 @@ type collector struct {
 	registry                 *prometheus.Registry
 	instanceRegistry         chan string
 	requestHandler           http.Handler
+	apiRequests              []string
 }
 
-func newCollector() *collector {
+func (c *collector) requestType(action string) string {
+	for _, p := range c.apiRequests {
+		if strings.HasPrefix(action, p) {
+			return "api"
+		}
+	}
+	return "web"
+}
+
+func newCollector(apiRequests []string) *collector {
 	c := collector{
 		httpRequestHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -73,7 +85,7 @@ func newCollector() *collector {
 				Help:    "http response time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
-			[]string{"application", "environment", "action", "code", "http_method", "instance", "cluster", "datacenter"},
+			[]string{"application", "environment", "type", "code", "http_method", "instance", "cluster", "datacenter"},
 		),
 		jobExecutionHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -81,10 +93,11 @@ func newCollector() *collector {
 				Help:    "background job execution time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
-			[]string{"application", "environment", "action", "code", "instance", "cluster", "datacenter"},
+			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
 		),
 		registry:         prometheus.NewRegistry(),
 		instanceRegistry: make(chan string, 10000),
+		apiRequests:      apiRequests,
 	}
 	c.registry.MustRegister(c.httpRequestHistogramVec)
 	c.registry.MustRegister(c.jobExecutionHistogramVec)
@@ -142,6 +155,10 @@ func initialize() {
 	}
 }
 
+type stream struct {
+	APIRequests []string `json:"api_requests"`
+}
+
 func retrieveStreams(url, env string) {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
@@ -165,17 +182,17 @@ func retrieveStreams(url, env string) {
 		return
 	}
 	defer res.Body.Close()
-	var streams map[string]interface{}
+	var streams map[string]stream
 	err = json.Unmarshal(body, &streams)
 	if err != nil {
 		logError("could not parse stream: %s", err)
 		return
 	}
 	suffix := "-" + env
-	for s := range streams {
+	for s, r := range streams {
 		if env == "" || strings.HasSuffix(s, suffix) {
-			logInfo("adding stream: %s", s)
-			getCollector(s, true)
+			logInfo("adding stream: %s : %v", s, r.APIRequests)
+			createCollector(s, r.APIRequests)
 		}
 	}
 }
@@ -280,10 +297,16 @@ func recordMetrics(data string) {
 	}
 	delete(m, "metric")
 	delete(m, "value")
+	action := m["action"]
+	delete(m, "action")
 	// fmt.Printf("metric: %s, value: %f\n", metric, value)
-	c := getCollector(m["application"]+"-"+m["environment"], true)
+	c := getCollector(m["application"] + "-" + m["environment"])
+	if c == nil {
+		return
+	}
 	switch metric {
 	case "http":
+		m["type"] = c.requestType(action)
 		c.httpRequestHistogramVec.With(m).Observe(value)
 		c.instanceRegistry <- instance
 	case "job":
@@ -330,7 +353,7 @@ func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	app := vars["application"]
 	env := vars["environment"]
-	c := getCollector(app+"-"+env, false)
+	c := getCollector(app + "-" + env)
 	if c == nil {
 		http.NotFound(w, r)
 	} else {
