@@ -28,11 +28,17 @@ import (
 )
 
 var opts struct {
-	Verbose   bool   `short:"v" long:"verbose" description:"be verbose"`
-	Importer  string `short:"i" long:"importer" default:"127.0.0.1:9612" description:"importer host:port pair"`
-	Env       string `short:"e" long:"env" description:"logjam environments to process"`
-	Port      string `short:"p" long:"port" default:"8081" description:"port to expose metrics on"`
-	StreamURL string `short:"s" long:"stream-url" default:"" description:"Logjam endpoint for retrieveing stream definitions"`
+	Verbose     bool   `short:"v" long:"verbose" description:"be verbose"`
+	Importer    string `short:"i" long:"importer" default:"127.0.0.1:9612" description:"importer host:port pair"`
+	Env         string `short:"e" long:"env" description:"logjam environments to process"`
+	Port        string `short:"p" long:"port" default:"8081" description:"port to expose metrics on"`
+	StreamURL   string `short:"s" long:"stream-url" default:"" description:"Logjam endpoint for retrieving stream definitions"`
+	Datacenters string `short:"d" long:"datacenters" description:"List of known datacenters, comma separated. Will be used to determine label value if not available on incoming data."`
+}
+
+type dcPair struct {
+	name     string
+	withDots string
 }
 
 var (
@@ -44,6 +50,7 @@ var (
 	missed       int64
 	collectors   = make(map[string]*collector)
 	mutex        sync.Mutex
+	datacenters  = make([]dcPair, 0)
 )
 
 func createCollector(appEnv string, apiRequests []string) {
@@ -153,6 +160,12 @@ func initialize() {
 		u.Path = path.Join(u.Path, "admin/streams")
 		retrieveStreams(u.String(), opts.Env)
 	}
+	for _, dc := range strings.Split(opts.Datacenters, ",") {
+		if dc != "" {
+			datacenters = append(datacenters, dcPair{name: dc, withDots: "." + dc + "."})
+		}
+	}
+	fmt.Printf("datacenters: %+v\n", datacenters)
 }
 
 type stream struct {
@@ -299,6 +312,20 @@ func recordMetrics(data string) {
 	delete(m, "value")
 	action := m["action"]
 	delete(m, "action")
+	if dc := m["datacenter"]; dc == "unknown" || dc == "" {
+		fixed := false
+		for _, d := range datacenters {
+			if strings.Contains(instance, d.withDots) {
+				fixed = true
+				m["datacenter"] = d.name
+				// fmt.Printf("Fixed datacenter: %s ==> %s\n", dc, d.name)
+				break
+			}
+		}
+		if verbose && !fixed {
+			logWarn("Could not fix datacenter: %s, application: %s, instance: %s", dc, m["application"], instance)
+		}
+	}
 	// fmt.Printf("metric: %s, value: %f\n", metric, value)
 	c := getCollector(m["application"] + "-" + m["environment"])
 	if c == nil {
