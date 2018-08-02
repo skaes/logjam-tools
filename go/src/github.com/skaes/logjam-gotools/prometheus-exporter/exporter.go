@@ -78,6 +78,7 @@ type collector struct {
 	jobExecutionHistogramVec *prometheus.HistogramVec
 	registry                 *prometheus.Registry
 	instanceRegistry         chan instanceInfo
+	metricsChannel           chan map[string]string
 	requestHandler           http.Handler
 	apiRequests              []string
 	knownInstances           map[instanceInfo]time.Time
@@ -114,12 +115,25 @@ func newCollector(apiRequests []string) *collector {
 		instanceRegistry: make(chan instanceInfo, 10000),
 		apiRequests:      apiRequests,
 		knownInstances:   make(map[instanceInfo]time.Time),
+		metricsChannel:   make(chan map[string]string, 10000),
 	}
 	c.registry.MustRegister(c.httpRequestHistogramVec)
 	c.registry.MustRegister(c.jobExecutionHistogramVec)
 	c.requestHandler = promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{})
 	go c.instanceRegistryHandler()
+	go c.observer()
 	return &c
+}
+
+func (c *collector) observeMetrics(m map[string]string) {
+	c.metricsChannel <- m
+}
+
+func (c *collector) observer() {
+	for !interrupted {
+		m := <-c.metricsChannel
+		c.recordMetrics(m)
+	}
 }
 
 func hasLabel(pairs []*promclient.LabelPair, label string, value string) bool {
@@ -385,7 +399,7 @@ func zmqMsgHandler() {
 				logError("could not retrieve collector for %s", appEnv)
 				continue
 			}
-			c.recordMetrics(metrics)
+			c.observeMetrics(metrics)
 		}
 	}
 }
