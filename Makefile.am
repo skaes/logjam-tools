@@ -208,7 +208,8 @@ GO_DEPS = \
 	github.com/nu7hatch/gouuid \
 	github.com/pebbe/zmq4 \
 	gopkg.in/tylerb/graceful.v1 \
-        github.com/prometheus/client_golang/prometheus
+        github.com/prometheus/client_golang/prometheus \
+	github.com/prometheus/client_model/go
 
 .godeps:
 	$(GO_ENV) go get $(GO_DEPS)
@@ -220,7 +221,7 @@ GO_SRC = go/src/$(GO_PKG)
 GO_NOINSTALL_TARGETS = livestream-generator
 GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-prometheus-exporter
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
-GO_TESTS = http-client-test
+GO_TESTS = http-client-test prometheus-exporter-test
 
 # Extend generated Makefile with rules for compiling the go part. See
 # https://www.gnu.org/software/automake/manual/html_node/Extending.html for why
@@ -249,10 +250,13 @@ logjam-http-forwarder: $(GO_SRC)/http-forwarder/forwarder.go .godeps
 logjam-prometheus-exporter: $(GO_SRC)/prometheus-exporter/exporter.go .godeps
 	$(GO_ENV) go build -o $@ $<
 
-.PHONY: http-client-test
+.PHONY: http-client-test prometheus-exporter-test
 
 http-client-test:
 	$(GO_ENV) go test $(GO_PKG)/http-client
+
+prometheus-exporter-test:
+	$(GO_ENV) go test $(GO_PKG)/prometheus-exporter
 
 check-local: livestream-test
 

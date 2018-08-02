@@ -24,6 +24,7 @@ import (
 	zmq "github.com/pebbe/zmq4"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	promclient "github.com/prometheus/client_model/go"
 	"gopkg.in/tylerb/graceful.v1"
 )
 
@@ -34,6 +35,7 @@ var opts struct {
 	Port        string `short:"p" long:"port" default:"8081" description:"port to expose metrics on"`
 	StreamURL   string `short:"s" long:"stream-url" default:"" description:"Logjam endpoint for retrieving stream definitions"`
 	Datacenters string `short:"d" long:"datacenters" description:"List of known datacenters, comma separated. Will be used to determine label value if not available on incoming data."`
+	CleanAfter  uint   `short:"c" long:"clean-after" default:"60" description:"Minutes to wait before cleaning old instances"`
 }
 
 type dcPair struct {
@@ -66,13 +68,19 @@ func getCollector(appEnv string) *collector {
 	return collectors[appEnv]
 }
 
+type instanceInfo struct {
+	name string
+	kind string
+}
+
 type collector struct {
 	httpRequestHistogramVec  *prometheus.HistogramVec
 	jobExecutionHistogramVec *prometheus.HistogramVec
 	registry                 *prometheus.Registry
-	instanceRegistry         chan string
+	instanceRegistry         chan instanceInfo
 	requestHandler           http.Handler
 	apiRequests              []string
+	knownInstances           map[instanceInfo]time.Time
 }
 
 func (c *collector) requestType(action string) string {
@@ -103,8 +111,9 @@ func newCollector(apiRequests []string) *collector {
 			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
 		),
 		registry:         prometheus.NewRegistry(),
-		instanceRegistry: make(chan string, 10000),
+		instanceRegistry: make(chan instanceInfo, 10000),
 		apiRequests:      apiRequests,
+		knownInstances:   make(map[instanceInfo]time.Time),
 	}
 	c.registry.MustRegister(c.httpRequestHistogramVec)
 	c.registry.MustRegister(c.jobExecutionHistogramVec)
@@ -113,28 +122,112 @@ func newCollector(apiRequests []string) *collector {
 	return &c
 }
 
-func (c *collector) instanceRegistryHandler() {
-	// map from instance names to last seen timestamps
-	knownInstances := make(map[string]time.Time)
-	// cleaning every minute
-	ticker := time.NewTicker(1 * time.Minute)
-	// until we are interrupted
-	for !interrupted {
-		select {
-		case instance := <-c.instanceRegistry:
-			knownInstances[instance] = time.Now()
-		case <-ticker.C:
-			threshold := time.Now().Add(-1 * time.Hour)
-			for i, v := range knownInstances {
-				if v.Before(threshold) {
-					logInfo("removing instance: %s", i)
-					delete(knownInstances, i)
-					labels := prometheus.Labels{"instance": i}
-					c.httpRequestHistogramVec.Delete(labels)
-					c.jobExecutionHistogramVec.Delete(labels)
+func hasLabel(pairs []*promclient.LabelPair, label string, value string) bool {
+	for _, p := range pairs {
+		if p.GetName() == label && p.GetValue() == value {
+			return true
+		}
+	}
+	return false
+}
+
+func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
+	labels := make(prometheus.Labels)
+	for _, p := range pairs {
+		labels[p.GetName()] = p.GetValue()
+	}
+	return labels
+}
+
+func (c *collector) removeInstance(i instanceInfo) bool {
+	logInfo("removing instance: %s", i.name)
+	delete(c.knownInstances, i)
+	mfs, err := c.registry.Gather()
+	if err != nil {
+		logError("could not gather metric families for deletion: %s", err)
+		return false
+	}
+	numProcessed := 0
+	numDeleted := 0
+	for _, mf := range mfs {
+		for _, m := range mf.GetMetric() {
+			pairs := m.GetLabel()
+			if hasLabel(pairs, "instance", i.name) {
+				numProcessed++
+				labels := labelsFromLabelPairs(pairs)
+				deleted := false
+				if i.kind == "http" {
+					deleted = c.httpRequestHistogramVec.Delete(labels)
+				} else {
+					deleted = c.jobExecutionHistogramVec.Delete(labels)
+				}
+				if deleted {
+					numDeleted++
+				} else {
+					logError("Could not delete labels: %v", labels)
 				}
 			}
 		}
+	}
+	return numProcessed > 0 && numProcessed == numDeleted
+}
+
+func (c *collector) instanceRegistryHandler() {
+	// cleaning every minute, until we are interrupted
+	ticker := time.NewTicker(1 * time.Minute)
+	for !interrupted {
+		select {
+		case instance := <-c.instanceRegistry:
+			c.knownInstances[instance] = time.Now()
+		case <-ticker.C:
+			threshold := time.Now().Add(-1 * time.Duration(opts.CleanAfter) * time.Minute)
+			for i, v := range c.knownInstances {
+				if v.Before(threshold) {
+					c.removeInstance(i)
+				}
+			}
+		}
+	}
+}
+
+func fixDatacenter(m map[string]string, instance string) {
+	if dc := m["datacenter"]; dc == "unknown" || dc == "" {
+		fixed := false
+		for _, d := range datacenters {
+			if strings.Contains(instance, d.withDots) {
+				fixed = true
+				m["datacenter"] = d.name
+				// fmt.Printf("Fixed datacenter: %s ==> %s\n", dc, d.name)
+				break
+			}
+		}
+		if verbose && !fixed {
+			logWarn("Could not fix datacenter: %s, application: %s, instance: %s", dc, m["application"], instance)
+		}
+	}
+}
+
+func (c *collector) recordMetrics(m map[string]string) {
+	metric := m["metric"]
+	instance := m["instance"]
+	action := m["action"]
+	value, err := strconv.ParseFloat(m["value"], 64)
+	if err != nil {
+		logError("could not parse float: %s", err)
+		return
+	}
+	delete(m, "metric")
+	delete(m, "value")
+	delete(m, "action")
+	fixDatacenter(m, instance)
+	switch metric {
+	case "http":
+		m["type"] = c.requestType(action)
+		c.httpRequestHistogramVec.With(m).Observe(value)
+		c.instanceRegistry <- instanceInfo{name: instance, kind: metric}
+	case "job":
+		c.jobExecutionHistogramVec.With(m).Observe(value)
+		c.instanceRegistry <- instanceInfo{name: instance, kind: metric}
 	}
 }
 
@@ -281,12 +374,23 @@ func zmqMsgHandler() {
 					logError("detected message gap for env %s: missed %d messages", env, gap)
 				}
 			}
-			recordMetrics(data)
+			metrics, err := parseMetrics(data)
+			if err != nil {
+				logError("%s", err)
+				continue
+			}
+			appEnv := metrics["application"] + "-" + metrics["environment"]
+			c := getCollector(appEnv)
+			if c == nil {
+				logError("could not retrieve collector for %s", appEnv)
+				continue
+			}
+			c.recordMetrics(metrics)
 		}
 	}
 }
 
-func recordMetrics(data string) {
+func parseMetrics(data string) (map[string]string, error) {
 	// fmt.Printf("data: %s\n", data)
 	m := make(map[string]string)
 	for _, l := range strings.Split(data, "\n") {
@@ -295,51 +399,12 @@ func recordMetrics(data string) {
 		}
 		pos := strings.Index(l, ":")
 		if pos == -1 {
-			logError("line without separator: %s", l)
-			return
+			return m, fmt.Errorf("line without separator: %s", l)
 		}
 		m[l[:pos]] = l[pos+1:]
 	}
 	// fmt.Printf("map: %v\n", m)
-	metric := m["metric"]
-	instance := m["instance"]
-	value, err := strconv.ParseFloat(m["value"], 64)
-	if err != nil {
-		logError("could not parse float: %s", err)
-		return
-	}
-	delete(m, "metric")
-	delete(m, "value")
-	action := m["action"]
-	delete(m, "action")
-	if dc := m["datacenter"]; dc == "unknown" || dc == "" {
-		fixed := false
-		for _, d := range datacenters {
-			if strings.Contains(instance, d.withDots) {
-				fixed = true
-				m["datacenter"] = d.name
-				// fmt.Printf("Fixed datacenter: %s ==> %s\n", dc, d.name)
-				break
-			}
-		}
-		if verbose && !fixed {
-			logWarn("Could not fix datacenter: %s, application: %s, instance: %s", dc, m["application"], instance)
-		}
-	}
-	// fmt.Printf("metric: %s, value: %f\n", metric, value)
-	c := getCollector(m["application"] + "-" + m["environment"])
-	if c == nil {
-		return
-	}
-	switch metric {
-	case "http":
-		m["type"] = c.requestType(action)
-		c.httpRequestHistogramVec.With(m).Observe(value)
-		c.instanceRegistry <- instance
-	case "job":
-		c.jobExecutionHistogramVec.With(m).Observe(value)
-		c.instanceRegistry <- instance
-	}
+	return m, nil
 }
 
 // report number of incoming zmq messages every second
