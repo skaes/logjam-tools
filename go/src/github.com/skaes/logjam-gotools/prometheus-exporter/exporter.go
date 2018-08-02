@@ -68,20 +68,19 @@ func getCollector(appEnv string) *collector {
 	return collectors[appEnv]
 }
 
-type instanceInfo struct {
-	name string
-	kind string
-}
-
 type collector struct {
+	httpRequestCounterVec    *prometheus.CounterVec
+	httpRequestDurationVec   *prometheus.CounterVec
+	jobExecutionCounterVec   *prometheus.CounterVec
+	jobExecutionDurationVec  *prometheus.CounterVec
 	httpRequestHistogramVec  *prometheus.HistogramVec
 	jobExecutionHistogramVec *prometheus.HistogramVec
 	registry                 *prometheus.Registry
-	instanceRegistry         chan instanceInfo
+	instanceRegistry         chan string
 	metricsChannel           chan map[string]string
 	requestHandler           http.Handler
 	apiRequests              []string
-	knownInstances           map[instanceInfo]time.Time
+	knownInstances           map[string]time.Time
 }
 
 func (c *collector) requestType(action string) string {
@@ -95,13 +94,41 @@ func (c *collector) requestType(action string) string {
 
 func newCollector(apiRequests []string) *collector {
 	c := collector{
+		httpRequestCounterVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "http_request_count",
+				Help: "http request count",
+			},
+			[]string{"application", "environment", "type", "code", "http_method", "instance", "cluster", "datacenter"},
+		),
+		httpRequestDurationVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "http_request_time_seconds",
+				Help: "http request time seconds",
+			},
+			[]string{"application", "environment", "type", "code", "http_method", "instance", "cluster", "datacenter"},
+		),
+		jobExecutionCounterVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "job_execution_count",
+				Help: "job execution count",
+			},
+			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
+		),
+		jobExecutionDurationVec: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: "job_execution_time_seconds",
+				Help: "job execution time seconds",
+			},
+			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
+		),
 		httpRequestHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "http_request_duration_seconds",
 				Help:    "http response time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
-			[]string{"application", "environment", "type", "code", "http_method", "instance", "cluster", "datacenter"},
+			[]string{"application", "environment", "type", "http_method"},
 		),
 		jobExecutionHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -109,16 +136,20 @@ func newCollector(apiRequests []string) *collector {
 				Help:    "background job execution time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
-			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
+			[]string{"application", "environment"},
 		),
 		registry:         prometheus.NewRegistry(),
-		instanceRegistry: make(chan instanceInfo, 10000),
+		instanceRegistry: make(chan string, 10000),
 		apiRequests:      apiRequests,
-		knownInstances:   make(map[instanceInfo]time.Time),
+		knownInstances:   make(map[string]time.Time),
 		metricsChannel:   make(chan map[string]string, 10000),
 	}
 	c.registry.MustRegister(c.httpRequestHistogramVec)
 	c.registry.MustRegister(c.jobExecutionHistogramVec)
+	c.registry.MustRegister(c.httpRequestCounterVec)
+	c.registry.MustRegister(c.httpRequestDurationVec)
+	c.registry.MustRegister(c.jobExecutionCounterVec)
+	c.registry.MustRegister(c.jobExecutionDurationVec)
 	c.requestHandler = promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{})
 	go c.instanceRegistryHandler()
 	go c.observer()
@@ -153,8 +184,8 @@ func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
 	return labels
 }
 
-func (c *collector) removeInstance(i instanceInfo) bool {
-	logInfo("removing instance: %s", i.name)
+func (c *collector) removeInstance(i string) bool {
+	logInfo("removing instance: %s", i)
 	delete(c.knownInstances, i)
 	mfs, err := c.registry.Gather()
 	if err != nil {
@@ -164,16 +195,25 @@ func (c *collector) removeInstance(i instanceInfo) bool {
 	numProcessed := 0
 	numDeleted := 0
 	for _, mf := range mfs {
+		name := mf.GetName()
+		if name == "http_request_duration_seconds" || name == "job_execution_duration_seconds" {
+			continue
+		}
 		for _, m := range mf.GetMetric() {
 			pairs := m.GetLabel()
-			if hasLabel(pairs, "instance", i.name) {
+			if hasLabel(pairs, "instance", i) {
 				numProcessed++
 				labels := labelsFromLabelPairs(pairs)
 				deleted := false
-				if i.kind == "http" {
-					deleted = c.httpRequestHistogramVec.Delete(labels)
-				} else {
-					deleted = c.jobExecutionHistogramVec.Delete(labels)
+				switch name {
+				case "http_request_count":
+					deleted = c.httpRequestCounterVec.Delete(labels)
+				case "http_request_time_seconds":
+					deleted = c.httpRequestDurationVec.Delete(labels)
+				case "job_execution_count":
+					deleted = c.jobExecutionCounterVec.Delete(labels)
+				case "job_execution_time_seconds":
+					deleted = c.jobExecutionDurationVec.Delete(labels)
 				}
 				if deleted {
 					numDeleted++
@@ -237,11 +277,23 @@ func (c *collector) recordMetrics(m map[string]string) {
 	switch metric {
 	case "http":
 		m["type"] = c.requestType(action)
+		c.httpRequestCounterVec.With(m).Inc()
+		c.httpRequestDurationVec.With(m).Add(value)
+		delete(m, "code")
+		delete(m, "instance")
+		delete(m, "cluster")
+		delete(m, "datacenter")
 		c.httpRequestHistogramVec.With(m).Observe(value)
-		c.instanceRegistry <- instanceInfo{name: instance, kind: metric}
+		c.instanceRegistry <- instance
 	case "job":
+		c.jobExecutionCounterVec.With(m).Inc()
+		c.jobExecutionDurationVec.With(m).Add(value)
+		delete(m, "code")
+		delete(m, "instance")
+		delete(m, "cluster")
+		delete(m, "datacenter")
 		c.jobExecutionHistogramVec.With(m).Observe(value)
-		c.instanceRegistry <- instanceInfo{name: instance, kind: metric}
+		c.instanceRegistry <- instance
 	}
 }
 

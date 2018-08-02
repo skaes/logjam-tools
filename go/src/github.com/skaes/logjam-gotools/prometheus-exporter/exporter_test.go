@@ -30,12 +30,36 @@ func TestDeletingLabels(t *testing.T) {
 		"action":      "marks",
 		"value":       "7.7",
 	}
+	metrics3 := map[string]string{
+		"application": "a",
+		"environment": "b",
+		"metric":      "job",
+		"code":        "200",
+		"instance":    "i",
+		"cluster":     "d",
+		"datacenter":  "e",
+		"action":      "marks",
+		"value":       "3.1",
+	}
+	metrics4 := map[string]string{
+		"application": "a",
+		"environment": "b",
+		"metric":      "job",
+		"code":        "200",
+		"instance":    "k",
+		"cluster":     "d",
+		"datacenter":  "e",
+		"action":      "marks",
+		"value":       "4.4",
+	}
 	c.recordMetrics(metrics1)
 	c.recordMetrics(metrics2)
-	if !c.removeInstance(instanceInfo{name: "i", kind: "http"}) {
+	c.recordMetrics(metrics3)
+	c.recordMetrics(metrics4)
+	if !c.removeInstance("i") {
 		t.Errorf("could not remove instance: %s", "i")
 	}
-	if c.removeInstance(instanceInfo{name: "j", kind: "http"}) {
+	if c.removeInstance("j") {
 		t.Errorf("could remove non existent instance : %s", "j")
 	}
 }
