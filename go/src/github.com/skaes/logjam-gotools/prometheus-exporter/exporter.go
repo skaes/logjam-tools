@@ -94,7 +94,7 @@ func newCollector(apiRequests []string) *collector {
 	c := collector{
 		httpRequestSummaryVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Name:       "http_request_latency",
+				Name:       "http_request_latency_seconds",
 				Help:       "http request latency summary",
 				Objectives: map[float64]float64{},
 			},
@@ -102,7 +102,7 @@ func newCollector(apiRequests []string) *collector {
 		),
 		jobExecutionSummaryVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Name:       "job_execution_latency",
+				Name:       "job_execution_latency_seconds",
 				Help:       "job execution latency summary",
 				Objectives: map[float64]float64{},
 			},
@@ -190,9 +190,9 @@ func (c *collector) removeInstance(i string) bool {
 				labels := labelsFromLabelPairs(pairs)
 				deleted := false
 				switch name {
-				case "http_request_latency":
+				case "http_request_latency_seconds":
 					deleted = c.httpRequestSummaryVec.Delete(labels)
-				case "job_execution_latency":
+				case "job_execution_latency_seconds":
 					deleted = c.jobExecutionSummaryVec.Delete(labels)
 				}
 				if deleted {
