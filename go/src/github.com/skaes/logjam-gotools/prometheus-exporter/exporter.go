@@ -69,10 +69,8 @@ func getCollector(appEnv string) *collector {
 }
 
 type collector struct {
-	httpRequestCounterVec    *prometheus.CounterVec
-	httpRequestDurationVec   *prometheus.CounterVec
-	jobExecutionCounterVec   *prometheus.CounterVec
-	jobExecutionDurationVec  *prometheus.CounterVec
+	httpRequestSummaryVec    *prometheus.SummaryVec
+	jobExecutionSummaryVec   *prometheus.SummaryVec
 	httpRequestHistogramVec  *prometheus.HistogramVec
 	jobExecutionHistogramVec *prometheus.HistogramVec
 	registry                 *prometheus.Registry
@@ -94,31 +92,19 @@ func (c *collector) requestType(action string) string {
 
 func newCollector(apiRequests []string) *collector {
 	c := collector{
-		httpRequestCounterVec: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "http_request_count",
-				Help: "http request count",
+		httpRequestSummaryVec: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name:       "http_request_latency",
+				Help:       "http request latency summary",
+				Objectives: map[float64]float64{},
 			},
 			[]string{"application", "environment", "type", "code", "http_method", "instance", "cluster", "datacenter"},
 		),
-		httpRequestDurationVec: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "http_request_time_seconds",
-				Help: "http request time seconds",
-			},
-			[]string{"application", "environment", "type", "code", "http_method", "instance", "cluster", "datacenter"},
-		),
-		jobExecutionCounterVec: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "job_execution_count",
-				Help: "job execution count",
-			},
-			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
-		),
-		jobExecutionDurationVec: prometheus.NewCounterVec(
-			prometheus.CounterOpts{
-				Name: "job_execution_time_seconds",
-				Help: "job execution time seconds",
+		jobExecutionSummaryVec: prometheus.NewSummaryVec(
+			prometheus.SummaryOpts{
+				Name:       "job_execution_latency",
+				Help:       "job execution latency summary",
+				Objectives: map[float64]float64{},
 			},
 			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
 		),
@@ -146,10 +132,8 @@ func newCollector(apiRequests []string) *collector {
 	}
 	c.registry.MustRegister(c.httpRequestHistogramVec)
 	c.registry.MustRegister(c.jobExecutionHistogramVec)
-	c.registry.MustRegister(c.httpRequestCounterVec)
-	c.registry.MustRegister(c.httpRequestDurationVec)
-	c.registry.MustRegister(c.jobExecutionCounterVec)
-	c.registry.MustRegister(c.jobExecutionDurationVec)
+	c.registry.MustRegister(c.httpRequestSummaryVec)
+	c.registry.MustRegister(c.jobExecutionSummaryVec)
 	c.requestHandler = promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{})
 	go c.instanceRegistryHandler()
 	go c.observer()
@@ -206,14 +190,10 @@ func (c *collector) removeInstance(i string) bool {
 				labels := labelsFromLabelPairs(pairs)
 				deleted := false
 				switch name {
-				case "http_request_count":
-					deleted = c.httpRequestCounterVec.Delete(labels)
-				case "http_request_time_seconds":
-					deleted = c.httpRequestDurationVec.Delete(labels)
-				case "job_execution_count":
-					deleted = c.jobExecutionCounterVec.Delete(labels)
-				case "job_execution_time_seconds":
-					deleted = c.jobExecutionDurationVec.Delete(labels)
+				case "http_request_latency":
+					deleted = c.httpRequestSummaryVec.Delete(labels)
+				case "job_execution_latency":
+					deleted = c.jobExecutionSummaryVec.Delete(labels)
 				}
 				if deleted {
 					numDeleted++
@@ -277,8 +257,7 @@ func (c *collector) recordMetrics(m map[string]string) {
 	switch metric {
 	case "http":
 		m["type"] = c.requestType(action)
-		c.httpRequestCounterVec.With(m).Inc()
-		c.httpRequestDurationVec.With(m).Add(value)
+		c.httpRequestSummaryVec.With(m).Observe(value)
 		delete(m, "code")
 		delete(m, "instance")
 		delete(m, "cluster")
@@ -286,8 +265,7 @@ func (c *collector) recordMetrics(m map[string]string) {
 		c.httpRequestHistogramVec.With(m).Observe(value)
 		c.instanceRegistry <- instance
 	case "job":
-		c.jobExecutionCounterVec.With(m).Inc()
-		c.jobExecutionDurationVec.With(m).Add(value)
+		c.jobExecutionSummaryVec.With(m).Observe(value)
 		delete(m, "code")
 		delete(m, "instance")
 		delete(m, "cluster")
