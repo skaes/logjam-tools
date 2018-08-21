@@ -115,7 +115,7 @@ function handle_json_c()
     test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="36be1c4c7ade78fae8ef67280cd4f98ff9f81016"
+    expected_revision="13b3dbd32d3e0bdd7648538292f71b0eadadc48e"
     if [ "$revision" != $expected_revision ]; then
         git reset --hard
         [ $cached = 0 ] && git fetch
