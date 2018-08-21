@@ -65,18 +65,25 @@ function handle_rabbitmq()
     test -d $d || git clone https://github.com/skaes/rabbitmq-c.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="4a33bd4602740a88a4f00e7cad094fe736b3f38d" # use-std-gnu99
+    expected_revision="a65c64c0efd883f3e200bd8831ad3ca066ea523c" # 0.9.0
     if [ "$revision" != $expected_revision ]; then
         git reset --hard
         [ $cached = 0 ] && git fetch
         git checkout $expected_revision
     fi
-    [ $forced == "1" ] && git clean -qfdx
-    test -f config.status || (autoreconf -i && ./configure --prefix=$prefix)
-    make -j4
-    $LSUDO make $cmd
+    [ $forced == "1" ] && git clean -qfdx && rm -rf build
+    mkdir -p build
+    cd build
+    cmake ..
+    cmake --build . --config Release
+    cmake -DCMAKE_INSTALL_PREFIX=$prefix ..
+    if [ "$cmd" == "install" ]; then
+        $LSUDO cmake --build . --config Release --target install
+    else
+        $LSUDO xargs rm < install_manifest.txt
+    fi
     $LSUDO $ldconfig
-    cd ..
+    cd ../..
 }
 
 function handle_mongoc()
@@ -126,7 +133,7 @@ function handle_sodium()
 {
     d=libsodium-1.0.11
     f=${d}.tar.gz
-    test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.11/$f
+    test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/1.0.16/$f
     test -d $d || tar xzvf $f
     cd $d
     [ $forced == "1" ] && rm -f config.status && git clean -fqdx
