@@ -42,8 +42,6 @@ mkdir -p $build_dir
 cd $build_dir
 export PATH=$(pwd)/cmake/bin:$PATH
 
-echo $(which cmake)
-
 case $OSTYPE in
     darwin*)
         export CC=clang
@@ -71,6 +69,7 @@ function handle_cmake()
     f="cmake-$v-$(uname -s)-x86_64.tar.gz"
     test -f $f || wget -nv https://cmake.org/files/v3.12/$f
     test -d $d || (mkdir $d && tar xzf $f -C $d --strip-components=$cmake_strip)
+    echo "using CMAKE=$(which cmake)"
 }
 
 function handle_rabbitmq()
@@ -116,9 +115,12 @@ function handle_mongoc()
     [ $forced == "1" ] && git clean -qfdx && rm -rf cmake-build
     mkdir -p cmake-build
     cd cmake-build
-    cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF ..
-    make
-    $LSUDO make install
+    cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_INSTALL_PREFIX=$prefix ..
+    if [ "$cmd" == "install" ]; then
+        $LSUDO cmake --build . --config Release --target install
+    else
+        $LSUDO xargs rm < install_manifest.txt
+    fi
     $LSUDO $ldconfig
     cd ../..
 }
