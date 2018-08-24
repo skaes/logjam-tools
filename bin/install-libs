@@ -40,17 +40,22 @@ echo "library dependencies go into $prefix, forced=$forced, cmd=$cmd, build_dir=
 
 mkdir -p $build_dir
 cd $build_dir
+export PATH=$(pwd)/cmake/bin:$PATH
+
+echo $(which cmake)
 
 case $OSTYPE in
     darwin*)
         export CC=clang
         export CXX=clang++
         ldconfig=/usr/bin/true
+        cmake_strip=3
         ;;
     *)
         export CC=gcc
         export CXX=g++
         ldconfig=ldconfig
+        cmake_strip=1
         ;;
 esac
 
@@ -58,6 +63,15 @@ esac
 # and libczmq can find libzmq
 export PKG_CONFIG_PATH="$prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
 echo "using PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
+
+function handle_cmake()
+{
+    v=3.12.1
+    d=cmake
+    f="cmake-$v-$(uname -s)-x86_64.tar.gz"
+    test -f $f || wget -nv https://cmake.org/files/v3.12/$f
+    test -d $d || (mkdir $d && tar xzf $f -C $d --strip-components=$cmake_strip)
+}
 
 function handle_rabbitmq()
 {
@@ -172,7 +186,7 @@ function handle_czmq()
     test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="63600a821d45f0ce8ca6e8fe115ee615c9355f15" # 3.0.2 with fixes
+    expected_revision="49dfdf9d653b83b344db5746567516ffb5a269cb" # 3.0.2 with fixes
     if [ "$revision" != "" ]; then
         git reset --hard
         [ $cached = 0 ] && git fetch
@@ -216,8 +230,10 @@ case $cmd in
         handle_mongoc
         handle_snappy
         handle_rabbitmq
+        handle_cmake
         ;;
     *)
+        handle_cmake
         handle_rabbitmq
         handle_snappy
         handle_mongoc
