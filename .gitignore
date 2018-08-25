@@ -28,19 +28,6 @@ logjam.prof
 config.h
 config.h.in
 stamp-h1
-# go sources
-/go/pkg
-/go/src/github.com/ShowMax/
-/go/src/github.com/beorn7/
-/go/src/github.com/golang/
-/go/src/github.com/gorilla/
-/go/src/github.com/jessevdk/
-/go/src/github.com/matttproud/
-/go/src/github.com/nu7hatch/
-/go/src/github.com/pebbe/
-/go/src/github.com/prometheus/
-/go/src/github.com/protobuf/
-/go/src/gopkg.in
 # programs
 /livestream-generator
 /logjam-device
@@ -61,3 +48,4 @@ stamp-h1
 /test_publisher
 /test_subscriber
 /tester
+/go/vendor
