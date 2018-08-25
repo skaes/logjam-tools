@@ -89,7 +89,7 @@ function handle_rabbitmq()
     cd build
     cmake ..
     cmake --build . --config Release
-    cmake -DCMAKE_INSTALL_PREFIX=$prefix -DCMAKE_INSTALL_LIBDIR=$prefix/lib ..
+    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$prefix -DCMAKE_INSTALL_LIBDIR=$prefix/lib ..
     if [ "$cmd" == "install" ]; then
         $LSUDO cmake --build . --config Release --target install
     else
@@ -115,7 +115,9 @@ function handle_mongoc()
     [ $forced == "1" ] && git clean -qfdx && rm -rf cmake-build
     mkdir -p cmake-build
     cd cmake-build
-    cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_INSTALL_PREFIX=$prefix -DCMAKE_INSTALL_LIBDIR=$prefix/lib ..
+    cmake ..
+    cmake --build . --config Release
+    cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$prefix -DCMAKE_INSTALL_LIBDIR=$prefix/lib ..
     if [ "$cmd" == "install" ]; then
         $LSUDO cmake --build . --config Release --target install
     else
