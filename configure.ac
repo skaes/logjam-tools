@@ -93,7 +93,4 @@ AC_CHECK_FUNC([pthread_setname_np],
 
 AX_CHECK_ZLIB
 
-PROJECT_DIR=`pwd`
-AC_SUBST([GO_PATH], ["$PROJECT_DIR/go"])
-
 AC_OUTPUT
