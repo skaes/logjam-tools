@@ -470,6 +470,7 @@ func statsReporter() {
 func webServer() {
 	r := mux.NewRouter()
 	r.HandleFunc("/metrics/{application}/{environment}", serveAppMetrics)
+	r.HandleFunc("/_system/alive", serveAliveness)
 	logInfo("starting http server on port %s", opts.Port)
 	spec := ":" + opts.Port
 	srv := &graceful.Server{
@@ -483,6 +484,11 @@ func webServer() {
 	if err != nil {
 		logError("Cannot listen and serve: %s", err)
 	}
+}
+
+func serveAliveness(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(200)
+	w.Write([]byte("ok"))
 }
 
 func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
