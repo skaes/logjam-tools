@@ -401,17 +401,17 @@ func installSignalHandler() {
 }
 
 func logInfo(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("LJI[%d] %s\n", os.Getpid(), format)
+	finalFormat := fmt.Sprintf("%s INFO %s\n", time.Now().Format(time.RFC3339), format)
 	fmt.Printf(finalFormat, args...)
 }
 
 func logError(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("LJE[%d] %s\n", os.Getpid(), format)
+	finalFormat := fmt.Sprintf("%s ERROR %s\n", time.Now().Format(time.RFC3339), format)
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
 func logWarn(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("LJW[%d] %s\n", os.Getpid(), format)
+	finalFormat := fmt.Sprintf("%s WARN %s\n", time.Now().Format(time.RFC3339), format)
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
