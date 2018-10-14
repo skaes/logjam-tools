@@ -102,7 +102,7 @@ func newCollector(apiRequests []string) *collector {
 				Help:       "http request latency summary",
 				Objectives: map[float64]float64{},
 			},
-			[]string{"application", "environment", "type", "code", "http_method", "host", "cluster", "datacenter"},
+			[]string{"application", "environment", "type", "code", "http_method", "instance", "cluster", "datacenter"},
 		),
 		jobExecutionSummaryVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
@@ -110,7 +110,7 @@ func newCollector(apiRequests []string) *collector {
 				Help:       "job execution latency summary",
 				Objectives: map[float64]float64{},
 			},
-			[]string{"application", "environment", "code", "host", "cluster", "datacenter"},
+			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
 		),
 		httpRequestHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -189,7 +189,7 @@ func (c *collector) removeInstance(i string) bool {
 		}
 		for _, m := range mf.GetMetric() {
 			pairs := m.GetLabel()
-			if hasLabel(pairs, "host", i) {
+			if hasLabel(pairs, "instance", i) {
 				numProcessed++
 				labels := labelsFromLabelPairs(pairs)
 				deleted := false
@@ -252,8 +252,6 @@ func fixDatacenter(m map[string]string, instance string) {
 func (c *collector) recordMetrics(m map[string]string) {
 	metric := m["metric"]
 	instance := m["instance"]
-	delete(m, "instance")
-	m["host"] = instance
 	action := m["action"]
 	value, err := strconv.ParseFloat(m["value"], 64)
 	if err != nil {
@@ -269,7 +267,7 @@ func (c *collector) recordMetrics(m map[string]string) {
 		m["type"] = c.requestType(action)
 		c.httpRequestSummaryVec.With(m).Observe(value)
 		delete(m, "code")
-		delete(m, "host")
+		delete(m, "instance")
 		delete(m, "cluster")
 		delete(m, "datacenter")
 		c.httpRequestHistogramVec.With(m).Observe(value)
@@ -277,7 +275,7 @@ func (c *collector) recordMetrics(m map[string]string) {
 	case "job":
 		c.jobExecutionSummaryVec.With(m).Observe(value)
 		delete(m, "code")
-		delete(m, "host")
+		delete(m, "instance")
 		delete(m, "cluster")
 		delete(m, "datacenter")
 		c.jobExecutionHistogramVec.With(m).Observe(value)
