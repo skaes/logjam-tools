@@ -45,7 +45,7 @@ type dcPair struct {
 
 var (
 	verbose      = false
-	interrupted  = false
+	interrupted  uint32
 	importerSpec string
 	processed    int64
 	dropped      int64
@@ -55,11 +55,14 @@ var (
 	datacenters  = make([]dcPair, 0)
 )
 
-func createCollector(appEnv string, apiRequests []string) {
-	c := newCollector(apiRequests)
+func addCollector(appEnv string, apiRequests []string) {
 	mutex.Lock()
 	defer mutex.Unlock()
-	collectors[appEnv] = c
+	_, found := collectors[appEnv]
+	if !found {
+		logInfo("adding stream: %s : %v", appEnv, apiRequests)
+		collectors[appEnv] = newCollector(apiRequests)
+	}
 }
 
 func getCollector(appEnv string) *collector {
@@ -79,6 +82,7 @@ type collector struct {
 	requestHandler           http.Handler
 	apiRequests              []string
 	knownInstances           map[string]time.Time
+	stopped                  uint32
 }
 
 func (c *collector) requestType(action string) string {
@@ -145,7 +149,7 @@ func (c *collector) observeMetrics(m map[string]string) {
 }
 
 func (c *collector) observer() {
-	for !interrupted {
+	for atomic.LoadUint32(&interrupted)+atomic.LoadUint32(&c.stopped) == 0 {
 		m := <-c.metricsChannel
 		c.recordMetrics(m)
 	}
@@ -207,9 +211,9 @@ func (c *collector) removeInstance(i string) bool {
 }
 
 func (c *collector) instanceRegistryHandler() {
-	// cleaning every minute, until we are interrupted
+	// cleaning every minute, until we are interrupted or the stream was shut down
 	ticker := time.NewTicker(1 * time.Minute)
-	for !interrupted {
+	for atomic.LoadUint32(&interrupted)+atomic.LoadUint32(&c.stopped) == 0 {
 		select {
 		case instance := <-c.instanceRegistry:
 			c.knownInstances[instance] = time.Now()
@@ -222,6 +226,10 @@ func (c *collector) instanceRegistryHandler() {
 			}
 		}
 	}
+}
+
+func (c *collector) shutdown() {
+	atomic.AddUint32(&c.stopped, 1)
 }
 
 func fixDatacenter(m map[string]string, instance string) {
@@ -290,6 +298,12 @@ func initialize() {
 		logError("%s: passing arguments is not supported. please use options instead.", args[0])
 		os.Exit(1)
 	}
+	for _, dc := range strings.Split(opts.Datacenters, ",") {
+		if dc != "" {
+			datacenters = append(datacenters, dcPair{name: dc, withDots: "." + dc + "."})
+		}
+	}
+	fmt.Printf("datacenters: %+v\n", datacenters)
 	if opts.StreamURL != "" {
 		u, err := url.Parse(opts.StreamURL)
 		if err != nil {
@@ -297,54 +311,81 @@ func initialize() {
 			os.Exit(1)
 		}
 		u.Path = path.Join(u.Path, "admin/streams")
-		retrieveStreams(u.String(), opts.Env)
+		url, env := u.String(), opts.Env
+		streams := retrieveStreams(url, env)
+		updateStreams(streams, env)
+		go streamsUpdater(url, env)
 	}
-	for _, dc := range strings.Split(opts.Datacenters, ",") {
-		if dc != "" {
-			datacenters = append(datacenters, dcPair{name: dc, withDots: "." + dc + "."})
-		}
-	}
-	fmt.Printf("datacenters: %+v\n", datacenters)
 }
 
 type stream struct {
 	APIRequests []string `json:"api_requests"`
 }
 
-func retrieveStreams(url, env string) {
+func streamsUpdater(url, env string) {
+	ticker := time.NewTicker(1 * time.Minute)
+	for range ticker.C {
+		if atomic.LoadUint32(&interrupted) != 0 {
+			break
+		}
+		streams := retrieveStreams(url, env)
+		updateStreams(streams, env)
+	}
+}
+
+func retrieveStreams(url, env string) map[string]stream {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		logError("could not create http request: %s", err)
-		return
+		return nil
 	}
 	req.Header.Add("Accept", "application/json")
 	client := &http.Client{}
 	res, err := client.Do(req)
 	if err != nil {
 		logError("could not retrieve stream: %s", err)
-		return
+		return nil
 	}
 	if res.StatusCode != 200 {
 		logError("unexpected response: %d", res.Status)
-		return
+		return nil
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		logError("could not read response body: %s", err)
-		return
+		return nil
 	}
 	defer res.Body.Close()
 	var streams map[string]stream
 	err = json.Unmarshal(body, &streams)
 	if err != nil {
 		logError("could not parse stream: %s", err)
+		return nil
+	}
+	return streams
+}
+
+func updateStreams(streams map[string]stream, env string) {
+	if streams == nil {
 		return
 	}
+	logInfo("updating streams")
 	suffix := "-" + env
 	for s, r := range streams {
 		if env == "" || strings.HasSuffix(s, suffix) {
-			logInfo("adding stream: %s : %v", s, r.APIRequests)
-			createCollector(s, r.APIRequests)
+			addCollector(s, r.APIRequests)
+		}
+	}
+	// delete streams which disappeaerd
+	mutex.Lock()
+	defer mutex.Unlock()
+	for s, c := range collectors {
+		_, found := streams[s]
+		if !found {
+			logInfo("removing stream: %s", s)
+			delete(collectors, s)
+			// make sure to stop go routines associated with the collector
+			c.shutdown()
 		}
 	}
 }
@@ -354,7 +395,7 @@ func installSignalHandler() {
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		interrupted = true
+		atomic.AddUint32(&interrupted, 1)
 		signal.Stop(c)
 	}()
 }
@@ -395,7 +436,7 @@ func zmqMsgHandler() {
 	poller := zmq.NewPoller()
 	poller.Add(subscriber, zmq.POLLIN)
 
-	for !interrupted {
+	for atomic.LoadUint32(&interrupted) == 0 {
 		sockets, _ := poller.Poll(1 * time.Second)
 		for _, socket := range sockets {
 			s := socket.Socket
@@ -457,7 +498,7 @@ func parseMetrics(data string) (map[string]string, error) {
 func statsReporter() {
 	ticker := time.NewTicker(1 * time.Second)
 	for range ticker.C {
-		if interrupted {
+		if atomic.LoadUint32(&interrupted) != 0 {
 			break
 		}
 		_processed := atomic.SwapInt64(&processed, 0)
