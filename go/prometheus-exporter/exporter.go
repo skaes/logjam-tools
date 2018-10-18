@@ -102,7 +102,7 @@ func newCollector(apiRequests []string) *collector {
 				Help:       "http request latency summary",
 				Objectives: map[float64]float64{},
 			},
-			[]string{"application", "environment", "type", "code", "http_method", "host", "cluster", "datacenter"},
+			[]string{"application", "environment", "type", "code", "http_method", "instance", "cluster", "datacenter"},
 		),
 		jobExecutionSummaryVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
@@ -110,7 +110,7 @@ func newCollector(apiRequests []string) *collector {
 				Help:       "job execution latency summary",
 				Objectives: map[float64]float64{},
 			},
-			[]string{"application", "environment", "code", "host", "cluster", "datacenter"},
+			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
 		),
 		httpRequestHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -118,7 +118,8 @@ func newCollector(apiRequests []string) *collector {
 				Help:    "http response time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
-			[]string{"application", "environment", "type", "http_method"},
+			// instance always set to the empty string
+			[]string{"application", "environment", "type", "http_method", "instance"},
 		),
 		jobExecutionHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -126,7 +127,8 @@ func newCollector(apiRequests []string) *collector {
 				Help:    "background job execution time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
-			[]string{"application", "environment"},
+			// instance always set to the empty string
+			[]string{"application", "environment", "instance"},
 		),
 		registry:         prometheus.NewRegistry(),
 		instanceRegistry: make(chan string, 10000),
@@ -189,7 +191,7 @@ func (c *collector) removeInstance(i string) bool {
 		}
 		for _, m := range mf.GetMetric() {
 			pairs := m.GetLabel()
-			if hasLabel(pairs, "host", i) {
+			if hasLabel(pairs, "instance", i) {
 				numProcessed++
 				labels := labelsFromLabelPairs(pairs)
 				deleted := false
@@ -252,8 +254,6 @@ func fixDatacenter(m map[string]string, instance string) {
 func (c *collector) recordMetrics(m map[string]string) {
 	metric := m["metric"]
 	instance := m["instance"]
-	delete(m, "instance")
-	m["host"] = instance
 	action := m["action"]
 	value, err := strconv.ParseFloat(m["value"], 64)
 	if err != nil {
@@ -268,16 +268,16 @@ func (c *collector) recordMetrics(m map[string]string) {
 	case "http":
 		m["type"] = c.requestType(action)
 		c.httpRequestSummaryVec.With(m).Observe(value)
+		m["instance"] = ""
 		delete(m, "code")
-		delete(m, "host")
 		delete(m, "cluster")
 		delete(m, "datacenter")
 		c.httpRequestHistogramVec.With(m).Observe(value)
 		c.instanceRegistry <- instance
 	case "job":
 		c.jobExecutionSummaryVec.With(m).Observe(value)
+		m["instance"] = ""
 		delete(m, "code")
-		delete(m, "host")
 		delete(m, "cluster")
 		delete(m, "datacenter")
 		c.jobExecutionHistogramVec.With(m).Observe(value)
