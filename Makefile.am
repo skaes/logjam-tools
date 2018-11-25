@@ -200,7 +200,7 @@ check: checker
 	./checker
 
 .godeps:
-	cd $(GO_SRC) && $(GO_ENV) go mod vendor
+	cd $(GO_SRC) && $(GO_ENV) go mod tidy
 	touch .godeps
 
 GO_ENV = CGO_LDFLAGS='$(OPTDIR_LDFLAGS)' PKG_CONFIG_PATH=$(PKG_CONFIG_PATH)
@@ -237,15 +237,17 @@ logjam-http-forwarder: $(GO_SRC)/http-forwarder/forwarder.go .godeps
 logjam-prometheus-exporter: $(GO_SRC)/prometheus-exporter/exporter.go .godeps
 	cd $(GO_SRC) && $(GO_ENV) go build -i -o ../$@ prometheus-exporter/exporter.go
 
-.PHONY: http-client-test prometheus-exporter-test
+.PHONY: http-client-test prometheus-exporter-test livestream-test forwarde
+check-local: livestream-test http-forwarder-test prometheus-exporter-test
 
 http-client-test:
-	cd $(GO_SRC) && $(GO_ENV) go test ./$(GO_SRC)/http-client
+	cd $(GO_SRC) && $(GO_ENV) go test ./http-client
 
 prometheus-exporter-test:
-	$(GO_ENV) go test ./$(GO_SRC)/prometheus-exporter
-
-check-local: livestream-test
+	cd $(GO_SRC) && $(GO_ENV) go test ./prometheus-exporter
 
 livestream-test: logjam-livestream
-	$(GO_ENV) go test ./$(GO_SRC)/livestream-server
+	cd $(GO_SRC) && $(GO_ENV) go test ./livestream-server
+
+http-forwarder-test: logjam-http-forwarder
+	cd $(GO_SRC) && $(GO_ENV) go test ./http-forwarder

@@ -66,7 +66,7 @@ type PubMsg struct {
 	compression byte
 }
 
-func init() {
+func initialize() {
 	args, err := flags.ParseArgs(&opts, os.Args)
 	if err != nil {
 		e := err.(*flags.Error)
@@ -579,6 +579,7 @@ func webServer() {
 
 func main() {
 	logInfo("%s starting", os.Args[0])
+	initialize()
 	outputSpec = fmt.Sprintf("tcp://%s:%d", opts.BindIP, opts.OutputPort)
 	verbose = opts.Verbose
 	quiet = opts.Quiet
