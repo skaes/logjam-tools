@@ -228,8 +228,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         processor_state_t *processor = processor_create(stream_frame, parser_state, request);
 
         if (processor == NULL) {
-            fprintf(stderr, "[E] could not create processor\n");
-            my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+            dump_json_object(stderr, "[E] could not create processor for request: ", request);
             json_object_put(request);
             return;
         }
