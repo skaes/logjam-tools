@@ -22,13 +22,6 @@ int rcv_hwm = -1;
 int snd_hwm = -1;
 
 /* global config */
-static zconfig_t* config = NULL;
-static zfile_t *config_file = NULL;
-static char *config_file_name = "logjam.conf";
-static time_t config_file_last_modified = 0;
-static char *config_file_digest = "";
-static bool config_file_exists = false;
-
 static int router_port = 9604;
 static int pull_port = 9605;
 static int pub_port = 9606;
@@ -62,27 +55,6 @@ typedef struct {
     void *compressor_output;
 } publisher_state_t;
 
-
-static void config_file_init()
-{
-    config_file = zfile_new(NULL, config_file_name);
-    config_file_last_modified = zfile_modified(config_file);
-    config_file_digest = strdup(zfile_digest(config_file));
-}
-
-static bool config_file_has_changed()
-{
-    bool changed = false;
-    if (config_file_exists) {
-        zfile_restat(config_file);
-        if (config_file_last_modified != zfile_modified(config_file)) {
-            const char *new_digest = zfile_digest(config_file);
-            // printf("[D] old digest: %s\n[D] new digest: %s\n", config_file_digest, new_digest);
-            changed = strcmp(config_file_digest, new_digest) != 0;
-        }
-    }
-    return changed;
-}
 
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
@@ -119,17 +91,10 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     // update timestamp
     global_time = zclock_time();
 
-    // check for config changes
     static size_t ticks = 0;
-    bool terminate = (++ticks % CONFIG_FILE_CHECK_INTERVAL == 0) && config_file_has_changed();
-    if (terminate) {
-        printf("[I] detected config change. terminating.\n");
-        zsys_interrupted = 1;
-        return 0;
-    }
 
     // publish heartbeat
-    if (ticks % HEART_BEAT_INTERVAL == 0) {
+    if (++ticks % HEART_BEAT_INTERVAL == 0) {
         msg_meta.compression_method = NO_COMPRESSION;
         msg_meta.sequence_number++;
         msg_meta.created_ms = global_time;
@@ -276,7 +241,6 @@ static void print_usage(char * const *argv)
     fprintf(stderr,
             "usage: %s [options]\n"
             "\nOptions:\n"
-            "  -c, --config C             zeromq config file\n"
             "  -d, --device-id N          device id (integer)\n"
             "  -i, --io-threads N         zeromq io threads\n"
             "  -p, --input-port N         port number of zeromq input socket\n"
@@ -304,7 +268,6 @@ static void process_arguments(int argc, char * const *argv)
 
     static struct option long_options[] = {
         { "compress",      required_argument, 0, 'x' },
-        { "config",        required_argument, 0, 'c' },
         { "device-id",     required_argument, 0, 'd' },
         { "router-port",   required_argument, 0, 't' },
         { "help",          no_argument,       0,  0  },
@@ -338,9 +301,6 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'P':
             pub_port = atoi(optarg);
-            break;
-        case 'c':
-            config_file_name = optarg;
             break;
         case 'i':
             io_threads = atoi(optarg);
@@ -416,14 +376,6 @@ int main(int argc, char * const *argv)
            "[I] rcv-hwm:     %d\n"
            "[I] snd-hwm:     %d\n"
            , argv[0], pull_port, pub_port, router_port, io_threads, rcv_hwm, snd_hwm);
-
-    // load config
-    config_file_exists = zsys_file_exists(config_file_name);
-    if (config_file_exists) {
-        config_file_init();
-        config = zconfig_load((char*)config_file_name);
-    } else
-        config = zconfig_new("EMPTY", NULL);
 
     // set global config
     zsys_init();
