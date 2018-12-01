@@ -72,33 +72,6 @@ function handle_cmake()
     echo "using CMAKE=$(which cmake)"
 }
 
-function handle_rabbitmq()
-{
-    d=rabbitmq-c
-    test -d $d || git clone https://github.com/skaes/rabbitmq-c.git
-    cd $d
-    revision=$(git rev-parse HEAD)
-    expected_revision="a65c64c0efd883f3e200bd8831ad3ca066ea523c" # 0.9.0
-    if [ "$revision" != $expected_revision ]; then
-        git reset --hard
-        [ $cached = 0 ] && git fetch
-        git checkout $expected_revision
-    fi
-    [ $forced == "1" ] && git clean -qfdx && rm -rf build
-    mkdir -p build
-    cd build
-    cmake ..
-    cmake --build . --config Release
-    cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$prefix -DCMAKE_INSTALL_LIBDIR=$prefix/lib ..
-    if [ "$cmd" == "install" ]; then
-        $LSUDO cmake --build . --config Release --target install
-    else
-        $LSUDO xargs rm < install_manifest.txt
-    fi
-    $LSUDO $ldconfig
-    cd ../..
-}
-
 function handle_mongoc()
 {
     d=mongo-c-driver
@@ -232,12 +205,10 @@ case $cmd in
         handle_json_c
         handle_mongoc
         handle_snappy
-        handle_rabbitmq
         handle_cmake
         ;;
     *)
         handle_cmake
-        handle_rabbitmq
         handle_snappy
         handle_mongoc
         handle_json_c

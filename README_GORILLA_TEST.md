@@ -1,8 +1,6 @@
 ## Hardcore Test to brick your MacBook
 
-For now, the device needs to be running on the same machine as rabbitmq
-
-```logjam-device <device-port> <rabbitmq-port>```
+```logjam-device <device-port>```
 
 ## Testing on OS X
 

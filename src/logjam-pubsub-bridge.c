@@ -478,7 +478,7 @@ int main(int argc, char * const *argv)
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, compressor_output);
 
-    // setup handdler for messages incoming from the outside or rabbit_listener
+    // setup handdler for messages incoming from the outside
     rc = zloop_reader(loop, receiver, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, receiver);

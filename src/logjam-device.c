@@ -8,7 +8,6 @@
 #include <stdint.h>
 #include <getopt.h>
 #include "logjam-util.h"
-#include "rabbitmq-listener.h"
 #include "message-compressor.h"
 
 // shared globals
@@ -21,8 +20,6 @@ bool quiet = false;
 
 int rcv_hwm = -1;
 int snd_hwm = -1;
-
-zlist_t* subscriptions = NULL;
 
 /* global config */
 static zconfig_t* config = NULL;
@@ -281,12 +278,9 @@ static void print_usage(char * const *argv)
             "\nOptions:\n"
             "  -c, --config C             zeromq config file\n"
             "  -d, --device-id N          device id (integer)\n"
-            "  -e, --env E                create queues for this environment only\n"
-            "  -E, --subscribe A,B        subscription patterns\n"
             "  -i, --io-threads N         zeromq io threads\n"
             "  -p, --input-port N         port number of zeromq input socket\n"
             "  -q, --quiet                supress most output\n"
-            "  -r, --rabbit R             rabbitmq broker to connect to\n"
             "  -s, --compressors N        number of compressor threads\n"
             "  -t, --router-port N        port number of zeromq router socket\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
@@ -296,10 +290,8 @@ static void print_usage(char * const *argv)
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
-            "  LOGJAM_SUBSCRIPTIONS       subscription patterns\n"
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
             "  LOGJAM_SND_HWM             high watermark for output socket\n"
-            "  LOGJAM_RABBIT_ENV          create queues for this environment only\n"
             , argv[0]);
 }
 
@@ -314,22 +306,19 @@ static void process_arguments(int argc, char * const *argv)
         { "compress",      required_argument, 0, 'x' },
         { "config",        required_argument, 0, 'c' },
         { "device-id",     required_argument, 0, 'd' },
-        { "env",           required_argument, 0, 'E' },
         { "router-port",   required_argument, 0, 't' },
         { "help",          no_argument,       0,  0  },
         { "input-port",    required_argument, 0, 'p' },
         { "io-threads",    required_argument, 0, 'i' },
         { "output-port",   required_argument, 0, 'P' },
         { "quiet",         no_argument,       0, 'q' },
-        { "rabbit",        required_argument, 0, 'r' },
         { "rcv-hwm",       required_argument, 0, 'R' },
         { "snd-hwm",       required_argument, 0, 'S' },
-        { "subscribe",     required_argument, 0, 'e' },
         { "verbose",       no_argument,       0, 'v' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:r:p:c:e:i:x:s:P:S:R:E:t:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:c:i:x:s:P:S:R:t:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -339,15 +328,6 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'q':
             quiet = true;
-            break;
-        case 'r':
-            rabbit_host = optarg;
-            break;
-        case 'E':
-            subscriptions = split_delimited_string(optarg);
-            break;
-        case 'e':
-            rabbit_env = optarg;
             break;
         case 'd':
             msg_meta.device_number = atoi(optarg);
@@ -405,9 +385,6 @@ static void process_arguments(int argc, char * const *argv)
         }
     }
 
-    if (subscriptions == NULL)
-        subscriptions = split_delimited_string(getenv("LOGJAM_SUBSCRIPTIONS"));
-
     if (rcv_hwm == -1) {
         if (( v = getenv("LOGJAM_RCV_HWM") ))
             rcv_hwm = atoi(v);
@@ -420,13 +397,6 @@ static void process_arguments(int argc, char * const *argv)
             snd_hwm = atoi(v);
         else
             snd_hwm = DEFAULT_SND_HWM;
-    }
-
-    if (rabbit_env == NULL) {
-        if (( v = getenv("LOGJAM_RABBIT_ENV") ))
-            rabbit_env = v;
-        else
-            rabbit_env = DEFAULT_RABBIT_ENV;
     }
 }
 
@@ -442,11 +412,10 @@ int main(int argc, char * const *argv)
            "[I] pull-port:   %d\n"
            "[I] pub-port:    %d\n"
            "[I] router-port: %d\n"
-           "[I] rabbit-host: %s\n"
            "[I] io-threads:  %lu\n"
            "[I] rcv-hwm:     %d\n"
            "[I] snd-hwm:     %d\n"
-           , argv[0], pull_port, pub_port, router_port, rabbit_host, io_threads, rcv_hwm, snd_hwm);
+           , argv[0], pull_port, pub_port, router_port, io_threads, rcv_hwm, snd_hwm);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
@@ -455,24 +424,6 @@ int main(int argc, char * const *argv)
         config = zconfig_load((char*)config_file_name);
     } else
         config = zconfig_new("EMPTY", NULL);
-
-    // load subscriptions from config
-    if (zlist_size(subscriptions) == 0) {
-        zconfig_t *streams = zconfig_locate(config, "backend/streams");
-        if (streams) {
-            zconfig_t *stream_config = zconfig_child(streams);
-            while (stream_config) {
-                char *stream = zconfig_name(stream_config);
-                zlist_append(subscriptions, stream);
-                stream_config = zconfig_next(stream_config);
-            }
-        }
-    }
-    if (rabbit_host && zlist_size(subscriptions) == 0) {
-        fprintf(stderr, "[E] cannot start rabbitmq listener thread because no scubriptions were specified\n");
-        printf("[I] %s aborted\n", argv[0]);
-        exit(1);
-    }
 
     // set global config
     zsys_init();
@@ -535,14 +486,6 @@ int main(int argc, char * const *argv)
     for (size_t i = 0; i < num_compressors; i++)
         compressors[i] = message_compressor_new(i, compression_method);
 
-    // setup the rabbitmq listener agents
-    zactor_t *rabbit_listener = NULL;
-    if (rabbit_host != NULL) {
-        rabbit_listener = zactor_new(rabbitmq_listener, subscriptions);
-        assert_x(rabbit_listener != NULL, "could not start rabbitmq listener thread", __FILE__, __LINE__);
-        printf("[I] created rabbitmq listener thread\n");
-    }
-
     // set up event loop
     zloop_t *loop = zloop_new();
     assert(loop);
@@ -567,7 +510,7 @@ int main(int argc, char * const *argv)
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, compressor_output);
 
-    // setup handler for messages incoming from the outside or rabbit_listener
+    // setup handler for incoming messages (all from the outside)
     rc = zloop_reader(loop, receiver, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, receiver);
@@ -601,7 +544,6 @@ int main(int argc, char * const *argv)
 
     printf("[I] shutting down\n");
 
-    zactor_destroy(&rabbit_listener);
     zsock_destroy(&receiver);
     zsock_destroy(&router_receiver);
     zsock_destroy(&router_output);

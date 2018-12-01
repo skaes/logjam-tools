@@ -32,8 +32,6 @@ logjam_device_SOURCES = \
     src/logjam-device.c \
     src/logjam-util.c \
     src/logjam-util.h \
-    src/rabbitmq-listener.c \
-    src/rabbitmq-listener.h \
     src/message-compressor.c \
     src/message-compressor.h
 

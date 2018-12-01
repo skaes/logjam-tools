@@ -13,12 +13,10 @@ Currently the following programs are provided:
 ## logjam-device
 
 A daemon which offers a ZeroMQ PULL socket endpoint for applications
-to connect to and a ZeroMQ SUB socket for forwarding. It optionally
-subscribes to a RabbitMQ server to collect application messages from
-there and republishes them on the PUB socket. It can compress the log
-stream on the fly to reduce network traffic, although compressing it
-at the producer is preferable. You can run as many of those devices as
-needed to scale the logging infrastructure.
+to connect to and a ZeroMQ SUB socket for forwarding. It can compress
+the log stream on the fly to reduce network traffic, although
+compressing it at the producer is preferable. You can run as many of
+those devices as needed to scale the logging infrastructure.
 
 ## logjam-importer
 
@@ -140,14 +138,13 @@ ZMQ pub port for logjam-http-forwarder
 
 # Dependencies
 
-* librabbitmq (0.7.0)
 * libzmq (4.1.4)
 * libczmq (3.0.2)
 * mongo-c-driver (1.3.5)
 * libbson (included in mongo-c-driver as a submodule)
 * json-c (0.12 patched)
 * libsnappy (1.1.3)
-* go (1.9.4)
+* go (1.11.2)
 
 # Installation
 
@@ -193,7 +190,6 @@ use the `--prefix` argument like so:
 ```
 
 Or install them manually:
-* Download and install rabbitmq-c 0.7.0 from https://github.com/alanxz/rabbitmq-c/releases/tag/v0.7.0
 * Download and install zmq 4.1.4 from http://zeromq.org/intro:get-the-software
 * Dowmload and install czmq 3.0.2 from http://czmq.zeromq.org/page:get-the-software
 * Dowmload and install libsodium 1.0.11 from https://github.com/jedisct1/libsodium/releases/tag/1.0.11

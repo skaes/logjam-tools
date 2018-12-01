@@ -384,12 +384,12 @@ zsock_t* parser_prom_collector_socket_new(83,2455
 time_t valid_database_date(94,2714
 processor_state_t* processor_create(127,3674
 void parse_msg_and_forward_interesting_requests(186,6015
-zhash_t* processor_hash_new(268,9449
-parser_state_t* parser_state_new(276,9559
-void parser_state_destroy(295,10316
-void parser(312,10867
-zactor_t* parser_new(387,13791
-void parser_destroy(393,13943
+zhash_t* processor_hash_new(267,9424
+parser_state_t* parser_state_new(275,9534
+void parser_state_destroy(294,10291
+void parser(311,10842
+zactor_t* parser_new(386,13766
+void parser_destroy(392,13918
 
 src/message-compressor.h,52
 #define __LOGJAM_IMPORTER_INDEXER_H_INCLUDED__2,47
@@ -428,47 +428,47 @@ enum fe_msg_drop_reason 16,386
 } user_agent_stats_t;37,1454
 } parser_state_t;55,1899
 
-src/logjam-device.c,1533
-bool verbose 15,280
-bool debug 16,302
-bool quiet 17,322
-#define DEFAULT_RCV_HWM 19,343
-#define DEFAULT_SND_HWM 20,375
-int rcv_hwm 22,408
-int snd_hwm 23,426
-zlist_t* subscriptions 25,445
-static zconfig_t* config 28,497
-static zfile_t *config_file config_file29,530
-static char *config_file_name config_file_name30,566
-static time_t config_file_last_modified 31,613
-static char *config_file_digest config_file_digest32,658
-static bool config_file_exists 33,696
-static int router_port 35,737
-static int pull_port 36,768
-static int pub_port 37,797
-static size_t received_messages_count 39,826
-static size_t received_messages_bytes 40,869
-static size_t received_messages_max_bytes 41,912
-static size_t compressed_messages_count 43,960
-static size_t compressed_messages_bytes 44,1005
-static size_t compressed_messages_max_bytes 45,1050
-static size_t io_threads 47,1100
-static size_t num_compressors 48,1130
-static msg_meta_t msg_meta 50,1166
-static char device_number_s[device_number_s51,1212
-#define MAX_COMPRESSORS 53,1257
-static int compression_method 54,1284
-static zchunk_t *compression_buffer;compression_buffer55,1332
-static uint64_t global_time 56,1369
-} publisher_state_t;66,1617
-static void config_file_init(69,1640
-static bool config_file_has_changed(76,1850
-static int timer_event(90,2322
-static int read_zmq_message_and_forward(147,4591
-static int read_router_message_and_forward(225,7184
-static void print_usage(277,8976
-static void process_arguments(306,10689
-int main(433,14804
+src/logjam-device.c,1532
+bool verbose 14,249
+bool debug 15,271
+bool quiet 16,291
+#define DEFAULT_RCV_HWM 18,312
+#define DEFAULT_SND_HWM 19,344
+int rcv_hwm 21,377
+int snd_hwm 22,395
+zlist_t* subscriptions 24,414
+static zconfig_t* config 27,466
+static zfile_t *config_file config_file28,499
+static char *config_file_name config_file_name29,535
+static time_t config_file_last_modified 30,582
+static char *config_file_digest config_file_digest31,627
+static bool config_file_exists 32,665
+static int router_port 34,706
+static int pull_port 35,737
+static int pub_port 36,766
+static size_t received_messages_count 38,795
+static size_t received_messages_bytes 39,838
+static size_t received_messages_max_bytes 40,881
+static size_t compressed_messages_count 42,929
+static size_t compressed_messages_bytes 43,974
+static size_t compressed_messages_max_bytes 44,1019
+static size_t io_threads 46,1069
+static size_t num_compressors 47,1099
+static msg_meta_t msg_meta 49,1135
+static char device_number_s[device_number_s50,1181
+#define MAX_COMPRESSORS 52,1226
+static int compression_method 53,1253
+static zchunk_t *compression_buffer;compression_buffer54,1301
+static uint64_t global_time 55,1338
+} publisher_state_t;65,1586
+static void config_file_init(68,1609
+static bool config_file_has_changed(75,1819
+static int timer_event(89,2291
+static int read_zmq_message_and_forward(146,4560
+static int read_router_message_and_forward(224,7153
+static void print_usage(276,8945
+static void process_arguments(302,10413
+int main(415,14155
 
 src/zring.c,257
 typedef struct _node_t 4,38
@@ -567,30 +567,6 @@ int main(266,9847
 
 src/importer-livestream.h,55
 #define __LOGJAM_IMPORTER_LIVESTREAM_H_INCLUDED__2,50
-
-src/rabbitmq-listener.c,600
-#define FIX_SIG_PIPE10,213
-#define FRAME_MAX_DEFAULT 13,242
-#define OUR_FRAME_MAX 14,275
-char* rabbit_host 16,322
-char* rabbit_env 17,348
-int   rabbit_port 18,373
-} rabbit_listener_state_t;23,471
-void log_error(26,506
-int log_amqp_error(34,695
-void die_on_amqp_error(76,2080
-bool zmq_output_socket_ready(84,2228
-amqp_connection_state_t setup_amqp_connection(93,2468
-void shutdown_amqp_connection(117,3305
-void rabbitmq_add_queue(129,3841
-int rabbitmq_consume_message_and_forward(194,6961
-int rabbitmq_setup_queues(259,9355
-int pipe_command(273,9653
-void rabbitmq_listener(291,10098
-
-src/rabbitmq-listener.h,81
-#define __RABBITMQ_LISTENER_H_INCLUDED__2,41
-#define DEFAULT_RABBIT_ENV 13,219
 
 src/importer-adder.c,272
 zsock_t* adder_reply_socket_new(23,670
