@@ -40,16 +40,14 @@ static void process_arguments(43,1806
 static void config_file_init(155,5365
 int main(162,5575
 
-src/tester.c,191
+src/tester.c,124
 #define MESSAGE_BODY_SIZE 10,154
 void assert_x(12,186
 struct _zmsg_t 19,321
-    zlist_t *frames;frames20,338
-    size_t content_size;21,389
 zmsg_send_dont_wait(25,452
 int main(46,953
 
-src/logjam-pubsub-bridge.c,1695
+src/logjam-pubsub-bridge.c,1511
 bool verbose 15,277
 bool quiet 16,299
 bool debug 17,319
@@ -81,10 +79,6 @@ static size_t num_compressors 53,1330
 static msg_meta_t msg_meta 55,1366
 #define MAX_COMPRESSORS 57,1413
 static uint64_t global_time 58,1440
-    void *receiver;receiver62,1538
-    void *publisher;publisher63,1558
-    void *compressor_input;compressor_input64,1579
-    void *compressor_output;compressor_output65,1607
 } publisher_state_t;66,1636
 static void config_file_init(69,1659
 static bool config_file_has_changed(76,1869
@@ -94,14 +88,7 @@ static void print_usage(235,7905
 static void process_arguments(260,9292
 int main(387,13419
 
-src/graylog-forwarder-parser.c,610
-    size_t id;6,110
-    char me[me7,125
-    zconfig_t *config;config8,142
-    zsock_t *pipe;pipe9,165
-    zsock_t *pull_socket;pull_socket10,227
-    zsock_t *push_socket;push_socket11,308
-    zchunk_t *decompression_buffer;decompression_buffer12,383
+src/graylog-forwarder-parser.c,347
 } parser_state_t;13,419
 static int process_logjam_message(15,438
 zsock_t* parser_pull_socket_new(66,2248
@@ -112,11 +99,7 @@ void parser(125,3948
 zactor_t* graylog_forwarder_parser_new(168,5335
 void graylog_forwarder_parser_destroy(174,5505
 
-src/graylog-forwarder-writer.c,414
-    zsock_t *pipe;pipe6,120
-    zsock_t *pull_socket;pull_socket7,166
-    zsock_t *push_socket;push_socket8,228
-    size_t message_count;9,356
+src/graylog-forwarder-writer.c,264
 } writer_state_t;10,434
 static void send_graylog_message(12,453
 zsock_t* writer_pull_socket_new(50,1464
@@ -154,43 +137,23 @@ void increments_add(307,11456
 src/graylog-forwarder-writer.h,60
 #define __LOGJAM_GRAYLOG_FORWARDER_WRITER_H_INCLUDED__2,55
 
-src/importer-mongoutils.c,440
+src/importer-mongoutils.c,307
 size_t num_databases 3,34
 const char *databases[databases4,60
 mongoc_write_concern_t *wc_no_wait wc_no_wait6,99
 mongoc_write_concern_t *wc_wait wc_wait7,142
-mongoc_index_opt_t index_opt_default;8,182
-mongoc_index_opt_t index_opt_sparse;9,220
-mongoc_index_opt_t index_opt_unique;10,257
-void my_mongo_log_handler(13,302
-void initialize_mongo_db_globals(45,1065
-void ensure_known_database(102,2941
-int mongo_client_ping(134,4155
+void my_mongo_log_handler(10,190
+void initialize_mongo_db_globals(42,953
+void ensure_known_database(79,2208
+int mongo_client_ping(111,3422
 
-src/importer-increments.h,680
+src/importer-increments.h,127
 #define __LOGJAM_IMPORTER_INCREMENTS_H_INCLUDED__2,50
-    double val;13,240
-    double val_squared;14,256
-    double val_max;15,280
 } metric_pair_t;16,300
-    size_t backend_request_count;19,335
-    size_t page_request_count;20,369
-    size_t ajax_request_count;21,400
-    metric_pair_t *metrics;metrics22,431
-    json_object *others;others23,459
 } increments_t;24,484
-    const char* page;27,518
-    const char* module;28,540
-    double total_time;29,564
-    int response_code;30,587
-    int severity;31,610
-    int minute;32,628
-    int heap_growth;33,644
-    json_object* exceptions;34,665
-    json_object* soft_exceptions;35,694
 } request_data_t;36,728
 
-src/importer-processor.c,3519
+src/importer-processor.c,3520
 #define DB_PREFIX 10,250
 #define DB_PREFIX_LEN 11,278
 processor_state_t* processor_new(13,303
@@ -241,68 +204,50 @@ void append_null_byte(778,26396
     #define OP_DBL_DIGS 790,26760
     #define OP_DBL_DIGS 792,26806
 void forward_request_to_prom_collector(797,26868
-void processor_add_request(827,28254
-char* extract_page_for_jse(915,32364
-char* exctract_key_from_jse_description(937,33090
-void processor_add_js_exception(950,33490
-void processor_add_event(998,35086
-bool sorted_ascending(1013,35565
-bool all_zero(1023,35731
-void auto_correct_prefix(1038,36047
-void make_relative(1050,36232
-int extract_frontend_timings(1059,36380
-#define NUM_TIMINGS 1111,38066
-#define navigationStart 1112,38089
-#define fetchStart 1117,38229
-#define domainLookupStart 1118,38250
-#define domainLookupEnd 1119,38278
-#define connectStart 1120,38304
-#define connectEnd 1121,38327
-#define requestStart 1123,38384
-#define responseStart 1124,38407
-#define responseEnd 1125,38431
-#define domLoading 1126,38453
-#define domInteractive 1127,38474
-#define domContentLoadedEventStart 1128,38500
-#define domContentLoadedEventEnd 1129,38538
-#define domComplete 1130,38574
-#define loadEventStart 1131,38597
-#define loadEventEnd 1132,38623
-static int fe_apdex_attr_index 1134,38648
-int processor_set_frontend_apdex_attribute(1135,38695
-enum fe_msg_drop_reason convert_frontend_timings_to_json(1149,39000
-int check_frontend_request_validity(1215,42078
-void send_statsd_updates_for_page(1242,43147
-static const char* str_fe_reason(1278,44427
-void print_fe_drop_reason(1292,44908
-enum fe_msg_drop_reason processor_add_frontend_data(1298,45104
-void send_statsd_updates_for_ajax(1380,48506
-enum fe_msg_drop_reason processor_add_ajax_data(1395,48998
+void processor_add_request(829,28331
+char* extract_page_for_jse(917,32441
+char* exctract_key_from_jse_description(939,33167
+void processor_add_js_exception(952,33567
+void processor_add_event(1000,35163
+bool sorted_ascending(1015,35642
+bool all_zero(1025,35808
+void auto_correct_prefix(1040,36124
+void make_relative(1052,36309
+int extract_frontend_timings(1061,36457
+#define NUM_TIMINGS 1113,38143
+#define navigationStart 1114,38166
+#define fetchStart 1119,38306
+#define domainLookupStart 1120,38327
+#define domainLookupEnd 1121,38355
+#define connectStart 1122,38381
+#define connectEnd 1123,38404
+#define requestStart 1125,38461
+#define responseStart 1126,38484
+#define responseEnd 1127,38508
+#define domLoading 1128,38530
+#define domInteractive 1129,38551
+#define domContentLoadedEventStart 1130,38577
+#define domContentLoadedEventEnd 1131,38615
+#define domComplete 1132,38651
+#define loadEventStart 1133,38674
+#define loadEventEnd 1134,38700
+static int fe_apdex_attr_index 1136,38725
+int processor_set_frontend_apdex_attribute(1137,38772
+enum fe_msg_drop_reason convert_frontend_timings_to_json(1151,39077
+int check_frontend_request_validity(1217,42155
+void send_statsd_updates_for_page(1244,43224
+static const char* str_fe_reason(1280,44504
+void print_fe_drop_reason(1294,44985
+enum fe_msg_drop_reason processor_add_frontend_data(1300,45181
+void send_statsd_updates_for_ajax(1382,48583
+enum fe_msg_drop_reason processor_add_ajax_data(1397,49075
 
-src/importer-controller.c,1470
+src/importer-controller.c,659
 unsigned long num_subscribers 44,1667
 unsigned long num_parsers 45,1702
 unsigned long num_writers 46,1733
 unsigned long num_updaters 47,1765
 unsigned long num_adders 48,1798
-    zconfig_t *config;config51,1846
-    zactor_t *statsd_server;statsd_server52,1869
-    zactor_t *indexer;indexer53,1898
-    zactor_t *tracker;tracker54,1921
-    zactor_t *watchdog;watchdog55,1944
-    zactor_t *subscribers[subscribers56,1968
-    zactor_t *parsers[parsers57,2012
-    zactor_t *adders[adders58,2048
-    zactor_t *writers[writers59,2082
-    zactor_t *updaters[updaters60,2118
-    zactor_t *live_stream_publisher;live_stream_publisher61,2156
-    zactor_t *prom_collector;prom_collector62,2193
-    zsock_t *updates_socket;updates_socket63,2223
-    size_t updates_blocked;64,2252
-    zsock_t *adder_socket;adder_socket65,2280
-    zsock_t *live_stream_socket;live_stream_socket66,2307
-    size_t ticks;67,2340
-    statsd_client_t *statsd_client;statsd_client68,2358
 } controller_state_t;69,2394
 void extract_parser_state(73,2425
 void publish_totals(88,3033
@@ -319,32 +264,14 @@ int run_controller_loop(547,20160
 src/importer-mongoutils.h,56
 #define __LOGJAM_IMPORTER_MONGO_UTILS_H_INCLUDED__2,51
 
-src/importer-processor.h,410
+src/importer-processor.h,82
 #define __LOGJAM_IMPORTER_PROCESSOR_H_INCLUDED__2,49
-    char *db_name;db_name12,219
-    stream_info_t* stream_info;13,238
-    size_t request_count;14,270
-    zhash_t *modules;modules15,296
-    zhash_t *totals;totals16,318
-    zhash_t *minutes;minutes17,339
-    zhash_t *quants;quants18,361
-    zhash_t *histograms;histograms19,382
-    zhash_t *agents;agents20,407
 } processor_state_t;21,428
 
-src/device-tracker.c,708
+src/device-tracker.c,369
 bool log_gaps 5,49
-    uint32_t device_number;8,89
-    uint64_t sequence_number;9,117
-    uint64_t lost;10,147
-    int credit;11,166
-    const char* pub_spec;12,182
 } device_info_t;13,208
 struct _device_tracker_t 15,226
-    zhashx_t *seen_devices;seen_devices16,253
-    zhash_t *known_devices;known_devices17,281
-    char *localhost_spec;localhost_spec18,309
-    zsock_t *sub_socket;sub_socket19,335
 static size_t uint64_hash(22,364
 static int uint64_comparator(27,437
 static void device_info_destroy(32,542
@@ -353,28 +280,8 @@ void device_tracker_destroy(64,1619
 size_t device_tracker_calculate_gap(71,1795
 void device_tracker_reconnect_stale_devices(120,3753
 
-src/graylog-forwarder-subscriber.c,1242
-    zconfig_t *config;config7,131
-    zsock_t *pipe;pipe8,173
-    zlist_t *devices;devices9,223
-    device_tracker_t *tracker;tracker10,307
-    zsock_t *sub_socket;sub_socket11,369
-    zsock_t *push_socket;push_socket12,438
-    size_t message_count;13,499
-    size_t messages_dev_zero;14,585
-    size_t meta_info_failures;15,669
-    size_t message_gap_size;16,754
-    size_t message_drops;17,849
-    size_t message_blocks;18,952
-    zlist_t *subscriptions;subscriptions19,1057
-    int rcv_hwm;20,1085
-    int snd_hwm;21,1102
+src/graylog-forwarder-subscriber.c,519
 } subscriber_state_t;22,1119
-    zconfig_t *config;config25,1159
-    zlist_t *devices;devices26,1182
-    zlist_t *subscriptions;subscriptions27,1204
-    int rcv_hwm;28,1232
-    int snd_hwm;29,1249
 } subscriber_args_t;30,1266
 static subscriber_args_t* subscriber_args_new(33,1289
 zsock_t* subscriber_sub_socket_new(45,1660
@@ -419,14 +326,7 @@ config.h,634
 #define PACKAGE_VERSION 61,1823
 #define STDC_HEADERS 64,1909
 
-src/message-compressor.c,740
-    size_t id;21,514
-    zsock_t *pipe;pipe22,529
-    zsock_t *pull_socket;pull_socket23,548
-    zsock_t *push_socket;push_socket24,574
-    int compression_method;25,600
-    zchunk_t *compression_buffer;compression_buffer26,628
-    bool decompress;27,662
+src/message-compressor.c,474
 } compressor_state_t;28,683
 #define COMPRESS 30,706
 #define DECOMPRESS 31,729
@@ -458,13 +358,7 @@ void setup_stream_config(219,7538
 #define ONE_DAY_MS 260,9115
 void update_known_modules(262,9157
 
-src/prom-collector.c,639
-    zsock_t* pipe;5,75
-    zsock_t* pull_socket;6,94
-    zsock_t* pub_socket;7,120
-    size_t message_count;8,145
-    size_t message_drops;9,171
-    zhash_t* sequence_numbers;10,197
+src/prom-collector.c,451
 } prom_collector_state_t;11,270
 zsock_t* prom_collector_pull_socket_new(15,305
 zsock_t* prom_collector_pub_socket_new(25,540
@@ -500,30 +394,9 @@ void parser_destroy(393,13943
 src/message-compressor.h,52
 #define __LOGJAM_IMPORTER_INDEXER_H_INCLUDED__2,47
 
-src/importer-streaminfo.h,1093
+src/importer-streaminfo.h,268
 #define __LOGJAM_IMPORTER_STREAM_INFO_H_INCLUDED__2,51
-    const char* name;11,190
-    size_t value;12,212
 } module_threshold_t;13,230
-    const char *key;key16,270
-    const char *yek;yek17,319
-    const char *app;app18,368
-    const char *env;env19,389
-    size_t key_len;20,410
-    size_t app_len;21,430
-    size_t env_len;22,450
-    int db;23,470
-    int import_threshold;24,482
-    int module_threshold_count;25,508
-    int64_t storage_size;26,540
-    double sampling_rate_400s;27,566
-    long sampling_rate_400s_threshold;28,597
-    module_threshold_t *module_thresholds;module_thresholds29,636
-    const char *ignored_request_prefix;ignored_request_prefix30,679
-    const char **backend_only_requests;backend_only_requests31,719
-    int backend_only_requests_size;32,759
-    int all_requests_are_backend_only_requests;33,795
-    zhash_t *known_modules;known_modules34,843
 } stream_info_t;35,871
 #define MAX_RANDOM_VALUE 41,1080
 #define TEN_PERCENT_OF_MAX_RANDOM 42,1120
@@ -533,16 +406,14 @@ src/importer-streaminfo.h,1093
 src/prom-collector.h,50
 #define __LOGJAM_PROM_COLLECTOR_H_INCLUDED__2,45
 
-src/importer-watchdog.c,186
+src/importer-watchdog.c,129
 #define CREDIT 6,128
-    int credit;9,164
-    bool received_term_cmd;10,244
 } watchdog_state_t;11,323
 static int timer_event(14,345
 int actor_command(29,755
 void watchdog(55,1506
 
-src/importer-parser.h,1324
+src/importer-parser.h,414
 #define __LOGJAM_IMPORTER_PARSER_H_INCLUDED__2,46
 #define FE_MSG_OUTLIER_THRESHOLD_MS 14,343
 enum fe_msg_drop_reason 16,386
@@ -553,33 +424,11 @@ enum fe_msg_drop_reason 16,386
     FE_MSG_CORRUPTED 21,695
     FE_MSG_INVALID 22,748
 #define FE_MSG_NUM_REASONS 24,815
-    size_t received;27,862
-    size_t dropped;28,936
-    size_t drop_reasons[drop_reasons29,1005
 } frontend_stats_t;30,1096
-    size_t received_backend;33,1134
-    size_t received_frontend;34,1211
-    size_t fe_dropped;35,1288
-    size_t fe_drop_reasons[fe_drop_reasons36,1360
 } user_agent_stats_t;37,1454
-    size_t id;40,1494
-    char me[me41,1509
-    zconfig_t *config;config42,1526
-    size_t parsed_msgs_count;43,1549
-    frontend_stats_t fe_stats;44,1579
-    zsock_t *pipe;pipe45,1610
-    zsock_t *pull_socket;pull_socket46,1629
-    zsock_t *push_socket;push_socket47,1655
-    zsock_t *indexer_socket;indexer_socket48,1681
-    json_tokener* tokener;49,1710
-    zhash_t *processors;processors50,1737
-    uuid_tracker_t *tracker;tracker51,1762
-    statsd_client_t *statsd_client;statsd_client52,1791
-    zchunk_t *decompression_buffer;decompression_buffer53,1827
-    zsock_t *prom_collector_socket;prom_collector_socket54,1863
 } parser_state_t;55,1899
 
-src/logjam-device.c,1815
+src/logjam-device.c,1533
 bool verbose 15,280
 bool debug 16,302
 bool quiet 17,322
@@ -611,12 +460,6 @@ static char device_number_s[device_number_s51,1212
 static int compression_method 54,1284
 static zchunk_t *compression_buffer;compression_buffer55,1332
 static uint64_t global_time 56,1369
-    void *receiver;receiver60,1467
-    void *router_receiver;router_receiver61,1487
-    void *router_output;router_output62,1514
-    void *publisher;publisher63,1539
-    void *compressor_input;compressor_input64,1560
-    void *compressor_output;compressor_output65,1588
 } publisher_state_t;66,1617
 static void config_file_init(69,1640
 static bool config_file_has_changed(76,1850
@@ -627,14 +470,10 @@ static void print_usage(277,8976
 static void process_arguments(306,10689
 int main(433,14804
 
-src/zring.c,371
+src/zring.c,257
 typedef struct _node_t 4,38
-    char *key;key5,63
-    void *item;item6,78
 } node_t;7,94
 struct _zring_t 9,105
-    zhashx_t *hash;hash10,123
-    zlistx_t *list;list11,143
 zring_new 15,177
 zring_destroy 32,517
 zring_insert 45,759
@@ -648,7 +487,7 @@ zring_test 139,2489
 src/importer-watchdog.h,53
 #define __LOGJAM_IMPORTER_WATCHDOG_H_INCLUDED__2,48
 
-src/logjam-forwarder.c,1427
+src/logjam-forwarder.c,1351
 bool verbose 14,245
 bool quiet 15,267
 bool debug 16,287
@@ -676,8 +515,6 @@ static zlist_t *subscriptions subscriptions46,1133
 static size_t io_threads 48,1172
 static msg_meta_t msg_meta 50,1203
 static uint64_t global_time 52,1250
-    void *receiver;receiver56,1348
-    void *publisher;publisher57,1368
 } publisher_state_t;58,1389
 static void config_file_init(61,1412
 static bool config_file_has_changed(68,1622
@@ -691,12 +528,7 @@ src/zring.h,72
 #define __ZRING_H_INCLUDED__2,29
 typedef struct _zring_t zring_t;8,99
 
-src/importer-livestream.c,579
-    zsock_t* pipe;5,80
-    zsock_t* pull_socket;6,99
-    zsock_t* pub_socket;7,125
-    size_t message_count;8,150
-    size_t message_drops;9,176
+src/importer-livestream.c,429
 } live_stream_state_t;10,202
 zsock_t* live_stream_pull_socket_new(14,234
 zsock_t* live_stream_pub_socket_new(24,463
@@ -736,15 +568,13 @@ int main(266,9847
 src/importer-livestream.h,55
 #define __LOGJAM_IMPORTER_LIVESTREAM_H_INCLUDED__2,50
 
-src/rabbitmq-listener.c,677
+src/rabbitmq-listener.c,600
 #define FIX_SIG_PIPE10,213
 #define FRAME_MAX_DEFAULT 13,242
 #define OUR_FRAME_MAX 14,275
 char* rabbit_host 16,322
 char* rabbit_env 17,348
 int   rabbit_port 18,373
-    amqp_connection_state_t conn;21,417
-    void *receiver;receiver22,451
 } rabbit_listener_state_t;23,471
 void log_error(26,506
 int log_amqp_error(34,695
@@ -787,32 +617,15 @@ int snd_hwm 14,248
 compressed_gelf_new(18,288
 void compressed_gelf_destroy(28,483
 
-src/graylog-forwarder-controller.c,378
+src/graylog-forwarder-controller.c,223
 unsigned int num_parsers 14,359
-    zconfig_t *config;config17,407
-    zactor_t *subscriber;subscriber18,430
-    zactor_t *parsers[parsers19,456
-    zactor_t *writer;writer20,492
 } controller_state_t;21,514
 bool controller_create_actors(25,545
 void controller_destroy_actors(42,1102
 int send_tick_commands(52,1359
 int graylog_forwarder_run_controller_loop(66,1721
 
-src/importer-requestwriter.c,1435
-    zconfig_t* config;23,661
-    char me[me24,684
-    size_t id;25,701
-    mongoc_client_t* mongo_clients[mongo_clients26,716
-    zhash_t *request_collections;request_collections27,767
-    zhash_t *jse_collections;jse_collections28,801
-    zhash_t *events_collections;events_collections29,831
-    zsock_t *pipe;pipe30,864
-    zsock_t *pull_socket;pull_socket31,913
-    zsock_t *live_stream_socket;live_stream_socket32,939
-    int updates_count;33,972
-    int update_time;34,1037
-    statsd_client_t *statsd_client;statsd_client35,1115
+src/importer-requestwriter.c,878
 } request_writer_state_t;36,1151
 zsock_t* request_writer_pull_socket_new(40,1186
 mongoc_collection_t* request_writer_get_request_collection(50,1414
@@ -837,7 +650,7 @@ zactor_t* request_writer_new(633,23818
 src/importer-adder.h,50
 #define __LOGJAM_IMPORTER_ADDER_H_INCLUDED__2,45
 
-src/graylog-forwarder-common.h,370
+src/graylog-forwarder-common.h,318
 #define __GRAYLOG_FORWARDER_COMMON_H_INCLUDED__2,48
 #define DEFAULT_RCV_HWM 18,289
 #define DEFAULT_RCV_HWM_STR 19,325
@@ -846,8 +659,6 @@ src/graylog-forwarder-common.h,370
 #define DEFAULT_INTERFACE_PORT 23,436
 #define DEFAULT_INTERFACE 24,472
 #define MAX_PARSERS 33,640
-    Bytef *data;data37,714
-    uLongf len;38,731
 } compressed_gelf_t;39,747
 
 src/graylog-forwarder-controller.h,55
@@ -856,33 +667,26 @@ src/graylog-forwarder-controller.h,55
 src/importer-requestwriter.h,59
 #define __LOGJAM_IMPORTER_REQUEST_WRITER_H_INCLUDED__2,54
 
-src/importer-indexer.c,1070
-    size_t id;27,1110
-    mongoc_client_t *mongo_clients[mongo_clients28,1125
-    mongoc_collection_t *global_collection;global_collection29,1176
-    zsock_t *controller_socket;controller_socket30,1220
-    zsock_t *pull_socket;pull_socket31,1252
-    zhash_t *databases;databases32,1278
+src/importer-indexer.c,740
 } indexer_state_t;33,1302
-    size_t id;36,1339
-    char iso_date[iso_date37,1354
 } bg_indexer_args_t;38,1391
 #define INDEXER_DELAY 42,1519
 zsock_t *indexer_pull_socket_new(indexer_pull_socket_new45,1551
-void add_request_field_index(55,1754
-void add_request_collection_indexes(100,3917
-void add_jse_collection_indexes(132,5445
-int64_t extract_storage_size(155,6473
-void indexer_check_disk_usage(175,7040
-void indexer_refresh_storage_sizes(207,8163
-void indexer_create_indexes(228,8900
-void indexer_create_all_indexes(304,12269
-void* create_indexes_for_date(329,13170
-void spawn_bg_indexer_for_date(361,14000
-void handle_indexer_request(375,14439
-indexer_state_t* indexer_state_new(400,15298
-void indexer_state_destroy(417,15785
-void indexer(431,16140
+void create_index(55,1754
+void add_request_field_index(94,3485
+void add_request_collection_indexes(113,4043
+void add_jse_collection_indexes(138,4863
+int64_t extract_storage_size(154,5280
+void indexer_check_disk_usage(174,5847
+void indexer_refresh_storage_sizes(206,6970
+void indexer_create_indexes(227,7707
+void indexer_create_all_indexes(277,9356
+void* create_indexes_for_date(302,10257
+void spawn_bg_indexer_for_date(334,11087
+void handle_indexer_request(348,11526
+indexer_state_t* indexer_state_new(373,12385
+void indexer_state_destroy(390,12872
+void indexer(404,13227
 
 src/logjam-logger.c,823
 static bool verbose 4,46
@@ -914,7 +718,7 @@ int main(231,7417
 src/importer-indexer.h,52
 #define __LOGJAM_IMPORTER_INDEXER_H_INCLUDED__2,47
 
-src/logjam-fhttpd.c,2490
+src/logjam-fhttpd.c,2257
 static bool verbose 14,242
 static bool debug 15,271
 static bool quiet 16,298
@@ -955,13 +759,6 @@ static msg_meta_t msg_meta 85,2165
 static int compression 86,2211
 static zchunk_t* compression_buffer 87,2252
 static zchunk_t* decompression_buffer 88,2296
-    char app[app91,2360
-    char env[env92,2379
-    const char *msg_type;msg_type93,2398
-    char routing_key[routing_key94,2424
-    int routing_key_len;95,2454
-    char *json_str;json_str96,2479
-    int json_len;97,2499
 } msg_data_t;98,2517
 static char current_time_as_string[current_time_as_string100,2532
 static void set_started_at(102,2601
@@ -1002,35 +799,19 @@ void print_usage(90,2555
 void process_arguments(104,3164
 int main(182,5462
 
-src/logjam-message.c,396
+src/logjam-message.c,336
 const char *LOG_LEVELS_NAMES[LOG_LEVELS_NAMES8,140
 const int SYSLOG_MAPPING[SYSLOG_MAPPING17,257
 struct _logjam_message 26,408
-    zframe_t *frames[frames27,433
-    size_t size;28,458
 static inline void str_normalize(31,479
 size_t logjam_message_size(40,640
 logjam_message* logjam_message_read(45,715
 gelf_message* logjam_message_to_gelf(92,1835
 void logjam_message_destroy(258,7818
 
-src/statsd-client.c,1212
+src/statsd-client.c,760
 struct _statsd_client_t 4,57
-    const char *owner;owner5,83
-    char *namespace;namespace6,147
-    zsock_t *updates;updates7,203
 #define BUFFER_SIZE 10,289
-    size_t id;13,332
-    zsock_t *pipe;pipe14,381
-    zsock_t *updates;updates15,431
-    size_t update_count;16,497
-    size_t update_bytes;17,565
-    char buffer[buffer18,641
-    int buffer_used;19,757
-    int statsd_socket;20,812
-    struct sockaddr_in servaddr;21,873
-    bool connected;22,934
-    bool received_term_cmd;23,998
 } statsd_server_state_t;24,1077
 statsd_client_t* statsd_client_new(27,1104
 void statsd_client_destroy(52,1757
@@ -1094,25 +875,8 @@ void config_file_init(261,10968
 bool config_file_has_changed(269,11219
 bool config_update_date_info(281,11624
 
-src/importer-subscriber.c,1359
+src/importer-subscriber.c,691
 #define MAX_DEVICES 22,926
-    size_t id;26,984
-    char me[me27,1072
-    zsock_t *pipe;pipe28,1133
-    zlist_t *devices;devices29,1197
-    device_tracker_t *tracker;tracker30,1295
-    zsock_t *sub_socket;sub_socket31,1401
-    zsock_t *push_socket;push_socket32,1484
-    zsock_t *pull_socket;pull_socket33,1559
-    zsock_t *router_socket;router_socket34,1643
-    zsock_t *pub_socket;pub_socket35,1736
-    size_t message_count;36,1828
-    size_t messages_dev_zero;37,1914
-    size_t meta_info_failures;38,2012
-    size_t message_gap_size;39,2111
-    size_t message_drops;40,2220
-    size_t message_blocks;41,2337
-    statsd_client_t *statsd_client;statsd_client42,2456
 } subscriber_state_t;43,2492
 zlist_t* extract_devices_from_config(47,2523
 zsock_t* subscriber_sub_socket_new(67,3117
@@ -1130,26 +894,9 @@ static void subscriber(377,13960
 zactor_t* subscriber_new(437,15684
 void subscriber_destroy(443,15859
 
-src/importer-statsupdater.c,1549
-    size_t id;25,802
-    char me[me26,817
-    mongoc_client_t *mongo_clients[mongo_clients27,834
-    mongoc_collection_t *global_collection;global_collection28,885
-    zhash_t *stats_collections;stats_collections29,929
-    zsock_t *pipe;pipe30,961
-    zsock_t *pull_socket;pull_socket31,980
-    int updates_count;32,1006
-    int update_time;33,1071
-    statsd_client_t *statsd_client;statsd_client34,1149
+src/importer-statsupdater.c,780
 } stats_updater_state_t;35,1185
-    mongoc_collection_t *totals;totals38,1228
-    mongoc_collection_t *minutes;minutes39,1261
-    mongoc_collection_t *quants;quants40,1295
-    mongoc_collection_t *histograms;histograms41,1328
-    mongoc_collection_t *agents;agents42,1365
 } stats_collections_t;43,1398
-    const char *db_name;db_name46,1439
-    mongoc_collection_t *collection;collection47,1464
 } collection_update_callback_t;48,1501
 typedef int (updater_foreach_fn)50,1534
 bson_t* increments_to_bson(53,1622
@@ -1301,7 +1048,7 @@ src/gelf-message.h,206
 #define gelf_message_add_level(8,271
 typedef json_object gelf_message;10,344
 
-src/logjam-util.h,1242
+src/logjam-util.h,1038
 #define __LOGJAM_UTIL_H_INCLUDED__2,35
 #define zloop_ignore_interrupts(20,339
 #define CONFIG_FILE_CHECK_INTERVAL 29,671
@@ -1316,12 +1063,6 @@ src/logjam-util.h,1242
 #define META_INFO_VERSION 44,1099
 #define META_INFO_TAG 45,1127
 #define META_INFO_EMPTY 46,1156
-    uint16_t tag;50,1317
-    uint8_t  compression_method;51,1335
-    uint8_t  version;52,1368
-    uint32_t device_number;53,1390
-    uint64_t created_ms;54,1418
-    uint64_t sequence_number;55,1443
 } msg_meta_t;56,1473
 static inline void meta_info_encode(72,1837
 static inline void meta_info_decode(80,2096
@@ -1335,29 +1076,9 @@ static inline int zmsg_send_and_destroy(163,4974
 static inline int zmsg_send_with_retry(170,5133
 static inline zmsg_t* zmsg_recv_with_retry(185,5588
 
-src/importer-tracker.c,1485
+src/importer-tracker.c,787
 struct _uuid_tracker_t 22,673
-    zsock_t *additions;additions23,698
-    zsock_t *deletions;deletions24,751
-    size_t id;29,849
-    uint64_t current_time_ms;30,888
-    uint64_t age_threshold_ms;31,966
-    size_t added;32,1042
-    size_t deleted;33,1113
-    size_t expired;34,1184
-    size_t failed;35,1263
-    size_t duplicates;36,1343
-    zsock_t *additions;additions37,1424
-    zsock_t *deletions;deletions38,1484
-    zsock_t *subscriber;subscriber39,1546
-    zsock_t *pipe;pipe40,1642
-    zring_t *uuids;uuids41,1695
-    zring_t *failures;failures42,1792
-    zring_t *successes;successes43,1913
-    bool received_term_cmd;44,2010
 } tracker_state_t;45,2087
-    uint64_t created_time_ms;49,2146
-    zmsg_t *msg;msg50,2176
 } failure_t;51,2193
 uuid_tracker_t* tracker_new(55,2237
 void tracker_destroy(77,2904
@@ -1447,11 +1168,8 @@ static void print_usage(88,2748
 static void process_arguments(103,3418
 int main(182,5845
 
-src/str-builder.c,198
+src/str-builder.c,136
 struct _str_builder 4,51
-    char *str;str5,73
-    int size;6,88
-    int pos;7,102
 str_builder* sb_new(10,119
 char *sb_string(sb_string24,393
 void sb_append(29,451
