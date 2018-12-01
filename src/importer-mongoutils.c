@@ -5,9 +5,6 @@ const char *databases[MAX_DATABASES];
 
 mongoc_write_concern_t *wc_no_wait = NULL;
 mongoc_write_concern_t *wc_wait = NULL;
-mongoc_index_opt_t index_opt_default;
-mongoc_index_opt_t index_opt_sparse;
-mongoc_index_opt_t index_opt_unique;
 
 static
 void my_mongo_log_handler(mongoc_log_level_t log_level, const char *log_domain, const char *message, void *user_data)
@@ -56,26 +53,6 @@ void initialize_mongo_db_globals(zconfig_t* config)
        mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_UNACKNOWLEDGED);
     else
         mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_DEFAULT);
-
-    mongoc_index_opt_init(&index_opt_default);
-    if (USE_BACKGROUND_INDEX_BUILDS)
-        index_opt_default.background = true;
-    else
-        index_opt_default.background = false;
-
-    mongoc_index_opt_init(&index_opt_sparse);
-    index_opt_sparse.sparse = true;
-    if (USE_BACKGROUND_INDEX_BUILDS)
-        index_opt_sparse.background = true;
-    else
-        index_opt_sparse.background = false;
-
-    mongoc_index_opt_init(&index_opt_unique);
-    index_opt_unique.unique = true;
-    if (USE_BACKGROUND_INDEX_BUILDS)
-        index_opt_unique.background = true;
-    else
-        index_opt_unique.background = false;
 
     zconfig_t* dbs = zconfig_locate(config, "backend/databases");
     if (dbs) {
