@@ -267,10 +267,10 @@ void add_metrics_to_metrics_collection(const char* db_name, stream_info_t* strea
             bson_append_utf8(*p, "rid", 3, rid, strlen(rid));
         else
             bson_append_oid(*p, "rid", 3, oid);
-        if (1) {
+        if (0) {
             size_t m;
             char* bjs = bson_as_json(*p, &m);
-            printf("[D] METRIC %s\n", bjs);
+            // printf("[D] METRIC %s\n", bjs);
             bson_free(bjs);
         }
         p++;
@@ -303,7 +303,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
 {
     // dump_json_object(stdout, "[D]", request);
     bson_t *metrics = convert_metrics_for_indexing(request);
-    if (1) {
+    if (0) {
         size_t n;
         char* bs = bson_as_json(metrics, &n);
         printf("[D] metrics document. size: %zu; value: %s\n", n, bs);
@@ -334,7 +334,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         oid = zmalloc(sizeof(*oid));
         bson_oid_init(oid, NULL);
         bson_append_oid(document, "_id", 3, oid);
-        printf("[D] generated oid for document:\n");
+        // printf("[D] generated oid for document:\n");
     }
     {
         size_t n = 1024;
