@@ -189,7 +189,7 @@ bool json_object_is_zero(json_object* jobj)
         return 0.0 == json_object_get_double(jobj);
     }
     else if (type == json_type_int) {
-        return 0 == json_object_get_int(jobj);
+        return 0 == json_object_get_int64(jobj);
     }
     return false;
 }
