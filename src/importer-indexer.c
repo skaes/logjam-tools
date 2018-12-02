@@ -345,6 +345,28 @@ void spawn_bg_indexer_for_date(size_t id, const char* iso_date)
 }
 
 static
+void ensure_databases_are_known(indexer_state_t *state, const char* iso_date)
+{
+    if (dryrun) return;
+
+    zlist_t *streams = zhash_keys(configured_streams);
+    char *stream = zlist_first(streams);
+    bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
+    while (stream && !zsys_interrupted) {
+        stream_info_t *info = zhash_lookup(configured_streams, stream);
+        assert(info);
+        mongoc_client_t *client = state->mongo_clients[info->db];
+        if (!have_subscriptions || zhash_lookup(stream_subscriptions, stream)) {
+            char db_name[1000];
+            sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
+            ensure_known_database(client, db_name);
+        }
+        stream = zlist_next(streams);
+    }
+    zlist_destroy(&streams);
+}
+
+static
 void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
 {
     zframe_t *db_frame = zmsg_first(msg);
@@ -442,9 +464,13 @@ void indexer(zsock_t *pipe, void *args)
                 if (verbose)
                     printf("[D] indexer[%zu]: tick\n", id);
 
-                // if date has changed, start a background thread to create databases for the next day
+                // if date has changed, make sure databases of today are added to the known datbases
+                // table and spawn a background thread to create databases for the next day
                 if (config_update_date_info()) {
-                    printf("[I] indexer[%zu]: date change. creating indexes for tomorrow\n", id);
+                    printf("[I] indexer[%zu]: date change detected\n", id);
+                    printf("[I] indexer[%zu]: making sure today's databases are known\n", id);
+                    ensure_databases_are_known(state, iso_date_today);
+                    printf("[I] indexer[%zu]: creating indexes for tomorrow\n", id);
                     spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
                 }
                 if (ticks++ % PING_INTERVAL == 0) {
