@@ -271,6 +271,8 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
 
     add_request_collection_indexes(state, db);
     add_jse_collection_indexes(state, db);
+
+    mongoc_database_destroy(db);
 }
 
 static
