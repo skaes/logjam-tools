@@ -25,6 +25,7 @@ typedef struct {
     size_t id;
     mongoc_client_t* mongo_clients[MAX_DATABASES];
     zhash_t *request_collections;
+    zhash_t *metrics_collections;
     zhash_t *jse_collections;
     zhash_t *events_collections;
     zsock_t *pipe;         // actor command pipe
@@ -58,6 +59,21 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
         // add_request_collection_indexes(db_name, collection);
         zhash_insert(self->request_collections, db_name, collection);
         zhash_freefn(self->request_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
+    }
+    return collection;
+}
+
+static
+mongoc_collection_t* request_writer_get_metrics_collection(request_writer_state_t* self, const char* db_name, stream_info_t *stream_info)
+{
+    if (dryrun) return NULL;
+    mongoc_collection_t *collection = zhash_lookup(self->metrics_collections, db_name);
+    if (collection == NULL) {
+        // printf("[D] creating metrics collection: %s\n", db_name);
+        mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
+        collection = mongoc_client_get_collection(mongo_client, db_name, "metrics");
+        zhash_insert(self->metrics_collections, db_name, collection);
+        zhash_freefn(self->metrics_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
     }
     return collection;
 }
@@ -195,8 +211,9 @@ bool json_object_is_zero(json_object* jobj)
 }
 
 static
-void convert_metrics_for_indexing(json_object *request)
+bson_t* convert_metrics_for_indexing(json_object *request)
 {
+    bson_t* metrics_doc = bson_new();
     json_object *metrics = json_object_new_array();
     for (int i=0; i<=last_resource_offset; i++) {
         const char* resource = int_to_resource[i];
@@ -211,18 +228,87 @@ void convert_metrics_for_indexing(json_object *request)
                 json_object_object_add(metric_pair, "n", json_object_new_string(resource));
                 json_object_object_add(metric_pair, "v", resource_val);
                 json_object_array_add(metrics, metric_pair);
+
+                enum json_type type = json_object_get_type(resource_val);
+                if (type == json_type_double) {
+                    double val = json_object_get_double(resource_val);
+                    bson_append_double(metrics_doc, resource, strlen(resource), val);
+                }
+                else if (type == json_type_int) {
+                    int64_t val = json_object_get_int64(resource_val);
+                    bson_append_int64(metrics_doc, resource, strlen(resource), val);
+                }
             }
         }
     }
     json_object_object_add(request, "metrics", metrics);
+    return metrics_doc;
 }
 
 static
-json_object* store_request(const char* db_name, stream_info_t* stream_info, json_object* request, request_writer_state_t* state)
+void add_metrics_to_metrics_collection(const char* db_name, stream_info_t* stream_info, bson_t* metrics, const char* page, const char* module, int minute, const char* rid, bson_oid_t* oid, request_writer_state_t* state)
+{
+    mongoc_collection_t *metrics_collection = request_writer_get_metrics_collection(state, db_name, stream_info);
+    size_t n = bson_count_keys(metrics);
+    bson_t *docs[n];
+    bson_iter_t iter;
+    bson_iter_init(&iter, metrics);
+    bson_t** p = docs;
+    while (*module == ':') module++;
+    while (bson_iter_next(&iter)) {
+        *p = bson_new();
+        bson_append_utf8(*p, "page", 4, page, strlen(page));
+        bson_append_utf8(*p, "module", 6, module, strlen(module));
+        bson_append_int32(*p, "minute", 6, minute);
+        const char *metric = bson_iter_key(&iter);
+        bson_append_utf8(*p, "metric", 6,  metric, strlen(metric));
+        bson_append_iter(*p, "value", 5, &iter);
+        if (rid)
+            bson_append_utf8(*p, "rid", 3, rid, strlen(rid));
+        else
+            bson_append_oid(*p, "rid", 3, oid);
+        if (1) {
+            size_t m;
+            char* bjs = bson_as_json(*p, &m);
+            printf("[D] METRIC %s\n", bjs);
+            bson_free(bjs);
+        }
+        p++;
+    }
+    if (!dryrun) {
+        bson_t *opts = NULL;
+        bson_t reply;
+        bson_error_t error;
+        bool ok = mongoc_collection_insert_many(metrics_collection, (const bson_t**)docs, n, opts, &reply, &error);
+        if (!ok) {
+            size_t m;
+            char* bjs = bson_as_json(metrics, &m);
+            char *reply_str = bson_as_json(&reply, NULL);
+            fprintf(stderr,
+                    "[E] could not insert metrics on %s: (%d) %s\n"
+                    "[E] metrics document size: %zu; value: %s\n"
+                    "[E] reply: %s\n",
+                    db_name, error.code, error.message, n, bjs, reply_str);
+            bson_free(bjs);
+            bson_free(reply_str);
+        }
+    }
+    for (size_t i=0; i<n; i++) {
+        bson_destroy(docs[i]);
+    }
+}
+
+static
+json_object* store_request(const char* db_name, stream_info_t* stream_info, json_object* request, const char* module, request_writer_state_t* state)
 {
     // dump_json_object(stdout, "[D]", request);
-    convert_metrics_for_indexing(request);
-
+    bson_t *metrics = convert_metrics_for_indexing(request);
+    if (1) {
+        size_t n;
+        char* bs = bson_as_json(metrics, &n);
+        printf("[D] metrics document. size: %zu; value: %s\n", n, bs);
+        bson_free(bs);
+    }
     mongoc_collection_t *requests_collection = request_writer_get_request_collection(state, db_name, stream_info);
     bson_t *document = bson_sized_new(2048);
 
@@ -242,12 +328,13 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         }
         json_object_object_del(request, "request_id");
     }
+    bson_oid_t *oid = NULL;
     if (request_id == NULL) {
         // generate an oid
-        bson_oid_t oid;
-        bson_oid_init(&oid, NULL);
-        bson_append_oid(document, "_id", 3, &oid);
-        // printf("[D] generated oid for document:\n");
+        oid = zmalloc(sizeof(*oid));
+        bson_oid_init(oid, NULL);
+        bson_append_oid(document, "_id", 3, oid);
+        printf("[D] generated oid for document:\n");
     }
     {
         size_t n = 1024;
@@ -281,6 +368,20 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         }
     }
     bson_destroy(document);
+
+    json_object *page_obj;
+    if (json_object_object_get_ex(request, "page", &page_obj)) {
+        const char* page = json_object_get_string(page_obj);
+        json_object *minute_obj;
+        if (json_object_object_get_ex(request, "minute", &minute_obj)) {
+            int minute = json_object_get_int(minute_obj);
+            add_metrics_to_metrics_collection(db_name, stream_info, metrics, page, module, minute, request_id, oid, state);
+        }
+    }
+
+    if (oid)
+        free(oid);
+    bson_destroy(metrics);
 
     return request_id_obj;
 }
@@ -487,7 +588,7 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     if (!dryrun) {
         switch (task_type) {
         case 'r':
-            request_id = store_request(db_name, stream_info, request, state);
+            request_id = store_request(db_name, stream_info, request, module, state);
             request_writer_publish_error(stream_info, module, request, state, request_id);
             break;
         case 'j':
@@ -517,6 +618,7 @@ request_writer_state_t* request_writer_state_new(zconfig_t *config, size_t id)
         assert(state->mongo_clients[i]);
     }
     state->request_collections = zhash_new();
+    state->metrics_collections = zhash_new();
     state->jse_collections = zhash_new();
     state->events_collections = zhash_new();
     state->statsd_client = statsd_client_new(config, state->me);
@@ -531,6 +633,7 @@ void request_writer_state_destroy(request_writer_state_t **state_p)
     zsock_destroy(&state->pull_socket);
     zsock_destroy(&state->live_stream_socket);
     zhash_destroy(&state->request_collections);
+    zhash_destroy(&state->metrics_collections);
     zhash_destroy(&state->jse_collections);
     zhash_destroy(&state->events_collections);
     for (int i=0; i<num_databases; i++) {

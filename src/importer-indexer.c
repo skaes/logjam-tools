@@ -151,6 +151,39 @@ void add_jse_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
 }
 
 static
+void add_metrics_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
+{
+    bson_t *keys;
+
+    keys = bson_new();
+    bson_append_int32(keys, "metric", 6, 1);
+    bson_append_int32(keys, "value", 5, -1);
+    create_index(state, db, "metrics", keys);
+    bson_destroy(keys);
+
+    keys = bson_new();
+    bson_append_int32(keys, "page", 4, 1);
+    bson_append_int32(keys, "metric", 6, 1);
+    bson_append_int32(keys, "value", 5, -1);
+    create_index(state, db, "metrics", keys);
+    bson_destroy(keys);
+
+    keys = bson_new();
+    bson_append_int32(keys, "module", 6, 1);
+    bson_append_int32(keys, "metric", 6, 1);
+    bson_append_int32(keys, "value", 5, -1);
+    create_index(state, db, "metrics", keys);
+    bson_destroy(keys);
+
+    keys = bson_new();
+    bson_append_int32(keys, "minute", 6, 1);
+    bson_append_int32(keys, "metric", 6, 1);
+    bson_append_int32(keys, "value", 5, -1);
+    create_index(state, db, "metrics", keys);
+    bson_destroy(keys);
+}
+
+static
 int64_t extract_storage_size(bson_t *doc)
 {
     bson_iter_t iter;
@@ -269,6 +302,7 @@ void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
     create_index(state, db, "agents", keys);
     bson_destroy(keys);
 
+    add_metrics_collection_indexes(state, db);
     add_request_collection_indexes(state, db);
     add_jse_collection_indexes(state, db);
 
