@@ -112,21 +112,6 @@ void add_request_field_index(indexer_state_t *state, mongoc_database_t *db, cons
 static
 void add_request_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
 {
-    bson_t *keys;
-
-    keys = bson_new();
-    bson_append_int32(keys, "metrics.n", 9, 1);
-    bson_append_int32(keys, "metrics.v", 9, -1);
-    create_index(state, db, "requests", keys);
-    bson_destroy(keys);
-
-    keys = bson_new();
-    bson_append_int32(keys, "page", 4, 1);
-    bson_append_int32(keys, "metrics.n", 9, 1);
-    bson_append_int32(keys, "metrics.v", 9, -1);
-    create_index(state, db, "requests", keys);
-    bson_destroy(keys);
-
     add_request_field_index(state, db, "response_code");
     add_request_field_index(state, db, "severity");
     add_request_field_index(state, db, "exceptions");
