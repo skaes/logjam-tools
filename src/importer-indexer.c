@@ -322,11 +322,11 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
 static
 void* create_indexes_for_date(void* args)
 {
-    if (dryrun) return NULL;
+    bg_indexer_args_t *indexer_args = args;
+    if (dryrun) goto exit;
 
     indexer_state_t state;
     memset(&state, 0, sizeof(state));
-    bg_indexer_args_t *indexer_args = args;
     state.id = indexer_args->id;;
 
     char thread_name[16];
@@ -347,6 +347,7 @@ void* create_indexes_for_date(void* args)
         mongoc_client_destroy(state.mongo_clients[i]);
     }
 
+ exit:
     free(indexer_args);
     return NULL;
 }
