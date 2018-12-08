@@ -66,6 +66,7 @@ typedef struct {
     zsock_t *live_stream_socket;
     size_t ticks;
     statsd_client_t *statsd_client;
+    zlist_t *collected_processors;
 } controller_state_t;
 
 
@@ -152,51 +153,8 @@ void publish_totals_for_every_known_stream(controller_state_t *state, zhash_t *p
 }
 
 static
-int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
+void merge_processors(controller_state_t *state, zlist_t *additions)
 {
-    int64_t start_time_ms = zclock_mono();
-    controller_state_t *state = arg;
-    zhash_t *processors[num_parsers];
-    size_t parsed_msgs_counts[num_parsers];
-    frontend_stats_t fe_stats[num_parsers];
-
-    state->ticks++;
-
-    // tell tracker, subscribers, live stream publisher and  stats server to tick
-    zstr_send(state->statsd_server, "tick");
-    for (size_t i=0; i<num_subscribers; i++) {
-        zstr_send(state->subscribers[i], "tick");
-    }
-    zstr_send(state->tracker, "tick");
-    zstr_send(state->live_stream_publisher, "tick");
-
-    // printf("[D] controller: collecting data from parsers: tick[%zu]\n", state->ticks);
-    for (size_t i=0; i<num_parsers; i++) {
-        zactor_t* parser = state->parsers[i];
-        zstr_send(parser, "tick");
-        zmsg_t *response = zmsg_recv(parser);
-        if (response) {
-            extract_parser_state(response, &processors[i], &parsed_msgs_counts[i], &fe_stats[i]);
-            zmsg_destroy(&response);
-        }
-    }
-
-    zlist_t *additions = zlist_new();
-    zlist_append(additions, processors[0]);
-
-    // printf("[D] controller: combining processors states\n");
-    size_t parsed_msgs_count = parsed_msgs_counts[0];
-    frontend_stats_t front_stats = fe_stats[0];
-    for (int i=1; i<num_parsers; i++) {
-        parsed_msgs_count += parsed_msgs_counts[i];
-        front_stats.received += fe_stats[i].received;
-        front_stats.dropped += fe_stats[i].dropped;
-        for (int j=0; j<FE_MSG_NUM_REASONS; j++)
-            front_stats.drop_reasons[j] += fe_stats[i].drop_reasons[j];
-        zlist_append(additions, processors[i]);
-    }
-
-    // merge processors
     int l = zlist_size(additions);
     while (l>1) {
         int n = l / 2;
@@ -227,30 +185,15 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         l = zlist_size(additions);
     }
 
-    processors[0] = zlist_pop(additions);
-    zlist_destroy(&additions);
+}
 
-    // publish on live stream (need to do this while we still own the processors)
-    // printf("[D] controller: publishing live streams\n");
-    publish_totals_for_every_known_stream(state, processors[0]);
-
-    // tell indexer to tick
-    zstr_send(state->indexer, "tick");
-
-    // tell prom collector to tick
-    zstr_send(state->prom_collector, "tick");
-
-    // tell stats updaters to tick
-    for (int i=0; i<num_updaters; i++) {
-        zstr_send(state->updaters[i], "tick");
-    }
-
-    // forward to stats_updaters
-    // printf("[D] controller: forwarding updates\n");
-    zlist_t *db_names = zhash_keys(processors[0]);
+static
+void forward_updates(controller_state_t *state, zhash_t *processor)
+{
+    zlist_t *db_names = zhash_keys(processor);
     const char* db_name = zlist_first(db_names);
     while (db_name != NULL) {
-        processor_state_t *proc = zhash_lookup(processors[0], db_name);
+        processor_state_t *proc = zhash_lookup(processor, db_name);
         // printf("[D] forwarding %s\n", db_name);
         zmsg_t *stats_msg;
 
@@ -327,7 +270,85 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         db_name = zlist_next(db_names);
     }
     zlist_destroy(&db_names);
-    zhash_destroy(&processors[0]);
+}
+
+static
+int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
+{
+    int64_t start_time_ms = zclock_mono();
+    controller_state_t *state = arg;
+    zhash_t *processors[num_parsers];
+    size_t parsed_msgs_counts[num_parsers];
+    frontend_stats_t fe_stats[num_parsers];
+
+    state->ticks++;
+
+    // tell tracker, subscribers, live stream publisher and  stats server to tick
+    zstr_send(state->statsd_server, "tick");
+    for (size_t i=0; i<num_subscribers; i++) {
+        zstr_send(state->subscribers[i], "tick");
+    }
+    zstr_send(state->tracker, "tick");
+    zstr_send(state->live_stream_publisher, "tick");
+
+    // printf("[D] controller: collecting data from parsers: tick[%zu]\n", state->ticks);
+    for (size_t i=0; i<num_parsers; i++) {
+        zactor_t* parser = state->parsers[i];
+        zstr_send(parser, "tick");
+        zmsg_t *response = zmsg_recv(parser);
+        if (response) {
+            extract_parser_state(response, &processors[i], &parsed_msgs_counts[i], &fe_stats[i]);
+            zmsg_destroy(&response);
+        }
+    }
+
+    zlist_t *additions = zlist_new();
+    zlist_append(additions, processors[0]);
+
+    // printf("[D] controller: combining processors states\n");
+    size_t parsed_msgs_count = parsed_msgs_counts[0];
+    frontend_stats_t front_stats = fe_stats[0];
+    for (int i=1; i<num_parsers; i++) {
+        parsed_msgs_count += parsed_msgs_counts[i];
+        front_stats.received += fe_stats[i].received;
+        front_stats.dropped += fe_stats[i].dropped;
+        for (int j=0; j<FE_MSG_NUM_REASONS; j++)
+            front_stats.drop_reasons[j] += fe_stats[i].drop_reasons[j];
+        zlist_append(additions, processors[i]);
+    }
+
+    merge_processors(state, additions);
+    zhash_t *processor = zlist_pop(additions);
+    zlist_destroy(&additions);
+
+    // publish on live stream (need to do this while we still own the processor)
+    // printf("[D] controller: publishing live streams\n");
+    publish_totals_for_every_known_stream(state, processor);
+
+    // tell indexer to tick
+    zstr_send(state->indexer, "tick");
+
+    // tell prom collector to tick
+    zstr_send(state->prom_collector, "tick");
+
+    // tell stats updaters to tick
+    for (int i=0; i<num_updaters; i++) {
+        zstr_send(state->updaters[i], "tick");
+    }
+
+    zlist_append(state->collected_processors, processor);
+    // combine stats of collected processor from last tick with current one
+    if (zlist_size(state->collected_processors) > 1) {
+        merge_processors(state, state->collected_processors);
+    }
+
+    // forward to stats_updaters
+    if (state->ticks % DATABASE_UPDATE_INTERVAL == 0) {
+        // printf("[D] controller: forwarding updates\n");
+        processor = zlist_pop(state->collected_processors);
+        forward_updates(state, processor);
+        zhash_destroy(&processor);
+    }
 
     // tell request writers to tick
     for (int i=0; i<num_writers; i++) {
@@ -566,6 +587,8 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
 
     controller_state_t state = {.ticks = 0, .config = config, .updates_blocked = 0};
     state.statsd_client = statsd_client_new(config, "controller[0]");
+    state.collected_processors = zlist_new();
+    assert(state.collected_processors);
     bool start_up_complete = controller_create_actors(&state);
 
     if (!start_up_complete)
@@ -576,7 +599,7 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     assert(loop);
     zloop_set_verbose(loop, 0);
 
-    // flush increments to database every 1000 ms
+    // combine increments every 1000 ms
     rc = zloop_timer(loop, 1000, 1, collect_stats_and_forward, &state);
     assert(rc != -1);
 
@@ -597,7 +620,13 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     zloop_destroy(&loop);
     assert(loop == NULL);
 
+    zhash_t *p = NULL;
  exit:
+    // free collected processors
+    while ( (p = zlist_pop(state.collected_processors) )) {
+        zhash_destroy(&p);
+    }
+    zlist_destroy(&state.collected_processors);
     // create apocalypse timer
     if (start_shutdown_timer() == -1)
         printf("[W] controller: could not start shutdown timer\n");

@@ -97,6 +97,7 @@ extern int set_thread_name(const char* name);
 #define COLLECTION_REFRESH_INTERVAL 3600
 #define CONFIG_FILE_CHECK_INTERVAL 10
 #define DATABASE_INFO_REFRESH_INTERVAL 60
+#define DATABASE_UPDATE_INTERVAL 5
 
 // maximum size of histograms stored in mongo
 #define HISTOGRAM_SIZE 22
