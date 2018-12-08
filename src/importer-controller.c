@@ -377,8 +377,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         printf("[E] controller: queued inserts are negative: %d\n", inserts);
         inserts = 0;
     }
-    statsd_client_gauge(state->statsd_client, "importer.queued_updates.count", updates);
-    statsd_client_gauge(state->statsd_client, "importer.queued_inserts.count", inserts);
+    statsd_client_count(state->statsd_client, "importer.queued_updates.count", updates);
+    statsd_client_count(state->statsd_client, "importer.queued_inserts.count", inserts);
 
     // log a warning about the number of blocked updates
     if (state->updates_blocked) {
