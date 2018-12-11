@@ -5,6 +5,7 @@
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
 #include "importer-parser.h"
+#include "prometheus-client.h"
 
 /*
  * connections: n_u = NUM_UPDATERS, "o" = bind, "[<>v^]" = connect
@@ -566,7 +567,10 @@ static void stats_updater(zsock_t *pipe, void *args)
                     printf("[I] updater[%zu]: tick (%d updates, %d ms)\n", id, state->updates_count, state->update_time/1000);
                 }
                 statsd_client_count(state->statsd_client, "importer.updates.count", state->updates_count);
+                prometheus_client_count(IMPORTER_UPDATE_COUNT, state->updates_count);
                 statsd_client_timing(state->statsd_client, "importer.updates.time", state->update_time/1000);
+                prometheus_client_timing(IMPORTER_UPDATE_TIME, state->update_time/1000);
+
                 // ping the server
                 if (ticks++ % PING_INTERVAL == 0) {
                     for (int i=0; i<num_databases; i++) {

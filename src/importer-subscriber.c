@@ -3,6 +3,7 @@
 #include "logjam-util.h"
 #include "device-tracker.h"
 #include "statsd-client.h"
+#include "prometheus-client.h"
 
 /*
  * connections: n_s = num_subscribers, n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
@@ -303,7 +304,9 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
                    state->message_count, state->message_gap_size, state->meta_info_failures,
                    state->messages_dev_zero, state->message_blocks, state->message_drops);
             statsd_client_count(state->statsd_client, "subscriber.messsages.received.count", state->message_count);
+            prometheus_client_count(IMPORTER_MSGS_RECEIVED_COUNT, state->message_count);
             statsd_client_count(state->statsd_client, "subscriber.messsages.missed.count", state->message_gap_size);
+            prometheus_client_count(IMPORTER_MSGS_MISSED_COUNT, state->message_gap_size);
             state->message_count = 0;
             state->message_gap_size = 0;
             state->meta_info_failures = 0;

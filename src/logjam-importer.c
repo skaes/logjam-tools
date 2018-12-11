@@ -3,6 +3,7 @@
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
 #include "importer-processor.h"
+#include "prometheus-client.h"
 #include <getopt.h>
 
 int snd_hwm = -1;
@@ -14,7 +15,7 @@ char* live_stream_connection_spec = NULL;
 char* prom_collector_connection_spec = NULL;
 zlist_t *hosts = NULL;
 
-static char *subscription_pattern = NULL;
+static const char *subscription_pattern = NULL;
 static const char *config_file_name = "logjam.conf";
 
 FILE* frontend_timings = NULL;
@@ -322,6 +323,7 @@ int main(int argc, char * const *argv)
                num_parsers, num_writers, num_updaters, subscription_pattern);
 
     initialize_mongo_db_globals(config);
+    prometheus_client_init("0.0.0.0:9637");
 
     setup_resource_maps(config);
     setup_stream_config(config, subscription_pattern);

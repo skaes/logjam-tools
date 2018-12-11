@@ -56,11 +56,11 @@ int main(int argc, char const * const *argv)
   assert_x(ZMQ_VERSION <= 20200 && socket_count > 512,
            "zeromq < 3.2 only supports up to 512 sockets");
 
-  void **sockets = zmalloc(socket_count * sizeof(void*));
+  zsock_t **sockets = (zsock_t**)zmalloc(socket_count * sizeof(zsock_t*));
 
   int j;
   for (j=0; j<socket_count; j++) {
-    void *socket = zsock_new(ZMQ_PUSH);
+    zsock_t *socket = zsock_new(ZMQ_PUSH);
     if (NULL==socket) {
       printf("Error occurred during %dth call to zsock_new: %s\n", j, zmq_strerror (errno));
       exit(1);
@@ -87,7 +87,7 @@ int main(int argc, char const * const *argv)
   char data[MESSAGE_BODY_SIZE];
   memset(data, 'a', MESSAGE_BODY_SIZE);
 
-  char *exchanges[2] = {"zmq-device-1", "zmq-device-2"};
+  const char *exchanges[2] = {"zmq-device-1", "zmq-device-2"};
   // char *keys[2] = {"1","2"};
 
   int i = 0, queued = 0, rejected = 0;
@@ -114,7 +114,7 @@ int main(int argc, char const * const *argv)
   printf("rejected: %8d\n", rejected);
 
   for (i=0;i<socket_count;i++) {
-    zsock_destroy(sockets[i]);
+    zsock_destroy(&sockets[i]);
   }
   free(sockets);
 

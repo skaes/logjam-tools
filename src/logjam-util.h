@@ -88,7 +88,7 @@ static inline void meta_info_decode(msg_meta_t *meta)
 static inline void msg_add_meta_info(zmq_msg_t *msg, msg_meta_t *meta)
 {
     zmq_msg_init_size(msg, sizeof(msg_meta_t));
-    void *data = zmq_msg_data(msg);
+    msg_meta_t *data = (msg_meta_t *) zmq_msg_data(msg);
     memcpy(data, meta,  sizeof(msg_meta_t));
     meta_info_encode(data);
 }

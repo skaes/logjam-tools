@@ -72,6 +72,33 @@ function handle_cmake()
     echo "using CMAKE=$(which cmake)"
 }
 
+function handle_prometheus_cpp()
+{
+    d=prometheus-cpp
+    test -d $d || git clone https://github.com/jupp0r/${d}.git
+    cd $d
+    revision=$(git rev-parse HEAD)
+    expected_revision="e14ba416e9bcde4439a3bf14fbdb93ef35321ae4" # 0.6.0
+    if [ "$revision" != "$expected_revision" ]; then
+        git reset --hard
+        [ $cached = 0 ] && git fetch
+        git checkout $expected_revision
+        [ $cached = 0 ] && git submodule init && git submodule update
+    fi
+    [ $forced == "1" ] && git clean -qfdx && rm -rf _build
+    mkdir -p _build
+    cd _build
+    cmake  -DCMAKE_INSTALL_PREFIX=$prefix -DCMAKE_INSTALL_LIBDIR=$prefix/lib ..
+    if [ "$cmd" == "install" ]; then
+        make -j4
+        $LSUDO make install
+    else
+        $LSUDO xargs rm < install_manifest.txt
+    fi
+    $LSUDO $ldconfig
+    cd ../..
+}
+
 function handle_mongoc()
 {
     d=mongo-c-driver
@@ -205,10 +232,12 @@ case $cmd in
         handle_json_c
         handle_mongoc
         handle_snappy
+        handle_prometheus_cpp
         handle_cmake
         ;;
     *)
         handle_cmake
+        handle_prometheus_cpp
         handle_snappy
         handle_mongoc
         handle_json_c

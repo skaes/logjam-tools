@@ -11,6 +11,7 @@
 #include "importer-watchdog.h"
 #include "statsd-client.h"
 #include "prom-collector.h"
+#include "prometheus-client.h"
 
 /*
  * connections: n_s = num_subscribers, n_w = num_writers, n_p = num_parsers, n_u= num_updaters, n_a = num_adders "[<>^v]" = connect, "o" = bind
@@ -378,7 +379,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         inserts = 0;
     }
     statsd_client_count(state->statsd_client, "importer.queued_updates.count", updates);
+    prometheus_client_gauge(IMPORTER_QUEUED_UPDATES_COUNT , updates);
     statsd_client_count(state->statsd_client, "importer.queued_inserts.count", inserts);
+    prometheus_client_gauge(IMPORTER_QUEUED_INSERTS_COUNT , inserts);
 
     // log a warning about the number of blocked updates
     if (state->updates_blocked) {

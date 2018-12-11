@@ -4,7 +4,7 @@
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
 #include "statsd-client.h"
-
+#include "prometheus-client.h"
 
 /*
  * connections: n_w = num_writers, n_p = num_parsers, "o" = bind, "[<>v^]" = connect
@@ -674,7 +674,9 @@ static void request_writer(zsock_t *pipe, void *args)
                 if (verbose && (state->updates_count || state->update_time))
                     printf("[I] writer [%zu]: tick (%d requests, %d ms)\n", id, state->updates_count, state->update_time/1000);
                 statsd_client_count(state->statsd_client, "importer.inserts.count", state->updates_count);
+                prometheus_client_count(IMPORTER_INSERT_COUNT, state->updates_count);
                 statsd_client_timing(state->statsd_client, "importer.inserts.time", state->update_time/1000);
+                prometheus_client_timing(IMPORTER_INSERT_TIME, state->update_time/1000);
                 if (ticks++ % PING_INTERVAL == 0) {
                     // ping mongodb to reestablish connection if it got lost
                     for (int i=0; i<num_databases; i++) {
