@@ -111,14 +111,19 @@ void prometheus_client_count(int metric, double value)
     switch (metric) {
     case IMPORTER_UPDATE_COUNT:
         client.updates_total->Increment(value);
+        break;
     case IMPORTER_INSERT_COUNT:
         client.inserts_total->Increment(value);
+        break;
     case IMPORTER_MSGS_RECEIVED_COUNT:
         client.received_msgs_total->Increment(value);
+        break;
     case IMPORTER_MSGS_MISSED_COUNT:
         client.missed_msgs_total->Increment(value);
+        break;
     case IMPORTER_MSGS_PARSED_COUNT:
         client.parsed_msgs_total->Increment(value);
+        break;
     }
 }
 
@@ -127,8 +132,10 @@ void prometheus_client_gauge(int metric, double value)
     switch (metric) {
     case IMPORTER_QUEUED_UPDATES_COUNT:
         client.queued_updates->Set(value);
+        break;
     case IMPORTER_QUEUED_INSERTS_COUNT:
         client.queued_inserts->Set(value);
+        break;
     }
 }
 
@@ -137,7 +144,9 @@ void prometheus_client_timing(int metric, double value)
     switch (metric) {
     case IMPORTER_UPDATE_TIME:
         client.updates_seconds->Increment(value);
+        break;
     case IMPORTER_INSERT_TIME:
         client.inserts_seconds->Increment(value);
+        break;
     }
 }
