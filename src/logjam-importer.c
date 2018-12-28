@@ -11,8 +11,11 @@ int rcv_hwm = -1;
 int pull_port = -1;
 int router_port = -1;
 int sub_port = -1;
+int metrics_port = -1;
+char metrics_address[256] = {0};
 char* live_stream_connection_spec = NULL;
 char* prom_collector_connection_spec = NULL;
+const char *metrics_ip = "127.0.0.1";
 zlist_t *hosts = NULL;
 
 static const char *subscription_pattern = NULL;
@@ -75,6 +78,8 @@ void print_usage(char * const *argv)
             "  -P, --input-port N         pull port for receiving logjam messages\n"
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
+            "  -m, --metrics-port N       port to use for prometheus path /metrics\n"
+            "  -M, --metrics-ip N         ip for binding metrucs endpoint\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
@@ -109,11 +114,14 @@ void process_arguments(int argc, char * const *argv)
         { "router-port",      required_argument, 0, 't' },
         { "snd-hwm",          required_argument, 0, 'S' },
         { "subscribe",        required_argument, 0, 's' },
+        { "subscribers",      required_argument, 0, 'b' },
+        { "metrics-port",     required_argument, 0, 'm' },
+        { "metrics-ip",       required_argument, 0, 'M' },
         { "verbose",          no_argument,       0, 'v' },
         { 0,                  0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "a:b:c:f:np:qs:u:vw:x:i:P:R:S:l:h:D:t:N", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "a:b:c:f:nm:p:qs:u:vw:x:i:P:R:S:l:h:D:t:NM:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -179,6 +187,10 @@ void process_arguments(int argc, char * const *argv)
             }
             break;
         }
+        case 'B': {
+            metrics_ip = optarg;
+            break;
+        }
         case 'h':
             hosts = split_delimited_string(optarg);
             if (zlist_size(hosts) == 0) {
@@ -203,6 +215,9 @@ void process_arguments(int argc, char * const *argv)
             break;
         case 'D':
             sub_port = atoi(optarg);
+            break;
+        case 'm':
+            metrics_port = atoi(optarg);
             break;
         case 'N':
             send_statsd_msgs = false;
@@ -238,6 +253,8 @@ void process_arguments(int argc, char * const *argv)
         sub_port = DEFAULT_SUB_PORT;
     if (router_port == -1)
         router_port = DEFAULT_ROUTER_PORT;
+    if (metrics_port == -1)
+        metrics_port = DEFAULT_METRICS_PORT;
 
     if (hosts == NULL && (v = getenv("LOGJAM_DEVICES")))
         hosts = split_delimited_string(v);
@@ -282,7 +299,7 @@ int main(int argc, char * const *argv)
     }
     if (frontend_timings_apdex_attr) {
         if (!processor_set_frontend_apdex_attribute(frontend_timings_apdex_attr)) {
-            fprintf(stderr, "[E] invalid frontend apdex attribite name: %s\n", frontend_timings_apdex_attr);
+            fprintf(stderr, "[E] invalid frontend apdex attribute name: %s\n", frontend_timings_apdex_attr);
             exit(1);
         }
     }
@@ -323,7 +340,8 @@ int main(int argc, char * const *argv)
                num_parsers, num_writers, num_updaters, subscription_pattern);
 
     initialize_mongo_db_globals(config);
-    prometheus_client_init("0.0.0.0:9637");
+    snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
+    prometheus_client_init(metrics_address);
 
     setup_resource_maps(config);
     setup_stream_config(config, subscription_pattern);

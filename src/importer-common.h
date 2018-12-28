@@ -33,6 +33,7 @@ extern int queued_inserts;
 #define DEFAULT_SUB_PORT 9606
 #define DEFAULT_LIVE_STREAM_PORT 9607
 #define DEFAULT_PROM_COLLECTOR_PORT 9612
+#define DEFAULT_METRICS_PORT 9610
 
 #define DEFAULT_REP_CONNECTION_SPEC "tcp://localhost:9604"
 #define DEFAULT_PULL_CONNECTION_SPEC "tcp://localhost:9605"

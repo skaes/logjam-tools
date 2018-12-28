@@ -114,6 +114,10 @@ https://githum.com/skaes/logjam-core).
 A ZeroMQ PUSH socket for graylog to connect to
 (logjam-graylog-forwarder).
 
+### 9610
+
+A prometheus metrics endpoint, used by logjam-importer.
+
 ### 9705
 
 HTTP listening port for logjam-fhttpd

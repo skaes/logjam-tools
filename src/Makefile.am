@@ -28,7 +28,7 @@ noinst_PROGRAMS = \
     checker
 
 logjam_device_SOURCES = \
-    config.h \
+    ../config.h \
     logjam-device.c \
     logjam-util.c \
     logjam-util.h \
@@ -36,7 +36,7 @@ logjam_device_SOURCES = \
     message-compressor.h
 
 logjam_importer_SOURCES = \
-    config.h \
+    ../config.h \
     importer-adder.c \
     importer-adder.h \
     importer-common.c \
@@ -86,13 +86,13 @@ logjam_importer_SOURCES = \
 logjam_importer_LDADD = $(PROMETHEUS_LIBS) $(LDADD)
 
 logjam_fhttpd_SOURCES = \
-    config.h \
+    ../config.h \
     logjam-fhttpd.c \
     logjam-util.c \
     logjam-util.h
 
 logjam_graylog_forwarder_SOURCES = \
-    config.h \
+    ../config.h \
     logjam-graylog-forwarder.c \
     graylog-forwarder-common.c \
     graylog-forwarder-common.h \
@@ -116,7 +116,7 @@ logjam_graylog_forwarder_SOURCES = \
     device-tracker.h
 
 logjam_dump_SOURCES = \
-    config.h \
+    ../config.h \
     logjam-dump.c \
     logjam-util.c \
     logjam-util.h \
@@ -124,13 +124,13 @@ logjam_dump_SOURCES = \
     device-tracker.h
 
 logjam_replay_SOURCES = \
-    config.h \
+    ../config.h \
     logjam-replay.c \
     logjam-util.c \
     logjam-util.h
 
 logjam_pubsub_bridge_SOURCES = \
-    config.h \
+    ../config.h \
     logjam-pubsub-bridge.c \
     logjam-util.c \
     logjam-util.h \
@@ -140,7 +140,7 @@ logjam_pubsub_bridge_SOURCES = \
     device-tracker.h
 
 logjam_forwarder_SOURCES = \
-    config.h \
+    ../config.h \
     logjam-forwarder.c \
     logjam-util.c \
     logjam-util.h \
@@ -148,13 +148,13 @@ logjam_forwarder_SOURCES = \
     device-tracker.h
 
 logjam_logger_SOURCES = \
-    config.h \
+    ../config.h \
     logjam-logger.c \
     logjam-util.c \
     logjam-util.h
 
 logjam_tail_SOURCES = \
-    config.h \
+    ../config.h \
     logjam-tail.c \
     logjam-util.c \
     logjam-util.h
