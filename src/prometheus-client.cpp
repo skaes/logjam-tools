@@ -97,7 +97,7 @@ void prometheus_client_init(const char* address)
     client.queued_inserts = &client.queued_inserts_family->Add({});
 
     // ask the exposer to scrape the registry on incoming scrapes
-    // client.exposer->RegisterCollectable(client.registry);
+    client.exposer->RegisterCollectable(client.registry);
 }
 
 void prometheus_client_shutdown()
