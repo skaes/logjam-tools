@@ -126,9 +126,9 @@ void prometheus_client_gauge(int metric, double value)
 {
     switch (metric) {
     case IMPORTER_QUEUED_UPDATES_COUNT:
-        client.queued_updates->Increment(value);
+        client.queued_updates->Set(value);
     case IMPORTER_QUEUED_INSERTS_COUNT:
-        client.queued_inserts->Increment(value);
+        client.queued_inserts->Set(value);
     }
 }
 
