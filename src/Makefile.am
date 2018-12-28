@@ -6,7 +6,7 @@ AM_CFLAGS = --std=gnu99 -Wall -fno-fast-math
 AM_CXXFLAGS = --std=c++11 -Wall -fno-fast-math
 AM_LDFLAGS = $(OPT_PTHREAD_FLAGS)
 LDADD = $(OPTDIR_LDFLAGS) $(DEPS_LIBS) $(OPT_PROFILER_FLAGS) -lm
-PROMETHEUS_LIBS = $(libdir)/libprometheus-cpp-core.a $(libdir)/libprometheus-cpp-pull.a $(libdir)/libprometheus-cpp-push.a
+PROMETHEUS_LIBS = $(libdir)/libprometheus-cpp-pull.a $(libdir)/libprometheus-cpp-push.a $(libdir)/libprometheus-cpp-core.a
 
 bin_PROGRAMS = \
 logjam-device \
