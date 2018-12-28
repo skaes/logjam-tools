@@ -187,7 +187,7 @@ void process_arguments(int argc, char * const *argv)
             }
             break;
         }
-        case 'B': {
+        case 'M': {
             metrics_ip = optarg;
             break;
         }
