@@ -70,14 +70,14 @@ void prometheus_client_init(const char* address)
 
     client.missed_msgs_total_family = &prometheus::BuildCounter()
         .Name("importer_msgs_missed_total")
-        .Help("How many logjam messages where missed by this importer")
+        .Help("How many logjam messages were missed by this importer")
         .Register(*client.registry);
 
     client.missed_msgs_total = &client.missed_msgs_total_family->Add({});
 
     client.parsed_msgs_total_family = &prometheus::BuildCounter()
         .Name("importer_msgs_parsed_total")
-        .Help("How many logjam messages where parsed by this importer")
+        .Help("How many logjam messages were parsed by this importer")
         .Register(*client.registry);
 
     client.parsed_msgs_total = &client.parsed_msgs_total_family->Add({});
