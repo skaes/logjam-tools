@@ -15,7 +15,7 @@ int metrics_port = -1;
 char metrics_address[256] = {0};
 char* live_stream_connection_spec = NULL;
 char* prom_collector_connection_spec = NULL;
-const char *metrics_ip = "127.0.0.1";
+const char *metrics_ip = "0.0.0.0";
 zlist_t *hosts = NULL;
 
 static const char *subscription_pattern = NULL;
@@ -79,7 +79,7 @@ void print_usage(char * const *argv)
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "  -m, --metrics-port N       port to use for prometheus path /metrics\n"
-            "  -M, --metrics-ip N         ip for binding metrucs endpoint\n"
+            "  -M, --metrics-ip N         ip for binding metrics endpoint\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
