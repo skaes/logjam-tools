@@ -337,7 +337,7 @@ void parser(zsock_t *pipe, void *args)
                 if (state->parsed_msgs_count && verbose)
                     printf("[I] parser [%zu]: tick (%zu messages, %zu frontend)\n", id, state->parsed_msgs_count, state->fe_stats.received);
                 statsd_client_count(state->statsd_client, "importer.parses.count", state->parsed_msgs_count);
-                prometheus_client_count(IMPORTER_MSGS_PARSED_COUNT, state->parsed_msgs_count);
+                prometheus_client_count_msgs_parsed(state->parsed_msgs_count);
                 zmsg_t *answer = zmsg_new();
                 zmsg_addptr(answer, state->processors);
                 zmsg_addmem(answer, &state->parsed_msgs_count, sizeof(state->parsed_msgs_count));

@@ -33,6 +33,7 @@ typedef struct {
     zsock_t *live_stream_socket;
     int updates_count;     // updates performend since last tick
     int update_time;       // processing time since last tick (micro seconds)
+    int updates_failed;    // how many updates failed
     statsd_client_t *statsd_client;
 } request_writer_state_t;
 
@@ -291,6 +292,7 @@ void add_metrics_to_metrics_collection(const char* db_name, stream_info_t* strea
                     db_name, error.code, error.message, n, bjs, reply_str);
             bson_free(bjs);
             bson_free(reply_str);
+            state->updates_failed++;
         }
     }
     for (size_t i=0; i<n; i++) {
@@ -348,6 +350,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     // printf("[D] doument. size: %zu; value:%s\n", n, bs);
     // bson_free(bs);
 
+    bool update_failed = false;
     if (!dryrun) {
         bson_error_t error;
         int tries = TOKU_TX_RETRIES;
@@ -364,13 +367,15 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
                         "[E] document size: %zu; value: %s\n",
                         request_id, db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
+                update_failed = true;
+                state->updates_failed++;
             }
         }
     }
     bson_destroy(document);
 
     json_object *page_obj;
-    if (json_object_object_get_ex(request, "page", &page_obj)) {
+    if (!update_failed && json_object_object_get_ex(request, "page", &page_obj)) {
         const char* page = json_object_get_string(page_obj);
         json_object *minute_obj;
         if (json_object_object_get_ex(request, "minute", &minute_obj)) {
@@ -409,6 +414,7 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
                         "[E] document size: %zu; value: %s\n",
                         db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
+                state->updates_failed++;
             }
         }
     }
@@ -469,6 +475,7 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
                         "[E] document size: %zu; value: %s\n",
                         db_name, error.code, error.message, n, bjs);
                 bson_free(bjs);
+                state->updates_failed++;
             }
         }
     }
@@ -674,9 +681,11 @@ static void request_writer(zsock_t *pipe, void *args)
                 if (verbose && (state->updates_count || state->update_time))
                     printf("[I] writer [%zu]: tick (%d requests, %d ms)\n", id, state->updates_count, state->update_time/1000);
                 statsd_client_count(state->statsd_client, "importer.inserts.count", state->updates_count);
-                prometheus_client_count(IMPORTER_INSERT_COUNT, state->updates_count);
                 statsd_client_timing(state->statsd_client, "importer.inserts.time", state->update_time/1000);
-                prometheus_client_timing(IMPORTER_INSERT_TIME, ((double)state->update_time)/1000000);
+                statsd_client_timing(state->statsd_client, "importer.inserts.failed", state->updates_failed);
+                prometheus_client_count_inserts(state->updates_count);
+                prometheus_client_time_inserts(((double)state->update_time)/1000000);
+                prometheus_client_count_inserts_failed(state->updates_failed);
                 if (ticks++ % PING_INTERVAL == 0) {
                     // ping mongodb to reestablish connection if it got lost
                     for (int i=0; i<num_databases; i++) {
@@ -695,6 +704,7 @@ static void request_writer(zsock_t *pipe, void *args)
                 }
                 state->updates_count = 0;
                 state->update_time = 0;
+                state->updates_failed = 0;
                 free(cmd);
             } else if (streq(cmd, "$TERM")) {
                 // printf("[D] writer [%zu]: received $TERM command\n", id);

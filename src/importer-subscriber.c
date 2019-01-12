@@ -304,9 +304,13 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
                    state->message_count, state->message_gap_size, state->meta_info_failures,
                    state->messages_dev_zero, state->message_blocks, state->message_drops);
             statsd_client_count(state->statsd_client, "subscriber.messsages.received.count", state->message_count);
-            prometheus_client_count(IMPORTER_MSGS_RECEIVED_COUNT, state->message_count);
             statsd_client_count(state->statsd_client, "subscriber.messsages.missed.count", state->message_gap_size);
-            prometheus_client_count(IMPORTER_MSGS_MISSED_COUNT, state->message_gap_size);
+            statsd_client_count(state->statsd_client, "subscriber.messsages.dropped.count", state->message_drops);
+            statsd_client_count(state->statsd_client, "subscriber.messsages.blocked.count", state->message_blocks);
+            prometheus_client_count_msgs_received(state->message_count);
+            prometheus_client_count_msgs_missed(state->message_gap_size);
+            prometheus_client_count_msgs_dropped(state->message_drops);
+            prometheus_client_count_msgs_blocked(state->message_blocks);
             state->message_count = 0;
             state->message_gap_size = 0;
             state->meta_info_failures = 0;
