@@ -688,24 +688,28 @@ static
 sampling_reason_t interesting_request(request_data_t *request_data, json_object *request, stream_info_t* info)
 {
     sampling_reason_t reason = 0;
+
     if (slow_request(info, request_data->total_time, request_data->module+2))
         reason |= SAMPLE_SLOW_REQUEST;
-    if (request_data->severity > LOG_SEVERITY_WARN)
+
+    if (request_data->severity >= LOG_SEVERITY_FATAL)
         reason |= SAMPLE_LOG_SEVERITY;
-    else {
-        if (request_data->severity > LOG_SEVERITY_INFO && sample_randomly(info))
-            reason |= SAMPLE_LOG_SEVERITY;
-    }
+    else if (request_data->severity >= LOG_SEVERITY_ERROR && (request_data->response_code >= 500 || sample_randomly(info)))
+        reason |= SAMPLE_LOG_SEVERITY;
+    else if (request_data->severity >= LOG_SEVERITY_WARN && sample_randomly(info))
+        reason |= SAMPLE_LOG_SEVERITY;
+
     if (request_data->response_code >= 500)
         reason |= SAMPLE_500;
-    else {
-        if (request_data->response_code >= 400 && sample_randomly(info))
-            reason |= SAMPLE_400;
-    }
+    else if (request_data->response_code >= 400 && sample_randomly(info))
+        reason |= SAMPLE_400;
+
     if (request_data->exceptions != NULL)
         reason |= SAMPLE_EXCEPTIONS;
+
     if (request_data->heap_growth > 0)
         reason |= SAMPLE_HEAP_GROWTH;
+
     return reason;
 }
 
