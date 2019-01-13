@@ -652,45 +652,61 @@ void processor_add_histogram(processor_state_t *self, const char* namespace, int
     // dump_histograms(self->histograms);
 }
 
-
 static
-bool interesting_request(request_data_t *request_data, json_object *request, stream_info_t* info)
+bool slow_request(stream_info_t *stream_info, double total_time, const char* module)
 {
-    int time_threshold = info->import_threshold;
-    if (request_data->total_time > time_threshold)
+    if (total_time > stream_info->import_threshold)
         return true;
-    if (request_data->severity > 1)
-        return true;
-    if (request_data->response_code >= 500)
-        return true;
-    double sampling_rate_threshold = info->sampling_rate_400s_threshold;
-    if (request_data->response_code >= 400) {
-        if (sampling_rate_threshold == MAX_RANDOM_VALUE) {
-            // printf("[D] processor: %s: taking 400 since sampling all requests\n", info ? info->key : "");
-            return true;
-        } else if (random() <= sampling_rate_threshold) {
-            // printf("[D] processor: %s: taking 400 since it matched threshold\n", info ? info->key : "");
-            return true;
-        } else {
-            // printf("[D] processor: %s: rejecting 400 since it exceeded threshold\n", info ? info->key : "");
-        }
-    }
-    if (request_data->exceptions != NULL)
-        return true;
-    if (request_data->heap_growth > 0)
-        return true;
-    if (info == NULL)
-        return false;
-    for (int i=0; i<info->module_threshold_count; i++) {
-        if (!strcmp(request_data->module+2, info->module_thresholds[i].name)) {
-            if (request_data->total_time > info->module_thresholds[i].value) {
-                // printf("[D] INTERESTING: %s: %f\n", request_data->module+2, request_data->total_time);
+    for (int i=0; i<stream_info->module_threshold_count; i++) {
+        if (!strcmp(module, stream_info->module_thresholds[i].name)) {
+            if (total_time > stream_info->module_thresholds[i].value)
                 return true;
-            } else
+            else
                 return false;
         }
     }
     return false;
+}
+
+static
+bool sample_randomly(stream_info_t* info)
+{
+    double sampling_rate_threshold = info->sampling_rate_400s_threshold;
+    if (sampling_rate_threshold == MAX_RANDOM_VALUE) {
+        // printf("[D] processor: %s: taking 400 since sampling all requests\n", info ? info->key : "");
+        return true;
+    }
+    if (random() <= sampling_rate_threshold) {
+        // printf("[D] processor: %s: taking 400 since it matched threshold\n", info ? info->key : "");
+        return true;
+    }
+    // printf("[D] processor: %s: rejecting 400 since it exceeded threshold\n", info ? info->key : "");
+    return false;
+}
+
+static
+sampling_reason_t interesting_request(request_data_t *request_data, json_object *request, stream_info_t* info)
+{
+    sampling_reason_t reason = 0;
+    if (slow_request(info, request_data->total_time, request_data->module+2))
+        reason |= SAMPLE_SLOW_REQUEST;
+    if (request_data->severity > LOG_SEVERITY_WARN)
+        reason |= SAMPLE_LOG_SEVERITY;
+    else {
+        if (request_data->severity > LOG_SEVERITY_INFO && sample_randomly(info))
+            reason |= SAMPLE_LOG_SEVERITY;
+    }
+    if (request_data->response_code >= 500)
+        reason |= SAMPLE_500;
+    else {
+        if (request_data->response_code >= 400 && sample_randomly(info))
+            reason |= SAMPLE_400;
+    }
+    if (request_data->exceptions != NULL)
+        reason |= SAMPLE_EXCEPTIONS;
+    if (request_data->heap_growth > 0)
+        reason |= SAMPLE_HEAP_GROWTH;
+    return reason;
 }
 
 static
@@ -895,7 +911,8 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         }
     }
 
-    if (interesting_request(&request_data, request, self->stream_info) && !throttle_request(self->stream_info)) {
+    sampling_reason_t sampling_reason = interesting_request(&request_data, request, self->stream_info);
+    if (sampling_reason && !throttle_request(self->stream_info)) {
         json_object_get(request);
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, self->db_name);
@@ -903,6 +920,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         zmsg_addstr(msg, request_data.module);
         zmsg_addptr(msg, request);
         zmsg_addptr(msg, self->stream_info);
+        zmsg_addmem(msg, &sampling_reason, sizeof(sampling_reason_t));
         if (!output_socket_ready(pstate->push_socket, 0)) {
             fprintf(stderr, "[W] parser [%zu]: push socket not ready\n", pstate->id);
         }

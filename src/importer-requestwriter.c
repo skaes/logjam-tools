@@ -301,7 +301,7 @@ void add_metrics_to_metrics_collection(const char* db_name, stream_info_t* strea
 }
 
 static
-json_object* store_request(const char* db_name, stream_info_t* stream_info, json_object* request, const char* module, request_writer_state_t* state)
+json_object* store_request(const char* db_name, stream_info_t* stream_info, json_object* request, const char* module, sampling_reason_t sampling_reason, request_writer_state_t* state)
 {
     // dump_json_object(stdout, "[D]", request);
     bson_t *metrics = convert_metrics_for_indexing(request);
@@ -380,7 +380,8 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         json_object *minute_obj;
         if (json_object_object_get_ex(request, "minute", &minute_obj)) {
             int minute = json_object_get_int(minute_obj);
-            add_metrics_to_metrics_collection(db_name, stream_info, metrics, page, module, minute, request_id, oid, state);
+            if (sampling_reason & (SAMPLE_SLOW_REQUEST|SAMPLE_HEAP_GROWTH))
+                add_metrics_to_metrics_collection(db_name, stream_info, metrics, page, module, minute, request_id, oid, state);
         }
     }
 
@@ -567,6 +568,7 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     zframe_t *mod_frame = zmsg_next(msg);
     zframe_t *body_frame = zmsg_next(msg);
     zframe_t *stream_frame = zmsg_next(msg);
+    zframe_t *sampling_frame = zmsg_next(msg);
 
     size_t db_name_len = zframe_size(db_frame);
     char db_name[db_name_len+1];
@@ -589,13 +591,16 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     memcpy(&request, zframe_data(body_frame), sizeof(json_object*));
     // dump_json_object(stdout, "[D]", request);
 
+    sampling_reason_t sampling_reason = 0;
+
     assert(zframe_size(type_frame) == 1);
     char task_type = *((char*)zframe_data(type_frame));
 
     if (!dryrun) {
         switch (task_type) {
         case 'r':
-            request_id = store_request(db_name, stream_info, request, module, state);
+            memcpy(&sampling_reason, zframe_data(sampling_frame), sizeof(sampling_reason_t));
+            request_id = store_request(db_name, stream_info, request, module, sampling_reason, state);
             request_writer_publish_error(stream_info, module, request, state, request_id);
             break;
         case 'j':

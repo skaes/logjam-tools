@@ -53,6 +53,21 @@ extern zhash_t *stream_subscriptions;
 extern void setup_stream_config(zconfig_t* config, const char* pattern);
 extern void update_known_modules(stream_info_t *stream_info, zhash_t* module_hash);
 
+typedef int sampling_reason_t;
+#define SAMPLE_SLOW_REQUEST    1
+#define SAMPLE_LOG_SEVERITY 1<<1
+#define SAMPLE_500          1<<2
+#define SAMPLE_400          1<<3
+#define SAMPLE_EXCEPTIONS   1<<4
+#define SAMPLE_HEAP_GROWTH  1<<5
+
+#define LOG_SEVERITY_DEBUG 0
+#define LOG_SEVERITY_INFO  1
+#define LOG_SEVERITY_WARN  2
+#define LOG_SEVERITY_ERROR 3
+#define LOG_SEVERITY_FATAL 4
+#define LOG_SEVERITY_ANY   5
+
 #ifdef __cplusplus
 }
 #endif
