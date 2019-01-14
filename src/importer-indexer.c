@@ -506,7 +506,7 @@ void indexer(zsock_t *pipe, void *args)
                         mongo_client_ping(state->mongo_clients[i]);
                     }
                 }
-                if (ticks++ % DATABASE_INFO_REFRESH_INTERVAL == 0) {
+                if (ticks % DATABASE_INFO_REFRESH_INTERVAL == 0) {
                     // retrieve current database storage sizew
                     indexer_refresh_storage_sizes(state);
                 }
