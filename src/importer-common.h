@@ -10,8 +10,8 @@ extern "C" {
 #endif
 
 #define MAX_SUBSCRIBERS 10
-#define MAX_PARSERS 20
-#define MAX_ADDERS 10
+#define MAX_PARSERS 32
+#define MAX_ADDERS 16
 #define MAX_WRITERS 20
 #define MAX_UPDATERS 20
 
