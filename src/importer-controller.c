@@ -587,8 +587,8 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
         printf("[D] io-threads: %lu\n", io_threads);
     zsys_set_io_threads(io_threads);
 
-    zsys_set_rcvhwm(1000);
-    zsys_set_sndhwm(1000);
+    zsys_set_rcvhwm(DEFAULT_RCV_HWM);
+    zsys_set_sndhwm(DEFAULT_SND_HWM);
     zsys_set_linger(0);
 
     controller_state_t state = {.ticks = 0, .config = config, .updates_blocked = 0};
