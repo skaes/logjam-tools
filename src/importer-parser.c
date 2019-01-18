@@ -65,6 +65,7 @@ zsock_t* parser_push_socket_new()
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
     zsock_set_sndtimeo(socket, 10);
+    zsock_set_sndhwm(socket, HWM_UNLIMITED);
     connect_multiple(socket, "request-writer", num_writers);
     return socket;
 }

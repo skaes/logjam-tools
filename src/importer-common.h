@@ -27,6 +27,7 @@ extern int queued_inserts;
 #define DEFAULT_RCV_HWM_STR "100000"
 #define DEFAULT_SND_HWM      100000
 #define DEFAULT_SND_HWM_STR "100000"
+#define HWM_UNLIMITED 0
 
 #define DEFAULT_ROUTER_PORT 9604
 #define DEFAULT_PULL_PORT 9605

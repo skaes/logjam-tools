@@ -43,6 +43,7 @@ zsock_t* request_writer_pull_socket_new(int i)
 {
     zsock_t *socket = zsock_new(ZMQ_PULL);
     assert(socket);
+    zsock_set_rcvhwm(socket, HWM_UNLIMITED);
     int rc = zsock_bind(socket, "inproc://request-writer-%d", i);
     assert(rc == 0);
     return socket;

@@ -495,7 +495,7 @@ stats_updater_state_t* stats_updater_state_new(zconfig_t *config, size_t id)
     state->id = id;
     snprintf(state->me, 16, "updater[%zu]", id);
     state->pull_socket = zsock_new(ZMQ_PULL);
-    zsock_set_rcvhwm(state->pull_socket, 5000);
+    zsock_set_rcvhwm(state->pull_socket, HWM_UNLIMITED);
     assert(state->pull_socket);
 
     int rc = zsock_connect(state->pull_socket, "inproc://stats-updates");

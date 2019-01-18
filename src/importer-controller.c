@@ -437,7 +437,7 @@ bool controller_create_actors(controller_state_t *state)
     state->updates_socket = zsock_new(ZMQ_PUSH);
     assert(state->updates_socket);
     zsock_set_sndtimeo(state->updates_socket, 10);
-    zsock_set_sndhwm(state->updates_socket, 5000);
+    zsock_set_sndhwm(state->updates_socket, HWM_UNLIMITED);
     int rc = zsock_bind(state->updates_socket, "inproc://stats-updates");
     assert(rc == 0);
 
