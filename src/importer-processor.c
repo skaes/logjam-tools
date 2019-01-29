@@ -729,8 +729,20 @@ int ignore_request(json_object *request, stream_info_t* info)
                 return 0;
             }
             const char *prefix = info ? info->ignored_request_prefix : global_ignored_request_prefix;
-            if (prefix != NULL && strstr(url, prefix) == url) {
-                return 1;
+            if (prefix != NULL) {
+                // skip over protocol and domain, if present.
+                const char *p = strstr(url, "://");
+                if (p)
+                    p += 3;
+                else
+                    p = url;
+                // find first slash
+                while (*p && *p != '/')
+                    p++;
+                if (p && strstr(p, prefix) == p) {
+                    // fprintf(stderr, "[D] ignored request because ignored request prefix matched. url: %s\n", url);
+                    return 1;
+                }
             }
         }
     }
