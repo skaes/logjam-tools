@@ -152,10 +152,10 @@ function handle_sodium()
     v=1.0.16
     d=libsodium-$v
     f=${d}.tar.gz
-    test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/$v/$f
-    test -d $d || tar xzvf $f
+    test -f $f && [ $forced != "1" ] || wget -nv https://github.com/jedisct1/libsodium/releases/download/$v/$f
+    test -d $d && [ $forced != "1" ]|| tar xzvf $f
     cd $d
-    [ $forced == "1" ] && rm -f config.status && git clean -fqdx
+    [ $forced == "1" ] && rm -f config.status
     test -f config.status || ./configure --prefix=$prefix
     make -j4
     $LSUDO make $cmd
@@ -176,7 +176,7 @@ function handle_zeromq()
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfdx
-    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --without-documentation)
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
@@ -196,7 +196,12 @@ function handle_czmq()
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfdx
-    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
+    (
+      gsed -i 's/czmq_build_doc="yes"/czmq_build_doc="no"/g' configure.ac &&
+      gsed -i 's/czmq_install_man="yes"/czmq_install_man="no"/g' configure.ac &&
+      sh autogen.sh &&
+        ./configure --prefix=$prefix
+    )
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
