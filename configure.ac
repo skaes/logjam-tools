@@ -53,7 +53,8 @@ AS_IF([test "x$prefix" != "x"],
       [ PKG_CONFIG_PATH="$prefix/lib/pkgconfig:$PKG_CONFIG_PATH"
         export PKG_CONFIG_PATH
         AC_SUBST([PKG_CONFIG_PATH], [$PKG_CONFIG_PATH])
-        AC_SUBST([OPTDIR_LDFLAGS], ["-Wl,-rpath -Wl,$libdir"])
+        AC_SUBST([OPTDIR_LDFLAGS], ["-Xlinker -rpath -Xlinker $libdir"])
+        dnl AC_SUBST([OPTDIR_LDFLAGS], ["-Wl,-rpath,$libdir"])
       ])
 
 AS_IF([test "x$with_opt_dir" == "x"],
@@ -75,7 +76,7 @@ AS_IF([test "x$with_opt_dir" == "x"],
 
 dnl AS_IF([test "x$DEPS_LIBS" != "x"],
 dnl       [ echo $DEPS_LIBS
-dnl         val=`echo $DEPS_LIBS | sed 's|-L\(/[[^ ]*]\)| -L\1 -Wl,-rpath -Wl,\1|g'`
+dnl         val=`echo $DEPS_LIBS | sed 's|-L\(/[[^ ]*]\)| -L\1 -Wl,-rpath,\1|g'`
 dnl         echo $val
 dnl         AC_SUBST([DEPS_LIBS], $val)
 dnl       ])
