@@ -5,6 +5,7 @@ build_dir="builds/repos"
 forced=0
 prefix=/usr/local
 cached=0
+documentation=1
 
 test -z "$LSUDO" && LSUDO="sudo"
 test "$(whoami)" = "root" && LSUDO=""
@@ -23,8 +24,10 @@ while (( $# > 0 )); do
             prefix="$2"; shift 2;;
         --prefix=*)
             prefix="${1#--prefix=}"; shift;;
+        --without-documentation)
+            documentation=0; shift;;
         --*)
-            echo "$(basename $0) [--force] [--cached] [--build-dir dir] [--prefix dir] [install|uninstall]"; exit 0;;
+            echo "$(basename $0) [--force] [--cached] [--without-documentation] [--build-dir dir] [--prefix dir] [install|uninstall]"; exit 0;;
         *) break ;;
     esac
 done
@@ -176,7 +179,11 @@ function handle_zeromq()
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfdx
-    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix --without-documentation)
+    additional_configure_flags=""
+    if [ "$documentation" == "0" ]; then
+      additional_configure_flags="--without-documentation"
+    fi
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix $additional_configure_flags)
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
@@ -196,11 +203,12 @@ function handle_czmq()
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfdx
-    (
-      gsed -i 's/czmq_build_doc="yes"/czmq_build_doc="no"/g' configure.ac &&
-      gsed -i 's/czmq_install_man="yes"/czmq_install_man="no"/g' configure.ac &&
-      sh autogen.sh &&
-        ./configure --prefix=$prefix
+    test -f config.status || (
+      if [ "$documentation" == "0" ]; then
+        gsed -i 's/czmq_build_doc="yes"/czmq_build_doc="no"/g' configure.ac &&
+        gsed -i 's/czmq_install_man="yes"/czmq_install_man="no"/g' configure.ac
+      fi
+      sh autogen.sh && ./configure --prefix=$prefix
     )
     make -j4
     $LSUDO make $cmd
