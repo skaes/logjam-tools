@@ -203,12 +203,13 @@ function handle_czmq()
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfdx
+    if [ "$documentation" == "0" ]; then
+      sed -ie 's/czmq_build_doc="yes"/czmq_build_doc="no"/g' configure.ac &&
+        sed -ie 's/czmq_install_man="yes"/czmq_install_man="no"/g' configure.ac
+    fi
     test -f config.status || (
-      if [ "$documentation" == "0" ]; then
-        gsed -i 's/czmq_build_doc="yes"/czmq_build_doc="no"/g' configure.ac &&
-        gsed -i 's/czmq_install_man="yes"/czmq_install_man="no"/g' configure.ac
-      fi
-      sh autogen.sh && ./configure --prefix=$prefix
+      sh autogen.sh &&
+      ./configure --prefix=$prefix
     )
     make -j4
     $LSUDO make $cmd
