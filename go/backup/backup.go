@@ -296,11 +296,7 @@ func backupRequests(db string) {
 }
 
 func backupDatabase(db string) {
-	if db == "logjam-global" {
-		backupWithoutRequests(db, backupAlways)
-		return
-	}
-	if strings.Index(db, "logjam-development") != -1 {
+	if db == "logjam-global" || strings.Index(db, "logjam-development") != -1 {
 		return
 	}
 	info := parseDatabaseName(db)
