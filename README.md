@@ -79,6 +79,10 @@ displays lines matching an optional list of topics on stdout.
 
 A utility program which backs up the logjam database.
 
+## logjam-mongodb-restore
+
+A utility program which restores a logjam database from a backup
+produced by `logjam-mongodb-backup`.
 
 ## Default ports
 

@@ -4,7 +4,7 @@ ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS}
 GO_ENV = CGO_LDFLAGS='$(OPTDIR_LDFLAGS)' PKG_CONFIG_PATH=$(PKG_CONFIG_PATH)
 GO_SRC = .
 GO_NOINSTALL_TARGETS = logjam-livestream-generator
-GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-prometheus-exporter logjam-mongodb-backup
+GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-prometheus-exporter logjam-mongodb-backup logjam-mongodb-restore
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
 GO_TESTS = http-client-test prometheus-exporter-test
 
@@ -41,6 +41,9 @@ logjam-prometheus-exporter: prometheus-exporter/exporter.go .godeps
 
 logjam-mongodb-backup: backup/backup.go .godeps
 	$(GO_ENV) go build -i -o $@ backup/backup.go
+
+logjam-mongodb-restore: restore/restore.go .godeps
+	$(GO_ENV) go build -i -o $@ restore/restore.go
 
 .PHONY: http-client-test prometheus-exporter-test livestream-test forwarde
 check-local: livestream-test http-forwarder-test prometheus-exporter-test

@@ -57,3 +57,5 @@ go/logjam-http-forwarder
 go/logjam-livestream
 go/logjam-livestream-generator
 go/logjam-prometheus-exporter
+go/logjam-mongodb-backup
+go/logjam-mongodb-restore
