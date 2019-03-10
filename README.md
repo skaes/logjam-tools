@@ -75,6 +75,11 @@ a PUB socket, optionally using a given topic.
 A utility program which connects to a logjam-logger PUB socket and
 displays lines matching an optional list of topics on stdout.
 
+## logjam-mongodb-backup
+
+A utility program which backs up the logjam database.
+
+
 ## Default ports
 
 This is the list of ports to which various programs bind, along with
