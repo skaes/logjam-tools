@@ -274,7 +274,7 @@ func backupWithoutRequests(db string, kind backupKind) {
 func backupRequests(db string) {
 	backupName := filepath.Join(opts.BackupDir, db+".requests")
 	_, err := os.Stat(backupName)
-	if err != nil {
+	if err == nil {
 		logInfo("request backup already exists: %s", backupName)
 		return
 	}
