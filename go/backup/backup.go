@@ -29,6 +29,8 @@ var opts struct {
 	StreamURL   string `short:"s" long:"stream-url" default:"http://localhost:3000" description:"Logjam endpoint for retrieving stream definitions"`
 	BackupDir   string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups"`
 	DatabaseURL string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host to back up"`
+	ToDate      string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
+	FromDate    string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
 }
 
 var (
@@ -37,7 +39,11 @@ var (
 	dryrun      = false
 	interrupted bool
 	streams     map[string]stream
+	toDate      time.Time
+	fromDate    time.Time
 )
+
+const DATEFORMAT = "2006-01-02"
 
 type stream struct {
 	App                       string        `json:"app"`
@@ -70,12 +76,12 @@ func parseDatabaseName(db string) *databaseInfo {
 	re := regexp.MustCompile(`^logjam-([^-]+)-([^-]+)-(\d\d\d\d-\d\d-\d\d)$`)
 	matches := re.FindStringSubmatch(db)
 	info := &databaseInfo{App: matches[1], Env: matches[2]}
-	t, err := time.Parse("2006-01-02", matches[3])
+	t, err := time.Parse(DATEFORMAT, matches[3])
 	if err != nil {
 		logError("could not parse database date: %s", matches[3])
 		return nil
 	}
-	info.Date = t
+	info.Date = t.Truncate(24 * time.Hour)
 	return info
 }
 
@@ -92,7 +98,7 @@ func parseBackupName(file string) (*databaseInfo, string) {
 		logError("could not parse database date: %s", matches[3])
 		return nil, ""
 	}
-	info.Date = t
+	info.Date = t.Truncate(24 * time.Hour)
 	return info, matches[4]
 }
 
@@ -126,6 +132,25 @@ func initialize() {
 	}
 	verbose = opts.Verbose
 	dryrun = opts.Dryrun
+	if opts.ToDate != "" {
+		t, err := time.Parse(DATEFORMAT, opts.ToDate)
+		if err != nil {
+			logError("could not parse to-date: %s. Error: %s", opts.ToDate, err)
+			os.Exit(1)
+		}
+		toDate = t
+	} else {
+		// yesterday at the beginning of the day
+		toDate = time.Now().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	}
+	if opts.FromDate != "" {
+		t, err := time.Parse(DATEFORMAT, opts.FromDate)
+		if err != nil {
+			logError("could not parse from-date: %s. Error: %s", opts.FromDate, err)
+			os.Exit(1)
+		}
+		fromDate = t.Truncate(24 * time.Hour)
+	}
 }
 
 func retrieveStreams(url string) map[string]stream {
@@ -281,6 +306,9 @@ func backupDatabase(db string) {
 	info := parseDatabaseName(db)
 	if info == nil {
 		rc = 1
+		return
+	}
+	if info.Date.Before(fromDate) || info.Date.After(toDate) {
 		return
 	}
 	streamName := info.StreamName()
