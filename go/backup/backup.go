@@ -213,12 +213,21 @@ func getDatabases() []string {
 	return databases
 }
 
-func backupWithoutRequests(db string) {
+type backupKind bool
+
+const (
+	backupAlways      backupKind = true
+	backupIfNotExists backupKind = false
+)
+
+func backupWithoutRequests(db string, kind backupKind) {
 	backupName := filepath.Join(opts.BackupDir, db+".archive")
-	_, err := os.Stat(backupName)
-	if err == nil {
-		logInfo("archive already exists: %s", backupName)
-		return
+	if kind == backupIfNotExists {
+		_, err := os.Stat(backupName)
+		if err == nil {
+			logInfo("archive already exists: %s", backupName)
+			return
+		}
 	}
 	cmd := exec.Command("mongodump", "--excludeCollection=requests", "--archive="+backupName, "--db="+db, "--gzip")
 	cmd.Stdout = os.Stdout
@@ -227,10 +236,10 @@ func backupWithoutRequests(db string) {
 	if dryrun {
 		return
 	}
-	err = cmd.Run()
+	err := cmd.Run()
 	if err != nil {
 		logError("creating archive failed: %s", err)
-		err := os.Remove(backupName)
+		err = os.Remove(backupName)
 		if err != nil {
 			logError("could not remove archive %s: %s", backupName, err)
 		}
@@ -240,7 +249,7 @@ func backupWithoutRequests(db string) {
 func backupRequests(db string) {
 	backupName := filepath.Join(opts.BackupDir, db+".requests")
 	_, err := os.Stat(backupName)
-	if err == nil {
+	if err != nil {
 		logInfo("request backup already exists: %s", backupName)
 		return
 	}
@@ -254,7 +263,7 @@ func backupRequests(db string) {
 	err = cmd.Run()
 	if err != nil {
 		logError("backing up requests failed: %s", err)
-		err := os.Remove(backupName)
+		err = os.Remove(backupName)
 		if err != nil {
 			logError("could not remove request backup file %s: %s", backupName, err)
 		}
@@ -262,7 +271,11 @@ func backupRequests(db string) {
 }
 
 func backupDatabase(db string) {
-	if db == "logjam-global" || strings.Index(db, "logjam-development") != -1 {
+	if db == "logjam-global" {
+		backupWithoutRequests(db, backupAlways)
+		return
+	}
+	if strings.Index(db, "logjam-development") != -1 {
 		return
 	}
 	info := parseDatabaseName(db)
@@ -277,7 +290,7 @@ func backupDatabase(db string) {
 		return
 	}
 	if !stream.DatabaseHasExpired(info.Date) {
-		backupWithoutRequests(db)
+		backupWithoutRequests(db, backupIfNotExists)
 	}
 	if !stream.RequestCollectionHasExpired(info.Date) {
 		backupRequests(db)
