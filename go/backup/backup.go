@@ -196,18 +196,18 @@ func installSignalHandler() {
 }
 
 func logInfo(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("INFO %s\n", format)
+	finalFormat := fmt.Sprintf("%s INFO %s\n", time.Now().Format(time.StampMicro), format)
 	fmt.Printf(finalFormat, args...)
 }
 
 func logError(format string, args ...interface{}) {
 	rc = 1
-	finalFormat := fmt.Sprintf("ERROR %s\n", format)
+	finalFormat := fmt.Sprintf("%s ERROR %s\n", time.Now().Format(time.StampMicro), format)
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
 func logWarn(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("WARN %s\n", format)
+	finalFormat := fmt.Sprintf("%s WARN %s\n", time.Now().Format(time.StampMicro), format)
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
@@ -250,7 +250,9 @@ func backupWithoutRequests(db string, kind backupKind) {
 	if kind == backupIfNotExists {
 		_, err := os.Stat(backupName)
 		if err == nil {
-			logInfo("archive already exists: %s", backupName)
+			if verbose {
+				logInfo("archive already exists: %s", backupName)
+			}
 			return
 		}
 	}
@@ -275,7 +277,9 @@ func backupRequests(db string) {
 	backupName := filepath.Join(opts.BackupDir, db+".requests")
 	_, err := os.Stat(backupName)
 	if err == nil {
-		logInfo("request backup already exists: %s", backupName)
+		if verbose {
+			logInfo("request backup already exists: %s", backupName)
+		}
 		return
 	}
 	cmd := exec.Command("mongodump", "--collection=requests", "--archive="+backupName, "--db="+db, "--gzip")
