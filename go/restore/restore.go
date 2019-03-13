@@ -1,14 +1,16 @@
 package main
 
 import (
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/jessevdk/go-flags"
 )
@@ -19,14 +21,22 @@ var opts struct {
 	BackupDir       string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups"`
 	DatabaseURL     string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host:port to restore to"`
 	ExcludeRequests bool   `short:"x" long:"exclude-requests" description:"don't restore request backups"`
+	ToDate          string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
+	FromDate        string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
+	Match           string `short:"m" long:"match" default:"*" description:"Restrict restore to files matching the given file glob. Ignored when an explicit list of archives is given. Defaults to all files."`
 }
 
 var (
-	rc          = int(0)
-	verbose     = false
-	dryrun      = false
-	interrupted bool
+	rc                = int(0)
+	verbose           = false
+	dryrun            = false
+	interrupted       bool
+	toDate            time.Time
+	fromDate          time.Time
+	archivesToRestore []string
 )
+
+const DATEFORMAT = "2006-01-02"
 
 func initialize() {
 	args, err := flags.ParseArgs(&opts, os.Args)
@@ -37,16 +47,32 @@ func initialize() {
 		}
 		os.Exit(1)
 	}
-	if len(args) > 1 {
-		logError("%s: passing arguments is not supported. please use options instead.", args[0])
-		os.Exit(1)
-	}
+	archivesToRestore = args[1:]
 	if _, err := os.Stat(opts.BackupDir); os.IsNotExist(err) {
 		logError("backup directory does not exist")
 		os.Exit(1)
 	}
 	verbose = opts.Verbose
 	dryrun = opts.Dryrun
+	if opts.ToDate != "" {
+		t, err := time.Parse(DATEFORMAT, opts.ToDate)
+		if err != nil {
+			logError("could not parse to-date: %s. Error: %s", opts.ToDate, err)
+			os.Exit(1)
+		}
+		toDate = t
+	} else {
+		// yesterday at the beginning of the day
+		toDate = time.Now().AddDate(0, 0, -1).Truncate(24 * time.Hour)
+	}
+	if opts.FromDate != "" {
+		t, err := time.Parse(DATEFORMAT, opts.FromDate)
+		if err != nil {
+			logError("could not parse from-date: %s. Error: %s", opts.FromDate, err)
+			os.Exit(1)
+		}
+		fromDate = t.Truncate(24 * time.Hour)
+	}
 }
 
 func installSignalHandler() {
@@ -60,23 +86,23 @@ func installSignalHandler() {
 }
 
 func logInfo(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("INFO %s\n", format)
+	finalFormat := fmt.Sprintf("%s INFO %s\n", time.Now().Format(time.StampMicro), format)
 	fmt.Printf(finalFormat, args...)
 }
 
 func logError(format string, args ...interface{}) {
 	rc = 1
-	finalFormat := fmt.Sprintf("ERROR %s\n", format)
+	finalFormat := fmt.Sprintf("%s ERROR %s\n", time.Now().Format(time.StampMicro), format)
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
 func logWarn(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("WARN %s\n", format)
+	finalFormat := fmt.Sprintf("%s WARN %s\n", time.Now().Format(time.StampMicro), format)
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
 func restoreArchive(db, suffix string) {
-	archive := filepath.Join(opts.BackupDir, db+suffix)
+	archive := db + suffix
 	_, err := os.Stat(archive)
 	if err != nil {
 		logInfo("could not access archive %s: %s", archive, err)
@@ -95,28 +121,52 @@ func restoreArchive(db, suffix string) {
 	}
 }
 
-func parseBackupFileName(name string) (string, string) {
+func parseBackupFileName(path string) (string, string) {
 	for _, s := range []string{".archive", ".requests"} {
-		f := strings.TrimSuffix(name, s)
-		if f != name {
+		f := strings.TrimSuffix(path, s)
+		if f != path {
 			return f, s
 		}
 	}
 	return "", ""
 }
 
-func restoreFromBackups() {
-	files, err := ioutil.ReadDir(opts.BackupDir)
-	if err != nil {
-		logError("could not read backup dir: %s", err)
-		return
+func parseBackupDate(path string) (time.Time, error) {
+	r := regexp.MustCompile(`(\d\d\d\d-\d\d-\d\d)`)
+	matches := r.FindStringSubmatch(filepath.Base(path))
+	if len(matches) == 2 {
+		return time.Parse(DATEFORMAT, matches[1])
 	}
-	for _, f := range files {
+	return time.Time{}, errors.New("missing date")
+}
+
+func restoreFromBackups() {
+	if len(archivesToRestore) == 0 {
+		files, err := filepath.Glob(filepath.Join(opts.BackupDir, "*"))
+		if err != nil {
+			logError("could not read backup dir: %s", err)
+			return
+		}
+		archivesToRestore = files
+	} else if opts.Match != "*" {
+		logWarn("ignoring match parameter, because an explicit list of files has been given")
+	}
+	for _, f := range archivesToRestore {
 		if interrupted {
 			return
 		}
-		name, suffix := parseBackupFileName(f.Name())
-		if name != "" && (!opts.ExcludeRequests || suffix == ".archive") {
+		name, suffix := parseBackupFileName(f)
+		if name == "" {
+			continue
+		}
+		date, err := parseBackupDate(name)
+		if err != nil {
+			logError("could not extract date from file name: %s", err)
+		}
+		if date.Before(fromDate) || date.After(toDate) {
+			continue
+		}
+		if !opts.ExcludeRequests || suffix == ".archive" {
 			restoreArchive(name, suffix)
 		}
 	}

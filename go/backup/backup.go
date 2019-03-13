@@ -24,13 +24,15 @@ import (
 )
 
 var opts struct {
-	Verbose     bool   `short:"v" long:"verbose" description:"be verbose"`
-	Dryrun      bool   `short:"n" long:"dryrun" description:"don't perform the backup, list what would happen"`
+	Verbose     bool   `short:"v" long:"verbose" description:"Be verbose"`
+	Force       bool   `short:"x" long:"force" description:"Perform backup even if file already exists"`
+	Dryrun      bool   `short:"n" long:"dryrun" description:"Don't perform the backup, list what would happen"`
 	StreamURL   string `short:"s" long:"stream-url" default:"http://localhost:3000" description:"Logjam endpoint for retrieving stream definitions"`
 	BackupDir   string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups"`
 	DatabaseURL string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host to back up"`
 	ToDate      string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
 	FromDate    string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
+	Pattern     string `short:"p" long:"match" default:".*" description:"Restrict backup to database names matching the given regexp."`
 }
 
 var (
@@ -41,6 +43,7 @@ var (
 	streams     map[string]stream
 	toDate      time.Time
 	fromDate    time.Time
+	pattern     *regexp.Regexp
 )
 
 const DATEFORMAT = "2006-01-02"
@@ -151,6 +154,11 @@ func initialize() {
 		}
 		fromDate = t.Truncate(24 * time.Hour)
 	}
+	p, err := regexp.Compile(opts.Pattern)
+	if err != nil {
+		logError("specified pattern '%s' did not compile: %s", opts.Pattern, err)
+	}
+	pattern = p
 }
 
 func retrieveStreams(url string) map[string]stream {
@@ -253,13 +261,22 @@ func backupWithoutRequests(db string, kind backupKind) {
 			if verbose {
 				logInfo("archive already exists: %s", backupName)
 			}
-			return
+			if !opts.Force {
+				return
+			}
 		}
 	}
-	cmd := exec.Command("mongodump", "--excludeCollection=requests", "--archive="+backupName, "--db="+db, "--gzip")
+	uri := strings.TrimSuffix(opts.DatabaseURL, "/") + "/" + db
+	cmd := exec.Command("mongodump", "--uri="+uri, "--excludeCollection=metrics", "--excludeCollection=requests", "--archive="+backupName, "--gzip")
+	if !verbose {
+		cmd.Args = append(cmd.Args, "--quiet")
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	logInfo("creating archive for %s", db)
+	if verbose {
+		logInfo("running cmd: %s", strings.Join(cmd.Args, " "))
+	}
 	if dryrun {
 		return
 	}
@@ -280,12 +297,24 @@ func backupRequests(db string) {
 		if verbose {
 			logInfo("request backup already exists: %s", backupName)
 		}
-		return
+		if !opts.Force {
+			return
+		}
 	}
-	cmd := exec.Command("mongodump", "--collection=requests", "--archive="+backupName, "--db="+db, "--gzip")
+	uri := strings.TrimSuffix(opts.DatabaseURL, "/") + "/" + db
+	cmd := exec.Command("mongodump", "--uri="+uri, "--archive="+backupName, "--gzip")
+	for _, s := range []string{"totals", "minutes", "quants", "agents", "heatmaps", "js_exceptions"} {
+		cmd.Args = append(cmd.Args, "--excludeCollection="+s)
+	}
+	if !verbose {
+		cmd.Args = append(cmd.Args, "--quiet")
+	}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	logInfo("backing up requests for %s", db)
+	if verbose {
+		logInfo("running cmd: %s", strings.Join(cmd.Args, " "))
+	}
 	if dryrun {
 		return
 	}
@@ -309,6 +338,9 @@ func backupDatabase(db string) {
 		return
 	}
 	if info.Date.Before(fromDate) || info.Date.After(toDate) {
+		return
+	}
+	if !pattern.MatchString(db) {
 		return
 	}
 	streamName := info.StreamName()
