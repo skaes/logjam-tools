@@ -8,6 +8,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -101,8 +102,7 @@ func logWarn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
-func restoreArchive(db, suffix string) {
-	archive := db + suffix
+func restoreArchive(archive string) {
 	_, err := os.Stat(archive)
 	if err != nil {
 		logInfo("could not access archive %s: %s", archive, err)
@@ -140,6 +140,21 @@ func parseBackupDate(path string) (time.Time, error) {
 	return time.Time{}, errors.New("missing date")
 }
 
+type archiveInfo struct {
+	Date time.Time
+	Path string
+}
+
+func extractArchiveInfo(a string) *archiveInfo {
+	file := filepath.Base(a)
+	date, err := parseBackupDate(file)
+	if err != nil {
+		logError("Ignoring archive '%s' because backup date could not be extracted: %s", err)
+		return nil
+	}
+	return &archiveInfo{Date: date, Path: a}
+}
+
 func restoreFromBackups() {
 	if len(archivesToRestore) == 0 {
 		files, err := filepath.Glob(filepath.Join(opts.BackupDir, "*"))
@@ -151,23 +166,31 @@ func restoreFromBackups() {
 	} else if opts.Match != "*" {
 		logWarn("ignoring match parameter, because an explicit list of files has been given")
 	}
-	for _, f := range archivesToRestore {
+	archives := []*archiveInfo{}
+	for _, a := range archivesToRestore {
+		info := extractArchiveInfo(a)
+		if info != nil {
+			archives = append(archives, info)
+		}
+	}
+	sort.Slice(archives, func(i int, j int) bool {
+		younger := archives[i].Date.Before(archives[j].Date)
+		sameDate := archives[i].Date == archives[j].Date
+		return younger || (sameDate && strings.Compare(archives[i].Path, archives[j].Path) == -1)
+	})
+	for _, a := range archives {
 		if interrupted {
 			return
 		}
-		name, suffix := parseBackupFileName(f)
+		name, suffix := parseBackupFileName(a.Path)
 		if name == "" {
 			continue
 		}
-		date, err := parseBackupDate(name)
-		if err != nil {
-			logError("could not extract date from file name: %s", err)
-		}
-		if date.Before(fromDate) || date.After(toDate) {
+		if a.Date.Before(fromDate) || a.Date.After(toDate) {
 			continue
 		}
 		if !opts.ExcludeRequests || suffix == ".archive" {
-			restoreArchive(name, suffix)
+			restoreArchive(name + suffix)
 		}
 	}
 }

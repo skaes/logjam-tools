@@ -13,6 +13,7 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 	"syscall"
 	"time"
@@ -66,19 +67,18 @@ func (s *stream) RequestCollectionHasExpired(date time.Time) bool {
 }
 
 type databaseInfo struct {
-	App  string
-	Env  string
-	Date time.Time
-}
-
-func (i *databaseInfo) StreamName() string {
-	return i.App + "-" + i.Env
+	App        string
+	Env        string
+	Date       time.Time
+	Name       string
+	StreamName string
 }
 
 func parseDatabaseName(db string) *databaseInfo {
 	re := regexp.MustCompile(`^logjam-([^-]+)-([^-]+)-(\d\d\d\d-\d\d-\d\d)$`)
 	matches := re.FindStringSubmatch(db)
-	info := &databaseInfo{App: matches[1], Env: matches[2]}
+	info := &databaseInfo{App: matches[1], Env: matches[2], Name: db}
+	info.StreamName = info.App + "-" + info.Env
 	t, err := time.Parse(DATEFORMAT, matches[3])
 	if err != nil {
 		logError("could not parse database date: %s", matches[3])
@@ -96,6 +96,7 @@ func parseBackupName(file string) (*databaseInfo, string) {
 		return nil, ""
 	}
 	info := &databaseInfo{App: matches[1], Env: matches[2]}
+	info.StreamName = info.App + "-" + info.Env
 	t, err := time.Parse("2006-01-02", matches[3])
 	if err != nil {
 		logError("could not parse database date: %s", matches[3])
@@ -219,7 +220,7 @@ func logWarn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
-func getDatabases() []string {
+func getDatabases() []*databaseInfo {
 	client, err := mongo.NewClient(options.Client().ApplyURI(opts.DatabaseURL))
 	if err != nil {
 		logError("could not create client: %s", err)
@@ -237,13 +238,23 @@ func getDatabases() []string {
 		logError("could not list databases: %s", err)
 		return nil
 	}
-	databases := make([]string, 0, len(names))
+	dbs := make([]*databaseInfo, 0, len(names))
 	for _, name := range names {
-		if strings.HasPrefix(name, "logjam") {
-			databases = append(databases, name)
+		if name == "logjam-global" || !strings.HasPrefix(name, "logjam-") {
+			continue
 		}
+		info := parseDatabaseName(name)
+		if info == nil {
+			continue
+		}
+		dbs = append(dbs, info)
 	}
-	return databases
+	sort.Slice(dbs, func(i, j int) bool {
+		younger := dbs[i].Date.Before(dbs[j].Date)
+		sameDate := dbs[i].Date == dbs[j].Date
+		return younger || (sameDate && strings.Compare(dbs[i].StreamName, dbs[j].StreamName) == -1)
+	})
+	return dbs
 }
 
 type backupKind bool
@@ -328,36 +339,30 @@ func backupRequests(db string) {
 	}
 }
 
-func backupDatabase(db string) {
-	if db == "logjam-global" || strings.Index(db, "logjam-development") != -1 {
+func backupDatabase(db *databaseInfo) {
+	if db.Name == "logjam-global" || strings.Index(db.Name, "logjam-development") != -1 {
 		return
 	}
-	info := parseDatabaseName(db)
-	if info == nil {
-		rc = 1
+	if db.Date.Before(fromDate) || db.Date.After(toDate) {
 		return
 	}
-	if info.Date.Before(fromDate) || info.Date.After(toDate) {
+	if !pattern.MatchString(db.Name) {
 		return
 	}
-	if !pattern.MatchString(db) {
-		return
-	}
-	streamName := info.StreamName()
-	stream, found := streams[streamName]
+	stream, found := streams[db.StreamName]
 	if !found {
-		logError("could not find stream info: %s", streamName)
+		logWarn("could not find stream for database %s, it should probably be deleted", db.Name)
 		return
 	}
-	if !stream.DatabaseHasExpired(info.Date) {
-		backupWithoutRequests(db, backupIfNotExists)
+	if !stream.DatabaseHasExpired(db.Date) {
+		backupWithoutRequests(db.Name, backupIfNotExists)
 	}
-	if !stream.RequestCollectionHasExpired(info.Date) {
-		backupRequests(db)
+	if !stream.RequestCollectionHasExpired(db.Date) {
+		backupRequests(db.Name)
 	}
 }
 
-func backupDatabases(dbs []string) {
+func backupDatabases(dbs []*databaseInfo) {
 	for _, db := range dbs {
 		if interrupted {
 			break
@@ -374,22 +379,22 @@ func removeExpiredBackups() {
 	}
 	for _, f := range files {
 		name := f.Name()
-		info, suffix := parseBackupName(name)
-		if info == nil {
+		db, suffix := parseBackupName(name)
+		if db == nil {
 			continue
 		}
-		streamName := info.StreamName()
-		stream, found := streams[streamName]
+		stream, found := streams[db.StreamName]
 		if !found {
-			logError("could not find stream info: %s", streamName)
+			logWarn("could not find stream info: '%s'", db.StreamName)
+			logWarn("please remove manually: '%s'", name)
 			continue
 		}
 		remove := false
 		switch suffix {
 		case "requests":
-			remove = stream.RequestCollectionHasExpired(info.Date)
+			remove = stream.RequestCollectionHasExpired(db.Date)
 		case "archive":
-			remove = stream.DatabaseHasExpired(info.Date)
+			remove = stream.DatabaseHasExpired(db.Date)
 		}
 		if remove {
 			path := filepath.Join(opts.BackupDir, name)
