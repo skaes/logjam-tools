@@ -65,8 +65,8 @@ scrape_configs:
     - targets: ['localhost:9090']
 EOF
 for stream in $streams; do
-    app=$(echo $stream | cut -d'-' -f1)
-    env=$(echo $stream | cut -d'-' -f2)
+    app=$(echo $stream | rev | cut -d'-' -f2- | rev)
+    env=$(echo $stream | awk -F '{print $NF}')
     cat <<EOF
 
   - job_name: '$stream'

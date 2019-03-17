@@ -296,7 +296,7 @@ bool extract_msg_data(char *query_string, char* headers, msg_data_t *msg_data)
 
     // extract app and env
     if (strlen(request_id) > 255
-        || sscanf(request_id, "%[^-]-%[^-]", msg_data->app, msg_data->env) != 2) {
+        || !extract_app_env(request_id, 255, msg_data->app, msg_data->env)) {
         goto cleanup;
     };
     // if we get here, we have a valid json object

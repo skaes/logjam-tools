@@ -636,6 +636,43 @@ void send_heartbeat(zsock_t *socket, msg_meta_t *meta, int pub_port)
     zmsg_send_and_destroy(&msg, socket);
 }
 
+bool extract_app_env(const char* app_env, int n, char* app, char* env)
+{
+    char* p = rindex(app_env, '-');
+    if (!p) return false;
+    int i = 0;
+    while (app_env != p) {
+        if (i++ >= n) return false;
+        *app++ = *app_env++;
+    }
+    *app = 0;
+    app_env++;
+    i = 0;
+    while (*app_env) {
+        if (i++ >= n) return false;
+        *env++ = *app_env++;
+    }
+    *env = 0;
+    return true;
+}
+
+bool extract_app_env_rid(const char* s, int n, char* app, char* env, char* rid)
+{
+    int l = strlen(s) + 1;
+    char buf[l];
+    memcpy(buf, s, l);
+    char* p = rindex(buf, '-');
+    if (!p) return false;
+    *p++ = 0;
+    int i = 0;
+    while (*p) {
+        if (i++ >= n) return false;
+        *rid++ = *p++;
+    }
+    *rid = 0;
+    return extract_app_env(buf, n, app, env);
+}
+
 
 static void test_uint64wrap (int verbose)
 {
@@ -690,6 +727,49 @@ static void test_my_fqdn (int verbose)
     }
 }
 
+static void test_extract_app_env (int verbose)
+{
+    bool ok;
+    char app[100];
+    char env[100];
+    ok = extract_app_env("", 100, app, env);
+    assert(!ok);
+    ok = extract_app_env("a", 100, app, env);
+    assert(!ok);
+    ok = extract_app_env("a-e", 100, app, env);
+    assert(ok);
+    assert(streq(app, "a"));
+    assert(streq(env, "e"));
+    ok = extract_app_env("a-b-e", 100, app, env);
+    assert(ok);
+    assert(streq(app, "a-b"));
+    assert(streq(env, "e"));
+}
+
+static void test_extract_app_env_rid (int verbose)
+{
+    bool ok;
+    char app[100];
+    char env[100];
+    char rid[100];
+    ok = extract_app_env_rid("", 100, app, env, rid);
+    assert(!ok);
+    ok = extract_app_env_rid("a", 100, app, env, rid);
+    assert(!ok);
+    ok = extract_app_env_rid("a-e", 100, app, env, rid);
+    assert(!ok);
+    ok = extract_app_env_rid("a-e-r", 100, app, env, rid);
+    assert(ok);
+    assert(streq(app, "a"));
+    assert(streq(env, "e"));
+    assert(streq(rid, "r"));
+    ok = extract_app_env_rid("a-b-e-r", 100, app, env, rid);
+    assert(ok);
+    assert(streq(app, "a-b"));
+    assert(streq(env, "e"));
+    assert(streq(rid, "r"));
+}
+
 void logjam_util_test (int verbose)
 {
     printf (" * logjam-utils: ");
@@ -701,6 +781,8 @@ void logjam_util_test (int verbose)
     test_gap_calc (verbose);
     test_negative_numbers_conversion_to_sizet (verbose);
     test_my_fqdn (verbose);
+    test_extract_app_env (verbose);
+    test_extract_app_env_rid (verbose);
 
     printf ("OK\n");
 }

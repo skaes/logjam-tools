@@ -47,8 +47,8 @@ produced and a message sequence number.
 data-msg  = app-env topic json-body meta-info
 
 app-env      = application "-" environment
-application  = ALPHA *ALPHA
-environment  = ALPHA *ALPHA
+application  = ALPHA *(ALPHA / "_" / "-")
+environment  = ALPHA *(ALPHA / "_")
 
 topic = logs *( ALPHA / "." )            ; normal log messages
 topic /= javascript *( ALPHA / "." )     ; javascript errors

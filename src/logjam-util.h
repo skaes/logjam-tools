@@ -199,6 +199,8 @@ extern zmsg_t* zmsg_loadx (zmsg_t *self, FILE *file);
 extern void logjam_util_test (int verbose);
 extern const char* my_fqdn();
 extern void send_heartbeat(zsock_t *socket, msg_meta_t* meta, int pub_port);
+extern bool extract_app_env(const char* app_env, int n, char* app, char* env);
+extern bool extract_app_env_rid(const char* s, int n, char* app, char* env, char* rid);
 
 #ifdef __cplusplus
 }

@@ -28,4 +28,9 @@ func TestParseRequestId(t *testing.T) {
 	if err != nil || rid.App != "a" || rid.Env != "e" || rid.Id != "r" {
 		t.Errorf("could not parse request id: %s", r)
 	}
+	r = "a-b-e-r"
+	rid, err = parseRequestId(r)
+	if err != nil || rid.App != "a-b" || rid.Env != "e" || rid.Id != "r" {
+		t.Errorf("could not parse request id: %s", r)
+	}
 }

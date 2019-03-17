@@ -154,11 +154,13 @@ stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
     }
     info->key_len = strlen(info->key);
 
-    char app[256] = {0};
-    char env[256] = {0};;
-    int n = sscanf(info->key, "%[^-]-%[^-]", app, env);
-    assert(n == 2);
-
+    char app[256];
+    char env[256];
+    bool ok = extract_app_env(info->key, 256, app, env);
+    if (!ok) {
+        printf("[E] invalid stream: %s\n", info->key);
+        assert(false);
+    }
     info->app = strdup(app);
     info->app_len = strlen(app);
     assert(info->app_len > 0);

@@ -309,13 +309,14 @@ type requestId struct {
 
 func parseRequestId(id string) (rid requestId, err error) {
 	slices := strings.Split(id, "-")
-	if len(slices) != 3 {
+	n := len(slices)
+	if n < 3 {
 		err = fmt.Errorf("Wrong request id format: %s", id)
 		return
 	}
-	rid.App = slices[0]
-	rid.Env = slices[1]
-	rid.Id = slices[2]
+	rid.App = strings.Join(slices[0:n-2], "-")
+	rid.Env = slices[n-2]
+	rid.Id = slices[n-1]
 	return
 }
 
