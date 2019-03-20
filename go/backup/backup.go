@@ -75,7 +75,7 @@ type databaseInfo struct {
 }
 
 func parseDatabaseName(db string) *databaseInfo {
-	re := regexp.MustCompile(`^logjam-([^-]+)-([^-]+)-(\d\d\d\d-\d\d-\d\d)$`)
+	re := regexp.MustCompile(`^logjam-(.+)-([^-]+)-(\d\d\d\d-\d\d-\d\d)$`)
 	matches := re.FindStringSubmatch(db)
 	info := &databaseInfo{App: matches[1], Env: matches[2], Name: db}
 	info.StreamName = info.App + "-" + info.Env
@@ -89,7 +89,7 @@ func parseDatabaseName(db string) *databaseInfo {
 }
 
 func parseBackupName(file string) (*databaseInfo, string) {
-	re := regexp.MustCompile(`^logjam-([^-]+)-([^-]+)-(\d\d\d\d-\d\d-\d\d)\.(archive|requests)$`)
+	re := regexp.MustCompile(`^logjam-(.+)-([^-]+)-(\d\d\d\d-\d\d-\d\d)\.(archive|requests)$`)
 	matches := re.FindStringSubmatch(file)
 	if len(matches) != 5 {
 		// not a backup file
