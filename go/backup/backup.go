@@ -25,12 +25,13 @@ import (
 )
 
 var opts struct {
-	Verbose     bool   `short:"v" long:"verbose" description:"Be verbose"`
-	Force       bool   `short:"x" long:"force" description:"Perform backup even if file already exists"`
-	Dryrun      bool   `short:"n" long:"dryrun" description:"Don't perform the backup, list what would happen"`
-	StreamURL   string `short:"s" long:"stream-url" default:"http://localhost:3000" description:"Logjam endpoint for retrieving stream definitions"`
-	BackupDir   string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups"`
-	DatabaseURL string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host to back up"`
+	Verbose     bool   `short:"v" long:"verbose" description:"Be verbose."`
+	Quiet       bool   `short:"q" long:"quiet" description:"Only log errors and warnings."`
+	Force       bool   `short:"x" long:"force" description:"Perform backup even if file already exists."`
+	Dryrun      bool   `short:"n" long:"dryrun" description:"Don't perform the backup, list what would happen."`
+	StreamURL   string `short:"s" long:"stream-url" default:"http://localhost:3000" description:"Logjam endpoint for retrieving stream definitions."`
+	BackupDir   string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups."`
+	DatabaseURL string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host to back up."`
 	ToDate      string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
 	FromDate    string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
 	Pattern     string `short:"p" long:"match" default:".*" description:"Restrict backup to database names matching the given regexp."`
@@ -205,8 +206,10 @@ func installSignalHandler() {
 }
 
 func logInfo(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("%s INFO %s\n", time.Now().Format(time.StampMicro), format)
-	fmt.Printf(finalFormat, args...)
+	if !opts.Quiet {
+		finalFormat := fmt.Sprintf("%s INFO %s\n", time.Now().Format(time.StampMicro), format)
+		fmt.Printf(finalFormat, args...)
+	}
 }
 
 func logError(format string, args ...interface{}) {

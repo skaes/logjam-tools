@@ -17,11 +17,12 @@ import (
 )
 
 var opts struct {
-	Verbose         bool   `short:"v" long:"verbose" description:"be verbose"`
-	Dryrun          bool   `short:"n" long:"dryrun" description:"don't perform the backup, list what would happen"`
-	BackupDir       string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups"`
-	DatabaseURL     string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host:port to restore to"`
-	ExcludeRequests bool   `short:"x" long:"exclude-requests" description:"don't restore request backups"`
+	Verbose         bool   `short:"v" long:"verbose" description:"Be verbose."`
+	Quiet           bool   `short:"q" long:"quiet" description:"Only log errors and warnings."`
+	Dryrun          bool   `short:"n" long:"dryrun" description:"Don't perform the backup, list what would happen."`
+	BackupDir       string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups."`
+	DatabaseURL     string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host:port to restore to."`
+	ExcludeRequests bool   `short:"x" long:"exclude-requests" description:"Don't restore request backups."`
 	ToDate          string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
 	FromDate        string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
 	Match           string `short:"m" long:"match" default:"*" description:"Restrict restore to files matching the given file glob. Ignored when an explicit list of archives is given. Defaults to all files."`
@@ -87,8 +88,10 @@ func installSignalHandler() {
 }
 
 func logInfo(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("%s INFO %s\n", time.Now().Format(time.StampMicro), format)
-	fmt.Printf(finalFormat, args...)
+	if !opts.Quiet {
+		finalFormat := fmt.Sprintf("%s INFO %s\n", time.Now().Format(time.StampMicro), format)
+		fmt.Printf(finalFormat, args...)
+	}
 }
 
 func logError(format string, args ...interface{}) {
