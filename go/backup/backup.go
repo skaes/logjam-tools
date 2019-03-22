@@ -112,7 +112,7 @@ func initialize() {
 	if err != nil {
 		e := err.(*flags.Error)
 		if e.Type != flags.ErrHelp {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, err)
 		}
 		os.Exit(1)
 	}
@@ -299,7 +299,7 @@ func backupWithoutRequests(db string, kind backupKind) {
 		logError("creating archive failed: %s", err)
 		err = os.Remove(backupName)
 		if err != nil {
-			logError("could not remove archive %s: %s", backupName, err)
+			logError("could not remove archive %s: %s", filepath.Base(backupName), err)
 		}
 	}
 }
@@ -309,7 +309,7 @@ func backupRequests(db string) {
 	_, err := os.Stat(backupName)
 	if err == nil {
 		if verbose {
-			logInfo("request backup already exists: %s", backupName)
+			logInfo("request backup already exists: %s", filepath.Base(backupName))
 		}
 		if !opts.Force {
 			return
@@ -337,7 +337,7 @@ func backupRequests(db string) {
 		logError("backing up requests failed: %s", err)
 		err = os.Remove(backupName)
 		if err != nil {
-			logError("could not remove request backup file %s: %s", backupName, err)
+			logError("could not remove request backup file %s: %s", filepath.Base(backupName), err)
 		}
 	}
 }
@@ -401,10 +401,10 @@ func removeExpiredBackups() {
 		}
 		if remove {
 			path := filepath.Join(opts.BackupDir, name)
-			logInfo("removing archive %s", path)
+			logInfo("removing archive %s", name)
 			err := os.Remove(path)
 			if err != nil {
-				logError("could not remove archive %s: %s", path, err)
+				logError("could not remove archive %s: %s", name, err)
 			}
 		}
 	}
@@ -412,7 +412,7 @@ func removeExpiredBackups() {
 
 func main() {
 	initialize()
-	logInfo("%s: starting backup", os.Args[0])
+	logInfo("%s: starting backup in %s", os.Args[0], opts.BackupDir)
 	installSignalHandler()
 	dbs := getDatabases()
 	backupDatabases(dbs)

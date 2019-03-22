@@ -45,7 +45,7 @@ func initialize() {
 	if err != nil {
 		e := err.(*flags.Error)
 		if e.Type != flags.ErrHelp {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, err)
 		}
 		os.Exit(1)
 	}
@@ -200,7 +200,7 @@ func restoreFromBackups() {
 
 func main() {
 	initialize()
-	logInfo("%s: starting restore", os.Args[0])
+	logInfo("%s: starting restore in %s", os.Args[0], opts.BackupDir)
 	installSignalHandler()
 	restoreFromBackups()
 	logInfo("%s: restore complete", os.Args[0])
