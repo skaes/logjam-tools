@@ -331,7 +331,7 @@ static void process_arguments(int argc, char * const *argv)
             exit(0);
             break;
         case '?':
-            if (strchr("drpceixsPSRE", optopt))
+            if (strchr("dpcixsPSRt", optopt))
                 fprintf(stderr, "option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "unknown option `-%c'.\n", optopt);
