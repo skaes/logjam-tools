@@ -111,6 +111,47 @@ mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t
     return collection;
 }
 
+// Find first correct UTF8 character position before buf[n], where n is greater than 3.
+static
+size_t find_utf8_offset(const char *buf, size_t n)
+{
+    assert(n>3);
+    // we might need to look 3 bytes back
+    const char *b = buf + n - 3;
+    // is the last byte part of a multi-byte sequence?
+    if (b[2] & 0x80) {
+        // Is the last byte in buffer the first byte in a new multi-byte sequence?
+        if (b[2] & 0x40) return n - 1;
+        // Is it a 3 byte sequence?
+        else if ((b[1] & 0xe0) == 0xe0) return n - 2;
+        // Is it a 4 byte sequence?
+        else if ((b[0] & 0xf0) == 0xf0) return n - 3;
+        // Should not happen, invalid utf8.
+        else {
+            // Find first ASCII character from the end position.
+            while ( (*b & 0x80) && (b != buf) ) b--;
+            return buf - b;
+        }
+    }
+    // it's an ASCII char
+    return n;
+}
+
+#define MAX_STRING_VALUE_SIZE 10000
+
+// limit string values to MAX_STRING_VALUE_SIZE bytes
+static
+int limit_json_string_value_length(const char* str, int n, char** copy)
+{
+    if (n <= MAX_STRING_VALUE_SIZE+16)
+        return n;
+    n = find_utf8_offset(str, MAX_STRING_VALUE_SIZE);
+    *copy = bson_malloc(n+16);
+    memcpy(*copy, str, n);
+    memcpy(*copy+n, " ...[TRUNCATED]", 16); // include terminating \x0 char
+    return n+15;
+}
+
 static
 int bson_append_win1252(bson_t *b, const char *key, size_t key_len, const char* val, size_t val_len)
 {
@@ -171,6 +212,10 @@ void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, cons
     case json_type_string: {
         const char *str = json_object_get_string(val);
         size_t n = json_object_get_string_len(val);
+        char *copy = NULL;
+        n = limit_json_string_value_length(str, n, &copy);
+        if (copy)
+            str = copy;
         if (bson_utf8_validate(str, n, false /* disallow embedded null characters */)) {
             bson_append_utf8(b, safe_key, len, str, n);
         } else {
@@ -180,6 +225,8 @@ void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, cons
             // bson_append_binary(b, safe_key, len, BSON_SUBTYPE_BINARY, (uint8_t*)str, n);
             bson_append_win1252(b, safe_key, len, str, n);
         }
+        if (copy)
+            bson_free(copy);
         break;
     }
     case json_type_null:
@@ -346,10 +393,12 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         json_object_to_bson(context, request, document);
     }
 
-    // size_t n;
-    // char* bs = bson_as_json(document, &n);
-    // printf("[D] doument. size: %zu; value:%s\n", n, bs);
-    // bson_free(bs);
+    if (0) {
+        size_t n;
+        char* bs = bson_as_json(document, &n);
+        printf("[D] doument. size: %zu; value:%s\n", n, bs);
+        bson_free(bs);
+    }
 
     bool update_failed = false;
     if (!dryrun) {
@@ -576,23 +625,22 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     assert(zframe_size(type_frame) == 1);
     char task_type = *((char*)zframe_data(type_frame));
 
-    if (!dryrun) {
-        switch (task_type) {
-        case 'r':
-            memcpy(&sampling_reason, zframe_data(sampling_frame), sizeof(sampling_reason_t));
-            request_id = store_request(db_name, stream_info, request, module, sampling_reason, state);
-            request_writer_publish_error(stream_info, module, request, state, request_id);
-            break;
-        case 'j':
-            store_js_exception(db_name, stream_info, request, state);
-            break;
-        case 'e':
-            store_event(db_name, stream_info, request, state);
-            break;
-        default:
-            fprintf(stderr, "[E] unknown task type for request_writer: %c\n", task_type);
-        }
+    switch (task_type) {
+    case 'r':
+        memcpy(&sampling_reason, zframe_data(sampling_frame), sizeof(sampling_reason_t));
+        request_id = store_request(db_name, stream_info, request, module, sampling_reason, state);
+        request_writer_publish_error(stream_info, module, request, state, request_id);
+        break;
+    case 'j':
+        store_js_exception(db_name, stream_info, request, state);
+        break;
+    case 'e':
+        store_event(db_name, stream_info, request, state);
+        break;
+    default:
+        fprintf(stderr, "[E] unknown task type for request_writer: %c\n", task_type);
     }
+
     json_object_put(request);
 }
 
