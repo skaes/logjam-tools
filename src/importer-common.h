@@ -85,8 +85,6 @@ extern int set_thread_name(const char* name);
 
 #define USE_UNACKNOWLEDGED_WRITES 0
 #define USE_BACKGROUND_INDEX_BUILDS 1
-#define TOKU_TX_LOCK_FAILED 16759
-#define TOKU_TX_RETRIES 2
 
 #if USE_UNACKNOWLEDGED_WRITES == 1
 #define USE_PINGS true

@@ -147,21 +147,14 @@ int minutes_add_increments(const char* namespace, void* data, void* arg)
     bson_t *document = increments_to_bson(namespace, increments);
     if (!dryrun) {
         bson_error_t error;
-        int tries = TOKU_TX_RETRIES;
-    retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "[W] retrying minutes update operation on %s\n", db_name);
-                goto retry;
-            } else {
-                size_t n;
-                char* bjs = bson_as_json(document, &n);
-                fprintf(stderr,
-                        "[E] update failed for %s on minutes: (%d) %s\n"
-                        "[E] document size: %zu; value: %s\n",
-                        db_name, error.code, error.message, n, bjs);
-                bson_free(bjs);
-            }
+            size_t n;
+            char* bjs = bson_as_json(document, &n);
+            fprintf(stderr,
+                    "[E] update failed for %s on minutes: (%d) %s\n"
+                    "[E] document size: %zu; value: %s\n",
+                    db_name, error.code, error.message, n, bjs);
+            bson_free(bjs);
         }
     }
     bson_destroy(selector);
@@ -189,21 +182,14 @@ int totals_add_increments(const char* namespace, void* data, void* arg)
     bson_t *document = increments_to_bson(namespace, increments);
     if (!dryrun) {
         bson_error_t error;
-        int tries = TOKU_TX_RETRIES;
-    retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "[W] retrying totals update operation on %s\n", db_name);
-                goto retry;
-            } else {
-                size_t n;
-                char* bjs = bson_as_json(document, &n);
-                fprintf(stderr,
-                        "[E] update failed for %s on totals: (%d) %s\n"
-                        "[E] document size: %zu; value: %s\n",
-                        db_name, error.code, error.message, n, bjs);
-                bson_free(bjs);
-            }
+            size_t n;
+            char* bjs = bson_as_json(document, &n);
+            fprintf(stderr,
+                    "[E] update failed for %s on totals: (%d) %s\n"
+                    "[E] document size: %zu; value: %s\n",
+                    db_name, error.code, error.message, n, bjs);
+            bson_free(bjs);
         }
     }
 
@@ -261,21 +247,14 @@ int quants_add_quants(const char* namespace, void* data, void* arg)
 
     if (!dryrun) {
         bson_error_t error;
-        int tries = TOKU_TX_RETRIES;
-    retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "[W] retrying quants update operation on %s\n", db_name);
-                goto retry;
-            } else {
-                size_t n;
-                char* bjs = bson_as_json(document, &n);
-                fprintf(stderr,
-                        "[E] update failed for %s on quants: (%d) %s\n"
-                        "[E] document size: %zu; value: %s\n",
-                        db_name, error.code, error.message, n, bjs);
-                bson_free(bjs);
-            }
+            size_t n;
+            char* bjs = bson_as_json(document, &n);
+            fprintf(stderr,
+                    "[E] update failed for %s on quants: (%d) %s\n"
+                    "[E] document size: %zu; value: %s\n",
+                    db_name, error.code, error.message, n, bjs);
+            bson_free(bjs);
         }
     }
     bson_destroy(selector);
@@ -340,21 +319,14 @@ int histograms_add_histograms(const char* namespace, void* data, void* arg)
 
     if (!dryrun) {
         bson_error_t error;
-        int tries = TOKU_TX_RETRIES;
-    retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "[W] retrying histograms update operation on %s\n", db_name);
-                goto retry;
-            } else {
-                size_t n;
-                char* bjs = bson_as_json(document, &n);
-                fprintf(stderr,
-                        "[E] update failed for %s on histograms: (%d) %s\n"
-                        "[E] document size: %zu; value: %s\n",
-                        db_name, error.code, error.message, n, bjs);
-                bson_free(bjs);
-            }
+            size_t n;
+            char* bjs = bson_as_json(document, &n);
+            fprintf(stderr,
+                    "[E] update failed for %s on histograms: (%d) %s\n"
+                    "[E] document size: %zu; value: %s\n",
+                    db_name, error.code, error.message, n, bjs);
+            bson_free(bjs);
         }
     }
     bson_destroy(selector);
@@ -419,21 +391,14 @@ int agents_add_agent(const char* agent, void* data, void* arg)
 
     if (!dryrun) {
         bson_error_t error;
-        int tries = TOKU_TX_RETRIES;
-    retry:
         if (!mongoc_collection_update(collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
-            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "[W] retrying agents update operation on %s\n", db_name);
-                goto retry;
-            } else {
-                size_t n;
-                char* bjs = bson_as_json(document, &n);
-                fprintf(stderr,
-                        "[E] update failed for %s on agents: (%d) %s\n"
-                        "[E] document size: %zu; value: %s\n",
-                        db_name, error.code, error.message, n, bjs);
-                bson_free(bjs);
-            }
+            size_t n;
+            char* bjs = bson_as_json(document, &n);
+            fprintf(stderr,
+                    "[E] update failed for %s on agents: (%d) %s\n"
+                    "[E] document size: %zu; value: %s\n",
+                    db_name, error.code, error.message, n, bjs);
+            bson_free(bjs);
         }
     }
     bson_destroy(selector);

@@ -354,23 +354,16 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     bool update_failed = false;
     if (!dryrun) {
         bson_error_t error;
-        int tries = TOKU_TX_RETRIES;
-    retry:
         if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "[W] retrying request insert operation on %s\n", db_name);
-                goto retry;
-            } else {
-                size_t n;
-                char* bjs = bson_as_json(document, &n);
-                fprintf(stderr,
-                        "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n"
-                        "[E] document size: %zu; value: %s\n",
-                        request_id, db_name, error.code, error.message, n, bjs);
-                bson_free(bjs);
-                update_failed = true;
-                state->updates_failed++;
-            }
+            size_t n;
+            char* bjs = bson_as_json(document, &n);
+            fprintf(stderr,
+                    "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n"
+                    "[E] document size: %zu; value: %s\n",
+                    request_id, db_name, error.code, error.message, n, bjs);
+            bson_free(bjs);
+            update_failed = true;
+            state->updates_failed++;
         }
     }
     bson_destroy(document);
@@ -402,22 +395,15 @@ void store_js_exception(const char* db_name, stream_info_t *stream_info, json_ob
 
     if (!dryrun) {
         bson_error_t error;
-        int tries = TOKU_TX_RETRIES;
-    retry:
         if (!mongoc_collection_insert(jse_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "[W] retrying exception insert operation on %s\n", db_name);
-                goto retry;
-            } else {
-                size_t n;
-                char* bjs = bson_as_json(document, &n);
-                fprintf(stderr,
-                        "[E] insert failed for exception document on %s: (%d) %s\n"
-                        "[E] document size: %zu; value: %s\n",
-                        db_name, error.code, error.message, n, bjs);
-                bson_free(bjs);
-                state->updates_failed++;
-            }
+            size_t n;
+            char* bjs = bson_as_json(document, &n);
+            fprintf(stderr,
+                    "[E] insert failed for exception document on %s: (%d) %s\n"
+                    "[E] document size: %zu; value: %s\n",
+                    db_name, error.code, error.message, n, bjs);
+            bson_free(bjs);
+            state->updates_failed++;
         }
     }
     bson_destroy(document);
@@ -463,22 +449,15 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
 
     if (!dryrun) {
         bson_error_t error;
-        int tries = TOKU_TX_RETRIES;
-    retry:
         if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            if ((error.code == TOKU_TX_LOCK_FAILED) && (--tries > 0)) {
-                fprintf(stderr, "[W] retrying event insert operation on %s\n", db_name);
-                goto retry;
-            } else {
-                size_t n;
-                char* bjs = bson_as_json(document, &n);
-                fprintf(stderr,
-                        "[E] insert failed for event document on %s: (%d) %s\n"
-                        "[E] document size: %zu; value: %s\n",
-                        db_name, error.code, error.message, n, bjs);
-                bson_free(bjs);
-                state->updates_failed++;
-            }
+            size_t n;
+            char* bjs = bson_as_json(document, &n);
+            fprintf(stderr,
+                    "[E] insert failed for event document on %s: (%d) %s\n"
+                    "[E] document size: %zu; value: %s\n",
+                    db_name, error.code, error.message, n, bjs);
+            bson_free(bjs);
+            state->updates_failed++;
         }
     }
     bson_destroy(document);
