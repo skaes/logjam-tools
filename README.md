@@ -202,6 +202,11 @@ use the `--prefix` argument like so:
 ./bin/install-libs --prefix=/opt/logjam
 ```
 
+If you are using Homebrew as your package manager on Mac OS it is recommended to
+install the libraries with `--without-documentation` to prevent issues arising
+from trying to validate XML files that can seemingly only be validated when
+`docbook-xsl-nons` is installed.
+
 Or install them manually:
 * Download and install zmq 4.1.4 from http://zeromq.org/intro:get-the-software
 * Dowmload and install czmq 3.0.2 from http://czmq.zeromq.org/page:get-the-software

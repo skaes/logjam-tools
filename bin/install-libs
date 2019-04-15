@@ -5,6 +5,7 @@ build_dir="builds/repos"
 forced=0
 prefix=/usr/local
 cached=0
+documentation=1
 
 test -z "$LSUDO" && LSUDO="sudo"
 test "$(whoami)" = "root" && LSUDO=""
@@ -23,8 +24,10 @@ while (( $# > 0 )); do
             prefix="$2"; shift 2;;
         --prefix=*)
             prefix="${1#--prefix=}"; shift;;
+        --without-documentation)
+            documentation=0; shift;;
         --*)
-            echo "$(basename $0) [--force] [--cached] [--build-dir dir] [--prefix dir] [install|uninstall]"; exit 0;;
+            echo "$(basename $0) [--force] [--cached] [--without-documentation] [--build-dir dir] [--prefix dir] [install|uninstall]"; exit 0;;
         *) break ;;
     esac
 done
@@ -115,7 +118,7 @@ function handle_mongoc()
     [ $forced == "1" ] && git clean -qfdx && rm -rf cmake-build
     mkdir -p cmake-build
     cd cmake-build
-    cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$prefix -DCMAKE_INSTALL_LIBDIR=$prefix/lib ..
+    cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$prefix -DCMAKE_INSTALL_LIBDIR=$prefix/lib -DCMAKE_MACOSX_RPATH=ON ..
     if [ "$cmd" == "install" ]; then
         make
         $LSUDO make install
@@ -152,10 +155,10 @@ function handle_sodium()
     v=1.0.16
     d=libsodium-$v
     f=${d}.tar.gz
-    test -f $f || wget -nv https://github.com/jedisct1/libsodium/releases/download/$v/$f
-    test -d $d || tar xzvf $f
+    test -f $f && [ $forced != "1" ] || wget -nv https://github.com/jedisct1/libsodium/releases/download/$v/$f
+    test -d $d && [ $forced != "1" ]|| tar xzvf $f
     cd $d
-    [ $forced == "1" ] && rm -f config.status && git clean -fqdx
+    [ $forced == "1" ] && rm -f config.status
     test -f config.status || ./configure --prefix=$prefix
     make -j4
     $LSUDO make $cmd
@@ -176,7 +179,11 @@ function handle_zeromq()
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfdx
-    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
+    additional_configure_flags=""
+    if [ "$documentation" == "0" ]; then
+      additional_configure_flags="--without-documentation"
+    fi
+    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix $additional_configure_flags)
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
@@ -196,7 +203,14 @@ function handle_czmq()
         git checkout $expected_revision
     fi
     [ $forced == "1" ] && git clean -qfdx
-    test -f config.status || (sh autogen.sh && ./configure --prefix=$prefix)
+    if [ "$documentation" == "0" ]; then
+      sed -ie 's/czmq_build_doc="yes"/czmq_build_doc="no"/g' configure.ac &&
+        sed -ie 's/czmq_install_man="yes"/czmq_install_man="no"/g' configure.ac
+    fi
+    test -f config.status || (
+      sh autogen.sh &&
+      ./configure --prefix=$prefix
+    )
     make -j4
     $LSUDO make $cmd
     $LSUDO $ldconfig
