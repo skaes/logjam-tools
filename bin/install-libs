@@ -116,6 +116,7 @@ function handle_mongoc()
         [ $cached = 0 ] && git submodule update
     fi
     [ $forced == "1" ] && git clean -qfdx && rm -rf cmake-build
+    echo 1.14.0 > VERSION_CURRENT
     mkdir -p cmake-build
     cd cmake-build
     cmake -DENABLE_AUTOMATIC_INIT_AND_CLEANUP=OFF -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=$prefix -DCMAKE_INSTALL_LIBDIR=$prefix/lib -DCMAKE_MACOSX_RPATH=ON ..
@@ -156,7 +157,7 @@ function handle_sodium()
     d=libsodium-$v
     f=${d}.tar.gz
     test -f $f && [ $forced != "1" ] || wget -nv https://github.com/jedisct1/libsodium/releases/download/$v/$f
-    test -d $d && [ $forced != "1" ]|| tar xzvf $f
+    test -d $d && [ $forced != "1" ] || tar xzvf $f
     cd $d
     [ $forced == "1" ] && rm -f config.status
     test -f config.status || ./configure --prefix=$prefix
