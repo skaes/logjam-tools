@@ -108,7 +108,7 @@ function handle_mongoc()
     test -d $d || git clone https://github.com/mongodb/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="a690091bae086f267791bd2227400f2035de99e8" # 1.12.0
+    expected_revision="71d7eaef31db31483cbb952d24d836c9e0d20b86" # 1.14.0
     if [ "$revision" != "$expected_revision" ]; then
         git reset --hard
         [ $cached = 0 ] && git fetch
@@ -152,7 +152,7 @@ function handle_json_c()
 
 function handle_sodium()
 {
-    v=1.0.16
+    v=1.0.17
     d=libsodium-$v
     f=${d}.tar.gz
     test -f $f && [ $forced != "1" ] || wget -nv https://github.com/jedisct1/libsodium/releases/download/$v/$f
@@ -196,7 +196,7 @@ function handle_czmq()
     test -d $d || git clone https://github.com/skaes/${d}.git
     cd $d
     revision=$(git rev-parse HEAD)
-    expected_revision="49dfdf9d653b83b344db5746567516ffb5a269cb" # 3.0.2 with fixes
+    expected_revision="13cfd790c94434f6350a9d5442f29ab2a8bb0c07" # master Sat Mar 16 19:51:26 2019 +0000
     if [ "$revision" != "" ]; then
         git reset --hard
         [ $cached = 0 ] && git fetch
@@ -237,14 +237,48 @@ function handle_snappy()
     cd ..
 }
 
+function handle_lz4()
+{
+    d=lz4
+    test -d $d || git clone https://github.com/lz4/${d}.git
+    cd $d
+    revision=$(git rev-parse HEAD)
+    expected_revision="641b453d9db536ee020851bfcb1dc39f61006f0a" # master (1.8.3)
+    if [ "$revision" != "" ]; then
+        git reset --hard
+        [ $cached = 0 ] && git fetch
+        git checkout $expected_revision
+    fi
+    [ $forced == "1" ] && git clean -qfdx
+    make -j4 PREFIX=$prefix
+    $LSUDO make $cmd PREFIX=$prefix
+    $LSUDO $ldconfig
+    cd ..
+}
+
+function handle_microhttpd()
+{
+    v=0.9.63
+    d=libmicrohttpd
+    f=${d}-${v}.tar.gz
+    test -f $f || wget -nv https://ftp.gnu.org/gnu/${d}/${f}
+    test -d $d || (mkdir $d && tar xzf $f -C $d --strip-components 1)
+    cd $d
+    test -f config.status || ./configure --prefix=$prefix
+    make -j4
+    $LSUDO make $cmd
+    cd ..
+}
 
 case $cmd in
     uninstall|clean)
         handle_czmq
+        handle_microhttpd
         handle_zeromq
         handle_sodium
         handle_json_c
         handle_mongoc
+        handle_lz4
         handle_snappy
         handle_prometheus_cpp
         handle_cmake
@@ -253,10 +287,12 @@ case $cmd in
         handle_cmake
         handle_prometheus_cpp
         handle_snappy
+        handle_lz4
         handle_mongoc
         handle_json_c
         handle_sodium
         handle_zeromq
+        handle_microhttpd
         handle_czmq
         ;;
 esac
