@@ -90,6 +90,7 @@ static zchunk_t* decompression_buffer = NULL;
 typedef struct {
     char app[256];
     char env[256];
+    char rid[256];
     const char *msg_type;
     char routing_key[256+17];
     int routing_key_len;
@@ -294,9 +295,9 @@ bool extract_msg_data(char *query_string, char* headers, msg_data_t *msg_data)
         goto cleanup;
     }
 
-    // extract app and env
+    // extract app and env from request id "app-with-hyphens-production-5f4f8884625b11e995f873f12a19e913"
     if (strlen(request_id) > 255
-        || !extract_app_env(request_id, 255, msg_data->app, msg_data->env)) {
+        || !extract_app_env_rid(request_id, 255, msg_data->app, msg_data->env, msg_data->rid)) {
         goto cleanup;
     };
     // if we get here, we have a valid json object
