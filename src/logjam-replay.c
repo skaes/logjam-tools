@@ -21,6 +21,7 @@ static int socket_type = ZMQ_PUB;
 static bool endless_loop = false;
 static int messages_per_second = 100000;
 static int message_credit = 1000000;
+static int device_number = 4711;
 
 static size_t replayed_messages_count = 0;
 static size_t replayed_messages_bytes = 0;
@@ -55,6 +56,10 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
 
     zmsg_t *msg = zmsg_loadx(NULL, dump_file);
     if (!msg) return 1;
+
+    // update device and seqeunce number
+    static uint64_t sequence_number = 0;
+    zmsg_set_device_and_sequence_number(msg, device_number, ++sequence_number);
 
     // calculate stats
     size_t msg_bytes = zmsg_content_size(msg);
@@ -96,6 +101,7 @@ void print_usage(char * const *argv)
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "  -d, --dealer               use zqm DEALER socket for publishing\n"
             "  -p, --pub S                zmq specification for publishing socket\n"
+            "  -s, --device N             simulate given device number\n"
             "      --help                 display this message\n"
             , argv[0]);
 }
@@ -112,12 +118,13 @@ void process_arguments(int argc, char * const *argv)
         { "msg-rate",      required_argument, 0, 'r' },
         { "io-threads",    required_argument, 0, 'i' },
         { "pub",           required_argument, 0, 'p' },
+        { "device",        required_argument, 0, 's' },
         { "verbose",       no_argument,       0, 'v' },
         { "dealer",        no_argument,       0, 'd' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vdlr:i:p:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vdlr:i:p:s:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -140,12 +147,15 @@ void process_arguments(int argc, char * const *argv)
         case 'p':
             connection_spec = optarg;
             break;
+        case 's':
+            device_number = atoi(optarg);
+            break;
         case 0:
             print_usage(argv);
             exit(0);
             break;
         case '?':
-            if (strchr("rip", optopt))
+            if (strchr("rips", optopt))
                 fprintf(stderr, "[E] option -%c requires an argument.\n", optopt);
             else if (isprint (optopt))
                 fprintf(stderr, "[E] unknown option `-%c'.\n", optopt);

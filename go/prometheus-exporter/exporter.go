@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -16,6 +15,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
 	// "runtime"
 	// "runtime/pprof"
 
@@ -25,17 +25,19 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	promclient "github.com/prometheus/client_model/go"
+	"github.com/skaes/logjam-tools/go/util"
 	"gopkg.in/tylerb/graceful.v1"
 )
 
 var opts struct {
 	Verbose     bool   `short:"v" long:"verbose" description:"be verbose"`
-	Importer    string `short:"i" long:"importer" default:"127.0.0.1:9612" description:"importer host:port pair"`
+	Devices     string `short:"d" long:"importer" default:"127.0.0.1:9606" description:"comma separated device specs (host:port pairs)"`
 	Env         string `short:"e" long:"env" description:"logjam environments to process"`
 	Port        string `short:"p" long:"port" default:"8081" description:"port to expose metrics on"`
 	StreamURL   string `short:"s" long:"stream-url" default:"" description:"Logjam endpoint for retrieving stream definitions"`
-	Datacenters string `short:"d" long:"datacenters" description:"List of known datacenters, comma separated. Will be used to determine label value if not available on incoming data."`
+	Datacenters string `short:"D" long:"datacenters" description:"List of known datacenters, comma separated. Will be used to determine label value if not available on incoming data."`
 	CleanAfter  uint   `short:"c" long:"clean-after" default:"60" description:"Minutes to wait before cleaning old instances"`
+	Parsers     uint   `short:"P" long:"parsers" default:"4" description:"Number of message parsers to run in parallel"`
 }
 
 type dcPair struct {
@@ -44,15 +46,16 @@ type dcPair struct {
 }
 
 var (
-	verbose      = false
-	interrupted  uint32
-	importerSpec string
-	processed    int64
-	dropped      int64
-	missed       int64
-	collectors   = make(map[string]*collector)
-	mutex        sync.Mutex
-	datacenters  = make([]dcPair, 0)
+	verbose     = false
+	interrupted uint32
+	deviceSpecs []string
+	processed   int64
+	dropped     int64
+	missed      int64
+	observed    int64
+	collectors  = make(map[string]*collector)
+	mutex       sync.Mutex
+	datacenters = make([]dcPair, 0)
 )
 
 func addCollector(appEnv string, apiRequests []string) {
@@ -61,7 +64,7 @@ func addCollector(appEnv string, apiRequests []string) {
 	_, found := collectors[appEnv]
 	if !found {
 		logInfo("adding stream: %s : %v", appEnv, apiRequests)
-		collectors[appEnv] = newCollector(apiRequests)
+		collectors[appEnv] = newCollector(appEnv, apiRequests)
 	}
 }
 
@@ -72,6 +75,9 @@ func getCollector(appEnv string) *collector {
 }
 
 type collector struct {
+	name                     string
+	app                      string
+	env                      string
 	httpRequestSummaryVec    *prometheus.SummaryVec
 	jobExecutionSummaryVec   *prometheus.SummaryVec
 	httpRequestHistogramVec  *prometheus.HistogramVec
@@ -94,8 +100,11 @@ func (c *collector) requestType(action string) string {
 	return "web"
 }
 
-func newCollector(apiRequests []string) *collector {
+func newCollector(appEnv string, apiRequests []string) *collector {
+	app, env := util.ParseStreamName(appEnv)
 	c := collector{
+		app: app,
+		env: env,
 		httpRequestSummaryVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
 				Name:       "http_request_latency_seconds",
@@ -283,6 +292,7 @@ func (c *collector) recordMetrics(m map[string]string) {
 		c.jobExecutionHistogramVec.With(m).Observe(value)
 		c.instanceRegistry <- instance
 	}
+	atomic.AddInt64(&observed, 1)
 }
 
 func initialize() {
@@ -303,7 +313,13 @@ func initialize() {
 			datacenters = append(datacenters, dcPair{name: dc, withDots: "." + dc + "."})
 		}
 	}
-	fmt.Printf("datacenters: %+v\n", datacenters)
+	deviceSpecs = make([]string, 0)
+	for _, s := range strings.Split(opts.Devices, ",") {
+		if s != "" {
+			deviceSpecs = append(deviceSpecs, fmt.Sprintf("tcp://%s", s))
+		}
+	}
+	verbose = opts.Verbose
 	if opts.StreamURL != "" {
 		u, err := url.Parse(opts.StreamURL)
 		if err != nil {
@@ -316,6 +332,8 @@ func initialize() {
 		updateStreams(streams, env)
 		go streamsUpdater(url, env)
 	}
+	logInfo("device-specs: %s", strings.Join(deviceSpecs, ","))
+	logInfo("datacenters: %+v", datacenters)
 }
 
 type stream struct {
@@ -415,85 +433,6 @@ func logWarn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
-//*****************************************************************
-
-func setupSocket() *zmq.Socket {
-	subscriber, _ := zmq.NewSocket(zmq.SUB)
-	subscriber.SetLinger(100)
-	subscriber.SetRcvhwm(1000000)
-	subscriber.SetSubscribe(opts.Env)
-	subscriber.Connect(importerSpec)
-	return subscriber
-}
-
-// run zmq event loop
-func zmqMsgHandler() {
-	subscriber := setupSocket()
-	defer subscriber.Close()
-
-	sequenceNumbers := make(map[string]uint64)
-
-	poller := zmq.NewPoller()
-	poller.Add(subscriber, zmq.POLLIN)
-
-	for atomic.LoadUint32(&interrupted) == 0 {
-		sockets, _ := poller.Poll(1 * time.Second)
-		for _, socket := range sockets {
-			s := socket.Socket
-			msg, _ := s.RecvMessage(0)
-			atomic.AddInt64(&processed, 1)
-			if len(msg) != 3 {
-				if atomic.AddInt64(&dropped, 1) == 1 {
-					logError("got invalid message: %v", msg)
-				}
-				continue
-			}
-			var env, data, seq = msg[0], msg[1], msg[2]
-			n := binary.BigEndian.Uint64([]byte(seq))
-			lastNumber, ok := sequenceNumbers[env]
-			if !ok {
-				lastNumber = 0
-			}
-			sequenceNumbers[env] = n
-			if n != lastNumber+1 && n > lastNumber && lastNumber != 0 {
-				gap := int64(n - lastNumber + 1)
-				if atomic.AddInt64(&missed, gap) == gap {
-					logError("detected message gap for env %s: missed %d messages", env, gap)
-				}
-			}
-			metrics, err := parseMetrics(data)
-			if err != nil {
-				logError("%s", err)
-				continue
-			}
-			appEnv := metrics["application"] + "-" + metrics["environment"]
-			c := getCollector(appEnv)
-			if c == nil {
-				logError("could not retrieve collector for %s", appEnv)
-				continue
-			}
-			c.observeMetrics(metrics)
-		}
-	}
-}
-
-func parseMetrics(data string) (map[string]string, error) {
-	// fmt.Printf("data: %s\n", data)
-	m := make(map[string]string)
-	for _, l := range strings.Split(data, "\n") {
-		if l == "" {
-			continue
-		}
-		pos := strings.Index(l, ":")
-		if pos == -1 {
-			return m, fmt.Errorf("line without separator: %s", l)
-		}
-		m[l[:pos]] = l[pos+1:]
-	}
-	// fmt.Printf("map: %v\n", m)
-	return m, nil
-}
-
 // report number of incoming zmq messages every second
 func statsReporter() {
 	ticker := time.NewTicker(1 * time.Second)
@@ -501,15 +440,15 @@ func statsReporter() {
 		if atomic.LoadUint32(&interrupted) != 0 {
 			break
 		}
+		_observed := atomic.SwapInt64(&observed, 0)
 		_processed := atomic.SwapInt64(&processed, 0)
 		_dropped := atomic.SwapInt64(&dropped, 0)
 		_missed := atomic.SwapInt64(&missed, 0)
-		logInfo("processed: %d, dropped: %d, missed: %d", _processed, _dropped, _missed)
+		logInfo("processed: %d, observed %d, dropped: %d, missed: %d", _processed, _observed, _dropped, _missed)
 	}
 }
 
 // web server
-
 func webServer() {
 	r := mux.NewRouter()
 	r.HandleFunc("/metrics/{application}/{environment}", serveAppMetrics)
@@ -549,12 +488,8 @@ func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
 //*******************************************************************************
 
 func main() {
-	initialize()
 	logInfo("%s starting", os.Args[0])
-	importerSpec = fmt.Sprintf("tcp://%s", opts.Importer)
-	verbose = opts.Verbose
-	logInfo("importer-spec: %s", importerSpec)
-	logInfo("env: %s", opts.Env)
+	initialize()
 
 	// f, err := os.Create("profile.prof")
 	// if err != nil {
@@ -564,8 +499,185 @@ func main() {
 	// defer pprof.StopCPUProfile()
 
 	installSignalHandler()
-	go zmqMsgHandler()
 	go statsReporter()
+	go streamParser()
 	webServer()
 	logInfo("%s shutting down", os.Args[0])
+}
+
+//*******************************************************************************
+
+func streamParser() {
+	parser, _ := zmq.NewSocket(zmq.SUB)
+	parser.SetLinger(100)
+	parser.SetRcvhwm(1000000)
+	parser.SetSubscribe("")
+	for _, s := range deviceSpecs {
+		logInfo("connection sub socket to %s", s)
+		err := parser.Connect(s)
+		if err != nil {
+			logError("could not connect: %s", s)
+		}
+	}
+	defer parser.Close()
+
+	poller := zmq.NewPoller()
+	poller.Add(parser, zmq.POLLIN)
+
+	sequenceNumbers := make(map[uint32]uint64, 0)
+
+	logInfo("starting %d parsers", opts.Parsers)
+	for i := uint(1); i <= opts.Parsers; i++ {
+		go decodeAndUnmarshal()
+	}
+
+	for {
+		if atomic.LoadUint32(&interrupted) != 0 {
+			break
+		}
+		sockets, _ := poller.Poll(1 * time.Second)
+		for _, socket := range sockets {
+			s := socket.Socket
+			msg, err := s.RecvMessageBytes(0)
+			if err != nil {
+				logError("recv message error: %s", err)
+				continue
+			}
+			atomic.AddInt64(&processed, 1)
+			if n := len(msg); n != 4 {
+				logError("invalid message length %s: %s", n, string(msg[0]))
+				if atomic.AddInt64(&dropped, 1) == 1 {
+					logError("got invalid message: %v", msg)
+				}
+				continue
+			}
+			info := util.UnpackInfo(msg[3])
+			if info == nil {
+				logError("could not decode meta info: %#x", msg[3])
+			}
+			lastNumber, ok := sequenceNumbers[info.DeviceNumber]
+			if !ok {
+				lastNumber = 0
+			}
+			d, n := info.DeviceNumber, info.SequenceNumber
+			sequenceNumbers[d] = n
+			if n != lastNumber+1 && n > lastNumber && lastNumber != 0 {
+				gap := int64(n - lastNumber + 1)
+				if atomic.AddInt64(&missed, gap) == gap {
+					logError("detected message gap for device %d: missed %d messages", d, gap)
+				}
+			}
+			decoderChannel <- &decodeAndUnmarshalTask{msg: msg, meta: info}
+		}
+	}
+}
+
+var decoderChannel = make(chan *decodeAndUnmarshalTask, 1000000)
+
+type decodeAndUnmarshalTask struct {
+	msg  [][]byte
+	meta *util.MetaInfo
+}
+
+func decodeAndUnmarshal() {
+	for {
+		if atomic.LoadUint32(&interrupted) != 0 {
+			break
+		}
+		select {
+		case task := <-decoderChannel:
+			info, msg := task.meta, task.msg
+			jsonBody, err := util.Decompress(msg[2], info.CompressionMethod)
+			if err != nil {
+				logError("could not decompress json body: %s", err)
+				continue
+			}
+			// TODO: handle invalid UTF8
+			data := map[string]interface{}{}
+			if err := json.Unmarshal(jsonBody, &data); err != nil {
+				logError("invalid json body: %s", err)
+				continue
+			}
+			appEnv := string(msg[0])
+			routingKey := string(msg[1])
+			processMessage(appEnv, routingKey, data)
+		}
+	}
+}
+
+func processMessage(appEnv string, routingKey string, data map[string]interface{}) {
+	if strings.Index(routingKey, "logs.") == -1 {
+		return
+		// TODO: respect ignored request uri
+		// TODO: process frontend timings
+	}
+	m := make(map[string]string)
+	info := extractMap(data, "request_info")
+	method := ""
+	if info != nil {
+		method = extractString(info, "method", "")
+	}
+	if method != "" {
+		m["metric"] = "http"
+		m["http_method"] = method
+	} else {
+		m["metric"] = "job"
+	}
+	m["action"] = extractAction(data)
+	m["value"] = extractString(data, "total_time", "0")
+	m["code"] = extractString(data, "code", "500")
+	m["instance"] = extractString(data, "host", "unknown")
+	m["cluster"] = extractString(data, "cluster", "unknown")
+	m["datacenter"] = extractString(data, "datacenter", "unknown")
+	c := getCollector(appEnv)
+	if c == nil {
+		logError("could not retrieve collector for %s", appEnv)
+		return
+	}
+	m["application"] = c.app
+	m["environment"] = c.env
+	c.observeMetrics(m)
+}
+
+func extractString(request map[string]interface{}, key string, defaultValue string) string {
+	value := request[key]
+	if value == nil {
+		return defaultValue
+	}
+	switch v := value.(type) {
+	case string:
+		return v
+	default:
+		return defaultValue
+	}
+}
+
+func extractAction(request map[string]interface{}) string {
+	action := extractString(request, "action", "")
+	if action == "" {
+		action = extractString(request, "logjam_action", "")
+		if action == "" {
+			action = "Unknown#unknown_method"
+		}
+	}
+	if strings.Index(action, "#") == -1 {
+		action += "#unknown_method"
+	} else if strings.Index(action, "#") == len(action)-1 {
+		action += "unknown_method"
+	}
+	return action
+}
+
+func extractMap(request map[string]interface{}, key string) map[string]interface{} {
+	value := request[key]
+	if value == nil {
+		return nil
+	}
+	switch v := value.(type) {
+	case map[string]interface{}:
+		return v
+	default:
+		return nil
+	}
+
 }

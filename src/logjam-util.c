@@ -172,6 +172,21 @@ int zmsg_clear_device_and_sequence_number(zmsg_t* msg)
     return 1;
 }
 
+int zmsg_set_device_and_sequence_number(zmsg_t* msg, uint32_t device_number, uint64_t sequence_number)
+{
+    if (zmsg_size(msg)!=4)
+        return 0;
+
+    zframe_t *meta_frame = zmsg_last(msg);
+    assert(zframe_size(meta_frame) == sizeof(msg_meta_t));
+
+    msg_meta_t *meta = (msg_meta_t *)zframe_data(meta_frame);
+    meta->device_number = htonl(device_number);
+    meta->sequence_number = htonll(sequence_number);
+
+    return 1;
+}
+
 int string_to_compression_method(const char *s)
 {
     if (!strcmp("zlib", s))

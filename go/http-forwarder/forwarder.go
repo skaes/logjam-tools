@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"compress/zlib"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 	"github.com/golang/snappy"
 	"github.com/jessevdk/go-flags"
 	zmq "github.com/pebbe/zmq4"
+	"github.com/skaes/logjam-tools/go/util"
 	"gopkg.in/tylerb/graceful.v1"
 )
 
@@ -32,7 +32,7 @@ var opts struct {
 	InputPort   int    `short:"p" long:"input-port" default:"9805" description:"port number of http input socket"`
 	CertFile    string `short:"c" long:"cert-file" env:"LOGJAM_CERT_FILE" description:"certificate file to use"`
 	KeyFile     string `short:"k" long:"key-file" env:"LOGJAM_KEY_FILE" description:"key file to use"`
-	DeviceId    int    `short:"d" long:"device-id" description:"device id"`
+	DeviceId    uint32 `short:"d" long:"device-id" description:"device id"`
 	OutputPort  int    `short:"P" long:"output-port" default:"9806" description:"port number of zeromq output socket"`
 	SendHwm     int    `short:"S" long:"snd-hwm" env:"LOGJAM_SND_HWM" default:"100000" description:"high water mark for zeromq output socket"`
 	IoThreads   int    `short:"i" long:"io-threads" default:"1" description:"number of zeromq io threads"`
@@ -81,9 +81,9 @@ func initialize() {
 	}
 	// Determine compression method.
 	if opts.Compression == "snappy" {
-		compression = SnappyCompression
+		compression = util.SnappyCompression
 	} else if opts.Compression == "zlib" {
-		compression = ZlibCompression
+		compression = util.ZlibCompression
 	} else if opts.Compression != "" {
 		logError("%s: unsupported compression method: %s.", args[0], opts.Compression)
 		os.Exit(1)
@@ -152,7 +152,7 @@ func sendMessage(socket *zmq.Socket, msg *PubMsg) {
 	socket.SendBytes([]byte(msg.appEnv), zmq.SNDMORE)
 	socket.SendBytes([]byte(msg.routingKey), zmq.SNDMORE)
 	socket.SendBytes(msg.data, zmq.SNDMORE)
-	meta := packInfo(nextSequenceNumber(), msg.compression)
+	meta := util.PackInfo(nextSequenceNumber(), opts.DeviceId, msg.compression)
 	socket.SendBytes(meta, 0)
 }
 
@@ -166,7 +166,7 @@ func sendHeartbeat(socket *zmq.Socket) {
 	socket.SendBytes([]byte("heartbeat"), zmq.SNDMORE)
 	socket.SendBytes([]byte(pubSocketSpecForConnecting()), zmq.SNDMORE)
 	socket.SendBytes([]byte("{}"), zmq.SNDMORE)
-	meta := packInfo(nextSequenceNumber(), NoCompression)
+	meta := util.PackInfo(nextSequenceNumber(), opts.DeviceId, util.NoCompression)
 	socket.SendBytes(meta, 0)
 }
 
@@ -210,54 +210,6 @@ var sequenceNum uint64
 func nextSequenceNumber() uint64 {
 	sequenceNum += 1
 	return sequenceNum
-}
-
-const (
-	MetaInfoVersion = 1
-	MetaInfoTag     = 0xcabd
-
-	NoCompression     = 0
-	ZlibCompression   = 1
-	SnappyCompression = 2
-)
-
-func zclockTime() uint64 {
-	return (uint64)(time.Now().UnixNano()) / 1000000
-}
-
-type MetaInfo struct {
-	Tag               uint16
-	CompressionMethod uint8
-	Version           uint8
-	DeviceNumber      uint32
-	Timestamp         uint64
-	SequenceNumber    uint64
-}
-
-func packInfo(seqNum uint64, compression byte) []byte {
-	data := make([]byte, 24)
-	binary.BigEndian.PutUint16(data, MetaInfoTag)
-	data[2] = compression
-	data[3] = MetaInfoVersion
-	binary.BigEndian.PutUint32(data[4:8], uint32(opts.DeviceId))
-	binary.BigEndian.PutUint64(data[8:16], zclockTime())
-	binary.BigEndian.PutUint64(data[16:24], seqNum)
-	return data
-}
-
-func unpackInfo(data []byte) *MetaInfo {
-	if len(data) != 24 {
-		return nil
-	}
-	info := &MetaInfo{
-		Tag:               binary.BigEndian.Uint16(data[0:2]),
-		CompressionMethod: data[2],
-		Version:           data[3],
-		DeviceNumber:      binary.BigEndian.Uint32(data[4:8]),
-		Timestamp:         binary.BigEndian.Uint64(data[8:16]),
-		SequenceNumber:    binary.BigEndian.Uint64(data[16:24]),
-	}
-	return info
 }
 
 var wg sync.WaitGroup
@@ -469,15 +421,15 @@ func extractFrontendMsgType(r *http.Request) string {
 
 // publish msg for publisher routine, optionally compressing it
 func publish(appEnv string, routingKey string, data []byte) {
-	var usedCompression byte = NoCompression
+	var usedCompression byte = util.NoCompression
 	switch compression {
-	case SnappyCompression:
+	case util.SnappyCompression:
 		compressedData := snappy.Encode(nil, data)
 		if len(compressedData) < len(data) {
 			data = compressedData
 			usedCompression = compression
 		}
-	case ZlibCompression:
+	case util.ZlibCompression:
 		buf := bytes.Buffer{}
 		w := zlib.NewWriter(&buf)
 		_, err := w.Write(data)
