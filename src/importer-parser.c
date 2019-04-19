@@ -284,7 +284,8 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->push_socket = parser_push_socket_new();
     state->prom_collector_socket = parser_prom_collector_socket_new();
     state->indexer_socket = parser_indexer_socket_new();
-    assert( state->tokener = json_tokener_new() );
+    state->tokener = json_tokener_new();
+    assert(state->tokener);
     state->processors = processor_hash_new();
     state->tracker = tracker_new();
     state->statsd_client = statsd_client_new(config, state->me);
