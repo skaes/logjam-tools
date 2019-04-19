@@ -688,6 +688,36 @@ bool extract_app_env_rid(const char* s, int n, char* app, char* env, char* rid)
     return extract_app_env(buf, n, app, env);
 }
 
+void ensure_chunk_can_take(zchunk_t* buffer, size_t data_size)
+{
+    size_t buffer_size = zchunk_max_size(buffer);
+    size_t target_size = zchunk_size(buffer) + data_size;
+    if (buffer_size < target_size) {
+        size_t next_size = 2 * buffer_size;
+        while (next_size < target_size)
+            next_size *= 2;
+        zchunk_resize(buffer, next_size);
+    }
+}
+
+void append_line(zchunk_t* buffer, const char* format, ...)
+{
+    char line[4096];
+    va_list argptr;
+    va_start(argptr, format);
+    int n = vsnprintf(line, 4096, format, argptr);
+    va_end(argptr);
+    ensure_chunk_can_take(buffer, (size_t)n);
+    // append without the null byte
+    zchunk_append(buffer, line, n);
+}
+
+void append_null_byte(zchunk_t* buffer)
+{
+    ensure_chunk_can_take(buffer, 1);
+    // append without the null byte
+    zchunk_append(buffer, "", 1);
+}
 
 static void test_uint64wrap (int verbose)
 {

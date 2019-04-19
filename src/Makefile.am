@@ -78,8 +78,6 @@ logjam_importer_SOURCES = \
     zring.h \
     device-tracker.c \
     device-tracker.h \
-    prom-collector.c \
-    prom-collector.h \
     prometheus-client.cpp \
     prometheus-client.h
 

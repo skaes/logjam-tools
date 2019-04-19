@@ -10,7 +10,6 @@
 #include "importer-subscriber.h"
 #include "importer-watchdog.h"
 #include "statsd-client.h"
-#include "prom-collector.h"
 #include "prometheus-client.h"
 
 /*
@@ -60,7 +59,6 @@ typedef struct {
     zactor_t *writers[MAX_WRITERS];
     zactor_t *updaters[MAX_UPDATERS];
     zactor_t *live_stream_publisher;
-    zactor_t *prom_collector;
     zsock_t *updates_socket;
     size_t updates_blocked;
     zsock_t *adder_socket;
@@ -329,9 +327,6 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     // tell indexer to tick
     zstr_send(state->indexer, "tick");
 
-    // tell prom collector to tick
-    zstr_send(state->prom_collector, "tick");
-
     // tell stats updaters to tick
     for (int i=0; i<num_updaters; i++) {
         zstr_send(state->updaters[i], "tick");
@@ -422,8 +417,6 @@ bool controller_create_actors(controller_state_t *state)
     state->statsd_server = zactor_new(statsd_actor_fn, state->config);
     // start the live stream publisher
     state->live_stream_publisher = zactor_new(live_stream_actor_fn, state->config);
-    // start the prometheus data collector
-    state->prom_collector = zactor_new(prom_collector_actor_fn, state->config);
     // start the indexer
     state->indexer = zactor_new(indexer, NULL);
     // create subscribers
@@ -513,9 +506,6 @@ void controller_destroy_actors(controller_state_t *state)
 
     if (verbose) printf("[D] controller: destroying live stream publisher\n");
     zactor_destroy(&state->live_stream_publisher);
-
-    if (verbose) printf("[D] controller: destroying prometheus data collector\n");
-    zactor_destroy(&state->prom_collector);
 
     if (verbose) printf("[D] controller: destroying live stream socket\n");
     zsock_destroy(&state->live_stream_socket);

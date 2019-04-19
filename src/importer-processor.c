@@ -5,7 +5,6 @@
 #include "importer-livestream.h"
 #include "importer-streaminfo.h"
 #include "importer-resources.h"
-#include "prom-collector.h"
 
 #define DB_PREFIX "logjam-"
 #define DB_PREFIX_LEN 7
@@ -201,6 +200,8 @@ double processor_setup_time(processor_state_t *self, json_object *request, const
     return total_time;
 }
 
+#if 0
+
 static
 const char* processor_setup_http_method(processor_state_t *self, json_object *request)
 {
@@ -260,6 +261,7 @@ const char* processor_setup_datacenter(processor_state_t *self, json_object *req
 
     return json_object_get_string(datacenter_info);
 }
+#endif
 
 static
 int extract_severity_from_lines_object(json_object* lines)
@@ -780,84 +782,6 @@ backend_only_request(const char *action, stream_info_t *stream)
     return 0;
 }
 
-static
-void ensure_chunk_can_take(zchunk_t* buffer, size_t data_size)
-{
-    size_t buffer_size = zchunk_max_size(buffer);
-    size_t target_size = zchunk_size(buffer) + data_size;
-    if (buffer_size < target_size) {
-        size_t next_size = 2 * buffer_size;
-        while (next_size < target_size)
-            next_size *= 2;
-        zchunk_resize(buffer, next_size);
-    }
-}
-
-static
-void append_line(zchunk_t* buffer, const char* format, ...)
-{
-    char line[4096];
-    va_list argptr;
-    va_start(argptr, format);
-    int n = vsnprintf(line, 4096, format, argptr);
-    va_end(argptr);
-    ensure_chunk_can_take(buffer, (size_t)n);
-    // append without the null byte
-    zchunk_append(buffer, line, n);
-}
-
-static
-void append_null_byte(zchunk_t* buffer)
-{
-    ensure_chunk_can_take(buffer, 1);
-    // append without the null byte
-    zchunk_append(buffer, "", 1);
-}
-
-// see https://stackoverflow.com/questions/16839658/printf-width-specifier-to-maintain-precision-of-floating-point-value
-#ifdef DBL_DECIMAL_DIG
-  #define OP_DBL_DIGS (DBL_DECIMAL_DIG)
-#else
-  #ifdef DECIMAL_DIG
-    #define OP_DBL_DIGS (DECIMAL_DIG)
-  #else
-    #define OP_DBL_DIGS (DBL_DIG + 3)
-  #endif
-#endif
-
-static
-void forward_request_to_prom_collector(processor_state_t *self, parser_state_t *pstate, json_object *request, request_data_t *request_data)
-{
-    const char* app = self->stream_info->app;
-    const char* env = self->stream_info->env;
-    const char* host = processor_setup_host(self, request);
-    const char* cluster = processor_setup_cluster(self, request);
-    const char* datacenter = processor_setup_datacenter(self, request);
-    const char* http_method = processor_setup_http_method(self, request);
-
-    zchunk_t *buffer = zchunk_new(NULL, 1024);
-    if (http_method) {
-        // http request
-        append_line(buffer, "metric:http\n");
-        append_line(buffer, "http_method:%s\n", http_method);
-        // TODO: add normalized URL
-    } else {
-        // background job
-        append_line(buffer, "metric:job\n");
-    }
-    append_line(buffer, "value:%.*e\n", OP_DBL_DIGS-1, request_data->total_time/1000);
-    append_line(buffer, "application:%s\n", app);
-    append_line(buffer, "environment:%s\n", env);
-    append_line(buffer, "action:%s\n", request_data->page);
-    append_line(buffer, "code:%d\n", request_data->response_code);
-    append_line(buffer, "instance:%s\n", host);
-    append_line(buffer, "cluster:%s\n", cluster);
-    append_line(buffer, "datacenter:%s\n", datacenter);
-    append_null_byte(buffer);
-    prom_collector_publish(pstate->prom_collector_socket, env, (const char*)zchunk_data(buffer));
-    zchunk_destroy(&buffer);
-}
-
 void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
     if (ignore_request(request, self->stream_info)) return;
@@ -943,8 +867,6 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         zmsg_send_with_retry(&msg, pstate->push_socket);
         __sync_add_and_fetch(&queued_inserts, 1);
     }
-
-    forward_request_to_prom_collector(self, pstate, request, &request_data);
 }
 
 static
