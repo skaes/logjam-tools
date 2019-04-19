@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	// "runtime"
 	// "runtime/pprof"
@@ -26,6 +27,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	promclient "github.com/prometheus/client_model/go"
 	"github.com/skaes/logjam-tools/go/util"
+	"golang.org/x/text/runes"
 	"gopkg.in/tylerb/graceful.v1"
 )
 
@@ -53,18 +55,19 @@ var (
 	dropped     int64
 	missed      int64
 	observed    int64
+	ignored     int64
 	collectors  = make(map[string]*collector)
 	mutex       sync.Mutex
 	datacenters = make([]dcPair, 0)
 )
 
-func addCollector(appEnv string, apiRequests []string) {
+func addCollector(appEnv string, stream stream) {
 	mutex.Lock()
 	defer mutex.Unlock()
 	_, found := collectors[appEnv]
 	if !found {
-		logInfo("adding stream: %s : %v", appEnv, apiRequests)
-		collectors[appEnv] = newCollector(appEnv, apiRequests)
+		logInfo("adding stream: %s : %+v", appEnv, stream)
+		collectors[appEnv] = newCollector(appEnv, stream)
 	}
 }
 
@@ -87,6 +90,7 @@ type collector struct {
 	metricsChannel           chan map[string]string
 	requestHandler           http.Handler
 	apiRequests              []string
+	ignoredRequestURI        string
 	knownInstances           map[string]time.Time
 	stopped                  uint32
 }
@@ -100,7 +104,7 @@ func (c *collector) requestType(action string) string {
 	return "web"
 }
 
-func newCollector(appEnv string, apiRequests []string) *collector {
+func newCollector(appEnv string, stream stream) *collector {
 	app, env := util.ParseStreamName(appEnv)
 	c := collector{
 		app: app,
@@ -139,11 +143,12 @@ func newCollector(appEnv string, apiRequests []string) *collector {
 			// instance always set to the empty string
 			[]string{"application", "environment", "instance"},
 		),
-		registry:         prometheus.NewRegistry(),
-		instanceRegistry: make(chan string, 10000),
-		apiRequests:      apiRequests,
-		knownInstances:   make(map[string]time.Time),
-		metricsChannel:   make(chan map[string]string, 10000),
+		registry:          prometheus.NewRegistry(),
+		instanceRegistry:  make(chan string, 10000),
+		apiRequests:       stream.APIRequests,
+		ignoredRequestURI: stream.IgnoredRequestURI,
+		knownInstances:    make(map[string]time.Time),
+		metricsChannel:    make(chan map[string]string, 10000),
 	}
 	c.registry.MustRegister(c.httpRequestHistogramVec)
 	c.registry.MustRegister(c.jobExecutionHistogramVec)
@@ -337,7 +342,11 @@ func initialize() {
 }
 
 type stream struct {
-	APIRequests []string `json:"api_requests"`
+	App                 string   `json:"app"`
+	Env                 string   `json:"env"`
+	IgnoredRequestURI   string   `json:"ignored_request_uri"`
+	BackendOnlyRequests string   `json:"backend_only_requests"`
+	APIRequests         []string `json:"api_requests"`
 }
 
 func streamsUpdater(url, env string) {
@@ -391,7 +400,7 @@ func updateStreams(streams map[string]stream, env string) {
 	suffix := "-" + env
 	for s, r := range streams {
 		if env == "" || strings.HasSuffix(s, suffix) {
-			addCollector(s, r.APIRequests)
+			addCollector(s, r)
 		}
 	}
 	// delete streams which disappeaerd
@@ -444,7 +453,9 @@ func statsReporter() {
 		_processed := atomic.SwapInt64(&processed, 0)
 		_dropped := atomic.SwapInt64(&dropped, 0)
 		_missed := atomic.SwapInt64(&missed, 0)
-		logInfo("processed: %d, observed %d, dropped: %d, missed: %d", _processed, _observed, _dropped, _missed)
+		_ignored := atomic.SwapInt64(&ignored, 0)
+		logInfo("processed: %d, ignored: %d, observed %d, dropped: %d, missed: %d",
+			_processed, _ignored, _observed, _dropped, _missed)
 	}
 }
 
@@ -592,7 +603,10 @@ func decodeAndUnmarshal() {
 				logError("could not decompress json body: %s", err)
 				continue
 			}
-			// TODO: handle invalid UTF8
+			if !utf8.Valid(jsonBody) {
+				jsonBody = runes.ReplaceIllFormed().Bytes(jsonBody)
+				logError("replaced invalid utf8 in json body: %s", jsonBody)
+			}
 			data := map[string]interface{}{}
 			if err := json.Unmarshal(jsonBody, &data); err != nil {
 				logError("invalid json body: %s", err)
@@ -608,14 +622,27 @@ func decodeAndUnmarshal() {
 func processMessage(appEnv string, routingKey string, data map[string]interface{}) {
 	if strings.Index(routingKey, "logs.") == -1 {
 		return
-		// TODO: respect ignored request uri
 		// TODO: process frontend timings
+	}
+	c := getCollector(appEnv)
+	if c == nil {
+		logError("could not retrieve collector for %s", appEnv)
+		return
 	}
 	m := make(map[string]string)
 	info := extractMap(data, "request_info")
 	method := ""
 	if info != nil {
 		method = extractString(info, "method", "")
+		uri := extractString(info, "url", "")
+		if uri != "" {
+			u, err := url.Parse(uri)
+			if err == nil && strings.Index(u.Path, c.ignoredRequestURI) >= 0 {
+				atomic.AddInt64(&ignored, 1)
+				// logInfo("ignoring request: %s", u.String())
+				return
+			}
+		}
 	}
 	if method != "" {
 		m["metric"] = "http"
@@ -629,11 +656,6 @@ func processMessage(appEnv string, routingKey string, data map[string]interface{
 	m["instance"] = extractString(data, "host", "unknown")
 	m["cluster"] = extractString(data, "cluster", "unknown")
 	m["datacenter"] = extractString(data, "datacenter", "unknown")
-	c := getCollector(appEnv)
-	if c == nil {
-		logError("could not retrieve collector for %s", appEnv)
-		return
-	}
 	m["application"] = c.app
 	m["environment"] = c.env
 	c.observeMetrics(m)
