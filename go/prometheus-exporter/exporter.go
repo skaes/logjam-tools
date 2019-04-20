@@ -38,7 +38,7 @@ var opts struct {
 	Port        string `short:"p" long:"port" default:"8081" description:"port to expose metrics on"`
 	StreamURL   string `short:"s" long:"stream-url" default:"" description:"Logjam endpoint for retrieving stream definitions"`
 	Datacenters string `short:"D" long:"datacenters" description:"List of known datacenters, comma separated. Will be used to determine label value if not available on incoming data."`
-	CleanAfter  uint   `short:"c" long:"clean-after" default:"60" description:"Minutes to wait before cleaning old instances"`
+	CleanAfter  uint   `short:"c" long:"clean-after" default:"5" description:"Minutes to wait before cleaning old time series"`
 	Parsers     uint   `short:"P" long:"parsers" default:"4" description:"Number of message parsers to run in parallel"`
 }
 
@@ -81,17 +81,17 @@ type collector struct {
 	name                     string
 	app                      string
 	env                      string
+	apiRequests              []string
+	ignoredRequestURI        string
 	httpRequestSummaryVec    *prometheus.SummaryVec
 	jobExecutionSummaryVec   *prometheus.SummaryVec
 	httpRequestHistogramVec  *prometheus.HistogramVec
 	jobExecutionHistogramVec *prometheus.HistogramVec
 	registry                 *prometheus.Registry
-	instanceRegistry         chan string
 	metricsChannel           chan map[string]string
 	requestHandler           http.Handler
-	apiRequests              []string
-	ignoredRequestURI        string
-	knownInstances           map[string]time.Time
+	actionRegistry           chan string
+	knownActions             map[string]time.Time
 	stopped                  uint32
 }
 
@@ -115,7 +115,8 @@ func newCollector(appEnv string, stream stream) *collector {
 				Help:       "http request latency summary",
 				Objectives: map[float64]float64{},
 			},
-			[]string{"application", "environment", "type", "code", "http_method", "instance", "cluster", "datacenter"},
+			// instance always set to the empty string
+			[]string{"application", "environment", "action", "type", "code", "http_method", "instance", "cluster", "datacenter"},
 		),
 		jobExecutionSummaryVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
@@ -123,7 +124,8 @@ func newCollector(appEnv string, stream stream) *collector {
 				Help:       "job execution latency summary",
 				Objectives: map[float64]float64{},
 			},
-			[]string{"application", "environment", "code", "instance", "cluster", "datacenter"},
+			// instance always set to the empty string
+			[]string{"application", "environment", "action", "code", "instance", "cluster", "datacenter"},
 		),
 		httpRequestHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -132,7 +134,7 @@ func newCollector(appEnv string, stream stream) *collector {
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
 			// instance always set to the empty string
-			[]string{"application", "environment", "type", "http_method", "instance"},
+			[]string{"application", "environment", "action", "type", "http_method", "instance"},
 		),
 		jobExecutionHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -141,13 +143,13 @@ func newCollector(appEnv string, stream stream) *collector {
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100},
 			},
 			// instance always set to the empty string
-			[]string{"application", "environment", "instance"},
+			[]string{"application", "environment", "action", "instance"},
 		),
 		registry:          prometheus.NewRegistry(),
-		instanceRegistry:  make(chan string, 10000),
+		actionRegistry:    make(chan string, 10000),
 		apiRequests:       stream.APIRequests,
 		ignoredRequestURI: stream.IgnoredRequestURI,
-		knownInstances:    make(map[string]time.Time),
+		knownActions:      make(map[string]time.Time),
 		metricsChannel:    make(chan map[string]string, 10000),
 	}
 	c.registry.MustRegister(c.httpRequestHistogramVec)
@@ -155,7 +157,7 @@ func newCollector(appEnv string, stream stream) *collector {
 	c.registry.MustRegister(c.httpRequestSummaryVec)
 	c.registry.MustRegister(c.jobExecutionSummaryVec)
 	c.requestHandler = promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{})
-	go c.instanceRegistryHandler()
+	go c.actionRegistryHandler()
 	go c.observer()
 	return &c
 }
@@ -188,9 +190,9 @@ func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
 	return labels
 }
 
-func (c *collector) removeInstance(i string) bool {
-	logInfo("removing instance: %s", i)
-	delete(c.knownInstances, i)
+func (c *collector) removeAction(a string) bool {
+	logInfo("removing action: %s", a)
+	delete(c.knownActions, a)
 	mfs, err := c.registry.Gather()
 	if err != nil {
 		logError("could not gather metric families for deletion: %s", err)
@@ -200,12 +202,9 @@ func (c *collector) removeInstance(i string) bool {
 	numDeleted := 0
 	for _, mf := range mfs {
 		name := mf.GetName()
-		if name == "http_request_duration_seconds" || name == "job_execution_duration_seconds" {
-			continue
-		}
 		for _, m := range mf.GetMetric() {
 			pairs := m.GetLabel()
-			if hasLabel(pairs, "instance", i) {
+			if hasLabel(pairs, "action", a) {
 				numProcessed++
 				labels := labelsFromLabelPairs(pairs)
 				deleted := false
@@ -214,6 +213,10 @@ func (c *collector) removeInstance(i string) bool {
 					deleted = c.httpRequestSummaryVec.Delete(labels)
 				case "job_execution_latency_seconds":
 					deleted = c.jobExecutionSummaryVec.Delete(labels)
+				case "http_request_duration_seconds":
+					deleted = c.httpRequestHistogramVec.Delete(labels)
+				case "job_execution_duration_seconds":
+					deleted = c.jobExecutionHistogramVec.Delete(labels)
 				}
 				if deleted {
 					numDeleted++
@@ -226,18 +229,18 @@ func (c *collector) removeInstance(i string) bool {
 	return numProcessed > 0 && numProcessed == numDeleted
 }
 
-func (c *collector) instanceRegistryHandler() {
+func (c *collector) actionRegistryHandler() {
 	// cleaning every minute, until we are interrupted or the stream was shut down
 	ticker := time.NewTicker(1 * time.Minute)
 	for atomic.LoadUint32(&interrupted)+atomic.LoadUint32(&c.stopped) == 0 {
 		select {
-		case instance := <-c.instanceRegistry:
-			c.knownInstances[instance] = time.Now()
+		case action := <-c.actionRegistry:
+			c.knownActions[action] = time.Now()
 		case <-ticker.C:
 			threshold := time.Now().Add(-1 * time.Duration(opts.CleanAfter) * time.Minute)
-			for i, v := range c.knownInstances {
+			for a, v := range c.knownActions {
 				if v.Before(threshold) {
-					c.removeInstance(i)
+					c.removeAction(a)
 				}
 			}
 		}
@@ -268,6 +271,7 @@ func fixDatacenter(m map[string]string, instance string) {
 func (c *collector) recordMetrics(m map[string]string) {
 	metric := m["metric"]
 	instance := m["instance"]
+	m["instance"] = ""
 	action := m["action"]
 	value, err := strconv.ParseFloat(m["value"], 64)
 	if err != nil {
@@ -276,26 +280,23 @@ func (c *collector) recordMetrics(m map[string]string) {
 	}
 	delete(m, "metric")
 	delete(m, "value")
-	delete(m, "action")
 	fixDatacenter(m, instance)
 	switch metric {
 	case "http":
 		m["type"] = c.requestType(action)
 		c.httpRequestSummaryVec.With(m).Observe(value)
-		m["instance"] = ""
 		delete(m, "code")
 		delete(m, "cluster")
 		delete(m, "datacenter")
 		c.httpRequestHistogramVec.With(m).Observe(value)
-		c.instanceRegistry <- instance
+		c.actionRegistry <- action
 	case "job":
 		c.jobExecutionSummaryVec.With(m).Observe(value)
-		m["instance"] = ""
 		delete(m, "code")
 		delete(m, "cluster")
 		delete(m, "datacenter")
 		c.jobExecutionHistogramVec.With(m).Observe(value)
-		c.instanceRegistry <- instance
+		c.actionRegistry <- action
 	}
 	atomic.AddInt64(&observed, 1)
 }
@@ -347,6 +348,10 @@ type stream struct {
 	IgnoredRequestURI   string   `json:"ignored_request_uri"`
 	BackendOnlyRequests string   `json:"backend_only_requests"`
 	APIRequests         []string `json:"api_requests"`
+}
+
+func (s *stream) AppEnv() string {
+	return s.App + "+" + s.Env
 }
 
 func streamsUpdater(url, env string) {

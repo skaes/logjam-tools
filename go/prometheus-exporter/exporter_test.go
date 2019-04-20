@@ -5,14 +5,20 @@ import (
 )
 
 func TestDeletingLabels(t *testing.T) {
-	c := newCollector([]string{})
+	s := stream{
+		App:                 "a",
+		Env:                 "b",
+		IgnoredRequestURI:   "/_",
+		BackendOnlyRequests: "",
+		APIRequests:         []string{},
+	}
+	c := newCollector(s.AppEnv(), s)
 	metrics1 := map[string]string{
 		"application": "a",
 		"environment": "b",
 		"metric":      "http",
 		"code":        "200",
 		"http_method": "GET",
-		"instance":    "i",
 		"cluster":     "c",
 		"datacenter":  "d",
 		"action":      "murks",
@@ -24,7 +30,6 @@ func TestDeletingLabels(t *testing.T) {
 		"metric":      "http",
 		"code":        "200",
 		"http_method": "GET",
-		"instance":    "k",
 		"cluster":     "d",
 		"datacenter":  "e",
 		"action":      "marks",
@@ -35,7 +40,6 @@ func TestDeletingLabels(t *testing.T) {
 		"environment": "b",
 		"metric":      "job",
 		"code":        "200",
-		"instance":    "i",
 		"cluster":     "d",
 		"datacenter":  "e",
 		"action":      "marks",
@@ -46,7 +50,6 @@ func TestDeletingLabels(t *testing.T) {
 		"environment": "b",
 		"metric":      "job",
 		"code":        "200",
-		"instance":    "k",
 		"cluster":     "d",
 		"datacenter":  "e",
 		"action":      "marks",
@@ -56,10 +59,10 @@ func TestDeletingLabels(t *testing.T) {
 	c.recordMetrics(metrics2)
 	c.recordMetrics(metrics3)
 	c.recordMetrics(metrics4)
-	if !c.removeInstance("i") {
-		t.Errorf("could not remove instance: %s", "i")
+	if !c.removeAction("marks") {
+		t.Errorf("could not remove action: %s", "marks")
 	}
-	if c.removeInstance("j") {
-		t.Errorf("could remove non existent instance : %s", "j")
+	if c.removeAction("schnippi") {
+		t.Errorf("could remove non existing action : %s", "schnippi")
 	}
 }
