@@ -607,7 +607,7 @@ func decodeAndUnmarshal() {
 				jsonBody = runes.ReplaceIllFormed().Bytes(jsonBody)
 				logError("replaced invalid utf8 in json body: %s", jsonBody)
 			}
-			data := map[string]interface{}{}
+			data := make(map[string]interface{})
 			if err := json.Unmarshal(jsonBody, &data); err != nil {
 				logError("invalid json body: %s", err)
 				continue
@@ -615,6 +615,8 @@ func decodeAndUnmarshal() {
 			appEnv := string(msg[0])
 			routingKey := string(msg[1])
 			processMessage(appEnv, routingKey, data)
+		case <-time.After(1 * time.Second):
+			// make sure we shut down timely even if no messages arrive
 		}
 	}
 }
@@ -633,11 +635,11 @@ func processMessage(appEnv string, routingKey string, data map[string]interface{
 	info := extractMap(data, "request_info")
 	method := ""
 	if info != nil {
-		method = extractString(info, "method", "")
+		method = strings.ToUpper(extractString(info, "method", ""))
 		uri := extractString(info, "url", "")
 		if uri != "" {
 			u, err := url.Parse(uri)
-			if err == nil && strings.Index(u.Path, c.ignoredRequestURI) >= 0 {
+			if err == nil && strings.HasPrefix(u.Path, c.ignoredRequestURI) {
 				atomic.AddInt64(&ignored, 1)
 				// logInfo("ignoring request: %s", u.String())
 				return

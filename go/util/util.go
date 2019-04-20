@@ -66,10 +66,10 @@ func Decompress(data []byte, method uint8) ([]byte, error) {
 	case ZlibCompression:
 		buf := bytes.NewBuffer(data)
 		reader, err := zlib.NewReader(buf)
+		defer reader.Close()
 		if err != nil {
 			return nil, err
 		}
-		defer reader.Close()
 		decompressed, err := ioutil.ReadAll(reader)
 		if err != nil {
 			return nil, err
