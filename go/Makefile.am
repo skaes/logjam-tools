@@ -4,7 +4,7 @@ ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS}
 GO_ENV = CGO_LDFLAGS='$(OPTDIR_LDFLAGS)' PKG_CONFIG_PATH=$(PKG_CONFIG_PATH)
 GO_SRC = .
 GO_NOINSTALL_TARGETS = logjam-livestream-generator
-GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-prometheus-exporter logjam-mongodb-backup logjam-mongodb-restore
+GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-fhttpd logjam-prometheus-exporter logjam-mongodb-backup logjam-mongodb-restore
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
 GO_TESTS = http-client-test prometheus-exporter-test
 
@@ -13,7 +13,6 @@ GO_TESTS = http-client-test prometheus-exporter-test
 # it's all-local, check-local, clean-local, etc.
 
 all-local: $(GO_TARGETS)
-	go mod tidy
 
 clean-local:
 	rm -f $(GO_TARGETS)
@@ -25,25 +24,29 @@ uninstall-local:
 	cd $(bindir) && rm -f $(GO_INSTALL_TARGETS)
 
 logjam-livestream: livestream-server/server.go
-	$(GO_ENV) go build -i -o $@ livestream-server/server.go
+	$(GO_ENV) go build -i -o $@ $<
 
 logjam-livestream-generator: livestream-generator/generator.go
-	$(GO_ENV) go build -i -o $@ livestream-generator/generator.go
+	$(GO_ENV) go build -i -o $@ $<
 
-logjam-http-forwarder: http-forwarder/forwarder.go
-	$(GO_ENV) go build -i -o $@ http-forwarder/forwarder.go
+logjam-http-forwarder: http-forwarder/forwarder.go util/util.go
+	$(GO_ENV) go build -i -o $@ $<
 
-logjam-prometheus-exporter: prometheus-exporter/exporter.go
-	$(GO_ENV) go build -i -o $@ prometheus-exporter/exporter.go
+logjam-fhttpd: fhttpd/fhttpd.go util/util.go
+	$(GO_ENV) go build -i -o $@ $<
+
+logjam-prometheus-exporter: prometheus-exporter/exporter.go util/util.go
+	$(GO_ENV) go build -i -o $@ $<
 
 logjam-mongodb-backup: backup/backup.go
-	$(GO_ENV) go build -i -o $@ backup/backup.go
+	$(GO_ENV) go build -i -o $@ $<
 
 logjam-mongodb-restore: restore/restore.go
-	$(GO_ENV) go build -i -o $@ restore/restore.go
+	$(GO_ENV) go build -i -o $@ $<
 
-.PHONY: http-client-test prometheus-exporter-test livestream-test forwarde
-check-local: livestream-test http-forwarder-test prometheus-exporter-test
+TESTS = prometheus-exporter-test livestream-test util-test
+.PHONY: $(TESTS)
+check-local: $(TESTS)
 
 http-client-test:
 	$(GO_ENV) go test ./http-client
@@ -54,5 +57,5 @@ prometheus-exporter-test:
 livestream-test: logjam-livestream
 	$(GO_ENV) go test ./livestream-server
 
-http-forwarder-test: logjam-http-forwarder
-	$(GO_ENV) go test ./http-forwarder
+util-test:
+	$(GO_ENV) go test ./util

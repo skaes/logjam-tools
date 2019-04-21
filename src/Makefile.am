@@ -11,7 +11,6 @@ PROMETHEUS_LIBS = $(libdir)/libprometheus-cpp-pull.a $(libdir)/libprometheus-cpp
 bin_PROGRAMS = \
 logjam-device \
     logjam-importer \
-    logjam-fhttpd \
     logjam-graylog-forwarder \
     logjam-dump \
     logjam-replay \
@@ -82,12 +81,6 @@ logjam_importer_SOURCES = \
     prometheus-client.h
 
 logjam_importer_LDADD = $(PROMETHEUS_LIBS) $(LDADD)
-
-logjam_fhttpd_SOURCES = \
-    ../config.h \
-    logjam-fhttpd.c \
-    logjam-util.c \
-    logjam-util.h
 
 logjam_graylog_forwarder_SOURCES = \
     ../config.h \

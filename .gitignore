@@ -53,10 +53,11 @@ proml-queries.txt
 #go
 /go/vendor
 /go/Makefile
-go/logjam-http-forwarder
-go/logjam-livestream
-go/logjam-livestream-generator
-go/logjam-prometheus-exporter
-go/logjam-mongodb-backup
-go/logjam-mongodb-restore
+/go/logjam-fhttpd
+/go/logjam-http-forwarder
+/go/logjam-livestream
+/go/logjam-livestream-generator
+/go/logjam-mongodb-backup
+/go/logjam-mongodb-restore
+/go/logjam-prometheus-exporter
 .rvmrc

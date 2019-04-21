@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -47,6 +48,9 @@ var (
 	processedCount    uint64
 	processedBytes    uint64
 	processedMaxBytes uint64
+
+	// Zeromq PUB sockets are not thread safe, so we run the publisher in a
+	// separate go routine.
 )
 
 func initialize() {
@@ -62,6 +66,7 @@ func initialize() {
 		log.Error("%s: arguments are ingored, please use options instead.", args[0])
 		os.Exit(1)
 	}
+	// Determine compression method.
 	// Determine compression method.
 	compression, err = util.ParseCompressionMethodName(opts.Compression)
 	if err != nil {
@@ -110,6 +115,45 @@ func (sm stringMap) DeleteString(k string) string {
 	return v
 }
 
+// URL params which neeed to be converted to integer for JSON
+var integerKeyList = []string{"viewport_height", "viewport_width", "html_nodes", "script_nodes", "style_nodes", "v"}
+
+// Lookup table for those params
+var integerKeys stringSet
+
+func init() {
+	integerKeys = make(stringSet)
+	for _, k := range integerKeyList {
+		integerKeys[k] = true
+	}
+}
+
+func parseValue(k string, v string) (interface{}, error) {
+	if integerKeys[k] {
+		return strconv.Atoi(v)
+	}
+	return v, nil
+}
+
+func parseQuery(r *http.Request) (stringMap, error) {
+	sm := make(stringMap)
+	for k, v := range r.URL.Query() {
+		switch len(v) {
+		case 1:
+			v, err := parseValue(k, v[0])
+			if err != nil {
+				return sm, err
+			}
+			sm[k] = v
+		case 0:
+			sm[k] = ""
+		default:
+			return sm, fmt.Errorf("Parameter %s specified more than once", k)
+		}
+	}
+	return sm, nil
+}
+
 // No thanks to https://github.com/golang/go/issues/19644, this is only an
 // approximation of the actual number of bytes transferred.
 func requestSize(r *http.Request) uint64 {
@@ -137,45 +181,90 @@ func recordRequest(r *http.Request) {
 	statsMutex.Unlock()
 }
 
-func serveEvents(w http.ResponseWriter, r *http.Request) {
-	defer recordRequest(r)
+func extractFrontendData(r *http.Request) (stringMap, *util.RequestId, error) {
+	sm, err := parseQuery(r)
+	if err != nil {
+		return sm, nil, err
+	}
+	// add timestamps
+	now := time.Now()
+	sm["started_ms"] = now.UnixNano() / int64(time.Millisecond)
+	sm["started_at"] = now.Format(time.RFC3339)
+
+	// check protocol version
+	if sm["v"] == nil {
+		return sm, nil, errors.New("Missing protocol version number: v=1")
+	}
+	if sm["v"].(int) != 1 {
+		return sm, nil, fmt.Errorf("Unsupported protocol version: v=%d", sm["v"].(int))
+	}
+	// check logjam_action
+	if sm["logjam_action"] == nil {
+		return sm, nil, errors.New("Missing field: logjam_action")
+	}
+	// check request_id
+	if sm["logjam_request_id"] == nil {
+		return sm, nil, errors.New("Missing field: logjam_request_id")
+	}
+	id := sm["logjam_request_id"].(string)
+	// extract app and environment
+	rid, err := util.ParseRequestId(id)
+	if err != nil {
+		return sm, nil, err
+	}
+	// log.Info("SM: %+v, RID: %+v", sm, rid)
+	return sm, rid, nil
+}
+
+func sendFrontendData(rid *util.RequestId, msgType string, sm stringMap) error {
+	appEnv := rid.AppEnv()
+	routingKey := rid.RoutingKey("frontend", msgType)
+	data, err := json.Marshal(sm)
+	if err != nil {
+		return err
+	}
+	publisher.Publish(appEnv, routingKey, data)
+	return nil
+}
+
+func writeErrorResponse(w http.ResponseWriter, txt string) {
+	http.Error(w, "400 RTFM", 400)
+	fmt.Fprintln(w, txt)
+}
+
+func writeImageResponse(w http.ResponseWriter) {
+	w.WriteHeader(200)
 	w.Header().Set("Cache-Control", "private")
-	w.Header().Set("Content-Type", "text/plain")
-	if r.Method != "POST" {
-		w.WriteHeader(400)
-		io.WriteString(w, "Can only POST to this resource\n")
-		return
-	}
-	ct := r.Header.Get("Content-Type")
-	if ct != "application/json" {
-		w.WriteHeader(415)
-		io.WriteString(w, "Content-Type needs to be application/json\n")
-		return
-	}
-	decoder := json.NewDecoder(r.Body)
-	var data stringMap
-	err := decoder.Decode(&data)
+	w.Header().Set("Content-Type", "image/gif")
+	w.Header().Set("Content-Disposition", "inline")
+	w.Header().Set("Content-Transfer-Encoding", "base64")
+	io.WriteString(w, "R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==")
+}
+
+func serveFrontendRequest(w http.ResponseWriter, r *http.Request) {
+	defer recordRequest(r)
+	sm, rid, err := extractFrontendData(r)
 	if err != nil {
-		w.WriteHeader(400)
-		io.WriteString(w, "Request body is not valid JSON\n")
+		writeErrorResponse(w, err.Error())
 		return
 	}
-	app := data.DeleteString("app")
-	env := data.DeleteString("env")
-	if app == "" || env == "" {
-		w.WriteHeader(400)
-		io.WriteString(w, "Request body is missing proper app and env specs\n")
-		return
-	}
-	appEnv := app + "-" + env
-	routingKey := "events." + appEnv
-	msgBody, err := json.Marshal(data)
+	msgType := extractFrontendMsgType(r)
+	err = sendFrontendData(rid, msgType, sm)
 	if err != nil {
-		w.WriteHeader(500)
+		writeErrorResponse(w, err.Error())
 		return
 	}
-	publisher.Publish(appEnv, routingKey, msgBody)
-	w.WriteHeader(202)
+	writeImageResponse(w)
+}
+
+func extractFrontendMsgType(r *http.Request) string {
+	if r.URL.Path == "/logjam/ajax" {
+		return "ajax"
+	}
+	if r.URL.Path == "/logjam/page" {
+		return "page"
+	}
+	return "unknown"
 }
 
 func serveAlive(w http.ResponseWriter, r *http.Request) {
@@ -188,7 +277,8 @@ func serveAlive(w http.ResponseWriter, r *http.Request) {
 
 func webServer() {
 	mux := http.NewServeMux()
-	mux.HandleFunc("/logjam/events", serveEvents)
+	mux.HandleFunc("/logjam/ajax", serveFrontendRequest)
+	mux.HandleFunc("/logjam/page", serveFrontendRequest)
 	mux.HandleFunc("/alive.txt", serveAlive)
 	log.Info("starting http server on port %d", opts.InputPort)
 	spec := ":" + strconv.Itoa(opts.InputPort)
@@ -229,7 +319,7 @@ func main() {
 	log.Info("device-id: %d", opts.DeviceId)
 	log.Info("output-spec: %s", outputSpec)
 	// debugSpec := fmt.Sprintf("localhost:%d", opts.DebugPort)
-	// log.Info("debug-spec: %s", debugSpec)
+	// logInfo("debug-spec: %s", debugSpec)
 
 	// f, err := os.Create("profile.prof")
 	// if err != nil {

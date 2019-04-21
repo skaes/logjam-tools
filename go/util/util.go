@@ -4,8 +4,13 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
+	"fmt"
 	"io/ioutil"
+	"os"
+	"os/signal"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
 
 	"github.com/golang/snappy"
@@ -87,5 +92,83 @@ func ParseStreamName(appEnv string) (app string, env string) {
 	}
 	app = strings.Join(slices[0:n-1], "-")
 	env = slices[n-1]
+	return
+}
+
+// RequestId is a strcut representation of a logjam request id, which
+// has the form app-env-uuid, where app can contain hyphens but uuid
+// can't.
+type RequestId struct {
+	App string
+	Env string
+	Id  string
+}
+
+// ParseRequestId parses the string representation of a logjam request
+// id.
+func ParseRequestId(id string) (rid *RequestId, err error) {
+	slices := strings.Split(id, "-")
+	n := len(slices)
+	if n < 3 {
+		err = fmt.Errorf("Wrong request id format: %s", id)
+		return
+	}
+	rid = &RequestId{
+		App: strings.Join(slices[0:n-2], "-"),
+		Env: slices[n-2],
+		Id:  slices[n-1],
+	}
+	return
+}
+
+// AppEnv returns the app-env string of a request id.
+func (rid *RequestId) AppEnv() string {
+	return rid.App + "-" + rid.Env
+}
+
+// RoutingKey fabricates a routing key for agive request id, given a
+// prefix and a message type.
+func (rid *RequestId) RoutingKey(prefix string, msgType string) string {
+	return fmt.Sprintf("%s.%s.%s.%s", prefix, msgType, rid.App, rid.Env)
+}
+
+// WaitForWaitGroupWithTimeout waits for a wait group wg but times out.
+func WaitForWaitGroupWithTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
+	c := make(chan struct{})
+	go func() {
+		defer close(c)
+		wg.Wait()
+	}()
+	select {
+	case <-c:
+		return false
+	case <-time.After(timeout):
+		return true
+	}
+}
+
+// InstallSignalHandler installs a signal handler for interupts and TERM signal.
+func InstallSignalHandler(interrupted *bool) {
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		*interrupted = true
+		signal.Stop(c)
+	}()
+}
+
+// ParseCompressionMethodName converts string to compression method
+func ParseCompressionMethodName(name string) (method byte, err error) {
+	switch name {
+	case "snappy":
+		method = SnappyCompression
+	case "zlib":
+		method = ZlibCompression
+	case "":
+		method = NoCompression
+	default:
+		err = fmt.Errorf("unknown compression methiod: %s", method)
+	}
 	return
 }
