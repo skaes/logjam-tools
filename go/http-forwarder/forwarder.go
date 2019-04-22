@@ -47,6 +47,7 @@ var (
 	processedCount    uint64
 	processedBytes    uint64
 	processedMaxBytes uint64
+	httpFailures      uint64
 )
 
 func initialize() {
@@ -80,9 +81,11 @@ func statsReporter() {
 		count := processedCount
 		bytes := processedBytes
 		maxBytes := processedMaxBytes
+		failures := httpFailures
 		processedCount = 0
 		processedBytes = 0
 		processedMaxBytes = 0
+		httpFailures = 0
 		statsMutex.Unlock()
 		// report
 		kb := float64(bytes) / 1024.0
@@ -92,7 +95,7 @@ func statsReporter() {
 			avgkb = kb / float64(count)
 		}
 		if !quiet {
-			log.Info("processed %d requests, size: %.2f KB, avg: %.2f KB, max: %.2f", count, kb, avgkb, maxkb)
+			log.Info("processed %d requests, invalid %d, size: %.2f KB, avg: %.2f KB, max: %.2f", count, failures, kb, avgkb, maxkb)
 		}
 	}
 }
@@ -137,17 +140,25 @@ func recordRequest(r *http.Request) {
 	statsMutex.Unlock()
 }
 
+func recordFailure() {
+	statsMutex.Lock()
+	httpFailures++
+	statsMutex.Unlock()
+}
+
 func serveEvents(w http.ResponseWriter, r *http.Request) {
 	defer recordRequest(r)
 	w.Header().Set("Cache-Control", "private")
 	w.Header().Set("Content-Type", "text/plain")
 	if r.Method != "POST" {
+		recordFailure()
 		w.WriteHeader(400)
 		io.WriteString(w, "Can only POST to this resource\n")
 		return
 	}
 	ct := r.Header.Get("Content-Type")
 	if ct != "application/json" {
+		recordFailure()
 		w.WriteHeader(415)
 		io.WriteString(w, "Content-Type needs to be application/json\n")
 		return
@@ -156,6 +167,7 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 	var data stringMap
 	err := decoder.Decode(&data)
 	if err != nil {
+		recordFailure()
 		w.WriteHeader(400)
 		io.WriteString(w, "Request body is not valid JSON\n")
 		return
@@ -163,6 +175,7 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 	app := data.DeleteString("app")
 	env := data.DeleteString("env")
 	if app == "" || env == "" {
+		recordFailure()
 		w.WriteHeader(400)
 		io.WriteString(w, "Request body is missing proper app and env specs\n")
 		return
@@ -171,6 +184,7 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 	routingKey := "events." + appEnv
 	msgBody, err := json.Marshal(data)
 	if err != nil {
+		recordFailure()
 		w.WriteHeader(500)
 		return
 	}

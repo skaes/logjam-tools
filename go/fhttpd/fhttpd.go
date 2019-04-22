@@ -47,6 +47,7 @@ var (
 	processedCount    uint64
 	processedBytes    uint64
 	processedMaxBytes uint64
+	httpFailures      uint64
 
 	// Zeromq PUB sockets are not thread safe, so we run the publisher in a
 	// separate go routine.
@@ -84,9 +85,11 @@ func statsReporter() {
 		count := processedCount
 		bytes := processedBytes
 		maxBytes := processedMaxBytes
+		failures := httpFailures
 		processedCount = 0
 		processedBytes = 0
 		processedMaxBytes = 0
+		httpFailures = 0
 		statsMutex.Unlock()
 		// report
 		kb := float64(bytes) / 1024.0
@@ -96,7 +99,7 @@ func statsReporter() {
 			avgkb = kb / float64(count)
 		}
 		if !quiet {
-			log.Info("processed %d requests, size: %.2f KB, avg: %.2f KB, max: %.2f", count, kb, avgkb, maxkb)
+			log.Info("processed %d requests, invalid %d, size: %.2f KB, avg: %.2f KB, max: %.2f", count, failures, kb, avgkb, maxkb)
 		}
 	}
 }
@@ -227,6 +230,9 @@ func sendFrontendData(rid *util.RequestId, msgType string, sm stringMap) error {
 }
 
 func writeErrorResponse(w http.ResponseWriter, txt string) {
+	statsMutex.Lock()
+	httpFailures++
+	statsMutex.Unlock()
 	http.Error(w, "400 RTFM", 400)
 	fmt.Fprintln(w, txt)
 }
