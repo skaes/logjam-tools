@@ -99,7 +99,7 @@ func statsReporter() {
 			avgkb = kb / float64(count)
 		}
 		if !quiet {
-			log.Info("processed %d requests, invalid %d, size: %.2f KB, avg: %.2f KB, max: %.2f", count, failures, kb, avgkb, maxkb)
+			log.Info("processed %d, invalid %d, size: %.2f KB, avg: %.2f KB, max: %.2f", count, failures, kb, avgkb, maxkb)
 		}
 	}
 }
