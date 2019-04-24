@@ -214,6 +214,7 @@ func extractFrontendData(r *http.Request) (stringMap, *util.RequestId, error) {
 	if err != nil {
 		return sm, nil, err
 	}
+	sm["user_agent"] = r.Header.Get("User-Agent")
 	// log.Info("SM: %+v, RID: %+v", sm, rid)
 	return sm, rid, nil
 }
