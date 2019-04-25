@@ -161,8 +161,11 @@ func ExtractAjaxTime(rts string) (int64, error) {
 		return 0, err
 	}
 	start, end := timings[0], timings[1]
-	if start < 0 || start > end {
-		return 0, fmt.Errorf("ajax start is negative or ajax end is before ajax start")
+	if start < 0 {
+		return 0, fmt.Errorf("ajax start is negative")
+	}
+	if start > end {
+		return 0, fmt.Errorf("ajax end is before ajax start")
 	}
 	return end - start, nil
 }
