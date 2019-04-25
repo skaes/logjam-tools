@@ -1,18 +1,27 @@
-package main
+package promcollector
 
 import (
+	"github.com/skaes/logjam-tools/go/util"
 	"testing"
 )
 
 func TestDeletingLabels(t *testing.T) {
-	s := stream{
+	s := util.Stream{
 		App:                 "a",
 		Env:                 "b",
 		IgnoredRequestURI:   "/_",
 		BackendOnlyRequests: "",
 		APIRequests:         []string{},
 	}
-	c := newCollector(s.AppEnv(), s)
+	options := Options{
+		Interrupted: new(uint32),
+		Observed:    new(uint64),
+		Ignored:     new(uint64),
+		Dropped:     new(uint64),
+		Datacenters: "a,b",
+		CleanAfter:  60,
+	}
+	c := New(s.AppEnv(), s, options)
 	metrics1 := &metric{
 		kind: Log,
 		props: map[string]string{

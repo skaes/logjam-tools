@@ -172,3 +172,15 @@ func ParseCompressionMethodName(name string) (method byte, err error) {
 	}
 	return
 }
+
+type Stream struct {
+	App                 string   `json:"app"`
+	Env                 string   `json:"env"`
+	IgnoredRequestURI   string   `json:"ignored_request_uri"`
+	BackendOnlyRequests string   `json:"backend_only_requests"`
+	APIRequests         []string `json:"api_requests"`
+}
+
+func (s *Stream) AppEnv() string {
+	return s.App + "+" + s.Env
+}

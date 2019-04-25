@@ -43,15 +43,15 @@ logjam-mongodb-backup: backup/backup.go
 logjam-mongodb-restore: restore/restore.go
 	$(GO_ENV) go build -i -o $@ $<
 
-GO_TESTS = prometheus-exporter-test livestream-test util-test frontendmetrics-test
+GO_TESTS = promcollector-test livestream-test util-test frontendmetrics-test
 .PHONY: $(GO_TESTS)
 check-local: $(GO_TESTS)
 
 http-client-test:
 	$(GO_ENV) go test ./http-client
 
-prometheus-exporter-test:
-	$(GO_ENV) go test ./prometheus-exporter
+promcollector-test:
+	$(GO_ENV) go test ./promcollector
 
 livestream-test: logjam-livestream
 	$(GO_ENV) go test ./livestream-server
