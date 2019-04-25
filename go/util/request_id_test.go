@@ -5,7 +5,7 @@ import (
 )
 
 func TestParseRequestId(t *testing.T) {
-	var rid RequestId
+	var rid *RequestId
 	var r string
 	var err error
 	r = ""

@@ -6,7 +6,6 @@ GO_SRC = .
 GO_NOINSTALL_TARGETS = logjam-livestream-generator
 GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-fhttpd logjam-prometheus-exporter logjam-mongodb-backup logjam-mongodb-restore
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
-GO_TESTS = http-client-test prometheus-exporter-test
 
 # Extend generated Makefile with rules for compiling the go part. See
 # https://www.gnu.org/software/automake/manual/html_node/Extending.html for why
@@ -35,7 +34,7 @@ logjam-http-forwarder: http-forwarder/forwarder.go util/util.go
 logjam-fhttpd: fhttpd/fhttpd.go util/util.go
 	$(GO_ENV) go build -i -o $@ $<
 
-logjam-prometheus-exporter: prometheus-exporter/exporter.go util/util.go
+logjam-prometheus-exporter: prometheus-exporter/exporter.go util/util.go frontendmetrics/frontendmetrics.go
 	$(GO_ENV) go build -i -o $@ $<
 
 logjam-mongodb-backup: backup/backup.go
@@ -44,9 +43,9 @@ logjam-mongodb-backup: backup/backup.go
 logjam-mongodb-restore: restore/restore.go
 	$(GO_ENV) go build -i -o $@ $<
 
-TESTS = prometheus-exporter-test livestream-test util-test
-.PHONY: $(TESTS)
-check-local: $(TESTS)
+GO_TESTS = prometheus-exporter-test livestream-test util-test frontendmetrics-test
+.PHONY: $(GO_TESTS)
+check-local: $(GO_TESTS)
 
 http-client-test:
 	$(GO_ENV) go test ./http-client
@@ -59,3 +58,6 @@ livestream-test: logjam-livestream
 
 util-test:
 	$(GO_ENV) go test ./util
+
+frontendmetrics-test: frontendmetrics/*.go
+	$(GO_ENV) go test ./frontendmetrics

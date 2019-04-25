@@ -13,52 +13,63 @@ func TestDeletingLabels(t *testing.T) {
 		APIRequests:         []string{},
 	}
 	c := newCollector(s.AppEnv(), s)
-	metrics1 := map[string]string{
-		"application": "a",
-		"environment": "b",
-		"metric":      "http",
-		"code":        "200",
-		"http_method": "GET",
-		"cluster":     "c",
-		"datacenter":  "d",
-		"action":      "murks",
-		"value":       "5.7",
+	metrics1 := &metric{
+		kind: Log,
+		props: map[string]string{
+			"application": "a",
+			"environment": "b",
+			"metric":      "http",
+			"code":        "200",
+			"http_method": "GET",
+			"cluster":     "c",
+			"datacenter":  "d",
+			"action":      "murks",
+		},
+		value: 5.7,
 	}
-	metrics2 := map[string]string{
-		"application": "a",
-		"environment": "b",
-		"metric":      "http",
-		"code":        "200",
-		"http_method": "GET",
-		"cluster":     "d",
-		"datacenter":  "e",
-		"action":      "marks",
-		"value":       "7.7",
+	metrics2 := &metric{
+		kind: Log,
+		props: map[string]string{
+			"application": "a",
+			"environment": "b",
+			"metric":      "http",
+			"code":        "200",
+			"http_method": "GET",
+			"cluster":     "d",
+			"datacenter":  "e",
+			"action":      "marks",
+		},
+		value: 7.7,
 	}
-	metrics3 := map[string]string{
-		"application": "a",
-		"environment": "b",
-		"metric":      "job",
-		"code":        "200",
-		"cluster":     "d",
-		"datacenter":  "e",
-		"action":      "marks",
-		"value":       "3.1",
+	metrics3 := &metric{
+		kind: Log,
+		props: map[string]string{
+			"application": "a",
+			"environment": "b",
+			"metric":      "job",
+			"code":        "200",
+			"cluster":     "d",
+			"datacenter":  "e",
+			"action":      "marks",
+		},
+		value: 3.1,
 	}
-	metrics4 := map[string]string{
-		"application": "a",
-		"environment": "b",
-		"metric":      "job",
-		"code":        "200",
-		"cluster":     "d",
-		"datacenter":  "e",
-		"action":      "marks",
-		"value":       "4.4",
+	metrics4 := &metric{
+		kind: Log,
+		props: map[string]string{
+			"application": "a",
+			"environment": "b",
+			"metric":      "job",
+			"code":        "200",
+			"cluster":     "d",
+			"datacenter":  "e",
+			"action":      "marks"},
+		value: 4.4,
 	}
-	c.recordMetrics(metrics1)
-	c.recordMetrics(metrics2)
-	c.recordMetrics(metrics3)
-	c.recordMetrics(metrics4)
+	c.recordLogMetrics(metrics1)
+	c.recordLogMetrics(metrics2)
+	c.recordLogMetrics(metrics3)
+	c.recordLogMetrics(metrics4)
 	if !c.removeAction("marks") {
 		t.Errorf("could not remove action: %s", "marks")
 	}

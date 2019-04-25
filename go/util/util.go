@@ -168,7 +168,7 @@ func ParseCompressionMethodName(name string) (method byte, err error) {
 	case "":
 		method = NoCompression
 	default:
-		err = fmt.Errorf("unknown compression methiod: %s", method)
+		err = fmt.Errorf("unknown compression method: %d", method)
 	}
 	return
 }

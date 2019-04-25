@@ -26,6 +26,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	promclient "github.com/prometheus/client_model/go"
+	"github.com/skaes/logjam-tools/go/frontendmetrics"
+	log "github.com/skaes/logjam-tools/go/logging"
 	"github.com/skaes/logjam-tools/go/util"
 	"golang.org/x/text/runes"
 	"gopkg.in/tylerb/graceful.v1"
@@ -33,7 +35,7 @@ import (
 
 var opts struct {
 	Verbose     bool   `short:"v" long:"verbose" description:"be verbose"`
-	Devices     string `short:"d" long:"importer" default:"127.0.0.1:9606" description:"comma separated device specs (host:port pairs)"`
+	Devices     string `short:"d" long:"devices" default:"127.0.0.1:9606" description:"comma separated device specs (host:port pairs)"`
 	Env         string `short:"e" long:"env" description:"logjam environments to process"`
 	Port        string `short:"p" long:"port" default:"8081" description:"port to expose metrics on"`
 	StreamURL   string `short:"s" long:"stream-url" default:"" description:"Logjam endpoint for retrieving stream definitions"`
@@ -66,7 +68,7 @@ func addCollector(appEnv string, stream stream) {
 	defer mutex.Unlock()
 	_, found := collectors[appEnv]
 	if !found {
-		logInfo("adding stream: %s : %+v", appEnv, stream)
+		log.Info("adding stream: %s : %+v", appEnv, stream)
 		collectors[appEnv] = newCollector(appEnv, stream)
 	}
 }
@@ -75,6 +77,18 @@ func getCollector(appEnv string) *collector {
 	mutex.Lock()
 	defer mutex.Unlock()
 	return collectors[appEnv]
+}
+
+const (
+	Log  = 1
+	Page = 2
+	Ajax = 3
+)
+
+type metric struct {
+	kind  uint8
+	props map[string]string
+	value float64
 }
 
 type collector struct {
@@ -87,12 +101,18 @@ type collector struct {
 	jobExecutionSummaryVec   *prometheus.SummaryVec
 	httpRequestHistogramVec  *prometheus.HistogramVec
 	jobExecutionHistogramVec *prometheus.HistogramVec
+	pageHistogramVec         *prometheus.HistogramVec
+	ajaxHistogramVec         *prometheus.HistogramVec
 	registry                 *prometheus.Registry
-	metricsChannel           chan map[string]string
+	metricsChannel           chan *metric
 	requestHandler           http.Handler
 	actionRegistry           chan string
 	knownActions             map[string]time.Time
 	stopped                  uint32
+}
+
+func (c *collector) appEnv() string {
+	return c.app + "-" + c.env
 }
 
 func (c *collector) requestType(action string) string {
@@ -145,31 +165,59 @@ func newCollector(appEnv string, stream stream) *collector {
 			// instance always set to the empty string
 			[]string{"application", "environment", "action", "instance"},
 		),
+		pageHistogramVec: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "logjam_page_time_duration_seconds",
+				Help:    "page loading time distribution",
+				Buckets: []float64{.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100, 250},
+			},
+			// instance always set to the empty string
+			[]string{"application", "environment", "action", "instance"},
+		),
+		ajaxHistogramVec: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name:    "logjam_ajax_time_duration_seconds",
+				Help:    "ajax response time distribution",
+				Buckets: []float64{.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 25, 50, 100, 250},
+			},
+			// instance always set to the empty string
+			[]string{"application", "environment", "action", "instance"},
+		),
 		registry:          prometheus.NewRegistry(),
 		actionRegistry:    make(chan string, 10000),
 		apiRequests:       stream.APIRequests,
 		ignoredRequestURI: stream.IgnoredRequestURI,
 		knownActions:      make(map[string]time.Time),
-		metricsChannel:    make(chan map[string]string, 10000),
+		metricsChannel:    make(chan *metric, 10000),
 	}
 	c.registry.MustRegister(c.httpRequestHistogramVec)
 	c.registry.MustRegister(c.jobExecutionHistogramVec)
 	c.registry.MustRegister(c.httpRequestSummaryVec)
 	c.registry.MustRegister(c.jobExecutionSummaryVec)
+	c.registry.MustRegister(c.pageHistogramVec)
+	c.registry.MustRegister(c.ajaxHistogramVec)
 	c.requestHandler = promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{})
 	go c.actionRegistryHandler()
 	go c.observer()
 	return &c
 }
 
-func (c *collector) observeMetrics(m map[string]string) {
+func (c *collector) observeMetrics(m *metric) {
 	c.metricsChannel <- m
 }
 
 func (c *collector) observer() {
 	for atomic.LoadUint32(&interrupted)+atomic.LoadUint32(&c.stopped) == 0 {
 		m := <-c.metricsChannel
-		c.recordMetrics(m)
+		// log.Info("ae: %s", c.appEnv())
+		switch m.kind {
+		case Log:
+			c.recordLogMetrics(m)
+		case Page:
+			c.recordPageMetrics(m)
+		case Ajax:
+			c.recordAjaxMetrics(m)
+		}
 	}
 }
 
@@ -191,11 +239,11 @@ func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
 }
 
 func (c *collector) removeAction(a string) bool {
-	logInfo("removing action: %s", a)
+	log.Info("removing action: %s", a)
 	delete(c.knownActions, a)
 	mfs, err := c.registry.Gather()
 	if err != nil {
-		logError("could not gather metric families for deletion: %s", err)
+		log.Error("could not gather metric families for deletion: %s", err)
 		return false
 	}
 	numProcessed := 0
@@ -217,11 +265,15 @@ func (c *collector) removeAction(a string) bool {
 					deleted = c.httpRequestHistogramVec.Delete(labels)
 				case "job_execution_duration_seconds":
 					deleted = c.jobExecutionHistogramVec.Delete(labels)
+				case "logjam_page_time_duration_seconds":
+					deleted = c.pageHistogramVec.Delete(labels)
+				case "logjam_ajax_time_duration_seconds":
+					deleted = c.ajaxHistogramVec.Delete(labels)
 				}
 				if deleted {
 					numDeleted++
 				} else {
-					logError("Could not delete labels: %v", labels)
+					log.Error("Could not delete labels: %v", labels)
 				}
 			}
 		}
@@ -258,47 +310,161 @@ func fixDatacenter(m map[string]string, instance string) {
 			if strings.Contains(instance, d.withDots) {
 				fixed = true
 				m["datacenter"] = d.name
-				// fmt.Printf("Fixed datacenter: %s ==> %s\n", dc, d.name)
+				// log.Info("Fixed datacenter: %s ==> %s\n", dc, d.name)
 				break
 			}
 		}
 		if verbose && !fixed {
-			logWarn("Could not fix datacenter: %s, application: %s, instance: %s", dc, m["application"], instance)
+			log.Warn("Could not fix datacenter: %s, application: %s, instance: %s", dc, m["application"], instance)
 		}
 	}
 }
 
-func (c *collector) recordMetrics(m map[string]string) {
-	metric := m["metric"]
-	instance := m["instance"]
-	m["instance"] = ""
-	action := m["action"]
-	value, err := strconv.ParseFloat(m["value"], 64)
-	if err != nil {
-		logError("could not parse float: %s", err)
-		return
-	}
-	delete(m, "metric")
-	delete(m, "value")
-	fixDatacenter(m, instance)
+func (c *collector) recordLogMetrics(m *metric) {
+	p := m.props
+	metric := p["metric"]
+	instance := p["instance"]
+	p["instance"] = ""
+	action := p["action"]
+	delete(p, "metric")
+	fixDatacenter(p, instance)
 	switch metric {
 	case "http":
-		m["type"] = c.requestType(action)
-		c.httpRequestSummaryVec.With(m).Observe(value)
-		delete(m, "code")
-		delete(m, "cluster")
-		delete(m, "datacenter")
-		c.httpRequestHistogramVec.With(m).Observe(value)
+		p["type"] = c.requestType(action)
+		c.httpRequestSummaryVec.With(p).Observe(m.value)
+		delete(p, "code")
+		delete(p, "cluster")
+		delete(p, "datacenter")
+		c.httpRequestHistogramVec.With(p).Observe(m.value)
 		c.actionRegistry <- action
 	case "job":
-		c.jobExecutionSummaryVec.With(m).Observe(value)
-		delete(m, "code")
-		delete(m, "cluster")
-		delete(m, "datacenter")
-		c.jobExecutionHistogramVec.With(m).Observe(value)
+		c.jobExecutionSummaryVec.With(p).Observe(m.value)
+		delete(p, "code")
+		delete(p, "cluster")
+		delete(p, "datacenter")
+		c.jobExecutionHistogramVec.With(p).Observe(m.value)
 		c.actionRegistry <- action
 	}
 	atomic.AddInt64(&observed, 1)
+}
+
+func (c *collector) recordPageMetrics(m *metric) {
+	p := m.props
+	p["instance"] = ""
+	action := p["action"]
+	c.pageHistogramVec.With(p).Observe(m.value)
+	c.actionRegistry <- action
+	atomic.AddInt64(&observed, 1)
+}
+
+func (c *collector) recordAjaxMetrics(m *metric) {
+	p := m.props
+	p["instance"] = ""
+	action := p["action"]
+	c.ajaxHistogramVec.With(p).Observe(m.value)
+	c.actionRegistry <- action
+	atomic.AddInt64(&observed, 1)
+}
+
+func (c *collector) processMessage(routingKey string, data map[string]interface{}) {
+	if strings.HasPrefix(routingKey, "logs") {
+		c.processLogMessage(routingKey, data)
+		return
+	}
+	if strings.HasPrefix(routingKey, "frontend.page") {
+		c.processPageMessage(routingKey, data)
+		return
+	}
+	if strings.HasPrefix(routingKey, "frontend.ajax") {
+		c.processAjaxMessage(routingKey, data)
+	}
+}
+
+func (c *collector) processLogMessage(routingKey string, data map[string]interface{}) {
+	p := make(map[string]string)
+	p["application"] = c.app
+	p["environment"] = c.env
+	info := extractMap(data, "request_info")
+	method := ""
+	if info != nil {
+		method = strings.ToUpper(extractString(info, "method", ""))
+		uri := extractString(info, "url", "")
+		if uri != "" {
+			u, err := url.Parse(uri)
+			if err == nil && strings.HasPrefix(u.Path, c.ignoredRequestURI) {
+				atomic.AddInt64(&ignored, 1)
+				if verbose {
+					log.Info("ignoring request: %s", u.String())
+				}
+				return
+			}
+		}
+	}
+	if method != "" {
+		p["metric"] = "http"
+		p["http_method"] = method
+	} else {
+		p["metric"] = "job"
+	}
+	p["action"] = extractAction(data)
+	p["code"] = extractString(data, "code", "500")
+	p["instance"] = extractString(data, "host", "unknown")
+	p["cluster"] = extractString(data, "cluster", "unknown")
+	p["datacenter"] = extractString(data, "datacenter", "unknown")
+	valstr := extractString(data, "total_time", "0")
+	val, err := strconv.ParseFloat(valstr, 64)
+	if err != nil {
+		atomic.AddInt64(&dropped, 1)
+		if verbose {
+			log.Error("could not parse total_time(%s): %s", err)
+		}
+		return
+	}
+	c.observeMetrics(&metric{kind: Log, props: p, value: val})
+}
+
+func (c *collector) processPageMessage(routingKey string, data map[string]interface{}) {
+	rts := extractString(data, "rts", "")
+	p := make(map[string]string)
+	p["application"] = c.app
+	p["environment"] = c.env
+	p["action"] = extractAction(data)
+	timings, err := frontendmetrics.ExtractPageTimings(rts)
+	if err != nil || timings.PageTime > frontendmetrics.OutlierThresholdMs {
+		atomic.AddInt64(&dropped, 1)
+		if verbose {
+			ua := extractString(data, "user_agent", "unknown")
+			if err != nil {
+				log.Error("could not extract page_time for %s [%s] from %s: %s, user agent: %s", c.appEnv(), p["action"], rts, err, ua)
+			} else {
+				log.Info("page_time outlier for %s [%s] from %s, user agent: %s, %f", c.appEnv(), p["action"], rts, ua, float64(timings.PageTime)/10000)
+			}
+		}
+		return
+	}
+	c.observeMetrics(&metric{kind: Page, props: p, value: float64(timings.PageTime)})
+}
+
+func (c *collector) processAjaxMessage(routingKey string, data map[string]interface{}) {
+	rts := extractString(data, "rts", "")
+	p := make(map[string]string)
+	p["application"] = c.app
+	p["environment"] = c.env
+	p["action"] = extractAction(data)
+	ajaxTime, err := frontendmetrics.ExtractAjaxTime(rts)
+	if err != nil || ajaxTime > frontendmetrics.OutlierThresholdMs {
+		atomic.AddInt64(&dropped, 1)
+		if verbose {
+			ua := extractString(data, "user_agent", "unknown")
+			if err != nil {
+				log.Error("could not extract ajax_time for %s [%s] from %s: %s, user agent: %s", c.appEnv(), p["action"], rts, err, ua)
+			} else {
+				log.Info("ajax_time outlier for %s [%s] from %s, user agent: %s, %f", c.appEnv(), p["action"], rts, ua, float64(ajaxTime)/10000)
+			}
+		}
+		return
+	}
+	c.observeMetrics(&metric{kind: Ajax, props: p, value: float64(ajaxTime)})
 }
 
 func initialize() {
@@ -306,12 +472,12 @@ func initialize() {
 	if err != nil {
 		e := err.(*flags.Error)
 		if e.Type != flags.ErrHelp {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, err)
 		}
 		os.Exit(1)
 	}
 	if len(args) > 1 {
-		logError("%s: passing arguments is not supported. please use options instead.", args[0])
+		log.Error("%s: passing arguments is not supported. please use options instead.", args[0])
 		os.Exit(1)
 	}
 	for _, dc := range strings.Split(opts.Datacenters, ",") {
@@ -329,7 +495,7 @@ func initialize() {
 	if opts.StreamURL != "" {
 		u, err := url.Parse(opts.StreamURL)
 		if err != nil {
-			logError("could not parse stream url: %s", err)
+			log.Error("could not parse stream url: %s", err)
 			os.Exit(1)
 		}
 		u.Path = path.Join(u.Path, "admin/streams")
@@ -338,8 +504,8 @@ func initialize() {
 		updateStreams(streams, env)
 		go streamsUpdater(url, env)
 	}
-	logInfo("device-specs: %s", strings.Join(deviceSpecs, ","))
-	logInfo("datacenters: %+v", datacenters)
+	log.Info("device-specs: %s", strings.Join(deviceSpecs, ","))
+	log.Info("datacenters: %+v", datacenters)
 }
 
 type stream struct {
@@ -368,30 +534,30 @@ func streamsUpdater(url, env string) {
 func retrieveStreams(url, env string) map[string]stream {
 	req, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
-		logError("could not create http request: %s", err)
+		log.Error("could not create http request: %s", err)
 		return nil
 	}
 	req.Header.Add("Accept", "application/json")
 	client := &http.Client{}
 	res, err := client.Do(req)
 	if err != nil {
-		logError("could not retrieve stream: %s", err)
+		log.Error("could not retrieve stream: %s", err)
 		return nil
 	}
 	if res.StatusCode != 200 {
-		logError("unexpected response: %d", res.Status)
+		log.Error("unexpected response: %d", res.Status)
 		return nil
 	}
 	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
-		logError("could not read response body: %s", err)
+		log.Error("could not read response body: %s", err)
 		return nil
 	}
 	defer res.Body.Close()
 	var streams map[string]stream
 	err = json.Unmarshal(body, &streams)
 	if err != nil {
-		logError("could not parse stream: %s", err)
+		log.Error("could not parse stream: %s", err)
 		return nil
 	}
 	return streams
@@ -401,7 +567,7 @@ func updateStreams(streams map[string]stream, env string) {
 	if streams == nil {
 		return
 	}
-	logInfo("updating streams")
+	log.Info("updating streams")
 	suffix := "-" + env
 	for s, r := range streams {
 		if env == "" || strings.HasSuffix(s, suffix) {
@@ -414,7 +580,7 @@ func updateStreams(streams map[string]stream, env string) {
 	for s, c := range collectors {
 		_, found := streams[s]
 		if !found {
-			logInfo("removing stream: %s", s)
+			log.Info("removing stream: %s", s)
 			delete(collectors, s)
 			// make sure to stop go routines associated with the collector
 			c.shutdown()
@@ -432,21 +598,6 @@ func installSignalHandler() {
 	}()
 }
 
-func logInfo(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("INFO %s\n", format)
-	fmt.Printf(finalFormat, args...)
-}
-
-func logError(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("ERROR %s\n", format)
-	fmt.Fprintf(os.Stderr, finalFormat, args...)
-}
-
-func logWarn(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("WARN %s\n", format)
-	fmt.Fprintf(os.Stderr, finalFormat, args...)
-}
-
 // report number of incoming zmq messages every second
 func statsReporter() {
 	ticker := time.NewTicker(1 * time.Second)
@@ -459,7 +610,7 @@ func statsReporter() {
 		_dropped := atomic.SwapInt64(&dropped, 0)
 		_missed := atomic.SwapInt64(&missed, 0)
 		_ignored := atomic.SwapInt64(&ignored, 0)
-		logInfo("processed: %d, ignored: %d, observed %d, dropped: %d, missed: %d",
+		log.Info("processed: %d, ignored: %d, observed %d, dropped: %d, missed: %d",
 			_processed, _ignored, _observed, _dropped, _missed)
 	}
 }
@@ -469,7 +620,7 @@ func webServer() {
 	r := mux.NewRouter()
 	r.HandleFunc("/metrics/{application}/{environment}", serveAppMetrics)
 	r.HandleFunc("/_system/alive", serveAliveness)
-	logInfo("starting http server on port %s", opts.Port)
+	log.Info("starting http server on port %s", opts.Port)
 	spec := ":" + opts.Port
 	srv := &graceful.Server{
 		Timeout: 10 * time.Second,
@@ -480,7 +631,7 @@ func webServer() {
 	}
 	err := srv.ListenAndServe()
 	if err != nil {
-		logError("Cannot listen and serve: %s", err)
+		log.Error("Cannot listen and serve: %s", err)
 	}
 }
 
@@ -504,7 +655,7 @@ func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
 //*******************************************************************************
 
 func main() {
-	logInfo("%s starting", os.Args[0])
+	log.Info("%s starting", os.Args[0])
 	initialize()
 
 	// f, err := os.Create("profile.prof")
@@ -518,7 +669,7 @@ func main() {
 	go statsReporter()
 	go streamParser()
 	webServer()
-	logInfo("%s shutting down", os.Args[0])
+	log.Info("%s shutting down", os.Args[0])
 }
 
 //*******************************************************************************
@@ -529,10 +680,10 @@ func streamParser() {
 	parser.SetRcvhwm(1000000)
 	parser.SetSubscribe("")
 	for _, s := range deviceSpecs {
-		logInfo("connection sub socket to %s", s)
+		log.Info("connection sub socket to %s", s)
 		err := parser.Connect(s)
 		if err != nil {
-			logError("could not connect: %s", s)
+			log.Error("could not connect: %s", s)
 		}
 	}
 	defer parser.Close()
@@ -542,7 +693,7 @@ func streamParser() {
 
 	sequenceNumbers := make(map[uint32]uint64, 0)
 
-	logInfo("starting %d parsers", opts.Parsers)
+	log.Info("starting %d parsers", opts.Parsers)
 	for i := uint(1); i <= opts.Parsers; i++ {
 		go decodeAndUnmarshal()
 	}
@@ -556,20 +707,20 @@ func streamParser() {
 			s := socket.Socket
 			msg, err := s.RecvMessageBytes(0)
 			if err != nil {
-				logError("recv message error: %s", err)
+				log.Error("recv message error: %s", err)
 				continue
 			}
 			atomic.AddInt64(&processed, 1)
 			if n := len(msg); n != 4 {
-				logError("invalid message length %s: %s", n, string(msg[0]))
+				log.Error("invalid message length %s: %s", n, string(msg[0]))
 				if atomic.AddInt64(&dropped, 1) == 1 {
-					logError("got invalid message: %v", msg)
+					log.Error("got invalid message: %v", msg)
 				}
 				continue
 			}
 			info := util.UnpackInfo(msg[3])
 			if info == nil {
-				logError("could not decode meta info: %#x", msg[3])
+				log.Error("could not decode meta info: %#x", msg[3])
 			}
 			lastNumber, ok := sequenceNumbers[info.DeviceNumber]
 			if !ok {
@@ -580,7 +731,7 @@ func streamParser() {
 			if n != lastNumber+1 && n > lastNumber && lastNumber != 0 {
 				gap := int64(n - lastNumber + 1)
 				if atomic.AddInt64(&missed, gap) == gap {
-					logError("detected message gap for device %d: missed %d messages", d, gap)
+					log.Error("detected message gap for device %d: missed %d messages", d, gap)
 				}
 			}
 			decoderChannel <- &decodeAndUnmarshalTask{msg: msg, meta: info}
@@ -605,67 +756,36 @@ func decodeAndUnmarshal() {
 			info, msg := task.meta, task.msg
 			jsonBody, err := util.Decompress(msg[2], info.CompressionMethod)
 			if err != nil {
-				logError("could not decompress json body: %s", err)
+				log.Error("could not decompress json body: %s", err)
 				continue
 			}
 			if !utf8.Valid(jsonBody) {
 				jsonBody = runes.ReplaceIllFormed().Bytes(jsonBody)
-				logError("replaced invalid utf8 in json body: %s", jsonBody)
+				log.Error("replaced invalid utf8 in json body: %s", jsonBody)
 			}
 			data := make(map[string]interface{})
 			if err := json.Unmarshal(jsonBody, &data); err != nil {
-				logError("invalid json body: %s", err)
+				log.Error("invalid json body: %s", err)
 				continue
 			}
 			appEnv := string(msg[0])
 			routingKey := string(msg[1])
-			processMessage(appEnv, routingKey, data)
+			if appEnv == "heartbeat" {
+				if verbose {
+					log.Info("received heartbeat from %s", routingKey)
+				}
+				continue
+			}
+			c := getCollector(appEnv)
+			if c == nil {
+				log.Error("could not retrieve collector for %s", appEnv)
+				continue
+			}
+			c.processMessage(routingKey, data)
 		case <-time.After(1 * time.Second):
 			// make sure we shut down timely even if no messages arrive
 		}
 	}
-}
-
-func processMessage(appEnv string, routingKey string, data map[string]interface{}) {
-	if strings.Index(routingKey, "logs.") == -1 {
-		return
-		// TODO: process frontend timings
-	}
-	c := getCollector(appEnv)
-	if c == nil {
-		logError("could not retrieve collector for %s", appEnv)
-		return
-	}
-	m := make(map[string]string)
-	info := extractMap(data, "request_info")
-	method := ""
-	if info != nil {
-		method = strings.ToUpper(extractString(info, "method", ""))
-		uri := extractString(info, "url", "")
-		if uri != "" {
-			u, err := url.Parse(uri)
-			if err == nil && strings.HasPrefix(u.Path, c.ignoredRequestURI) {
-				atomic.AddInt64(&ignored, 1)
-				// logInfo("ignoring request: %s", u.String())
-				return
-			}
-		}
-	}
-	if method != "" {
-		m["metric"] = "http"
-		m["http_method"] = method
-	} else {
-		m["metric"] = "job"
-	}
-	m["action"] = extractAction(data)
-	m["value"] = extractString(data, "total_time", "0")
-	m["code"] = extractString(data, "code", "500")
-	m["instance"] = extractString(data, "host", "unknown")
-	m["cluster"] = extractString(data, "cluster", "unknown")
-	m["datacenter"] = extractString(data, "datacenter", "unknown")
-	m["application"] = c.app
-	m["environment"] = c.env
-	c.observeMetrics(m)
 }
 
 func extractString(request map[string]interface{}, key string, defaultValue string) string {
