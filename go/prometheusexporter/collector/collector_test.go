@@ -1,4 +1,4 @@
-package promcollector
+package collector
 
 import (
 	"github.com/skaes/logjam-tools/go/util"
@@ -15,15 +15,12 @@ func TestDeletingLabels(t *testing.T) {
 	}
 	options := Options{
 		Interrupted: new(uint32),
-		Observed:    new(uint64),
-		Ignored:     new(uint64),
-		Dropped:     new(uint64),
 		Datacenters: "a,b",
 		CleanAfter:  60,
 	}
 	c := New(s.AppEnv(), s, options)
 	metrics1 := &metric{
-		kind: Log,
+		kind: logMetric,
 		props: map[string]string{
 			"application": "a",
 			"environment": "b",
@@ -37,7 +34,7 @@ func TestDeletingLabels(t *testing.T) {
 		value: 5.7,
 	}
 	metrics2 := &metric{
-		kind: Log,
+		kind: logMetric,
 		props: map[string]string{
 			"application": "a",
 			"environment": "b",
@@ -51,7 +48,7 @@ func TestDeletingLabels(t *testing.T) {
 		value: 7.7,
 	}
 	metrics3 := &metric{
-		kind: Log,
+		kind: logMetric,
 		props: map[string]string{
 			"application": "a",
 			"environment": "b",
@@ -64,7 +61,7 @@ func TestDeletingLabels(t *testing.T) {
 		value: 3.1,
 	}
 	metrics4 := &metric{
-		kind: Log,
+		kind: logMetric,
 		props: map[string]string{
 			"application": "a",
 			"environment": "b",

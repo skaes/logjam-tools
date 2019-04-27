@@ -34,7 +34,10 @@ logjam-http-forwarder: http-forwarder/forwarder.go util/util.go
 logjam-fhttpd: fhttpd/fhttpd.go util/util.go
 	$(GO_ENV) go build -i -o $@ $<
 
-logjam-prometheus-exporter: prometheus-exporter/exporter.go util/util.go frontendmetrics/frontendmetrics.go
+EXPORTER_PKGS = prometheusexporter/messageparser/messageparser.go prometheusexporter/collector/collector.go prometheusexporter/collectormanager/collectormanager.go prometheusexporter/webserver/webserver.go
+EXPORTER_DEPS = util/util.go logging/logging.go frontendmetrics/frontendmetrics.go
+
+logjam-prometheus-exporter: prometheusexporter/exporter.go $(EXPORTER_DEPS) $(EXPORTER_PKGS)
 	$(GO_ENV) go build -i -o $@ $<
 
 logjam-mongodb-backup: backup/backup.go
@@ -51,7 +54,7 @@ http-client-test:
 	$(GO_ENV) go test ./http-client
 
 promcollector-test:
-	$(GO_ENV) go test ./promcollector
+	$(GO_ENV) go test ./prometheusexporter/...
 
 livestream-test: logjam-livestream
 	$(GO_ENV) go test ./livestream-server

@@ -1,4 +1,4 @@
-package promcollector
+package collector
 
 import (
 	"net/http"
@@ -13,13 +13,14 @@ import (
 	promclient "github.com/prometheus/client_model/go"
 	"github.com/skaes/logjam-tools/go/frontendmetrics"
 	log "github.com/skaes/logjam-tools/go/logging"
+	"github.com/skaes/logjam-tools/go/prometheusexporter/stats"
 	"github.com/skaes/logjam-tools/go/util"
 )
 
 const (
-	Log  = 1
-	Page = 2
-	Ajax = 3
+	logMetric  = 1
+	pageMetric = 2
+	ajaxMetric = 3
 )
 
 type dcPair struct {
@@ -35,9 +36,6 @@ type metric struct {
 
 type Options struct {
 	Interrupted *uint32
-	Observed    *uint64
-	Ignored     *uint64
-	Dropped     *uint64
 	Verbose     bool
 	Datacenters string
 	CleanAfter  uint
@@ -45,7 +43,7 @@ type Options struct {
 
 type Collector struct {
 	opts                     Options
-	name                     string
+	Name                     string
 	app                      string
 	env                      string
 	apiRequests              []string
@@ -172,11 +170,11 @@ func (c *Collector) observer() {
 		m := <-c.metricsChannel
 		// log.Info("ae: %s", c.appEnv())
 		switch m.kind {
-		case Log:
+		case logMetric:
 			c.recordLogMetrics(m)
-		case Page:
+		case pageMetric:
 			c.recordPageMetrics(m)
-		case Ajax:
+		case ajaxMetric:
 			c.recordAjaxMetrics(m)
 		}
 	}
@@ -306,7 +304,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		c.jobExecutionHistogramVec.With(p).Observe(m.value)
 		c.actionRegistry <- action
 	}
-	atomic.AddUint64(c.opts.Observed, 1)
+	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 
 func (c *Collector) recordPageMetrics(m *metric) {
@@ -315,7 +313,7 @@ func (c *Collector) recordPageMetrics(m *metric) {
 	action := p["action"]
 	c.pageHistogramVec.With(p).Observe(m.value)
 	c.actionRegistry <- action
-	atomic.AddUint64(c.opts.Observed, 1)
+	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 
 func (c *Collector) recordAjaxMetrics(m *metric) {
@@ -324,7 +322,7 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 	action := p["action"]
 	c.ajaxHistogramVec.With(p).Observe(m.value)
 	c.actionRegistry <- action
-	atomic.AddUint64(c.opts.Observed, 1)
+	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 
 func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{}) {
@@ -353,7 +351,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 		if uri != "" {
 			u, err := url.Parse(uri)
 			if err == nil && strings.HasPrefix(u.Path, c.ignoredRequestURI) {
-				atomic.AddUint64(c.opts.Ignored, 1)
+				atomic.AddUint64(&stats.Stats.Ignored, 1)
 				if c.opts.Verbose {
 					log.Info("ignoring request: %s", u.String())
 				}
@@ -375,13 +373,13 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	valstr := extractString(data, "total_time", "0")
 	val, err := strconv.ParseFloat(valstr, 64)
 	if err != nil {
-		atomic.AddUint64(c.opts.Dropped, 1)
+		atomic.AddUint64(&stats.Stats.Dropped, 1)
 		if c.opts.Verbose {
 			log.Error("could not parse total_time(%s): %s", err)
 		}
 		return
 	}
-	c.observeMetrics(&metric{kind: Log, props: p, value: val})
+	c.observeMetrics(&metric{kind: logMetric, props: p, value: val})
 }
 
 func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) {
@@ -392,7 +390,7 @@ func (c *Collector) processPageMessage(routingKey string, data map[string]interf
 	p["action"] = extractAction(data)
 	timings, err := frontendmetrics.ExtractPageTimings(rts)
 	if err != nil || timings.PageTime > frontendmetrics.OutlierThresholdMs {
-		atomic.AddUint64(c.opts.Dropped, 1)
+		atomic.AddUint64(&stats.Stats.Dropped, 1)
 		if c.opts.Verbose {
 			ua := extractString(data, "user_agent", "unknown")
 			if err != nil {
@@ -403,7 +401,7 @@ func (c *Collector) processPageMessage(routingKey string, data map[string]interf
 		}
 		return
 	}
-	c.observeMetrics(&metric{kind: Page, props: p, value: float64(timings.PageTime)})
+	c.observeMetrics(&metric{kind: pageMetric, props: p, value: float64(timings.PageTime)})
 }
 
 func (c *Collector) processAjaxMessage(routingKey string, data map[string]interface{}) {
@@ -414,7 +412,7 @@ func (c *Collector) processAjaxMessage(routingKey string, data map[string]interf
 	p["action"] = extractAction(data)
 	ajaxTime, err := frontendmetrics.ExtractAjaxTime(rts)
 	if err != nil || ajaxTime > frontendmetrics.OutlierThresholdMs {
-		atomic.AddUint64(c.opts.Dropped, 1)
+		atomic.AddUint64(&stats.Stats.Dropped, 1)
 		if c.opts.Verbose {
 			ua := extractString(data, "user_agent", "unknown")
 			if err != nil {
@@ -425,7 +423,7 @@ func (c *Collector) processAjaxMessage(routingKey string, data map[string]interf
 		}
 		return
 	}
-	c.observeMetrics(&metric{kind: Ajax, props: p, value: float64(ajaxTime)})
+	c.observeMetrics(&metric{kind: ajaxMetric, props: p, value: float64(ajaxTime)})
 }
 
 func extractString(request map[string]interface{}, key string, defaultValue string) string {

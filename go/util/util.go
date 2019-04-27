@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"compress/zlib"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"os"
 	"os/signal"
 	"strings"
@@ -14,6 +16,7 @@ import (
 	"time"
 
 	"github.com/golang/snappy"
+	log "github.com/skaes/logjam-tools/go/logging"
 )
 
 const (
@@ -183,4 +186,36 @@ type Stream struct {
 
 func (s *Stream) AppEnv() string {
 	return s.App + "+" + s.Env
+}
+
+func RetrieveStreams(url, env string) map[string]Stream {
+	req, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		log.Error("could not create http request: %s", err)
+		return nil
+	}
+	req.Header.Add("Accept", "application/json")
+	client := &http.Client{}
+	res, err := client.Do(req)
+	if err != nil {
+		log.Error("could not retrieve stream: %s", err)
+		return nil
+	}
+	if res.StatusCode != 200 {
+		log.Error("unexpected response: %d", res.Status)
+		return nil
+	}
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		log.Error("could not read response body: %s", err)
+		return nil
+	}
+	defer res.Body.Close()
+	var streams map[string]Stream
+	err = json.Unmarshal(body, &streams)
+	if err != nil {
+		log.Error("could not parse stream: %s", err)
+		return nil
+	}
+	return streams
 }
