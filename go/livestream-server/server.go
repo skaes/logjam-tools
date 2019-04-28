@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -21,6 +20,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/jessevdk/go-flags"
 	zmq "github.com/pebbe/zmq4"
+	log "github.com/skaes/logjam-tools/go/logging"
 	"gopkg.in/tylerb/graceful.v1"
 )
 
@@ -243,7 +243,7 @@ func initialize() {
 		os.Exit(1)
 	}
 	if len(args) > 1 {
-		logError("%s: passing arguments is obsolete. please use options instead.", args[0])
+		log.Error("%s: passing arguments is obsolete. please use options instead.", args[0])
 		os.Exit(1)
 	}
 }
@@ -256,21 +256,6 @@ func installSignalHandler() {
 		interrupted = true
 		signal.Stop(c)
 	}()
-}
-
-func logInfo(format string, args ...interface{}) {
-	final_format := fmt.Sprintf("LJI[%d] %s\n", os.Getpid(), format)
-	fmt.Printf(final_format, args...)
-}
-
-func logError(format string, args ...interface{}) {
-	final_format := fmt.Sprintf("LJE[%d] %s\n", os.Getpid(), format)
-	fmt.Fprintf(os.Stderr, final_format, args...)
-}
-
-func logWarn(format string, args ...interface{}) {
-	final_format := fmt.Sprintf("LJW[%d] %s\n", os.Getpid(), format)
-	fmt.Fprintf(os.Stderr, final_format, args...)
 }
 
 const (
@@ -342,14 +327,14 @@ type AnomalyData struct {
 
 func handleZeromqMsg(msg *ZmqMsg) {
 	if verbose {
-		logInfo("ZMQ msg: %v", *msg)
+		log.Info("ZMQ msg: %v", *msg)
 	}
 	ai := app_info.Get(msg.app_env)
 	switch msg.msgType {
 	case perfMsg:
 		ai.metrics.Add(msg.data)
 		if tt, err := extractTotalTime(msg.data); err != nil {
-			logError("could not extract total time: %v", err)
+			log.Error("could not extract total time: %v", err)
 		} else {
 			if ai.lastMinute.IsFull() {
 				mean := ai.lastMinute.Mean()
@@ -365,9 +350,9 @@ func handleZeromqMsg(msg *ZmqMsg) {
 				ai.lastHour.Add(mean)
 				ai.lastMinute.Reset()
 				if data, err := json.Marshal(ad); err != nil {
-					logError("could not encode anomaly data as json: %v", err)
+					log.Error("could not encode anomaly data as json: %v", err)
 				} else {
-					// logInfo("ANOMALY DATA: %s", string(data))
+					// log.Info("ANOMALY DATA: %s", string(data))
 					ai.lastAnomalyMsg = string(data)
 					ai.SendToWebSockets(ai.lastAnomalyMsg)
 				}
@@ -385,19 +370,19 @@ func handleWebSocketMsg(msg *WsMsg) {
 	ai := app_info.Get(msg.app_env)
 	switch msg.msgType {
 	case subscribeMsg:
-		logInfo("adding subscription to %s for %s", msg.app_env, msg.name)
+		log.Info("adding subscription to %s for %s", msg.app_env, msg.name)
 		ai.channels[msg.name] = msg.channel
 		if err := ai.metrics.Send(msg.channel); err != nil {
-			logError("%v", err)
+			log.Error("%v", err)
 		}
 		if err := ai.errors.Send(msg.channel); err != nil {
-			logError("%v", err)
+			log.Error("%v", err)
 		}
 		if err := ai.SendLastAnomalyMsg(msg.channel); err != nil {
-			logError("%v", err)
+			log.Error("%v", err)
 		}
 	case unsubscribeMsg:
-		logInfo("removing subscription to %s for %s", msg.app_env, msg.name)
+		log.Info("removing subscription to %s for %s", msg.app_env, msg.name)
 		delete(ai.channels, msg.name)
 		close(msg.channel)
 	}
@@ -428,7 +413,7 @@ func zmqMsgHandler() {
 			s := socket.Socket
 			msg, _ := s.RecvMessage(0)
 			if len(msg) != 2 {
-				logError("got invalid message: %v", msg)
+				log.Error("got invalid message: %v", msg)
 				continue
 			}
 			var app_env, data = msg[0], msg[1]
@@ -449,7 +434,7 @@ func statsReporter() {
 		time.Sleep(1 * time.Second)
 		msg_count := atomic.SwapInt64(&processed, 0)
 		conn_count := atomic.LoadInt64(&ws_connections)
-		logInfo("processed: %d, ws connections: %d", msg_count, conn_count)
+		log.Info("processed: %d, ws connections: %d", msg_count, conn_count)
 	}
 }
 
@@ -499,7 +484,7 @@ func wsReader(ws *websocket.Conn) {
 		if !writerStarted {
 			app_env = string(bytes[:])
 			channel_name = nextChannelName()
-			logInfo("starting web socket writer for %s", app_env)
+			log.Info("starting web socket writer for %s", app_env)
 			ws_channel <- &WsMsg{msgType: subscribeMsg, app_env: app_env, name: channel_name, channel: dispatcher_input}
 			go wsWriter(app_env, ws, dispatcher_input)
 			writerStarted = true
@@ -516,7 +501,7 @@ func wsWriter(app_env string, ws *websocket.Conn, input_from_dispatcher chan str
 		select {
 		case data, ok := <-input_from_dispatcher:
 			if !ok {
-				logInfo("closed socket for %s?", app_env)
+				log.Info("closed socket for %s?", app_env)
 				return
 			}
 			ws.WriteMessage(websocket.TextMessage, []byte(data))
@@ -527,12 +512,12 @@ func wsWriter(app_env string, ws *websocket.Conn, input_from_dispatcher chan str
 }
 
 func serveWs(w http.ResponseWriter, r *http.Request) {
-	logInfo("received web socket request")
+	log.Info("received web socket request")
 	atomic.AddInt64(&ws_connections, 1)
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		if _, ok := err.(websocket.HandshakeError); !ok {
-			log.Println(err)
+			log.Error("%s", err)
 		}
 		return
 	}
@@ -550,7 +535,7 @@ func clientHandler() {
 	if runtime.GOOS == "darwin" {
 		port = 9608
 	}
-	logInfo("starting web socket server on port %d", port)
+	log.Info("starting web socket server on port %d", port)
 	spec := ":" + strconv.Itoa(port)
 	srv := &graceful.Server{
 		Timeout: 10 * time.Second,
@@ -562,16 +547,16 @@ func clientHandler() {
 	if opts.KeyFile != "" && opts.CertFile != "" {
 		err := srv.ListenAndServeTLS(opts.CertFile, opts.KeyFile)
 		if err != nil {
-			logError("Cannot list and serve TLS: %s", err)
+			log.Error("Cannot list and serve TLS: %s", err)
 		}
 	} else if opts.KeyFile != "" {
-		logError("cert-file given but no key-file!")
+		log.Error("cert-file given but no key-file!")
 	} else if opts.CertFile != "" {
-		logError("key-file given but no cert-file!")
+		log.Error("key-file given but no cert-file!")
 	} else {
 		err := srv.ListenAndServe()
 		if err != nil {
-			logError("Cannot list and serve TLS: %s", err)
+			log.Error("Cannot list and serve TLS: %s", err)
 		}
 	}
 }
@@ -580,12 +565,12 @@ func clientHandler() {
 
 func main() {
 	initialize()
-	logInfo("%s starting", os.Args[0])
+	log.Info("%s starting", os.Args[0])
 	bind_spec = fmt.Sprintf("tcp://%s:9611", opts.BindIP)
 	importer_spec = fmt.Sprintf("tcp://%s:9607", opts.ImporterHost)
 	verbose = opts.Verbose
-	logInfo("bind-spec:     %s", bind_spec)
-	logInfo("importer-spec: %s", importer_spec)
+	log.Info("bind-spec:     %s", bind_spec)
+	log.Info("importer-spec: %s", importer_spec)
 
 	// f, err := os.Create("profile.prof")
 	// if err != nil {
@@ -600,10 +585,10 @@ func main() {
 	go dispatcher()
 	clientHandler()
 
-	logInfo("% shutting down", os.Args[0])
+	log.Info("% shutting down", os.Args[0])
 	if waitForWaitGrouptWithTimeout(&wg, 3*time.Second) {
-		logInfo("shut down timed out!")
+		log.Info("shut down timed out!")
 	} else {
-		logInfo("shut down cleanly")
+		log.Info("shut down cleanly")
 	}
 }
