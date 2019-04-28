@@ -1,66 +1,69 @@
-AUTOMAKE_OPTIONS = subdir-objects
-ACLOCAL_AMFLAGS = ${ACLOCAL_FLAGS}
+prefix ?= /usr/local
 
-GO_ENV = CGO_LDFLAGS='$(OPTDIR_LDFLAGS)' PKG_CONFIG_PATH=$(PKG_CONFIG_PATH)
-GO_SRC = .
+PKG_CONFIG_PATH ?= $(prefix)/lib/pkgconfig
+export PKG_CONFIG_PATH
+
+OPTDIR_LDFLAGS ?= -Wl,-rpath -Wl,$(prefix)/lib
+CGO_LDFLAGS = $(OPTDIR_LDFLAGS)
+export CGO_LDFLAGS
+
+INSTALL_PROGRAM ?= install
+bindir ?= $(prefix)/bin
+
 GO_NOINSTALL_TARGETS = logjam-livestream-generator
 GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-fhttpd logjam-prometheus-exporter logjam-mongodb-backup logjam-mongodb-restore
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
 
-# Extend generated Makefile with rules for compiling the go part. See
-# https://www.gnu.org/software/automake/manual/html_node/Extending.html for why
-# it's all-local, check-local, clean-local, etc.
+all: $(GO_TARGETS)
 
-all-local: $(GO_TARGETS)
-
-clean-local:
+clean:
 	rm -f $(GO_TARGETS)
 
-install-exec-local: $(GO_INSTALL_TARGETS)
+install: $(GO_INSTALL_TARGETS)
 	$(INSTALL_PROGRAM) $^ $(bindir)
 
-uninstall-local:
+uninstall:
 	cd $(bindir) && rm -f $(GO_INSTALL_TARGETS)
 
 logjam-livestream: livestream-server/server.go
-	$(GO_ENV) go build -i -o $@ $<
+	go build -i -o $@ $<
 
 logjam-livestream-generator: livestream-generator/generator.go
-	$(GO_ENV) go build -i -o $@ $<
+	go build -i -o $@ $<
 
 logjam-http-forwarder: http-forwarder/forwarder.go util/util.go
-	$(GO_ENV) go build -i -o $@ $<
+	go build -i -o $@ $<
 
 logjam-fhttpd: fhttpd/fhttpd.go util/util.go
-	$(GO_ENV) go build -i -o $@ $<
+	go build -i -o $@ $<
 
 EXPORTER_PKGS = prometheusexporter/messageparser/messageparser.go prometheusexporter/collector/collector.go prometheusexporter/collectormanager/collectormanager.go prometheusexporter/webserver/webserver.go
 EXPORTER_DEPS = util/util.go logging/logging.go frontendmetrics/frontendmetrics.go
 
 logjam-prometheus-exporter: prometheusexporter/exporter.go $(EXPORTER_DEPS) $(EXPORTER_PKGS)
-	$(GO_ENV) go build -i -o $@ $<
+	go build -i -o $@ $<
 
 logjam-mongodb-backup: backup/backup.go
-	$(GO_ENV) go build -i -o $@ $<
+	go build -i -o $@ $<
 
 logjam-mongodb-restore: restore/restore.go
-	$(GO_ENV) go build -i -o $@ $<
+	go build -i -o $@ $<
 
 GO_TESTS = promcollector-test livestream-test util-test frontendmetrics-test
 .PHONY: $(GO_TESTS)
-check-local: $(GO_TESTS)
+check: $(GO_TESTS)
 
 http-client-test:
-	$(GO_ENV) go test ./http-client
+	go test ./http-client
 
 promcollector-test:
-	$(GO_ENV) go test ./prometheusexporter/...
+	go test ./prometheusexporter/...
 
 livestream-test: logjam-livestream
-	$(GO_ENV) go test ./livestream-server
+	go test ./livestream-server
 
 util-test:
-	$(GO_ENV) go test ./util
+	go test ./util
 
 frontendmetrics-test: frontendmetrics/*.go
-	$(GO_ENV) go test ./frontendmetrics
+	go test ./frontendmetrics

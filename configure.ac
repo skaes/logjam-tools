@@ -33,7 +33,7 @@ AC_PROG_CXXCPP
 test -z "$OLD_CFLAGS" || CFLAGS=$OLD_CFLAGS
 test -z "$OLD_CC" || CC=$OLD_CC
 
-AC_CONFIG_FILES([Makefile src/Makefile go/Makefile])
+AC_CONFIG_FILES([Makefile src/Makefile])
 AC_CONFIG_HEADERS([config.h])
 
 AC_ARG_WITH(opt-dir,

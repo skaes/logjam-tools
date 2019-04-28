@@ -52,7 +52,6 @@ proml-queries.txt
 /src/tester
 #go
 /go/vendor
-/go/Makefile
 /go/logjam-fhttpd
 /go/logjam-http-forwarder
 /go/logjam-livestream
