@@ -17,13 +17,15 @@ import (
 	"golang.org/x/text/runes"
 )
 
+// Options for MessageParser
 type Options struct {
-	Verbose     bool
-	Interrupted *uint32
-	Parsers     uint
-	Devices     string
+	Verbose     bool    // Verbose logging.
+	Interrupted *uint32 //Pointer to interruption state.
+	Parsers     uint    // Number of message decoder go routines to run.
+	Devices     string  // Logjam devices to connect to.
 }
 
+// MessageParser state
 type MessageParser struct {
 	opts           Options
 	deviceSpecs    []string
@@ -36,6 +38,7 @@ type decodeAndUnmarshalTask struct {
 	meta *util.MetaInfo
 }
 
+// New creates a new message parser
 func New(options Options) *MessageParser {
 	p := MessageParser{opts: options}
 	p.decoderChannel = make(chan *decodeAndUnmarshalTask, 1000000)
@@ -64,6 +67,9 @@ func (p *MessageParser) createSocket() *zmq.Socket {
 	return socket
 }
 
+// Run creates zmq socket, connects it to the devices, starts the
+// message parser go routines and reads messages from the socket and
+// forwards them to the parsers.
 func (p *MessageParser) Run() {
 	p.socket = p.createSocket()
 	defer p.socket.Close()
