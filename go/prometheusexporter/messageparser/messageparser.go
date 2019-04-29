@@ -163,7 +163,7 @@ func (p *MessageParser) decodeAndUnmarshal() {
 			c := collectormanager.GetCollector(appEnv)
 			if c == nil {
 				log.Error("could not retrieve collector for %s", appEnv)
-				return
+				continue
 			}
 			c.ProcessMessage(routingKey, data)
 		case <-ticker.C:
