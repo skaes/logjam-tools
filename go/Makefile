@@ -37,7 +37,7 @@ logjam-http-forwarder: http-forwarder/forwarder.go util/util.go
 logjam-fhttpd: fhttpd/fhttpd.go util/util.go
 	go build -i -o $@ $<
 
-EXPORTER_PKGS = prometheusexporter/messageparser/messageparser.go prometheusexporter/collector/collector.go prometheusexporter/collectormanager/collectormanager.go prometheusexporter/webserver/webserver.go
+EXPORTER_PKGS = prometheusexporter/messageparser/messageparser.go prometheusexporter/collector/collector.go prometheusexporter/collectormanager/collectormanager.go prometheusexporter/webserver/webserver.go prometheusexporter/stats/stats.go
 EXPORTER_DEPS = util/util.go logging/logging.go frontendmetrics/frontendmetrics.go
 
 logjam-prometheus-exporter: prometheusexporter/exporter.go $(EXPORTER_DEPS) $(EXPORTER_PKGS)
