@@ -89,7 +89,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 				Objectives: map[float64]float64{},
 			},
 			// instance always set to the empty string
-			[]string{"application", "environment", "action", "type", "code", "http_method", "instance", "cluster", "datacenter"},
+			[]string{"app", "env", "action", "type", "code", "method", "instance", "cluster", "dc"},
 		),
 		jobExecutionSummaryVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
@@ -98,7 +98,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 				Objectives: map[float64]float64{},
 			},
 			// instance always set to the empty string
-			[]string{"application", "environment", "action", "code", "instance", "cluster", "datacenter"},
+			[]string{"app", "env", "action", "code", "instance", "cluster", "dc"},
 		),
 		httpRequestHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -107,7 +107,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100},
 			},
 			// instance always set to the empty string
-			[]string{"application", "environment", "action", "type", "http_method", "instance"},
+			[]string{"app", "env", "action", "type", "method", "instance"},
 		),
 		jobExecutionHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -116,7 +116,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100},
 			},
 			// instance always set to the empty string
-			[]string{"application", "environment", "action", "instance"},
+			[]string{"app", "env", "action", "instance"},
 		),
 		pageHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -125,7 +125,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 				Buckets: []float64{.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
 			},
 			// instance always set to the empty string
-			[]string{"application", "environment", "action", "instance"},
+			[]string{"app", "env", "action", "instance"},
 		),
 		ajaxHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
@@ -134,7 +134,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 				Buckets: []float64{.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
 			},
 			// instance always set to the empty string
-			[]string{"application", "environment", "action", "instance"},
+			[]string{"app", "env", "action", "instance"},
 		),
 		registry:          prometheus.NewRegistry(),
 		actionRegistry:    make(chan string, 10000),
@@ -268,18 +268,18 @@ func (c *Collector) Shutdown() {
 }
 
 func (c *Collector) fixDatacenter(m map[string]string, instance string) {
-	if dc := m["datacenter"]; dc == "unknown" || dc == "" {
+	if dc := m["dc"]; dc == "unknown" || dc == "" {
 		fixed := false
 		for _, d := range c.datacenters {
 			if strings.Contains(instance, d.withDots) {
 				fixed = true
-				m["datacenter"] = d.name
+				m["dc"] = d.name
 				// log.Info("Fixed datacenter: %s ==> %s\n", dc, d.name)
 				break
 			}
 		}
 		if c.opts.Verbose && !fixed {
-			log.Warn("Could not fix datacenter: %s, application: %s, instance: %s", dc, m["application"], instance)
+			log.Warn("Could not fix datacenter: %s, application: %s, instance: %s", dc, m["app"], instance)
 		}
 	}
 }
@@ -298,14 +298,14 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		c.httpRequestSummaryVec.With(p).Observe(m.value)
 		delete(p, "code")
 		delete(p, "cluster")
-		delete(p, "datacenter")
+		delete(p, "dc")
 		c.httpRequestHistogramVec.With(p).Observe(m.value)
 		c.actionRegistry <- action
 	case "job":
 		c.jobExecutionSummaryVec.With(p).Observe(m.value)
 		delete(p, "code")
 		delete(p, "cluster")
-		delete(p, "datacenter")
+		delete(p, "dc")
 		c.jobExecutionHistogramVec.With(p).Observe(m.value)
 		c.actionRegistry <- action
 	}
@@ -347,8 +347,8 @@ func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{
 
 func (c *Collector) processLogMessage(routingKey string, data map[string]interface{}) {
 	p := make(map[string]string)
-	p["application"] = c.app
-	p["environment"] = c.env
+	p["app"] = c.app
+	p["env"] = c.env
 	info := extractMap(data, "request_info")
 	method := ""
 	if info != nil {
@@ -367,7 +367,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	}
 	if method != "" {
 		p["metric"] = "http"
-		p["http_method"] = method
+		p["method"] = method
 	} else {
 		p["metric"] = "job"
 	}
@@ -375,7 +375,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	p["code"] = extractString(data, "code", "500")
 	p["instance"] = extractString(data, "host", "unknown")
 	p["cluster"] = extractString(data, "cluster", "unknown")
-	p["datacenter"] = extractString(data, "datacenter", "unknown")
+	p["dc"] = extractString(data, "dc", "unknown")
 	valstr := extractString(data, "total_time", "0")
 	val, err := strconv.ParseFloat(valstr, 64)
 	if err != nil {
@@ -391,8 +391,8 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) {
 	rts := extractString(data, "rts", "")
 	p := make(map[string]string)
-	p["application"] = c.app
-	p["environment"] = c.env
+	p["app"] = c.app
+	p["env"] = c.env
 	p["action"] = extractAction(data)
 	timings, err := frontendmetrics.ExtractPageTimings(rts)
 	if err != nil || timings.PageTime > frontendmetrics.OutlierThresholdMs {
@@ -413,8 +413,8 @@ func (c *Collector) processPageMessage(routingKey string, data map[string]interf
 func (c *Collector) processAjaxMessage(routingKey string, data map[string]interface{}) {
 	rts := extractString(data, "rts", "")
 	p := make(map[string]string)
-	p["application"] = c.app
-	p["environment"] = c.env
+	p["app"] = c.app
+	p["env"] = c.env
 	p["action"] = extractAction(data)
 	ajaxTime, err := frontendmetrics.ExtractAjaxTime(rts)
 	if err != nil || ajaxTime > frontendmetrics.OutlierThresholdMs {
