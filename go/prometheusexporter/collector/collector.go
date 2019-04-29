@@ -198,7 +198,9 @@ func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
 }
 
 func (c *Collector) removeAction(a string) bool {
-	log.Info("removing action: %s", a)
+	if c.opts.Verbose {
+		log.Info("removing action: %s", a)
+	}
 	delete(c.knownActions, a)
 	mfs, err := c.registry.Gather()
 	if err != nil {
