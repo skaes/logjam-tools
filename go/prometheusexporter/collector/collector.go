@@ -317,7 +317,6 @@ func (c *Collector) recordPageMetrics(m *metric) {
 	action := p["action"]
 	c.pageHistogramVec.With(p).Observe(m.value)
 	c.actionRegistry <- action
-	atomic.AddInt64(&stats.Stats.Invisible, -1)
 	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 
@@ -327,7 +326,6 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 	action := p["action"]
 	c.ajaxHistogramVec.With(p).Observe(m.value)
 	c.actionRegistry <- action
-	atomic.AddInt64(&stats.Stats.Invisible, -1)
 	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 
