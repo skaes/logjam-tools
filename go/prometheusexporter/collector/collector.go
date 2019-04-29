@@ -162,8 +162,8 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 }
 
 func (c *Collector) observeMetrics(m *metric) {
-	c.metricsChannel <- m
 	atomic.AddInt64(&stats.Stats.Invisible, 1)
+	c.metricsChannel <- m
 }
 
 func (c *Collector) observer() {
