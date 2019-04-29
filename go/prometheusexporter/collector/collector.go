@@ -163,6 +163,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 
 func (c *Collector) observeMetrics(m *metric) {
 	c.metricsChannel <- m
+	atomic.AddInt64(&stats.Stats.Invisible, 1)
 }
 
 func (c *Collector) observer() {
@@ -177,6 +178,8 @@ func (c *Collector) observer() {
 		case ajaxMetric:
 			c.recordAjaxMetrics(m)
 		}
+		atomic.AddInt64(&stats.Stats.Invisible, -1)
+		atomic.AddUint64(&stats.Stats.Observed, 1)
 	}
 }
 
@@ -306,7 +309,6 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		c.jobExecutionHistogramVec.With(p).Observe(m.value)
 		c.actionRegistry <- action
 	}
-	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 
 func (c *Collector) recordPageMetrics(m *metric) {
@@ -315,6 +317,7 @@ func (c *Collector) recordPageMetrics(m *metric) {
 	action := p["action"]
 	c.pageHistogramVec.With(p).Observe(m.value)
 	c.actionRegistry <- action
+	atomic.AddInt64(&stats.Stats.Invisible, -1)
 	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 
@@ -324,6 +327,7 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 	action := p["action"]
 	c.ajaxHistogramVec.With(p).Observe(m.value)
 	c.actionRegistry <- action
+	atomic.AddInt64(&stats.Stats.Invisible, -1)
 	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 

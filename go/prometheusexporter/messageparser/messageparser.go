@@ -121,6 +121,7 @@ func (p *MessageParser) Run() {
 					log.Error("detected message gap for device %d: missed %d messages", d, gap)
 				}
 			}
+			atomic.AddInt64(&stats.Stats.Raw, 1)
 			p.decoderChannel <- &decodeAndUnmarshalTask{msg: msg, meta: info}
 		}
 	}
@@ -134,6 +135,7 @@ func (p *MessageParser) decodeAndUnmarshal() {
 		}
 		select {
 		case task := <-p.decoderChannel:
+			atomic.AddInt64(&stats.Stats.Raw, -1)
 			info, msg := task.meta, task.msg
 			jsonBody, err := util.Decompress(msg[2], info.CompressionMethod)
 			if err != nil {
