@@ -6,27 +6,28 @@ building all of this into logjam, it will be much less work to export logjam met
 Prometheus, which supports customized views through Grafana and alerting through both
 Grafana and it's own [alert manager].
 
-For starters, the following [metrics] will be exported as [histograms]
+For starters, the following [metrics] will be exported:
 
-| Metric | Usage Pattern |
-|--------|---------------|
-|1. http\_request\_duration\_seconds | used for both web and API requests |
-|2. job\_execution\_duration_seconds | used for all kinds of background jobs |
-|3. page\_request\_duration\_seconds | used for page load times, RUM |
-|4. ajax\_request\_duration\_seconds | used for ajax requests, RUM |
+| Metric | Metric Type | Usage Pattern |
+|--------|-------------|---------------|
+|1. logjam\_http\_response\_time\_distribution\_seconds | histogram | used for both web and API requests |
+|2. logjam\_job\_execution\_time\_distribution\_seconds | histogram | used for all kinds of background jobs |
+|3. logjam\_page\_time\_distribution\_seconds           | histogram | used for page load times, RUM |
+|4. logjam\_ajax\_time\_distribution\_seconds           | histogram | used for ajax requests, RUM |
+|5. logjam\_http\_response\_time\_distribution\_seconds | summary   | used for both web and API requests |
+|6. logjam\_job\_execution\_time\_distribution\_seconds | summary   | used for all kinds of background jobs |
 
 And the following [labels] will be used:
 
 | Label  | Value | Metrics used with |
 |--------|-------|------|
-|1. application             |application name in logjam      | 1,2,3,4
-|2. action                  |action name in logjam           | 1,2,3,4
-|3. code                    |response code in logjam         | 1,2
-|4. http\_method            |http requests                   | 1
-|5. http\_url\_normalized   |only for http requests          | 1
-|6. host                    |host or container name          | 1,2
-|7. cluster                 |cluster name (e.g. Kubernetes)  | 1,2
-|8. datacenter              |datacenter name                 | 1,2
+|1. app       | application name in logjam      | 1,2,3,4,5,6
+|2. env       | environment name in logjam      | 1,2,3,4,5,6
+|3. action    | action name in logjam           | 1,2,3,4,5,6
+|4. code      | response code in logjam         | 1,2
+|5. method    | http request method             | 5,6
+|6. cluster   | cluster name (e.g. Kubernetes)  | 5,6
+|7. dc        | datacenter name                 | 5,6
 
 The importer will need to figure out whether an action maps to which metric in Prometheus,
 but this is actually simple: it already knows whether it is processing an Ajax or a page
@@ -42,5 +43,6 @@ looking whether the request\_info sub hash contains a HTTP method specification.
 
 [metrics]: https://prometheus.io/docs/concepts/data_model/
 [labels]: https://prometheus.io/docs/practices/naming/
-[histograms]: https://prometheus.io/docs/concepts/metric_types/#histogram
+[histogram]: https://prometheus.io/docs/concepts/metric_types/#histogram
+[summary]: https://prometheus.io/docs/concepts/metric_types/#summary
 [alert manager]: https://prometheus.io/docs/alerting/overview/

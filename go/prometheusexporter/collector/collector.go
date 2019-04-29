@@ -84,8 +84,8 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 		env:  env,
 		httpRequestSummaryVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Name:       "http_request_latency_seconds",
-				Help:       "http request latency summary",
+				Name:       "logjam_http_response_time_summary_seconds",
+				Help:       "logjam http response time summary",
 				Objectives: map[float64]float64{},
 			},
 			// instance always set to the empty string
@@ -93,8 +93,8 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 		),
 		jobExecutionSummaryVec: prometheus.NewSummaryVec(
 			prometheus.SummaryOpts{
-				Name:       "job_execution_latency_seconds",
-				Help:       "job execution latency summary",
+				Name:       "logjam_job_execution_time_summary_seconds",
+				Help:       "logjam_job execution time summary",
 				Objectives: map[float64]float64{},
 			},
 			// instance always set to the empty string
@@ -102,8 +102,8 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 		),
 		httpRequestHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "http_request_duration_seconds",
-				Help:    "http response time distribution",
+				Name:    "logjam_http_response_time_distribution_seconds",
+				Help:    "logjam_http response time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100},
 			},
 			// instance always set to the empty string
@@ -111,7 +111,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 		),
 		jobExecutionHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "job_execution_duration_seconds",
+				Name:    "logjam_job_execution_time_distribution_seconds",
 				Help:    "background job execution time distribution",
 				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100},
 			},
@@ -120,7 +120,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 		),
 		pageHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "logjam_page_time_duration_seconds",
+				Name:    "logjam_page_time_distribution_seconds",
 				Help:    "page loading time distribution",
 				Buckets: []float64{.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
 			},
@@ -129,7 +129,7 @@ func New(appEnv string, stream util.Stream, opts Options) *Collector {
 		),
 		ajaxHistogramVec: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "logjam_ajax_time_duration_seconds",
+				Name:    "logjam_ajax_time_distribution_seconds",
 				Help:    "ajax response time distribution",
 				Buckets: []float64{.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
 			},
@@ -221,17 +221,17 @@ func (c *Collector) removeAction(a string) bool {
 				labels := labelsFromLabelPairs(pairs)
 				deleted := false
 				switch name {
-				case "http_request_latency_seconds":
+				case "logjam_http_response_time_summary_seconds":
 					deleted = c.httpRequestSummaryVec.Delete(labels)
-				case "job_execution_latency_seconds":
+				case "logjam_job_execution_time_summary_seconds":
 					deleted = c.jobExecutionSummaryVec.Delete(labels)
-				case "http_request_duration_seconds":
+				case "logjam_http_response_time_distribution_seconds":
 					deleted = c.httpRequestHistogramVec.Delete(labels)
-				case "job_execution_duration_seconds":
+				case "logjam_job_execution_time_distribution_seconds":
 					deleted = c.jobExecutionHistogramVec.Delete(labels)
-				case "logjam_page_time_duration_seconds":
+				case "logjam_page_time_distribution_seconds":
 					deleted = c.pageHistogramVec.Delete(labels)
-				case "logjam_ajax_time_duration_seconds":
+				case "logjam_ajax_time_distribution_seconds":
 					deleted = c.ajaxHistogramVec.Delete(labels)
 				}
 				if deleted {
