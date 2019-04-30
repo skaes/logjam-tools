@@ -317,7 +317,6 @@ func (c *Collector) recordPageMetrics(m *metric) {
 	action := p["action"]
 	c.pageHistogramVec.With(p).Observe(m.value)
 	c.actionRegistry <- action
-	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 
 func (c *Collector) recordAjaxMetrics(m *metric) {
@@ -326,7 +325,6 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 	action := p["action"]
 	c.ajaxHistogramVec.With(p).Observe(m.value)
 	c.actionRegistry <- action
-	atomic.AddUint64(&stats.Stats.Observed, 1)
 }
 
 func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{}) {
