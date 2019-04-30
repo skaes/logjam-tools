@@ -368,10 +368,10 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 		p["metric"] = "job"
 	}
 	p["action"] = extractAction(data)
-	p["code"] = extractString(data, "code", "500")
+	p["code"] = extractString(data, "response_code", "500")
 	p["instance"] = extractString(data, "host", "unknown")
 	p["cluster"] = extractString(data, "cluster", "unknown")
-	p["dc"] = extractString(data, "dc", "unknown")
+	p["dc"] = extractString(data, "datacenter", "unknown")
 	valstr := extractString(data, "total_time", "0")
 	val, err := strconv.ParseFloat(valstr, 64)
 	if err != nil {
