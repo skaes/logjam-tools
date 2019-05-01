@@ -5,7 +5,7 @@ build_dir="builds/repos"
 forced=0
 prefix=/usr/local
 cached=0
-documentation=1
+documentation=0
 
 test -z "$LSUDO" && LSUDO="sudo"
 test "$(whoami)" = "root" && LSUDO=""
@@ -24,6 +24,8 @@ while (( $# > 0 )); do
             prefix="$2"; shift 2;;
         --prefix=*)
             prefix="${1#--prefix=}"; shift;;
+        --with-documentation)
+            documentation=1; shift;;
         --without-documentation)
             documentation=0; shift;;
         --*)
