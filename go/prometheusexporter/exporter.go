@@ -3,9 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"os/signal"
-	"sync/atomic"
-	"syscall"
 
 	"github.com/jessevdk/go-flags"
 	log "github.com/skaes/logjam-tools/go/logging"
@@ -14,6 +11,7 @@ import (
 	"github.com/skaes/logjam-tools/go/prometheusexporter/messageparser"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/stats"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/webserver"
+	"github.com/skaes/logjam-tools/go/util"
 )
 
 var opts struct {
@@ -25,20 +23,6 @@ var opts struct {
 	Parsers     uint   `short:"P" long:"parsers" default:"4" description:"Number of message parsers to run in parallel."`
 	CleanAfter  uint   `short:"c" long:"clean-after" default:"5" description:"Minutes to wait before cleaning old time series."`
 	Port        string `short:"p" long:"port" default:"8081" description:"Port to expose metrics on."`
-}
-
-var (
-	interrupted uint32
-)
-
-func installSignalHandler() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		atomic.AddUint32(&interrupted, 1)
-		signal.Stop(c)
-	}()
 }
 
 func parseArgs() {
@@ -60,23 +44,21 @@ func main() {
 	log.Info("%s starting", os.Args[0])
 	parseArgs()
 
-	installSignalHandler()
+	util.InstallSignalHandler()
 
 	collectorOptions := collector.Options{
-		Interrupted: &interrupted,
 		Verbose:     opts.Verbose,
 		Datacenters: opts.Datacenters,
 		CleanAfter:  opts.CleanAfter,
 	}
 	collectormanager.Initialize(opts.StreamURL, opts.Env, collectorOptions)
 
-	go stats.Reporter(&interrupted)
+	go stats.Reporter()
 
 	parserOptions := messageparser.Options{
-		Interrupted: &interrupted,
-		Verbose:     opts.Verbose,
-		Parsers:     opts.Parsers,
-		Devices:     opts.Devices,
+		Verbose: opts.Verbose,
+		Parsers: opts.Parsers,
+		Devices: opts.Devices,
 	}
 	go messageparser.New(parserOptions).Run()
 

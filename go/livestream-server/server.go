@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
 	"runtime"
 	// "runtime/pprof"
 	"encoding/json"
@@ -14,13 +13,13 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/jessevdk/go-flags"
 	zmq "github.com/pebbe/zmq4"
 	log "github.com/skaes/logjam-tools/go/logging"
+	"github.com/skaes/logjam-tools/go/util"
 	"gopkg.in/tylerb/graceful.v1"
 )
 
@@ -230,7 +229,6 @@ var (
 	processed      int64
 	ws_connections int64
 	app_info       = make(AppEnvBufferMap)
-	interrupted    = false
 )
 
 func initialize() {
@@ -246,16 +244,6 @@ func initialize() {
 		log.Error("%s: passing arguments is obsolete. please use options instead.", args[0])
 		os.Exit(1)
 	}
-}
-
-func installSignalHandler() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		interrupted = true
-		signal.Stop(c)
-	}()
 }
 
 const (
@@ -296,7 +284,8 @@ var (
 
 func dispatcher() {
 	ticker := time.NewTicker(1 * time.Second)
-	for !interrupted {
+	defer ticker.Stop()
+	for !util.Interrupted() {
 		select {
 		case msg := <-ws_channel:
 			handleWebSocketMsg(msg)
@@ -407,7 +396,7 @@ func zmqMsgHandler() {
 	poller := zmq.NewPoller()
 	poller.Add(subscriber, zmq.POLLIN)
 
-	for !interrupted {
+	for !util.Interrupted() {
 		sockets, _ := poller.Poll(1 * time.Second)
 		for _, socket := range sockets {
 			s := socket.Socket
@@ -430,7 +419,7 @@ func zmqMsgHandler() {
 
 // report number of incoming zmq messages every second
 func statsReporter() {
-	for !interrupted {
+	for !util.Interrupted() {
 		time.Sleep(1 * time.Second)
 		msg_count := atomic.SwapInt64(&processed, 0)
 		conn_count := atomic.LoadInt64(&ws_connections)
@@ -476,7 +465,7 @@ func wsReader(ws *websocket.Conn) {
 	var channel_name string
 	writerStarted := false
 
-	for !interrupted {
+	for !util.Interrupted() {
 		msgType, bytes, err := ws.ReadMessage()
 		if err != nil || msgType != websocket.TextMessage {
 			break
@@ -497,7 +486,7 @@ func wsWriter(app_env string, ws *websocket.Conn, input_from_dispatcher chan str
 	wg.Add(1)
 	defer wg.Done()
 	defer ws.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(1000, ""))
-	for !interrupted {
+	for !util.Interrupted() {
 		select {
 		case data, ok := <-input_from_dispatcher:
 			if !ok {
@@ -579,7 +568,7 @@ func main() {
 	// pprof.StartCPUProfile(f)
 	// defer pprof.StopCPUProfile()
 
-	installSignalHandler()
+	util.InstallSignalHandler()
 	go statsReporter()
 	go zmqMsgHandler()
 	go dispatcher()

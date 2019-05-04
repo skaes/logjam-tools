@@ -37,7 +37,6 @@ var (
 	verbose     bool
 	quiet       bool
 	outputSpec  string
-	interrupted bool
 	compression byte
 
 	publisher *pub.Publisher
@@ -74,7 +73,8 @@ func initialize() {
 // report number of processed requests every second
 func statsReporter() {
 	ticker := time.NewTicker(1 * time.Second)
-	for !interrupted {
+	defer ticker.Stop()
+	for !util.Interrupted() {
 		<-ticker.C
 		// obtain values and reset counters
 		statsMutex.Lock()
@@ -252,9 +252,9 @@ func main() {
 	// pprof.StartCPUProfile(f)
 	// defer pprof.StopCPUProfile()
 
-	util.InstallSignalHandler(&interrupted)
+	util.InstallSignalHandler()
 	go statsReporter()
-	publisher = pub.New(&wg, &interrupted, pub.Opts{
+	publisher = pub.New(&wg, pub.Opts{
 		Compression: compression,
 		DeviceId:    opts.DeviceId,
 		OutputPort:  opts.OutputPort,

@@ -32,10 +32,10 @@ type Publisher struct {
 	sequenceNum      uint64
 }
 
-func New(wg *sync.WaitGroup, interrupted *bool, opts Opts) *Publisher {
+func New(wg *sync.WaitGroup, opts Opts) *Publisher {
 	p := Publisher{opts: opts}
 	p.publisherChannel = make(chan *pubMsg, 10000)
-	go p.publish(wg, interrupted)
+	go p.publish(wg)
 	return &p
 }
 
@@ -72,13 +72,14 @@ func (p *Publisher) sendHeartbeat(socket *zmq.Socket) {
 	socket.SendBytes(meta, 0)
 }
 
-func (p *Publisher) publish(wg *sync.WaitGroup, interrupted *bool) {
+func (p *Publisher) publish(wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 	publisherSocket := p.setupPublisherSocket()
 	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
 	var ticks uint64
-	for !*interrupted {
+	for !util.Interrupted() {
 		select {
 		case msg := <-p.publisherChannel:
 			p.sendMessage(publisherSocket, msg)

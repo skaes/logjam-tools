@@ -19,10 +19,9 @@ import (
 
 // Options for MessageParser
 type Options struct {
-	Verbose     bool    // Verbose logging.
-	Interrupted *uint32 //Pointer to interruption state.
-	Parsers     uint    // Number of message decoder go routines to run.
-	Devices     string  // Logjam devices to connect to.
+	Verbose bool   // Verbose logging.
+	Parsers uint   // Number of message decoder go routines to run.
+	Devices string // Logjam devices to connect to.
 }
 
 // MessageParser state
@@ -84,10 +83,7 @@ func (p *MessageParser) Run() {
 		go p.decodeAndUnmarshal()
 	}
 
-	for {
-		if atomic.LoadUint32(p.opts.Interrupted) != 0 {
-			break
-		}
+	for !util.Interrupted() {
 		sockets, _ := poller.Poll(1 * time.Second)
 		for _, socket := range sockets {
 			s := socket.Socket
@@ -129,10 +125,8 @@ func (p *MessageParser) Run() {
 
 func (p *MessageParser) decodeAndUnmarshal() {
 	ticker := time.NewTicker(1 * time.Second)
-	for {
-		if atomic.LoadUint32(p.opts.Interrupted) != 0 {
-			break
-		}
+	defer ticker.Stop()
+	for !util.Interrupted() {
 		select {
 		case task := <-p.decoderChannel:
 			atomic.AddInt64(&stats.Stats.Raw, -1)

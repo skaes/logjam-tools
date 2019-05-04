@@ -5,6 +5,7 @@ import (
 	"time"
 
 	log "github.com/skaes/logjam-tools/go/logging"
+	"github.com/skaes/logjam-tools/go/util"
 )
 
 // Stats collects prometheus exporter statistics. The various compoments of the
@@ -20,10 +21,11 @@ var Stats struct {
 }
 
 // Reporter reports exporter stats. The export starts it as a go routine.
-func Reporter(interrupted *uint32) {
+func Reporter() {
 	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 	for range ticker.C {
-		if atomic.LoadUint32(interrupted) != 0 {
+		if util.Interrupted() {
 			break
 		}
 		_observed := atomic.SwapUint64(&Stats.Observed, 0)

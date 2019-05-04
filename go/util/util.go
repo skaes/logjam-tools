@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -150,15 +151,22 @@ func WaitForWaitGroupWithTimeout(wg *sync.WaitGroup, timeout time.Duration) bool
 	}
 }
 
-// InstallSignalHandler installs a signal handler for interupts and TERM signal.
-func InstallSignalHandler(interrupted *bool) {
+var interrupted uint32
+
+// InstallSignalHandler installs a signal handler for interrupts and TERM signal.
+func InstallSignalHandler() {
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
 		<-c
-		*interrupted = true
+		atomic.StoreUint32(&interrupted, 1)
 		signal.Stop(c)
 	}()
+}
+
+// Interrupted returns whether an interrupt or TERM signal has been received
+func Interrupted() bool {
+	return atomic.LoadUint32(&interrupted) == 1
 }
 
 // ParseCompressionMethodName converts string to compression method

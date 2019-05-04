@@ -6,7 +6,6 @@ import (
 	"path"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	log "github.com/skaes/logjam-tools/go/logging"
@@ -64,8 +63,9 @@ func RemoveCollector(c *collector.Collector) {
 
 func StreamsUpdater(url, env string) {
 	ticker := time.NewTicker(1 * time.Minute)
+	defer ticker.Stop()
 	for range ticker.C {
-		if atomic.LoadUint32(opts.Interrupted) != 0 {
+		if util.Interrupted() {
 			break
 		}
 		UpdateStreams(url, env)

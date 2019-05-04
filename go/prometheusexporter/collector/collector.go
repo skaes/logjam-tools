@@ -35,7 +35,6 @@ type metric struct {
 }
 
 type Options struct {
-	Interrupted *uint32
 	Verbose     bool
 	Datacenters string
 	CleanAfter  uint
@@ -167,7 +166,7 @@ func (c *Collector) observeMetrics(m *metric) {
 }
 
 func (c *Collector) observer() {
-	for atomic.LoadUint32(c.opts.Interrupted)+atomic.LoadUint32(&c.stopped) == 0 {
+	for !util.Interrupted() && atomic.LoadUint32(&c.stopped) == 0 {
 		m := <-c.metricsChannel
 		// log.Info("ae: %s", c.appEnv())
 		switch m.kind {
@@ -248,7 +247,8 @@ func (c *Collector) removeAction(a string) bool {
 func (c *Collector) actionRegistryHandler() {
 	// cleaning every minute, until we are interrupted or the stream was shut down
 	ticker := time.NewTicker(1 * time.Minute)
-	for atomic.LoadUint32(c.opts.Interrupted)+atomic.LoadUint32(&c.stopped) == 0 {
+	defer ticker.Stop()
+	for !util.Interrupted() && atomic.LoadUint32(&c.stopped) == 0 {
 		select {
 		case action := <-c.actionRegistry:
 			c.knownActions[action] = time.Now()

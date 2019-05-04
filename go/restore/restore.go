@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/skaes/logjam-tools/go/util"
 )
 
 var opts struct {
@@ -32,7 +31,6 @@ var (
 	rc                = int(0)
 	verbose           = false
 	dryrun            = false
-	interrupted       bool
 	toDate            time.Time
 	fromDate          time.Time
 	archivesToRestore []string
@@ -75,16 +73,6 @@ func initialize() {
 		}
 		fromDate = t.Truncate(24 * time.Hour)
 	}
-}
-
-func installSignalHandler() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		interrupted = true
-		signal.Stop(c)
-	}()
 }
 
 func logInfo(format string, args ...interface{}) {
@@ -182,7 +170,7 @@ func restoreFromBackups() {
 		return younger || (sameDate && strings.Compare(archives[i].Path, archives[j].Path) == -1)
 	})
 	for _, a := range archives {
-		if interrupted {
+		if util.Interrupted() {
 			return
 		}
 		name, suffix := parseBackupFileName(a.Path)
@@ -201,7 +189,7 @@ func restoreFromBackups() {
 func main() {
 	initialize()
 	logInfo("%s: starting restore in %s", os.Args[0], opts.BackupDir)
-	installSignalHandler()
+	util.InstallSignalHandler()
 	restoreFromBackups()
 	logInfo("%s: restore complete", os.Args[0])
 	os.Exit(rc)

@@ -9,16 +9,15 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
-	"os/signal"
 	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/skaes/logjam-tools/go/util"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -38,14 +37,13 @@ var opts struct {
 }
 
 var (
-	rc          = int(0)
-	verbose     = false
-	dryrun      = false
-	interrupted bool
-	streams     map[string]stream
-	toDate      time.Time
-	fromDate    time.Time
-	pattern     *regexp.Regexp
+	rc       = int(0)
+	verbose  = false
+	dryrun   = false
+	streams  map[string]stream
+	toDate   time.Time
+	fromDate time.Time
+	pattern  *regexp.Regexp
 )
 
 const DATEFORMAT = "2006-01-02"
@@ -193,16 +191,6 @@ func retrieveStreams(url string) map[string]stream {
 		return nil
 	}
 	return streams
-}
-
-func installSignalHandler() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		interrupted = true
-		signal.Stop(c)
-	}()
 }
 
 func logInfo(format string, args ...interface{}) {
@@ -367,7 +355,7 @@ func backupDatabase(db *databaseInfo) {
 
 func backupDatabases(dbs []*databaseInfo) {
 	for _, db := range dbs {
-		if interrupted {
+		if util.Interrupted() {
 			break
 		}
 		backupDatabase(db)
@@ -413,7 +401,7 @@ func removeExpiredBackups() {
 func main() {
 	initialize()
 	logInfo("%s: starting backup in %s", os.Args[0], opts.BackupDir)
-	installSignalHandler()
+	util.InstallSignalHandler()
 	dbs := getDatabases()
 	backupDatabases(dbs)
 	removeExpiredBackups()

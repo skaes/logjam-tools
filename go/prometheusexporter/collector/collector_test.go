@@ -14,7 +14,6 @@ func TestDeletingLabels(t *testing.T) {
 		APIRequests:         []string{},
 	}
 	options := Options{
-		Interrupted: new(uint32),
 		Datacenters: "a,b",
 		CleanAfter:  60,
 	}

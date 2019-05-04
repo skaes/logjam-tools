@@ -5,15 +5,14 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/jessevdk/go-flags"
 	"github.com/nu7hatch/gouuid"
 	zmq "github.com/pebbe/zmq4"
+	"github.com/skaes/logjam-tools/go/util"
 )
 
 var opts struct {
@@ -40,15 +39,6 @@ func setupSocket() {
 	publisher.SetLinger(100)
 	publisher.SetSndhwm(1000)
 	publisher.Bind("tcp://127.0.0.1:9607")
-}
-
-func installSignalHandler() {
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-c
-		signal.Stop(c)
-	}()
 }
 
 type PerfData struct {
@@ -132,25 +122,18 @@ func main() {
 
 	keys := strings.Split(opts.Keys, ",")
 
-	c := make(chan os.Signal, 1)
-	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
-	interrupted := false
-
+	util.InstallSignalHandler()
 	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
 
-	for tick := 0; !interrupted; tick++ {
-		select {
-		case <-c:
-			fmt.Println("shutting down")
-			interrupted = true
-		case <-ticker.C:
+	for tick := 0; !util.Interrupted(); tick++ {
+		<-ticker.C
+		for _, key := range keys {
+			sendData(publisher, key, generatePerfData(), "DATA")
+		}
+		if tick%2 == 0 {
 			for _, key := range keys {
-				sendData(publisher, key, generatePerfData(), "DATA")
-			}
-			if tick%2 == 0 {
-				for _, key := range keys {
-					sendData(publisher, key, generateErrorData(), "ERRORS")
-				}
+				sendData(publisher, key, generateErrorData(), "ERRORS")
 			}
 		}
 	}
