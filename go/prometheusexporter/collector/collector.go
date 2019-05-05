@@ -379,7 +379,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 		p["metric"] = "job"
 	}
 	p["action"] = extractAction(data)
-	p["code"] = extractString(data, "response_code", "500")
+	p["code"] = extractString(data, "code", "500")
 	p["instance"] = extractString(data, "host", "unknown")
 	p["cluster"] = extractString(data, "cluster", "unknown")
 	p["dc"] = extractString(data, "datacenter", "unknown")
@@ -447,6 +447,8 @@ func extractString(request map[string]interface{}, key string, defaultValue stri
 	switch v := value.(type) {
 	case string:
 		return v
+	case float64:
+		return strconv.Itoa(int(v))
 	default:
 		return defaultValue
 	}
