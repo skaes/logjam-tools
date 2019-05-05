@@ -48,6 +48,7 @@ func main() {
 
 	collectorOptions := collector.Options{
 		Verbose:     opts.Verbose,
+		Debug:       false,
 		Datacenters: opts.Datacenters,
 		CleanAfter:  opts.CleanAfter,
 	}
@@ -57,6 +58,7 @@ func main() {
 
 	parserOptions := messageparser.Options{
 		Verbose: opts.Verbose,
+		Debug:   false,
 		Parsers: opts.Parsers,
 		Devices: opts.Devices,
 	}

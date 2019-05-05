@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	promclient "github.com/prometheus/client_model/go"
@@ -35,9 +36,10 @@ type metric struct {
 }
 
 type Options struct {
-	Verbose     bool
-	Datacenters string
-	CleanAfter  uint
+	Verbose     bool   // Verbose logging.
+	Debug       bool   // Extra verbose logging.
+	Datacenters string // Konown datacenters, comma separated.
+	CleanAfter  uint   // Remove actions with stale data after this many minutes.
 }
 
 type Collector struct {
@@ -168,7 +170,6 @@ func (c *Collector) observeMetrics(m *metric) {
 func (c *Collector) observer() {
 	for !util.Interrupted() && atomic.LoadUint32(&c.stopped) == 0 {
 		m := <-c.metricsChannel
-		// log.Info("ae: %s", c.appEnv())
 		switch m.kind {
 		case logMetric:
 			c.recordLogMetrics(m)
@@ -328,20 +329,30 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 }
 
 func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{}) {
+	if c.opts.Debug {
+		s := spew.Sdump(routingKey, data)
+		log.Info("processMessage\n%s", s)
+	}
+	var m *metric
 	if strings.HasPrefix(routingKey, "logs") {
-		c.processLogMessage(routingKey, data)
-		return
+		m = c.processLogMessage(routingKey, data)
 	}
 	if strings.HasPrefix(routingKey, "frontend.page") {
-		c.processPageMessage(routingKey, data)
-		return
+		m = c.processPageMessage(routingKey, data)
 	}
 	if strings.HasPrefix(routingKey, "frontend.ajax") {
-		c.processAjaxMessage(routingKey, data)
+		m = c.processAjaxMessage(routingKey, data)
+	}
+	if c.opts.Debug {
+		s := spew.Sdump(m)
+		log.Info("observing metric\n%s", s)
+	}
+	if m != nil {
+		c.observeMetrics(m)
 	}
 }
 
-func (c *Collector) processLogMessage(routingKey string, data map[string]interface{}) {
+func (c *Collector) processLogMessage(routingKey string, data map[string]interface{}) *metric {
 	p := make(map[string]string)
 	p["app"] = c.app
 	p["env"] = c.env
@@ -357,7 +368,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 				if c.opts.Verbose {
 					log.Info("ignoring request: %s", u.String())
 				}
-				return
+				return nil
 			}
 		}
 	}
@@ -379,12 +390,12 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 		if c.opts.Verbose {
 			log.Error("could not parse total_time(%s): %s", err)
 		}
-		return
+		return nil
 	}
-	c.observeMetrics(&metric{kind: logMetric, props: p, value: val})
+	return &metric{kind: logMetric, props: p, value: val}
 }
 
-func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) {
+func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) *metric {
 	rts := extractString(data, "rts", "")
 	p := make(map[string]string)
 	p["app"] = c.app
@@ -401,12 +412,12 @@ func (c *Collector) processPageMessage(routingKey string, data map[string]interf
 				log.Info("page_time outlier for %s [%s] from %s, user agent: %s, %f", c.appEnv(), p["action"], rts, ua, float64(timings.PageTime)/10000)
 			}
 		}
-		return
+		return nil
 	}
-	c.observeMetrics(&metric{kind: pageMetric, props: p, value: float64(timings.PageTime)})
+	return &metric{kind: pageMetric, props: p, value: float64(timings.PageTime)}
 }
 
-func (c *Collector) processAjaxMessage(routingKey string, data map[string]interface{}) {
+func (c *Collector) processAjaxMessage(routingKey string, data map[string]interface{}) *metric {
 	rts := extractString(data, "rts", "")
 	p := make(map[string]string)
 	p["app"] = c.app
@@ -423,9 +434,9 @@ func (c *Collector) processAjaxMessage(routingKey string, data map[string]interf
 				log.Info("ajax_time outlier for %s [%s] from %s, user agent: %s, %f", c.appEnv(), p["action"], rts, ua, float64(ajaxTime)/10000)
 			}
 		}
-		return
+		return nil
 	}
-	c.observeMetrics(&metric{kind: ajaxMetric, props: p, value: float64(ajaxTime)})
+	return &metric{kind: ajaxMetric, props: p, value: float64(ajaxTime)}
 }
 
 func extractString(request map[string]interface{}, key string, defaultValue string) string {

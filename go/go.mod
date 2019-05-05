@@ -3,6 +3,7 @@ module github.com/skaes/logjam-tools/go
 require (
 	github.com/ShowMax/go-fqdn v0.0.0-20180501083314-6f60894d629f
 	github.com/beorn7/perks v0.0.0-20180321164747-3a771d992973 // indirect
+	github.com/davecgh/go-spew v1.1.0
 	github.com/go-stack/stack v1.8.0 // indirect
 	github.com/gogo/protobuf v1.1.1 // indirect
 	github.com/golang/protobuf v1.2.0 // indirect

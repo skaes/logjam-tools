@@ -20,6 +20,7 @@ import (
 // Options for MessageParser
 type Options struct {
 	Verbose bool   // Verbose logging.
+	Debug   bool   // Extra verbose logging.
 	Parsers uint   // Number of message decoder go routines to run.
 	Devices string // Logjam devices to connect to.
 }
@@ -140,9 +141,9 @@ func (p *MessageParser) decodeAndUnmarshal() {
 				jsonBody = runes.ReplaceIllFormed().Bytes(jsonBody)
 				log.Warn("replaced invalid utf8 in json body: %s", jsonBody)
 			}
-			// if p.opts.Verbose {
-			//	log.Info("received msg body: %s", jsonBody)
-			// }
+			if p.opts.Debug {
+				log.Info("received msg body: %s", jsonBody)
+			}
 			data := make(map[string]interface{})
 			if err := json.Unmarshal(jsonBody, &data); err != nil {
 				log.Error("invalid json body: %s", err)
