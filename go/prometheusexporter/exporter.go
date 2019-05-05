@@ -20,6 +20,7 @@ var opts struct {
 	Devices     string `short:"d" long:"devices" env:"LOGJAM_DEVICES" default:"127.0.0.1:9606,127.0.0.1:9706" description:"Comma separated device specs (host:port pairs)."`
 	Env         string `short:"e" long:"env" env:"LOGJAM_ENV" description:"Logjam environments to process."`
 	Datacenters string `short:"D" long:"datacenters" env:"LOGJAM_DATACENTERS" description:"List of known datacenters, comma separated. Will be used to determine label value if not available on incoming data."`
+	DefaultDC   string `short:"u" long:"default-dc" env:"LOGJAM_DATACENTER" default:"unknown" description:"Assume this datacenter name if none could be derived from incoming data."`
 	Parsers     uint   `short:"P" long:"parsers" default:"4" description:"Number of message parsers to run in parallel."`
 	CleanAfter  uint   `short:"c" long:"clean-after" default:"5" description:"Minutes to wait before cleaning old time series."`
 	Port        string `short:"p" long:"port" default:"8081" description:"Port to expose metrics on."`
@@ -50,6 +51,7 @@ func main() {
 		Verbose:     opts.Verbose,
 		Debug:       false,
 		Datacenters: opts.Datacenters,
+		DefaultDC:   opts.DefaultDC,
 		CleanAfter:  opts.CleanAfter,
 	}
 	collectormanager.Initialize(opts.StreamURL, opts.Env, collectorOptions)

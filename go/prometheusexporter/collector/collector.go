@@ -39,6 +39,7 @@ type Options struct {
 	Verbose     bool   // Verbose logging.
 	Debug       bool   // Extra verbose logging.
 	Datacenters string // Konown datacenters, comma separated.
+	DefaultDC   string // Use this DC name if none can be derived.
 	CleanAfter  uint   // Remove actions with stale data after this many minutes.
 }
 
@@ -280,6 +281,7 @@ func (c *Collector) fixDatacenter(m map[string]string, instance string) {
 			}
 		}
 		if c.opts.Verbose && !fixed {
+			m["dc"] = c.opts.DefaultDC
 			log.Warn("Could not fix datacenter: %s, application: %s, instance: %s", dc, m["app"], instance)
 		}
 	}
@@ -382,7 +384,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	p["code"] = extractString(data, "code", "500")
 	p["instance"] = extractString(data, "host", "unknown")
 	p["cluster"] = extractString(data, "cluster", "unknown")
-	p["dc"] = extractString(data, "datacenter", "unknown")
+	p["dc"] = extractString(data, "datacenter", c.opts.DefaultDC)
 	valstr := extractString(data, "total_time", "0")
 	val, err := strconv.ParseFloat(valstr, 64)
 	if err != nil {
