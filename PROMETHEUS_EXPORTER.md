@@ -10,12 +10,12 @@ For starters, the following [metrics] will be exported:
 
 | Metric | Metric Type | Usage Pattern |
 |--------|-------------|---------------|
-|1. logjam\_http\_response\_time\_distribution\_seconds | histogram | used for both web and API requests |
-|2. logjam\_job\_execution\_time\_distribution\_seconds | histogram | used for all kinds of background jobs |
-|3. logjam\_page\_time\_distribution\_seconds           | histogram | used for page load times, RUM |
-|4. logjam\_ajax\_time\_distribution\_seconds           | histogram | used for ajax requests, RUM |
-|5. logjam\_http\_response\_time\_distribution\_seconds | summary   | used for both web and API requests |
-|6. logjam\_job\_execution\_time\_distribution\_seconds | summary   | used for all kinds of background jobs |
+|1. logjam:action:http\_response\_time\_distribution\_seconds | histogram | used for both web and API requests |
+|2. logjam:action:job\_execution\_time\_distribution\_seconds | histogram | used for all kinds of background jobs |
+|3. logjam:action:page\_time\_distribution\_seconds           | histogram | used for page load times, RUM |
+|4. logjam:action:ajax\_time\_distribution\_seconds           | histogram | used for ajax requests, RUM |
+|5. logjam:action:http\_response\_time\_distribution\_seconds | summary   | used for both web and API requests |
+|6. logjam:action:job\_execution\_time\_distribution\_seconds | summary   | used for all kinds of background jobs |
 
 And the following [labels] will be used:
 
