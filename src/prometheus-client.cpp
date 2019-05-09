@@ -42,91 +42,91 @@ void prometheus_client_init(const char* address)
 
     // declare metrics families, counters and gauges
     client.updates_total_family = &prometheus::BuildCounter()
-        .Name("importer_updates_total")
+        .Name("logjam:importer:updates_total")
         .Help("How many updates has this importer performed")
         .Register(*client.registry);
 
     client.updates_total = &client.updates_total_family->Add({});
 
     client.updates_seconds_family = &prometheus::BuildCounter()
-        .Name("importer_updates_seconds")
+        .Name("logjam:importer:updates_seconds")
         .Help("How many seconds has this importer spent updating")
         .Register(*client.registry);
 
     client.updates_seconds = &client.updates_seconds_family->Add({});
 
     client.inserts_total_family = &prometheus::BuildCounter()
-        .Name("importer_inserts_total")
+        .Name("logjam:importer:inserts_total")
         .Help("How many inserts has this importer performed")
         .Register(*client.registry);
 
     client.inserts_total = &client.inserts_total_family->Add({});
 
     client.inserts_seconds_family = &prometheus::BuildCounter()
-        .Name("importer_inserts_seconds")
+        .Name("logjam:importer:inserts_seconds")
         .Help("How many seconds has this imorter spent inserting")
         .Register(*client.registry);
 
     client.inserts_seconds = &client.inserts_seconds_family->Add({});
 
     client.received_msgs_total_family = &prometheus::BuildCounter()
-        .Name("importer_msgs_received_total")
+        .Name("logjam:importer:msgs_received_total")
         .Help("How many logjam messages has this importer received")
         .Register(*client.registry);
 
     client.received_msgs_total = &client.received_msgs_total_family->Add({});
 
     client.missed_msgs_total_family = &prometheus::BuildCounter()
-        .Name("importer_msgs_missed_total")
+        .Name("logjam:importer:msgs_missed_total")
         .Help("How many logjam messages were missed by this importer")
         .Register(*client.registry);
 
     client.missed_msgs_total = &client.missed_msgs_total_family->Add({});
 
     client.dropped_msgs_total_family = &prometheus::BuildCounter()
-        .Name("importer_msgs_dropped_total")
+        .Name("logjam:importer:msgs_dropped_total")
         .Help("How many logjam messages were dropped by this importer")
         .Register(*client.registry);
 
     client.dropped_msgs_total = &client.dropped_msgs_total_family->Add({});
 
     client.blocked_msgs_total_family = &prometheus::BuildCounter()
-        .Name("importer_msgs_blocked_total")
+        .Name("logjam:importer:msgs_blocked_total")
         .Help("How many logjam messages caused the importer to block")
         .Register(*client.registry);
 
     client.blocked_msgs_total = &client.blocked_msgs_total_family->Add({});
 
     client.parsed_msgs_total_family = &prometheus::BuildCounter()
-        .Name("importer_msgs_parsed_total")
+        .Name("logjam:importer:msgs_parsed_total")
         .Help("How many logjam messages were parsed by this importer")
         .Register(*client.registry);
 
     client.parsed_msgs_total = &client.parsed_msgs_total_family->Add({});
 
     client.queued_updates_family = &prometheus::BuildGauge()
-        .Name("importer_updates_queued")
+        .Name("logjam:importer:updates_queued")
         .Help("How many database updates are currently waiting to be processed by the importer")
         .Register(*client.registry);
 
     client.queued_updates = &client.queued_updates_family->Add({});
 
     client.queued_inserts_family = &prometheus::BuildGauge()
-        .Name("importer_inserts_queued")
+        .Name("logjam:importer:inserts_queued")
         .Help("How many database inserts are currently waiting to be processed by the importer")
         .Register(*client.registry);
 
     client.queued_inserts = &client.queued_inserts_family->Add({});
 
     client.blocked_updates_total_family = &prometheus::BuildCounter()
-        .Name("importer_updates_blocked_total")
+        .Name("logjam:importer:updates_blocked_total")
         .Help("How many update msgs caused the importer controller to block")
         .Register(*client.registry);
 
     client.blocked_updates_total = &client.blocked_updates_total_family->Add({});
 
     client.failed_inserts_total_family = &prometheus::BuildCounter()
-        .Name("importer_inserts_failed_total")
+        .Name("logjam:importer:inserts_failed_total")
         .Help("How many update database inserts failed")
         .Register(*client.registry);
 
