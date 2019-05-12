@@ -6,7 +6,8 @@ import (
 	"strings"
 )
 
-// Timings collects relevant metrics from the browser performance API
+// Timings collects relevant metrics from the browser performance
+// API. All timings are millicesond integers.
 type Timings struct {
 	NavigationTime int64 `json:"navigation_time"`
 	ConnectTime    int64 `json:"connect_time"`

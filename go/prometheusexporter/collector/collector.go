@@ -30,9 +30,9 @@ type dcPair struct {
 }
 
 type metric struct {
-	kind  uint8
-	props map[string]string
-	value float64
+	kind  uint8             // log, page or ajax
+	props map[string]string // stored as labels
+	value float64           // time value, in seconds
 }
 
 type Options struct {
@@ -394,7 +394,8 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 		}
 		return nil
 	}
-	return &metric{kind: logMetric, props: p, value: val}
+	// val is measured in milliseconds, but prometheus wants seconds
+	return &metric{kind: logMetric, props: p, value: val / 1000}
 }
 
 func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) *metric {
@@ -411,12 +412,13 @@ func (c *Collector) processPageMessage(routingKey string, data map[string]interf
 			if err != nil {
 				log.Error("could not extract page_time for %s [%s] from %s: %s, user agent: %s", c.appEnv(), p["action"], rts, err, ua)
 			} else {
-				log.Info("page_time outlier for %s [%s] from %s, user agent: %s, %f", c.appEnv(), p["action"], rts, ua, float64(timings.PageTime)/10000)
+				log.Info("page_time outlier for %s [%s] from %s, user agent: %s, %f", c.appEnv(), p["action"], rts, ua, float64(timings.PageTime)/1000)
 			}
 		}
 		return nil
 	}
-	return &metric{kind: pageMetric, props: p, value: float64(timings.PageTime)}
+	// page_time is measured in milliseconds, but prometheus wants seconds
+	return &metric{kind: pageMetric, props: p, value: float64(timings.PageTime) / 1000}
 }
 
 func (c *Collector) processAjaxMessage(routingKey string, data map[string]interface{}) *metric {
@@ -433,12 +435,13 @@ func (c *Collector) processAjaxMessage(routingKey string, data map[string]interf
 			if err != nil {
 				log.Error("could not extract ajax_time for %s [%s] from %s: %s, user agent: %s", c.appEnv(), p["action"], rts, err, ua)
 			} else {
-				log.Info("ajax_time outlier for %s [%s] from %s, user agent: %s, %f", c.appEnv(), p["action"], rts, ua, float64(ajaxTime)/10000)
+				log.Info("ajax_time outlier for %s [%s] from %s, user agent: %s, %f", c.appEnv(), p["action"], rts, ua, float64(ajaxTime)/1000)
 			}
 		}
 		return nil
 	}
-	return &metric{kind: ajaxMetric, props: p, value: float64(ajaxTime)}
+	// ajax_time is measured in milliseconds, but prometheus wants seconds
+	return &metric{kind: ajaxMetric, props: p, value: float64(ajaxTime) / 1000}
 }
 
 func extractString(request map[string]interface{}, key string, defaultValue string) string {
