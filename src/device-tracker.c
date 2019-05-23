@@ -1,6 +1,7 @@
 #include "device-tracker.h"
 
 extern bool quiet;
+extern bool verbose;
 
 bool log_gaps = true;
 
@@ -107,7 +108,7 @@ size_t device_tracker_calculate_gap(device_tracker_t* tracker, msg_meta_t* meta,
         info->sequence_number = sequence_number;
         info->credit = INITIAL_HEARTBEAT_CREDIT;
         if (pub_spec != NULL) {
-            if (!quiet)
+            if (verbose)
                 printf("[I] received heartbeat for connection: %s\n", pub_spec);
             if (info->pub_spec)
                 free((void*)info->pub_spec);
