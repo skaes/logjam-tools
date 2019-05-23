@@ -131,7 +131,7 @@ void device_tracker_reconnect_stale_devices(device_tracker_t* tracker)
             if (info->pub_spec) {
                 zlist_append(stale_devices, info);
             }
-        } else if (info->credit < INITIAL_HEARTBEAT_CREDIT - 1) {
+        } else if (info->credit < INITIAL_HEARTBEAT_CREDIT - 2) {
             printf("[I] credit left for device %d: %d\n", info->device_number, info->credit);
         }
         info = zhashx_next(tracker->seen_devices);
