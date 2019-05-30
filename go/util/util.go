@@ -5,6 +5,7 @@ import (
 	"compress/zlib"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -17,6 +18,7 @@ import (
 	"time"
 
 	"github.com/golang/snappy"
+	"github.com/pierrec/lz4"
 	log "github.com/skaes/logjam-tools/go/logging"
 )
 
@@ -27,6 +29,7 @@ const (
 	NoCompression     = 0
 	ZlibCompression   = 1
 	SnappyCompression = 2
+	LZ4Compression    = 3
 )
 
 func CurrentTime() uint64 {
@@ -70,6 +73,11 @@ func UnpackInfo(data []byte) *MetaInfo {
 
 func Decompress(data []byte, method uint8) ([]byte, error) {
 	switch method {
+	case LZ4Compression:
+		decompressedLen := binary.BigEndian.Uint32(data[:4])
+		decompressed := make([]byte, decompressedLen)
+		_, err := lz4.UncompressBlock(data[4:], decompressed)
+		return decompressed, err
 	case SnappyCompression:
 		return snappy.Decode(nil, data)
 	case ZlibCompression:
@@ -84,6 +92,30 @@ func Decompress(data []byte, method uint8) ([]byte, error) {
 			return nil, err
 		}
 		return decompressed, nil
+	}
+	return data, nil
+}
+
+func Compress(data []byte, method uint8) ([]byte, error) {
+	switch method {
+	case LZ4Compression:
+		hashTable := make([]int, 64<<10)
+		maxCompressedLen := lz4.CompressBlockBound(len(data))
+		buf := make([]byte, maxCompressedLen+4)
+		binary.BigEndian.PutUint32(buf[:4], uint32(len(data)))
+		n, err := lz4.CompressBlock(data, buf[4:], hashTable)
+		if n >= len(data) {
+			return nil, errors.New("data is not compressible")
+		}
+		return buf[:n+4], err
+	case SnappyCompression:
+		return snappy.Encode(nil, data), nil
+	case ZlibCompression:
+		var b bytes.Buffer
+		w := zlib.NewWriter(&b)
+		w.Write(data)
+		w.Close()
+		return b.Bytes(), nil
 	}
 	return data, nil
 }
@@ -170,8 +202,10 @@ func Interrupted() bool {
 }
 
 // ParseCompressionMethodName converts string to compression method
-func ParseCompressionMethodName(name string) (method byte, err error) {
+func ParseCompressionMethodName(name string) (method uint8, err error) {
 	switch name {
+	case "lz4":
+		method = LZ4Compression
 	case "snappy":
 		method = SnappyCompression
 	case "zlib":

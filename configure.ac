@@ -46,7 +46,7 @@ AC_ARG_WITH(opt-dir,
 		OPTDIR_LDFLAGS="$val"
                 AC_SUBST([OPTDIR_CPPFLAGS])
 		AC_SUBST([OPTDIR_LDFLAGS])
-                AC_SUBST([DEPS_LIBS],["-lczmq -lzmq -ljson-c -lmongoc-1.0 -lbson-1.0 -lsnappy"])
+                AC_SUBST([DEPS_LIBS],["-lczmq -lzmq -ljson-c -lmongoc-1.0 -lbson-1.0 -lsnappy -llz4"])
 	])
 
 AS_IF([test "x$prefix" != "x"],
@@ -58,7 +58,7 @@ AS_IF([test "x$prefix" != "x"],
 
 AS_IF([test "x$with_opt_dir" == "x"],
       [
-        PKG_CHECK_MODULES([DEPS],[libzmq >= 4.1.5 libczmq >= 4.2.0 json-c >= 0.11 libbson-1.0 >= 1.14.0 libmongoc-1.0 >= 1.14.0 libsnappy >= 1.1.3],[:],
+        PKG_CHECK_MODULES([DEPS],[libzmq >= 4.1.5 libczmq >= 4.2.0 json-c >= 0.11 libbson-1.0 >= 1.14.0 libmongoc-1.0 >= 1.14.0 libsnappy >= 1.1.3 liblz4 >= 1.8.3],[:],
                           [
                             echo "checking modules failed. using builtin default directories."
                             AC_SUBST([OPTDIR_CPPFLAGS],["-I/opt/logjam/include -I/opt/logjam/include/libbson-1.0 -I/opt/logjam/include/libmongoc-1.0 -I/usr/local/include -I/usr/local/include/libbson-1.0 -I/usr/local/include/libmongoc-1.0 -I/opt/local/include -I/opt/local/include/libbson-1.0 -I/opt/local/include/libmongoc-1.0"])
@@ -69,7 +69,7 @@ AS_IF([test "x$with_opt_dir" == "x"],
                             AS_IF([test -d /opt/local/lib],  [OPTDIR_LDFLAGS="$OPTDIR_LDFLAGS -L/opt/local/lib"])
                             AC_SUBST([OPTDIR_LDFLAGS])
 
-                            AC_SUBST([DEPS_LIBS],["-lczmq -lzmq -ljson-c -lmongoc-1.0 -lbson-1.0 -lsnappy"])]
+                            AC_SUBST([DEPS_LIBS],["-lczmq -lzmq -ljson-c -lmongoc-1.0 -lbson-1.0 -lsnappy -llz4"])]
                          )
       ])
 

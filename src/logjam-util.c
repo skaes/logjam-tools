@@ -3,6 +3,7 @@
 #include <limits.h>
 #include <zlib.h>
 #include <snappy-c.h>
+#include <lz4.h>
 #include "logjam-util.h"
 
 zlist_t *split_delimited_string(const char* s)
@@ -193,8 +194,8 @@ int string_to_compression_method(const char *s)
         return ZLIB_COMPRESSION;
     else if (!strcmp("snappy", s))
         return SNAPPY_COMPRESSION;
-    else if (!strcmp("brotli", s))
-        return BROTLI_COMPRESSION;
+    else if (!strcmp("lz4", s))
+        return LZ4_COMPRESSION;
     else {
         fprintf(stderr, "unsupported compression method: '%s'\n", s);
         return NO_COMPRESSION;
@@ -207,7 +208,7 @@ const char* compression_method_to_string(int compression_method)
     case NO_COMPRESSION:     return "no compression";
     case ZLIB_COMPRESSION:   return "zlib";
     case SNAPPY_COMPRESSION: return "snappy";
-    case BROTLI_COMPRESSION: return "brotli";
+    case LZ4_COMPRESSION:    return "lz4";
     default:                 return "unknown compression method";
     }
 }
@@ -252,7 +253,7 @@ int publish_on_zmq_transport(zmq_msg_t *message_parts, void *publisher, msg_meta
     return rc;
 }
 
-void compress_message_data_gzip(zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len)
+void compress_message_data_gzip(zchunk_t* buffer, zmq_msg_t *body, const char *data, size_t data_len)
 {
     const Bytef *raw_data = (Bytef *)data;
     uLong raw_len = data_len;
@@ -278,10 +279,10 @@ void compress_message_data_gzip(zchunk_t* buffer, zmq_msg_t *body, char *data, s
     memcpy(zmq_msg_data(&compressed_msg), compressed_data, compressed_len);
     zmq_msg_move(body, &compressed_msg);
 
-    // printf("[D] uncompressed/compressed: %ld/%ld\n", raw_len, compressed_len);
+    // printf("[D] zlib uncompressed/compressed: %ld/%ld\n", raw_len, compressed_len);
 }
 
-void compress_message_data_snappy(zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len)
+void compress_message_data_snappy(zchunk_t* buffer, zmq_msg_t *body, const char *data, size_t data_len)
 {
     size_t max_compressed_len = snappy_max_compressed_length(data_len);
     // printf("[D] util: compression bound %zu\n", max_compressed_len);
@@ -307,11 +308,42 @@ void compress_message_data_snappy(zchunk_t* buffer, zmq_msg_t *body, char *data,
     rc = zmq_msg_move(body, &compressed_msg);
     assert(rc != -1);
 
-    // printf("[D] uncompressed/compressed: %ld/%ld\n", data_len, compressed_len);
+    // printf("[D] snappy uncompressed/compressed: %ld/%ld\n", data_len, compressed_len);
 }
 
+void compress_message_data_lz4(zchunk_t* buffer, zmq_msg_t *body, const char *data, size_t data_len)
+{
+    int max_compressed_len = LZ4_compressBound(data_len) + 4;
+    assert(max_compressed_len > 0);
+    // printf("[D] util: compression bound %zu\n", max_compressed_len);
+    size_t buffer_size = zchunk_max_size(buffer);
+    if (buffer_size < (size_t)max_compressed_len) {
+        size_t next_size = 2 * buffer_size;
+        while (next_size < (size_t)max_compressed_len)
+            next_size *= 2;
+        // printf("[D] util: resizing compression buffer to %zu\n", next_size);
+        zchunk_resize(buffer, next_size);
+    }
+    char *compressed_data = (char*) zchunk_data(buffer);
 
-void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len)
+    // compress will set compressed_len to the size of the compressed data
+    int compressed_len = LZ4_compress_default(data, compressed_data+4, data_len, max_compressed_len);
+    assert(compressed_len > 0);
+    assert(compressed_len <= max_compressed_len);
+
+    int32_t encoded_len = htonl(data_len);
+    memcpy(compressed_data, &encoded_len, 4);
+
+    zmq_msg_t compressed_msg;
+    zmq_msg_init_size(&compressed_msg, compressed_len+4);
+    memcpy(zmq_msg_data(&compressed_msg), compressed_data, compressed_len+4);
+    int rc = zmq_msg_move(body, &compressed_msg);
+    assert(rc != -1);
+
+    // printf("[D] lz4 uncompressed/compressed: %ld/%d\n", data_len, compressed_len);
+}
+
+void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *body, const char *data, size_t data_len)
 {
     switch (compression_method) {
     case ZLIB_COMPRESSION:
@@ -320,11 +352,13 @@ void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *
     case SNAPPY_COMPRESSION:
         compress_message_data_snappy(buffer, body, data, data_len);
         break;
+    case LZ4_COMPRESSION:
+        compress_message_data_lz4(buffer, body, data, data_len);
+        break;
     default:
         fprintf(stderr, "[D] unknown compression method\n");
     }
 }
-
 
 // we give up if the buffer needs to be larger than 10MB
 const size_t max_buffer_size = 32 * 1024 * 1024;
@@ -393,6 +427,45 @@ int decompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body,
     return 1;
 }
 
+int decompress_frame_lz4(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
+{
+    const char *source = (char*) zframe_data(body_frame);
+    size_t source_len = zframe_size(body_frame);
+
+    size_t dest_size = zchunk_max_size(buffer);
+    char *dest = (char*) zchunk_data(buffer);
+
+    *body = "";
+    *body_len = 0;
+
+    int32_t encoded_length;
+    memcpy(&encoded_length, source, 4);
+    size_t uncompressed_length = ntohl(encoded_length);
+
+    if (uncompressed_length > dest_size) {
+        size_t next_size = 2 * dest_size;
+        while (next_size < max_buffer_size)
+            next_size *= 2;
+        if (next_size > max_buffer_size)
+            next_size = max_buffer_size;
+        zchunk_resize(buffer, next_size);
+        dest_size = next_size;
+        dest = (char*) zchunk_data(buffer);
+    }
+    assert(dest_size >= uncompressed_length);
+
+    int decompressed_bytes = LZ4_decompress_safe(source+4, dest, source_len-4, dest_size);
+    if (decompressed_bytes < 0) {
+        fprintf(stderr, "[E] lz4_decompress failed\n");
+        return 0;
+    }
+
+    *body = dest;
+    *body_len = decompressed_bytes;
+
+    return 1;
+}
+
 int decompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buffer, char **body, size_t* body_len)
 {
     switch (compression_method) {
@@ -400,6 +473,8 @@ int decompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buf
         return decompress_frame_gzip(body_frame, buffer, body, body_len);
     case SNAPPY_COMPRESSION:
         return decompress_frame_snappy(body_frame, buffer, body, body_len);
+    case LZ4_COMPRESSION:
+        return decompress_frame_lz4(body_frame, buffer, body, body_len);
     default:
         fprintf(stderr, "[D] unknown compression method: %d\n", compression_method);
         return 0;
@@ -761,7 +836,7 @@ static void test_htonll (int verbose)
 
 static void test_my_fqdn (int verbose)
 {
-    for (int i=0; i++ < 30;) {
+    for (int i=0; i++ < 5;) {
         const char* hostname = my_fqdn();
         if (hostname && strchr(hostname, '.')) {
             if (verbose)
@@ -815,6 +890,48 @@ static void test_extract_app_env_rid (int verbose)
     assert(streq(rid, "r"));
 }
 
+static void test_compression_decompression (int verbose)
+{
+    assert(sizeof(int32_t) == 4);
+    const char* test_data[5] =
+        {
+         "{}",
+         "111111111111111111111111111111111111111111111",
+         "jjskdhfuds hf e iuweu fbiuwe eubcbwebcdbcdsub sghufhuhfushd fuhsfhshfuhsfh",
+         "Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.",
+         "{\"id\":\"0001\",\"type\":\"donut\",\"name\":\"Cake\",\"ppu\":0.55,\"batters\":{\"batter\":[{\"id\":\"1001\",\"type\":\"Regular\"},{\"id\":\"1002\",\"type\":\"Chocolate\"},{\"id\":\"1003\",\"type\":\"Blueberry\"},{\"id\":\"1004\",\"type\":\"Devil's Food\"}]},\"topping\":[{\"id\":\"5001\",\"type\":\"None\"},{\"id\":\"5002\",\"type\":\"Glazed\"},{\"id\":\"5005\",\"type\":\"Sugar\"},{\"id\":\"5007\",\"type\":\"Powdered Sugar\"},{\"id\":\"5006\",\"type\":\"Chocolate with Sprinkles\"},{\"id\":\"5003\",\"type\":\"Chocolate\"},{\"id\":\"5004\",\"type\":\"Maple\"}]}"
+        };
+    const char* method_names[4] = {"lz4", "snappy", "zlib"};
+    for (int k = 0; k < 5; k++) {
+        const char* data = test_data[k];
+        const size_t data_len = strlen(data);
+        for (int i= 0; i < 3; i++) {
+            zchunk_t *buffer = zchunk_new(NULL, 10);
+            const char* method_name = method_names[i];
+            int method = string_to_compression_method(method_name);
+            zmq_msg_t body;
+            zmq_msg_init(&body);
+            compress_message_data(method, buffer, &body, data, data_len);
+            size_t compressed_len = zmq_msg_size(&body);
+            char* decompressed;
+            size_t decompressed_len;
+            zframe_t *frame = zframe_new(NULL, compressed_len);
+            memcpy(zframe_data(frame), zmq_msg_data(&body), compressed_len);
+            zmq_msg_close(&body);
+            int rc = decompress_frame(frame, method, buffer, &decompressed, &decompressed_len);
+            assert(rc);
+            if (decompressed_len != data_len) {
+                fprintf(stderr, "method %s: decompressed length (%zu) != original data length (%zu)\n",
+                        method_name, decompressed_len, data_len);
+                assert(0);
+            }
+            assert(0 == strncmp(data, decompressed, data_len));
+            zframe_destroy(&frame);
+            zchunk_destroy(&buffer);
+        }
+    }
+}
+
 void logjam_util_test (int verbose)
 {
     printf (" * logjam-utils: ");
@@ -828,6 +945,7 @@ void logjam_util_test (int verbose)
     test_my_fqdn (verbose);
     test_extract_app_env (verbose);
     test_extract_app_env_rid (verbose);
+    test_compression_decompression (verbose);
 
     printf ("OK\n");
 }

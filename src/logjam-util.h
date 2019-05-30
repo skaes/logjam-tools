@@ -35,8 +35,7 @@ extern void augment_zmq_connection_specs(zlist_t** specs, int default_port);
 #define NO_COMPRESSION     0
 #define ZLIB_COMPRESSION   1
 #define SNAPPY_COMPRESSION 2
-// brotli not yet supported
-#define BROTLI_COMPRESSION 3
+#define LZ4_COMPRESSION 3
 
 #define INITIAL_COMPRESSION_BUFFER_SIZE (16 * 1024)
 #define INITIAL_DECOMPRESSION_BUFFER_SIZE (32 * 1024)
@@ -113,7 +112,7 @@ extern bool output_socket_ready(zsock_t *socket, int msecs);
 
 extern int publish_on_zmq_transport(zmq_msg_t *message_parts, void *socket, msg_meta_t *msg_meta, int flags);
 
-extern void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *body, char *data, size_t data_len);
+extern void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *body, const char *data, size_t data_len);
 
 extern int decompress_frame(zframe_t *body_frame, int compression_method, zchunk_t *buffer, char **body, size_t* body_len);
 
