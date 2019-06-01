@@ -15,6 +15,8 @@ static struct prometheus_client_t {
     prometheus::Counter *inserts_seconds;
     prometheus::Family<prometheus::Counter> *received_msgs_total_family;
     prometheus::Counter *received_msgs_total;
+    prometheus::Family<prometheus::Counter> *received_bytes_total_family;
+    prometheus::Counter *received_bytes_total;
     prometheus::Family<prometheus::Counter> *missed_msgs_total_family;
     prometheus::Counter *missed_msgs_total;
     prometheus::Family<prometheus::Counter> *dropped_msgs_total_family;
@@ -75,6 +77,13 @@ void prometheus_client_init(const char* address)
         .Register(*client.registry);
 
     client.received_msgs_total = &client.received_msgs_total_family->Add({});
+
+    client.received_bytes_total_family = &prometheus::BuildCounter()
+        .Name("logjam:importer:msgs_received_bytes_total")
+        .Help("How many bytes of logjam messages has this importer received")
+        .Register(*client.registry);
+
+    client.received_bytes_total = &client.received_bytes_total_family->Add({});
 
     client.missed_msgs_total_family = &prometheus::BuildCounter()
         .Name("logjam:importer:msgs_missed_total")
@@ -156,6 +165,11 @@ void prometheus_client_count_inserts(double value)
 void prometheus_client_count_msgs_received(double value)
 {
     client.received_msgs_total->Increment(value);
+}
+
+void prometheus_client_count_bytes_received(double value)
+{
+    client.received_bytes_total->Increment(value);
 }
 
 void prometheus_client_count_msgs_missed(double value)

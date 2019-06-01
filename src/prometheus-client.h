@@ -14,6 +14,7 @@ extern void prometheus_client_count_updates(double value);
 extern void prometheus_client_count_inserts(double value);
 extern void prometheus_client_count_msgs_missed(double value);
 extern void prometheus_client_count_msgs_received(double value);
+extern void prometheus_client_count_bytes_received(double value);
 extern void prometheus_client_count_msgs_dropped(double value);
 extern void prometheus_client_count_msgs_blocked(double value);
 extern void prometheus_client_count_msgs_parsed(double value);

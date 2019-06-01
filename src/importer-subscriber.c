@@ -35,6 +35,7 @@ typedef struct {
     zsock_t *router_socket;                   // ROUTER socket for direct connections (apps)
     zsock_t *pub_socket;                      // republish all incoming messages (optional)
     size_t message_count;                     // messages processed (since last tick)
+    size_t message_bytes;                     // messages bytes processed (since last tick)
     size_t messages_dev_zero;                 // messages arrived from device 0 (since last tick)
     size_t meta_info_failures;                // messages with invalid meta info (since last tick)
     size_t message_gap_size;                  // messages missed due to gaps in the stream (since last tick)
@@ -187,6 +188,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
     zmsg_t *msg = zmsg_recv(socket);
     if (msg) {
         state->message_count++;
+        state->message_bytes += zmsg_content_size(msg);
         int n = zmsg_size(msg);
         if (n < 3 || n > 4) {
             fprintf(stderr, "[E] subscriber[%zu]: (%s:%d): dropped invalid message of size %d\n", state->id, __FILE__, __LINE__, n);
@@ -222,6 +224,7 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
     bool ok = true;
     bool is_ping = false;
     state->message_count++;
+    state->message_bytes += zmsg_content_size(msg);
 
     // pop the sender id added by the router socket
     zframe_t *sender_id = zmsg_pop(msg);
@@ -298,20 +301,24 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             rc = -1;
         }
         else if (streq(cmd, "tick")) {
-            printf("[I] subscriber[%zu]: %5zu messages "
-                   "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
+            printf("[I] subscriber[%zu]: %5zu messages"
+                   "(size: %.2fMB, gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
                    state->id,
-                   state->message_count, state->message_gap_size, state->meta_info_failures,
+                   state->message_count, (double)state->message_bytes / 1048576,
+                   state->message_gap_size, state->meta_info_failures,
                    state->messages_dev_zero, state->message_blocks, state->message_drops);
             statsd_client_count(state->statsd_client, "subscriber.messsages.received.count", state->message_count);
+            statsd_client_count(state->statsd_client, "subscriber.messsages.received.bytes", state->message_bytes);
             statsd_client_count(state->statsd_client, "subscriber.messsages.missed.count", state->message_gap_size);
             statsd_client_count(state->statsd_client, "subscriber.messsages.dropped.count", state->message_drops);
             statsd_client_count(state->statsd_client, "subscriber.messsages.blocked.count", state->message_blocks);
             prometheus_client_count_msgs_received(state->message_count);
+            prometheus_client_count_bytes_received(state->message_bytes);
             prometheus_client_count_msgs_missed(state->message_gap_size);
             prometheus_client_count_msgs_dropped(state->message_drops);
             prometheus_client_count_msgs_blocked(state->message_blocks);
             state->message_count = 0;
+            state->message_bytes = 0;
             state->message_gap_size = 0;
             state->meta_info_failures = 0;
             state->messages_dev_zero = 0;
