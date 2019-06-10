@@ -1,6 +1,6 @@
 #include <prometheus/exposer.h>
-#include "prometheus-client.h"
 #include <prometheus/registry.h>
+#include "importer-prometheus-client.h"
 
 static struct prometheus_client_t {
     prometheus::Exposer *exposer;

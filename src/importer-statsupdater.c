@@ -5,7 +5,7 @@
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
 #include "importer-parser.h"
-#include "prometheus-client.h"
+#include "importer-prometheus-client.h"
 
 /*
  * connections: n_u = NUM_UPDATERS, "o" = bind, "[<>v^]" = connect

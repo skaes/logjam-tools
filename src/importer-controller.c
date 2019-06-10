@@ -10,7 +10,7 @@
 #include "importer-subscriber.h"
 #include "importer-watchdog.h"
 #include "statsd-client.h"
-#include "prometheus-client.h"
+#include "importer-prometheus-client.h"
 
 /*
  * connections: n_s = num_subscribers, n_w = num_writers, n_p = num_parsers, n_u= num_updaters, n_a = num_adders "[<>^v]" = connect, "o" = bind

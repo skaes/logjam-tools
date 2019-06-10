@@ -3,7 +3,7 @@
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
 #include "importer-processor.h"
-#include "prometheus-client.h"
+#include "importer-prometheus-client.h"
 #include <getopt.h>
 
 int snd_hwm = -1;

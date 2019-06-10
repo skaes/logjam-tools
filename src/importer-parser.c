@@ -2,7 +2,7 @@
 #include "importer-parser.h"
 #include "importer-processor.h"
 #include "importer-parser.h"
-#include "prometheus-client.h"
+#include "importer-prometheus-client.h"
 
 /*
  * connections: n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind

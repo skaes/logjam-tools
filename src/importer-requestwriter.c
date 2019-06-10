@@ -4,7 +4,7 @@
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
 #include "statsd-client.h"
-#include "prometheus-client.h"
+#include "importer-prometheus-client.h"
 
 /*
  * connections: n_w = num_writers, n_p = num_parsers, "o" = bind, "[<>v^]" = connect

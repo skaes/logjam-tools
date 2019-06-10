@@ -77,8 +77,8 @@ logjam_importer_SOURCES = \
     zring.h \
     device-tracker.c \
     device-tracker.h \
-    prometheus-client.cpp \
-    prometheus-client.h
+    importer-prometheus-client.cpp \
+    importer-prometheus-client.h
 
 logjam_importer_LDADD = $(PROMETHEUS_LIBS) $(LDADD)
 

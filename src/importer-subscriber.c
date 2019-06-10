@@ -3,7 +3,7 @@
 #include "logjam-util.h"
 #include "device-tracker.h"
 #include "statsd-client.h"
-#include "prometheus-client.h"
+#include "importer-prometheus-client.h"
 
 /*
  * connections: n_s = num_subscribers, n_w = num_writers, n_p = num_parsers, "[<>^v]" = connect, "o" = bind
