@@ -7,6 +7,7 @@ import (
 	"github.com/gorilla/mux"
 	log "github.com/skaes/logjam-tools/go/logging"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/collectormanager"
+	"github.com/skaes/logjam-tools/go/prometheusexporter/stats"
 	"gopkg.in/tylerb/graceful.v1"
 )
 
@@ -14,6 +15,7 @@ import (
 func HandleHTTPRequests(port string) {
 	r := mux.NewRouter()
 	r.HandleFunc("/metrics/{application}/{environment}", serveAppMetrics)
+	r.HandleFunc("/metrics", serveExporterMetrics)
 	r.HandleFunc("/_system/alive", serveAliveness)
 	log.Info("starting http server on port %s", port)
 	spec := ":" + port
@@ -45,4 +47,8 @@ func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
 	} else {
 		c.RequestHandler.ServeHTTP(w, r)
 	}
+}
+
+func serveExporterMetrics(w http.ResponseWriter, r *http.Request) {
+	stats.RequestHandler.ServeHTTP(w, r)
 }
