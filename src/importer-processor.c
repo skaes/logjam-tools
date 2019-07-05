@@ -718,6 +718,12 @@ sampling_reason_t interesting_request(request_data_t *request_data, json_object 
 static
 int ignore_request(json_object *request, stream_info_t* info)
 {
+    json_object *logjam_ignore_message_obj;
+    if (json_object_object_get_ex(request, "logjam_ignore_message", &logjam_ignore_message_obj)) {
+        if (json_object_get_boolean(logjam_ignore_message_obj))
+            // fprintf(stderr, "[D] ignored message because logjam_ignore_message was set to true");
+            return 1;
+    }
     json_object *req_info;
     if (json_object_object_get_ex(request, "request_info", &req_info)) {
         json_object *url_obj;

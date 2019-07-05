@@ -358,6 +358,13 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	p := make(map[string]string)
 	p["app"] = c.app
 	p["env"] = c.env
+	ignore_message := extractBool(data, "logjam_ignore_message")
+	if ignore_message {
+		if c.opts.Verbose {
+			log.Info("ignoring request because logjam_ignore_message was set to true")
+		}
+		return nil
+	}
 	info := extractMap(data, "request_info")
 	method := ""
 	if info != nil {
@@ -368,7 +375,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 			if err == nil && strings.HasPrefix(u.Path, c.ignoredRequestURI) {
 				atomic.AddUint64(&stats.Stats.Ignored, 1)
 				if c.opts.Verbose {
-					log.Info("ignoring request: %s", u.String())
+					log.Info("ignoring request because of url match: %s", u.String())
 				}
 				return nil
 			}
@@ -456,6 +463,23 @@ func extractString(request map[string]interface{}, key string, defaultValue stri
 		return strconv.Itoa(int(v))
 	default:
 		return defaultValue
+	}
+}
+
+func extractBool(request map[string]interface{}, key string) bool {
+	value := request[key]
+	if value == nil {
+		return false
+	}
+	switch v := value.(type) {
+	case bool:
+		return bool(v)
+	case string:
+		return v == "true"
+	case int:
+		return int(v) > 0
+	default:
+		return false
 	}
 }
 
