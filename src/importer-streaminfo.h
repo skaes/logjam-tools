@@ -41,9 +41,9 @@ extern long int global_sampling_rate_400s_threshold;
 #define MAX_RANDOM_VALUE ((1L<<31) - 1)
 #define TEN_PERCENT_OF_MAX_RANDOM 214748364
 
-// request storage size soft limit is 10 GB, hard limit 20 GB, per app
-#define SOFT_LIMIT_STORAGE_SIZE 10737418240
-#define HARD_LIMIT_STORAGE_SIZE 21474836480
+// request storage size soft limit is 15 GB, hard limit 30 GB, per app
+#define SOFT_LIMIT_STORAGE_SIZE 16106127360
+#define HARD_LIMIT_STORAGE_SIZE 32212254720
 
 // all configured streams
 extern zhash_t *configured_streams;
