@@ -54,10 +54,17 @@ void add_import_threshold_settings(zconfig_t* config, stream_info_t* info)
         info->import_threshold = atoi(zconfig_value(setting));
         zconfig_t *module_setting = zconfig_child(setting);
         while (module_setting) {
-            char *module_name = zconfig_name(module_setting);
-            size_t threshold_value = atoi(zconfig_value(module_setting));
-            zhash_update(module_settings, module_name, (void*)threshold_value);
+            char *prefix = zconfig_name(module_setting);
+            size_t threshold_value;
+            if (streq(prefix, "prefix")) {
+                prefix = zconfig_value(module_setting);
+                zconfig_t *threshold = zconfig_child(module_setting);
+                threshold_value = atoi(zconfig_value(threshold));
+            } else {
+                threshold_value = atoi(zconfig_value(module_setting));
+            }
             module_setting = zconfig_next(module_setting);
+            zhash_update(module_settings, prefix, (void*)threshold_value);
         }
         setting = zlist_next(settings);
     }
