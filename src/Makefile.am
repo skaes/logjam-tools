@@ -32,7 +32,11 @@ logjam_device_SOURCES = \
     logjam-util.c \
     logjam-util.h \
     message-compressor.c \
-    message-compressor.h
+    message-compressor.h \
+    device-prometheus-client.cpp \
+    device-prometheus-client.h
+
+logjam_device_LDADD = $(PROMETHEUS_LIBS) $(LDADD)
 
 logjam_importer_SOURCES = \
     ../config.h \

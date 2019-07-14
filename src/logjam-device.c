@@ -9,6 +9,7 @@
 #include <getopt.h>
 #include "logjam-util.h"
 #include "message-compressor.h"
+#include "device-prometheus-client.h"
 
 // shared globals
 bool verbose = false;
@@ -45,6 +46,10 @@ static int compression_method = NO_COMPRESSION;
 static zchunk_t *compression_buffer;
 static uint64_t global_time = 0;
 
+int metrics_port = 8082;
+char metrics_address[256] = {0};
+const char *metrics_ip = "0.0.0.0";
+
 typedef struct {
     // raw zmq sockets, to avoid zsock_resolve
     void *receiver;
@@ -69,6 +74,11 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     size_t message_bytes    = received_messages_bytes - last_received_bytes;
     size_t compressed_count = compressed_messages_count - last_compressed_count;
     size_t compressed_bytes = compressed_messages_bytes - last_compressed_bytes;
+
+    device_prometheus_client_count_msgs_received(message_count);
+    device_prometheus_client_count_bytes_received(message_bytes);
+    device_prometheus_client_count_msgs_compressed(compressed_count);
+    device_prometheus_client_count_bytes_compressed(compressed_bytes);
 
     double avg_msg_size        = message_count ? (message_bytes / 1024.0) / message_count : 0;
     double max_msg_size        = received_messages_max_bytes / 1024.0;
@@ -252,6 +262,8 @@ static void print_usage(char * const *argv)
             "  -P, --output-port N        port number of zeromq ouput socket\n"
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
+            "  -m, --metrics-port N       port to use for prometheus path /metrics\n"
+            "  -M, --metrics-ip N         ip for binding metrics endpoint\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
@@ -278,10 +290,12 @@ static void process_arguments(int argc, char * const *argv)
         { "rcv-hwm",       required_argument, 0, 'R' },
         { "snd-hwm",       required_argument, 0, 'S' },
         { "verbose",       no_argument,       0, 'v' },
+        { "metrics-port",  required_argument, 0, 'm' },
+        { "metrics-ip",    required_argument, 0, 'M' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:p:c:i:x:s:P:S:R:t:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:c:i:x:s:P:S:R:t:m:M:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -302,6 +316,13 @@ static void process_arguments(int argc, char * const *argv)
         case 'P':
             pub_port = atoi(optarg);
             break;
+        case 'm':
+            metrics_port = atoi(optarg);
+            break;
+        case 'M': {
+            metrics_ip = optarg;
+            break;
+        }
         case 'i':
             io_threads = atoi(optarg);
             break;
@@ -386,6 +407,10 @@ int main(int argc, char * const *argv)
     zsys_set_io_threads(io_threads);
 
     compression_buffer = zchunk_new(NULL, INITIAL_COMPRESSION_BUFFER_SIZE);
+
+    // initalize prometheus client
+    snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
+    device_prometheus_client_init(metrics_address, device_number_s);
 
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_PULL);
@@ -505,6 +530,8 @@ int main(int argc, char * const *argv)
     for (size_t i = 0; i < num_compressors; i++)
         zactor_destroy(&compressors[i]);
     zsys_shutdown();
+
+    device_prometheus_client_shutdown();
 
     printf("[I] %s terminated\n", argv[0]);
 

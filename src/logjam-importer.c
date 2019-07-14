@@ -341,7 +341,7 @@ int main(int argc, char * const *argv)
 
     initialize_mongo_db_globals(config);
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
-    prometheus_client_init(metrics_address);
+    importer_prometheus_client_init(metrics_address);
 
     setup_resource_maps(config);
     setup_stream_config(config, subscription_pattern);

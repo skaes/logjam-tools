@@ -35,7 +35,7 @@ static struct prometheus_client_t {
     prometheus::Family<prometheus::Counter> *failed_inserts_total_family;
 } client;
 
-void prometheus_client_init(const char* address)
+void importer_prometheus_client_init(const char* address)
 {
     // create a http server running on the given address
     client.exposer = new prometheus::Exposer{address};
@@ -146,78 +146,78 @@ void prometheus_client_init(const char* address)
     client.exposer->RegisterCollectable(client.registry);
 }
 
-void prometheus_client_shutdown()
+void importer_prometheus_client_shutdown()
 {
     delete client.exposer;
     client.exposer = NULL;
 }
 
-void prometheus_client_count_updates(double value)
+void importer_prometheus_client_count_updates(double value)
 {
     client.updates_total->Increment(value);
 }
 
-void prometheus_client_count_inserts(double value)
+void importer_prometheus_client_count_inserts(double value)
 {
     client.inserts_total->Increment(value);
 }
 
-void prometheus_client_count_msgs_received(double value)
+void importer_prometheus_client_count_msgs_received(double value)
 {
     client.received_msgs_total->Increment(value);
 }
 
-void prometheus_client_count_bytes_received(double value)
+void importer_prometheus_client_count_bytes_received(double value)
 {
     client.received_bytes_total->Increment(value);
 }
 
-void prometheus_client_count_msgs_missed(double value)
+void importer_prometheus_client_count_msgs_missed(double value)
 {
     client.missed_msgs_total->Increment(value);
 }
 
-void prometheus_client_count_msgs_blocked(double value)
+void importer_prometheus_client_count_msgs_blocked(double value)
 {
     client.blocked_msgs_total->Increment(value);
 }
 
-void prometheus_client_count_msgs_dropped(double value)
+void importer_prometheus_client_count_msgs_dropped(double value)
 {
     client.dropped_msgs_total->Increment(value);
 }
 
-void prometheus_client_count_updates_blocked(double value)
+void importer_prometheus_client_count_updates_blocked(double value)
 {
     client.blocked_updates_total->Increment(value);
 }
 
-void prometheus_client_count_msgs_parsed(double value)
+void importer_prometheus_client_count_msgs_parsed(double value)
 {
     client.parsed_msgs_total->Increment(value);
 }
 
-void prometheus_client_gauge_queued_updates(double value)
+void importer_prometheus_client_gauge_queued_updates(double value)
 {
     client.queued_updates->Set(value);
 }
 
-void prometheus_client_gauge_queued_inserts(double value)
+void importer_prometheus_client_gauge_queued_inserts(double value)
 {
     client.queued_inserts->Set(value);
 }
 
-void prometheus_client_time_updates(double value)
+void importer_prometheus_client_time_updates(double value)
 {
     client.updates_seconds->Increment(value);
 }
 
-void prometheus_client_time_inserts(double value)
+void importer_prometheus_client_time_inserts(double value)
 {
     client.inserts_seconds->Increment(value);
 }
 
-void prometheus_client_count_inserts_failed(double value)
+void importer_prometheus_client_count_inserts_failed(double value)
 {
     client.failed_inserts_total->Increment(value);
 }

@@ -533,8 +533,8 @@ static void stats_updater(zsock_t *pipe, void *args)
                 }
                 statsd_client_count(state->statsd_client, "importer.updates.count", state->updates_count);
                 statsd_client_timing(state->statsd_client, "importer.updates.time", ((double)state->update_time)/1000);
-                prometheus_client_count_updates(state->updates_count);
-                prometheus_client_time_updates(((double)state->update_time)/1000000);
+                importer_prometheus_client_count_updates(state->updates_count);
+                importer_prometheus_client_time_updates(((double)state->update_time)/1000000);
 
                 // ping the server
                 if (ticks++ % PING_INTERVAL == 0) {

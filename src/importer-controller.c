@@ -375,11 +375,11 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
     statsd_client_gauge(state->statsd_client, "importer.queued_updates.count", updates);
     statsd_client_gauge(state->statsd_client, "importer.queued_inserts.count", inserts);
-    prometheus_client_gauge_queued_updates(updates);
-    prometheus_client_gauge_queued_inserts(inserts);
+    importer_prometheus_client_gauge_queued_updates(updates);
+    importer_prometheus_client_gauge_queued_inserts(inserts);
 
     statsd_client_count(state->statsd_client, "importer.blocked_updates.count", state->updates_blocked);
-    prometheus_client_count_updates_blocked(state->updates_blocked);
+    importer_prometheus_client_count_updates_blocked(state->updates_blocked);
 
     // log a warning about the number of blocked updates
     if (state->updates_blocked) {

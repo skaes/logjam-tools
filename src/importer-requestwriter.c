@@ -716,9 +716,9 @@ static void request_writer(zsock_t *pipe, void *args)
                 statsd_client_count(state->statsd_client, "importer.inserts.count", state->updates_count);
                 statsd_client_timing(state->statsd_client, "importer.inserts.time", state->update_time/1000);
                 statsd_client_count(state->statsd_client, "importer.failed_inserts.count", state->updates_failed);
-                prometheus_client_count_inserts(state->updates_count);
-                prometheus_client_time_inserts(((double)state->update_time)/1000000);
-                prometheus_client_count_inserts_failed(state->updates_failed);
+                importer_prometheus_client_count_inserts(state->updates_count);
+                importer_prometheus_client_time_inserts(((double)state->update_time)/1000000);
+                importer_prometheus_client_count_inserts_failed(state->updates_failed);
                 if (ticks++ % PING_INTERVAL == 0) {
                     // ping mongodb to reestablish connection if it got lost
                     for (int i=0; i<num_databases; i++) {
