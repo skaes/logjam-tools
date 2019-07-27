@@ -166,10 +166,14 @@ void merge_processors(controller_state_t *state, zlist_t *additions)
             zmsg_addptr(request, p1);
             zmsg_addptr(request, p2);
             int rc = zmsg_send_with_retry(&request, state->adder_socket);
+            if (zsys_interrupted)
+                return;
             assert(rc==0);
         }
         for (int i = 0; i < n; i++ ) {
             zmsg_t *reply = zmsg_recv_with_retry(state->adder_socket);
+            if (zsys_interrupted)
+                return;
             assert(reply);
             // discard empty reply envelope
             char *empty = zmsg_popstr(reply);
