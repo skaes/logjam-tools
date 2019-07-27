@@ -329,9 +329,11 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     publish_totals_for_every_known_stream(state, processor);
 
     // tell indexer to tick
+    // printf("[D] controller: ticking indexer\n");
     zstr_send(state->indexer, "tick");
 
     // tell stats updaters to tick
+    // printf("[D] controller: ticking updaters\n");
     for (int i=0; i<num_updaters; i++) {
         zstr_send(state->updaters[i], "tick");
     }
@@ -339,6 +341,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     zlist_append(state->collected_processors, processor);
     // combine stats of collected processor from last tick with current one
     if (zlist_size(state->collected_processors) > 1) {
+        // printf("[D] controller: merging processors\n");
         merge_processors(state, state->collected_processors);
     }
 
@@ -351,6 +354,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     // tell request writers to tick
+    // printf("[D] controller: ticking writers\n");
     for (int i=0; i<num_writers; i++) {
         zstr_send(state->writers[i], "tick");
     }
@@ -406,6 +410,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         int rc = zloop_timer(loop, next_tick, 1, collect_stats_and_forward, state);
         assert(rc != -1);
     }
+
+    // printf("[D] controller: finished tick[%zu]\n", state->ticks);
 
     return 0;
 }
