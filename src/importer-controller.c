@@ -457,7 +457,7 @@ bool controller_create_actors(controller_state_t *state)
     for (size_t i=0; i<num_parsers; i++) {
         state->parsers[i] = parser_new(state->config, i);
     }
-    num_adders = num_parsers / 2;
+    num_adders = (num_parsers + 1) / 2;
     for (size_t i=0; i<num_adders; i++) {
         state->adders[i] = zactor_new(adder, (void*)i);
     }
