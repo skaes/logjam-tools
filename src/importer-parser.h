@@ -48,6 +48,7 @@ typedef struct {
     zsock_t *indexer_socket;
     json_tokener* tokener;
     zhash_t *processors;
+    zhashx_t *unknown_streams;
     uuid_tracker_t *tracker;
     statsd_client_t *statsd_client;
     zchunk_t *decompression_buffer;

@@ -66,21 +66,32 @@ typedef struct {
     size_t ticks;
     statsd_client_t *statsd_client;
     zlist_t *collected_processors;
+    zhashx_t *unknown_streams;
 } controller_state_t;
 
 
 static
-void extract_parser_state(zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs_count, frontend_stats_t *fe_stats)
+void extract_parser_state(controller_state_t *state, zmsg_t* msg, zhash_t **processors, size_t *parsed_msgs_count, frontend_stats_t *fe_stats)
 {
     zframe_t *first = zmsg_first(msg);
     zframe_t *second = zmsg_next(msg);
     zframe_t *third = zmsg_next(msg);
+    zframe_t *fourth = zmsg_next(msg);
     assert(zframe_size(first) == sizeof(zhash_t*));
     memcpy(&*processors, zframe_data(first), sizeof(zhash_t*));
     assert(zframe_size(second) == sizeof(size_t));
     memcpy(parsed_msgs_count, zframe_data(second), sizeof(size_t));
     assert(zframe_size(third) == sizeof(frontend_stats_t));
     memcpy(fe_stats, zframe_data(third), sizeof(frontend_stats_t));
+    assert(zframe_size(fourth) == sizeof(zhashx_t*));
+    zhashx_t *unknowns;
+    memcpy(&unknowns, zframe_data(fourth), sizeof(zhashx_t*));
+    void* elem = zhashx_first(unknowns);
+    while (elem) {
+        const char *stream = zhashx_cursor(unknowns);
+        zhashx_insert(state->unknown_streams, stream, (void*)1);
+        elem = zhashx_next(unknowns);
+    }
 }
 
 
@@ -276,6 +287,25 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
 }
 
 static
+void log_unknown_streams(controller_state_t* state) {
+    void* elem = zhashx_first(state->unknown_streams);
+    if (elem == NULL)
+        return;
+    int size = 0;
+    char streams[1024] = {'\0'};
+    while (elem) {
+        const char *stream = zhashx_cursor(state->unknown_streams);
+        if (size > 0) {
+            strcat(streams, ",");
+        }
+        size += strlen(stream);
+        strcat(streams, stream);
+        elem = zhashx_next(state->unknown_streams);
+    }
+    fprintf(stderr, "[W] controller: unknown streams: %s\n", streams);
+}
+
+static
 int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 {
     int64_t start_time_ms = zclock_mono();
@@ -300,7 +330,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zstr_send(parser, "tick");
         zmsg_t *response = zmsg_recv(parser);
         if (response) {
-            extract_parser_state(response, &processors[i], &parsed_msgs_counts[i], &fe_stats[i]);
+            extract_parser_state(state, response, &processors[i], &parsed_msgs_counts[i], &fe_stats[i]);
             zmsg_destroy(&response);
         }
     }
@@ -395,13 +425,19 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         state->updates_blocked = 0;
     }
 
+    // log unkown streams every minute
+    if (state->ticks % 60 == 0) {
+        log_unknown_streams(state);
+        zhashx_destroy(&state->unknown_streams);
+        state->unknown_streams = zhashx_new();
+        assert(state->unknown_streams);
+    }
     // signal liveness to watchdog, unless we're dropping all frontend requests
-    if (front_stats.received == 0)
+    if (front_stats.received == 0 || front_stats.dropped < front_stats.received) {
         zstr_send(state->watchdog, "tick");
-    else if (front_stats.dropped < front_stats.received)
-        zstr_send(state->watchdog, "tick");
-    else
+    } else {
         fprintf(stderr, "[W] controller: dropped all frontend stats: %zu\n", front_stats.dropped);
+    }
 
     if (terminate) {
         printf("[I] controller: detected config change. terminating.\n");
@@ -595,6 +631,8 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     state.statsd_client = statsd_client_new(config, "controller[0]");
     state.collected_processors = zlist_new();
     assert(state.collected_processors);
+    state.unknown_streams = zhashx_new();
+    assert(state.unknown_streams);
     bool start_up_complete = controller_create_actors(&state);
 
     if (!start_up_complete)

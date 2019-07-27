@@ -20,7 +20,7 @@ typedef struct {
     zhash_t *agents;
 } processor_state_t;
 
-extern processor_state_t* processor_new(char *db_name);
+extern processor_state_t* processor_new(stream_info_t *stream_info, char *db_name);
 extern void processor_destroy(void* processor);
 extern void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request);
 extern void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request);

@@ -9,22 +9,8 @@
 #define DB_PREFIX "logjam-"
 #define DB_PREFIX_LEN 7
 
-processor_state_t* processor_new(char *db_name)
+processor_state_t* processor_new(stream_info_t *stream_info, char *db_name)
 {
-    // printf("[D] creating processor for db: %s\n", db_name);
-    // check whether it's a known stream and return NULL if not
-    size_t n = strlen(db_name) - DB_PREFIX_LEN;
-    char stream_name[n+1];
-    strcpy(stream_name, db_name + DB_PREFIX_LEN);
-    stream_name[n-11] = '\0';
-
-    stream_info_t *stream_info = zhash_lookup(configured_streams, stream_name);
-    if (stream_info == NULL) {
-        fprintf(stderr, "[E] did not find stream info: %s\n", stream_name);
-        return NULL;
-    }
-    // printf("[D] found stream info for stream %s: %s\n", stream_name, stream_info->key);
-
     processor_state_t *p = zmalloc(sizeof(processor_state_t));
     p->db_name = strdup(db_name);
     p->stream_info = stream_info;

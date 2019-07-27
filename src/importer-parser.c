@@ -126,23 +126,28 @@ time_t valid_database_date(const char *date)
 }
 
 static
-processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
+processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request, stream_info_t **stream_info)
 {
-    size_t n = zframe_size(stream_frame);
-    char db_name[n+100];
-    strcpy(db_name, "logjam-");
-    // printf("[D] db_name: %s\n", db_name);
-
+    // extract stream name onto the stack and add null char
     const char *stream_chars = (char*)zframe_data(stream_frame);
-    if (n > 15 && !strncmp("request-stream-", stream_chars, 15)) {
-        memcpy(db_name+7, stream_chars+15, n-15);
-        db_name[n+7-15] = '-';
-        db_name[n+7-14] = '\0';
-    } else {
-        memcpy(db_name+7, stream_chars, n);
-        db_name[n+7] = '-';
-        db_name[n+7+1] = '\0';
+    size_t stream_name_len = zframe_size(stream_frame);
+    char stream_name[stream_name_len+1];
+    memcpy(stream_name, stream_chars, stream_name_len);
+    stream_name[stream_name_len] = '\0';
+
+    // check whether it's a known stream and return NULL if not
+    *stream_info = zhash_lookup(configured_streams, stream_name);
+    if (*stream_info == NULL) {
+        zhashx_insert(parser_state->unknown_streams, stream_name, (void*)1);
+        return NULL;
     }
+    // printf("[D] found stream info for stream %s: %s\n", stream_name, stream_info->key);
+
+    char db_name[stream_name_len+100];
+    strcpy(db_name, "logjam-");
+    strcat(db_name+7, stream_name);
+    db_name[stream_name_len+7] = '-';
+    db_name[stream_name_len+7+1] = '\0';
     // printf("[D] db_name: %s\n", db_name);
 
     json_object* started_at_value;
@@ -152,23 +157,23 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
     }
     const char *date_str = json_object_get_string(started_at_value);
     if (INVALID_DATE == valid_database_date(date_str)) {
-        db_name[n+7] = '\0';
+        db_name[stream_name_len+7] = '\0';
         json_object* action_object;
         const char* action = NULL;
         if (json_object_object_get_ex(request, "action", &action_object)
             || json_object_object_get_ex(request, "logjam_action", &action_object)
             || json_object_object_get_ex(request, "page", &action_object))
             action = json_object_get_string(action_object);
-        fprintf(stderr, "[E] dropped request for %*s with invalid started_at date: %s. action: %s\n", (int)(n + 7), db_name, date_str, action);
+        fprintf(stderr, "[E] dropped request for %*s with invalid started_at date: %s. action: %s\n", (int)stream_name_len, stream_name, date_str, action);
         return NULL;
     }
-    strncpy(&db_name[n+7+1], date_str, 10);
-    db_name[n+7+1+10] = '\0';
+    strncpy(&db_name[stream_name_len+7+1], date_str, 10);
+    db_name[stream_name_len+7+1+10] = '\0';
     // printf("[D] db_name: %s\n", db_name);
 
     processor_state_t *p = zhash_lookup(parser_state->processors, db_name);
     if (p == NULL) {
-        p = processor_new(db_name);
+        p = processor_new(*stream_info, db_name);
         if (p) {
             int rc = zhash_insert(parser_state->processors, db_name, p);
             assert(rc ==0);
@@ -227,8 +232,13 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         // dump_json_object(stdout, "[D] ", request);
         char *topic_str = (char*) zframe_data(topic_frame);
         int n = zframe_size(topic_frame);
-        processor_state_t *processor = processor_create(stream_frame, parser_state, request);
-
+        stream_info_t *stream_info;
+        processor_state_t *processor = processor_create(stream_frame, parser_state, request, &stream_info);
+        if (stream_info == NULL) {
+            // we log unknown streams in the controller
+            json_object_put(request);
+            return;
+        }
         if (processor == NULL) {
             dump_json_object(stderr, "[E] could not create processor for request: ", request);
             json_object_put(request);
@@ -287,6 +297,8 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->tokener = json_tokener_new();
     assert(state->tokener);
     state->processors = processor_hash_new();
+    state->unknown_streams = zhashx_new();
+    assert(state->unknown_streams);
     state->tracker = tracker_new();
     state->statsd_client = statsd_client_new(config, state->me);
     state->decompression_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
@@ -303,6 +315,7 @@ void parser_state_destroy(parser_state_t **state_p)
     zsock_destroy(&state->indexer_socket);
     zsock_destroy(&state->prom_collector_socket);
     zhash_destroy(&state->processors);
+    zhashx_destroy(&state->unknown_streams);
     tracker_destroy(&state->tracker);
     statsd_client_destroy(&state->statsd_client);
     zchunk_destroy(&state->decompression_buffer);
@@ -344,10 +357,13 @@ void parser(zsock_t *pipe, void *args)
                 zmsg_addptr(answer, state->processors);
                 zmsg_addmem(answer, &state->parsed_msgs_count, sizeof(state->parsed_msgs_count));
                 zmsg_addmem(answer, &state->fe_stats, sizeof(state->fe_stats));
+                zmsg_addptr(answer, state->unknown_streams);
                 zmsg_send_with_retry(&answer, state->pipe);
                 state->parsed_msgs_count = 0;
                 memset(&state->fe_stats, 0 , sizeof(state->fe_stats));
                 state->processors = processor_hash_new();
+                state->unknown_streams = zhashx_new();
+                assert(state->unknown_streams);
                 free(cmd);
             } else if (streq(cmd, "$TERM")) {
                 // printf("[D] parser [%zu]: received $TERM command\n", id);
