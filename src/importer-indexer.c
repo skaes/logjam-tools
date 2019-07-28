@@ -214,9 +214,9 @@ void indexer_check_disk_usage(indexer_state_t *state, const char *db_name, strea
         stream_info->storage_size = extract_storage_size(&reply);
         if (stream_info->storage_size > HARD_LIMIT_STORAGE_SIZE)
             fprintf(stderr, "[E] indexer[%zu]: hard limiting %s at %"PRId64"\n", state->id, db_name, stream_info->storage_size);
-        else if  (stream_info->storage_size > SOFT_LIMIT_STORAGE_SIZE)
+        else if (stream_info->storage_size > SOFT_LIMIT_STORAGE_SIZE)
             fprintf(stderr, "[W] indexer[%zu]: soft limiting %s at %"PRId64"\n", state->id, db_name, stream_info->storage_size);
-        else
+        else if (verbose)
             fprintf(stdout, "[I] indexer[%zu]: not limiting %s at %"PRId64"\n", state->id, db_name, stream_info->storage_size);
     }
 
