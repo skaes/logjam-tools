@@ -97,10 +97,11 @@ meta-info = tag compression-method version device-number created-ms sequence-num
 
 tag = %xCABD                             ; used internally to detect programming errors
 
-compression-method = no-compression / zlib-compression / snappy-compression
+compression-method = no-compression / zlib-compression / snappy-compression / lz4-compression
 no-compression     = %x0
 zlib-compression   = %x1
 snappy-compression = %x2
+lz4-compression    = %x3
 
 version            = %x1
 
