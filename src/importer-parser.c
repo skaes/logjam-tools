@@ -229,7 +229,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
 
     json_object *request = parse_json_data(body, body_len, parser_state->tokener);
     if (request != NULL) {
-        // dump_json_object(stdout, "[D] ", request);
+        dump_json_object(stdout, "[D] REQUEST", request);
         char *topic_str = (char*) zframe_data(topic_frame);
         int n = zframe_size(topic_frame);
         stream_info_t *stream_info;
