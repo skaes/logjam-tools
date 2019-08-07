@@ -499,13 +499,15 @@ void store_event(const char* db_name, stream_info_t *stream_info, json_object* r
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_insert(events_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            size_t n;
-            char* bjs = bson_as_json(document, &n);
-            fprintf(stderr,
-                    "[E] insert failed for event document on %s: (%d) %s\n"
-                    "[E] document size: %zu; value: %s\n",
-                    db_name, error.code, error.message, n, bjs);
-            bson_free(bjs);
+            if (verbose) {
+                size_t n;
+                char* bjs = bson_as_json(document, &n);
+                fprintf(stderr,
+                        "[E] insert failed for event document on %s: (%d) %s\n"
+                        "[E] document size: %zu; value: %s\n",
+                        db_name, error.code, error.message, n, bjs);
+                bson_free(bjs);
+            }
             state->updates_failed++;
         }
     }
