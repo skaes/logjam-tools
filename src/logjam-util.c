@@ -510,7 +510,7 @@ json_object* parse_json_data(const char *json_data, size_t json_data_len, json_t
 
 void dump_json_object(FILE *f, const char* prefix, json_object *jobj)
 {
-    const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PLAIN);
+    const char *json_str = json_object_to_json_string_ext(jobj, JSON_C_TO_STRING_PRETTY);
     fprintf(f, "%s %s\n", prefix, json_str);
     // don't try to free the json string. it will crash.
 }

@@ -33,6 +33,7 @@ typedef struct {
     int heap_growth;
     json_object* exceptions;
     json_object* soft_exceptions;
+    const char* path;
 } request_data_t;
 
 extern increments_t* increments_new();

@@ -31,6 +31,9 @@ typedef struct {
     const char **backend_only_requests;
     int backend_only_requests_size;
     int all_requests_are_backend_only_requests;
+    const char **api_requests;
+    int api_requests_size;
+    int all_requests_are_api_requests;
     zhash_t *known_modules;
 } stream_info_t;
 

@@ -134,6 +134,35 @@ void add_backend_only_requests_settings(zconfig_t* config, stream_info_t* info)
 }
 
 static
+void add_api_requests_settings(zconfig_t* config, stream_info_t* info)
+{
+    zlist_t* settings = get_stream_settings(config, info, "api_requests");
+    zconfig_t *setting = zlist_last(settings);
+    if (setting) {
+        const char *value = zconfig_value(setting);
+        if (value) {
+            size_t len = strlen(value);
+            if (streq(value, "")) {
+                info->all_requests_are_api_requests = 1;
+            } else if (len>0) {
+                int n = str_count(value, ',') + 1;
+                info->api_requests_size = n;
+                info->api_requests = zmalloc(sizeof(char*)*n);
+                char *valdup = strdup(value);
+                char *prefix = strtok(valdup, ",");
+                int i = 0;
+                while (prefix) {
+                    info->api_requests[i++] = strdup(prefix);
+                    prefix = strtok(NULL, ",");
+                }
+                free(valdup);
+            }
+        }
+    }
+    zlist_destroy(&settings);
+}
+
+static
 void add_sampling_rate_400s_threshold_settings(zconfig_t* config, stream_info_t* info)
 {
     info->sampling_rate_400s = global_sampling_rate_400s;
@@ -192,6 +221,7 @@ stream_info_t* stream_info_new(zconfig_t *config, zconfig_t *stream_config)
     add_import_threshold_settings(config, info);
     add_ignored_request_settings(config, info);
     add_backend_only_requests_settings(config, info);
+    add_api_requests_settings(config, info);
     add_sampling_rate_400s_threshold_settings(config, info);
 
     info->known_modules = zhash_new();

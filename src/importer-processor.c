@@ -88,6 +88,71 @@ const char* append_to_json_string(json_object **jobj, const char* old_str, const
 }
 
 static
+void processor_setup_caller_info(request_data_t *request_data, json_object *request, stream_info_t *stream_info)
+{
+    // check whether we have a HTTP request
+    if (request_data->path == NULL)
+        return;
+    // check whether app has no api requests at all
+    if (!stream_info->all_requests_are_api_requests && stream_info->api_requests_size == 0)
+        return;
+    // check whether we have an api request
+    const char *module = request_data->module;
+    // skip colons
+    while (*module == ':') module++;
+    bool api_request = false;
+    for (int i = 0; i < stream_info->api_requests_size; i++) {
+        if (streq(module, stream_info->api_requests[i]))
+            api_request = true;
+    }
+    if (!api_request)
+        return;
+    // set caller_id if not present
+    bool dump = false;
+    json_object *caller_id_obj;
+    if (!json_object_object_get_ex(request, "caller_id", &caller_id_obj)) {
+        char rid[256] = {'\0'};
+        sprintf(rid, "unknown-%s-unknown", stream_info->env);
+        json_object_object_add(request, "caller_id", json_object_new_string(rid));
+        if (debug) {
+            printf("[D] added missing caller id for %s\n", stream_info->key);
+            dump = true;
+        }
+    } else {
+        const char *caller_id = json_object_get_string(caller_id_obj);
+        if (caller_id == NULL || *caller_id == '\0') {
+            char rid[256] = {'\0'};
+            sprintf(rid, "unknown-%s-unknown", stream_info->env);
+            json_object_object_add(request, "caller_id", json_object_new_string(rid));
+            if (debug) {
+                printf("[D] added missing caller id for %s\n", stream_info->key);
+                dump = true;
+            }
+        }
+    }
+    // set caller_action if not present
+    json_object *caller_action_obj;
+    if (!json_object_object_get_ex(request, "caller_action", &caller_action_obj)) {
+        json_object_object_add(request, "caller_action", json_object_new_string("Unknown#unknown"));
+        if (debug) {
+            printf("[D] added missing caller action for %s\n", stream_info->key);
+            dump = true;
+        }
+    } else {
+        const char *caller_action = json_object_get_string(caller_action_obj);
+        if (caller_action == NULL || *caller_action == '\0') {
+            json_object_object_add(request, "caller_action", json_object_new_string("Unknown#unknown"));
+            if (debug) {
+                printf("[D] added missing caller action for %s\n", stream_info->key);
+                dump = true;
+            }
+        }
+    }
+    if (dump)
+        dump_json_object(stderr, "[D] modified caller info", request);
+}
+
+static
 const char* processor_setup_page(processor_state_t *self, json_object *request)
 {
     json_object *page_obj = NULL;
@@ -704,7 +769,38 @@ sampling_reason_t interesting_request(request_data_t *request_data, json_object 
 }
 
 static
-int ignore_request(json_object *request, stream_info_t* info)
+void extract_request_path(request_data_t *request_data, json_object *request,  stream_info_t* info)
+{
+    request_data->path = NULL;
+    json_object *req_info;
+    if (json_object_object_get_ex(request, "request_info", &req_info)) {
+        json_object *url_obj;
+        if (!json_object_object_get_ex(req_info, "url", &url_obj)) {
+            return;
+        }
+        const char *url = json_object_get_string(url_obj);
+        if (url == NULL) {
+            if (info)
+                fprintf(stderr, "[W] got request with NULL url from %s\n", info->key);
+            if (verbose)
+                dump_json_object(stderr, "[W] REQUEST", request);
+            return;
+        }
+        // skip over protocol and domain, if present.
+        const char *p = strstr(url, "://");
+        if (p)
+            p += 3;
+        else
+            p = url;
+        // find first slash
+        while (*p && *p != '/')
+            p++;
+        request_data->path = p;
+    }
+}
+
+static
+int ignore_request(request_data_t *request_data, json_object *request, stream_info_t* info)
 {
     json_object *logjam_ignore_message_obj;
     if (json_object_object_get_ex(request, "logjam_ignore_message", &logjam_ignore_message_obj)) {
@@ -712,33 +808,12 @@ int ignore_request(json_object *request, stream_info_t* info)
             // fprintf(stderr, "[D] ignored message because logjam_ignore_message was set to true");
             return 1;
     }
-    json_object *req_info;
-    if (json_object_object_get_ex(request, "request_info", &req_info)) {
-        json_object *url_obj;
-        if (json_object_object_get_ex(req_info, "url", &url_obj)) {
-            const char *url = json_object_get_string(url_obj);
-            if (url == NULL) {
-                if (info)
-                    fprintf(stderr, "[W] got request with NULL url from %s\n", info->key);
-                if (verbose)
-                    dump_json_object(stderr, "[W] REQUEST", request);
-                return 0;
-            }
-            const char *prefix = info ? info->ignored_request_prefix : global_ignored_request_prefix;
-            if (prefix != NULL) {
-                // skip over protocol and domain, if present.
-                const char *p = strstr(url, "://");
-                if (p)
-                    p += 3;
-                else
-                    p = url;
-                // find first slash
-                while (*p && *p != '/')
-                    p++;
-                if (p && strstr(p, prefix) == p) {
-                    // fprintf(stderr, "[D] ignored request because ignored request prefix matched. url: %s\n", url);
-                    return 1;
-                }
+    if (request_data->path) {
+        const char *prefix = info ? info->ignored_request_prefix : global_ignored_request_prefix;
+        if (prefix != NULL) {
+            if (strstr(request_data->path, prefix) == request_data->path) {
+                // fprintf(stderr, "[D] ignored request because ignored request prefix matched. url: %s\n", url);
+                return 1;
             }
         }
     }
@@ -778,10 +853,11 @@ backend_only_request(const char *action, stream_info_t *stream)
 
 void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request)
 {
-    if (ignore_request(request, self->stream_info)) return;
-
     // dump_json_object(stdout, "[D] REQUEST", request);
     request_data_t request_data;
+    extract_request_path(&request_data, request, self->stream_info);
+    if (ignore_request(&request_data, request, self->stream_info)) return;
+
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
     request_data.response_code = processor_setup_response_code(self, request);
@@ -794,6 +870,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     processor_setup_other_time(self, request, request_data.total_time);
     processor_setup_allocated_memory(self, request);
     request_data.heap_growth = processor_setup_heap_growth(self, request);
+    processor_setup_caller_info(&request_data, request, self->stream_info);
 
     increments_t* increments = increments_new();
     increments->backend_request_count = 1;
