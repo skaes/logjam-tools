@@ -100,13 +100,17 @@ void processor_setup_caller_info(request_data_t *request_data, json_object *requ
     const char *module = request_data->module;
     // skip colons
     while (*module == ':') module++;
-    bool api_request = false;
-    for (int i = 0; i < stream_info->api_requests_size; i++) {
-        if (streq(module, stream_info->api_requests[i]))
-            api_request = true;
+    bool api_request = stream_info->all_requests_are_api_requests;
+    if (!api_request) {
+        for (int i = 0; i < stream_info->api_requests_size; i++) {
+            if (streq(module, stream_info->api_requests[i])) {
+                api_request = true;
+                break;
+            }
+        }
+        if (!api_request)
+            return;
     }
-    if (!api_request)
-        return;
     // set caller_id if not present
     bool dump = false;
     json_object *caller_id_obj;
