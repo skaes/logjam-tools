@@ -136,7 +136,7 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
     stream_name[stream_name_len] = '\0';
 
     // check whether it's a known stream and return NULL if not
-    *stream_info = zhash_lookup(configured_streams, stream_name);
+    *stream_info = get_stream(stream_name);
     if (*stream_info == NULL) {
         zhashx_insert(parser_state->unknown_streams, stream_name, (void*)1);
         return NULL;
@@ -173,7 +173,7 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
 
     processor_state_t *p = zhash_lookup(parser_state->processors, db_name);
     if (p == NULL) {
-        p = processor_new(*stream_info, db_name);
+        p = processor_new(stream_name, db_name);
         if (p) {
             int rc = zhash_insert(parser_state->processors, db_name, p);
             assert(rc ==0);
@@ -182,7 +182,7 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
             zmsg_t *msg = zmsg_new();
             assert(msg);
             zmsg_addstr(msg, db_name);
-            zmsg_addptr(msg, p->stream_info);
+            zmsg_addstr(msg, stream_name);
             zmsg_send_with_retry(&msg, parser_state->indexer_socket);
         }
     }
@@ -242,25 +242,26 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         if (processor == NULL) {
             dump_json_object(stderr, "[E] could not create processor for request: ", request);
             json_object_put(request);
+            put_stream(stream_info);
             return;
         }
         processor->request_count++;
 
         if (n >= 4 && !strncmp("logs", topic_str, 4))
-            processor_add_request(processor, parser_state, request);
+            processor_add_request(processor, parser_state, request, stream_info);
         else if (n >= 10 && !strncmp("javascript", topic_str, 10))
-            processor_add_js_exception(processor, parser_state, request);
+            processor_add_js_exception(processor, parser_state, request, stream_info);
         else if (n >= 6 && !strncmp("events", topic_str, 6))
-            processor_add_event(processor, parser_state, request);
+            processor_add_event(processor, parser_state, request, stream_info);
         else if (n >= 13 && !strncmp("frontend.page", topic_str, 13)) {
             parser_state->fe_stats.received++;
-            enum fe_msg_drop_reason reason = processor_add_frontend_data(processor, parser_state, request, msg);
+            enum fe_msg_drop_reason reason = processor_add_frontend_data(processor, parser_state, request, msg, stream_info);
             if (reason)
                 parser_state->fe_stats.dropped++;
             parser_state->fe_stats.drop_reasons[reason]++;
         } else if (n >= 13 && !strncmp("frontend.ajax", topic_str, 13)) {
             parser_state->fe_stats.received++;
-            enum fe_msg_drop_reason reason = processor_add_ajax_data(processor, parser_state, request, msg);
+            enum fe_msg_drop_reason reason = processor_add_ajax_data(processor, parser_state, request, msg, stream_info);
             if (reason)
                 parser_state->fe_stats.dropped++;
             parser_state->fe_stats.drop_reasons[reason]++;
@@ -269,6 +270,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
             my_zmsg_fprint(msg, "[E] FRAME=", stderr);
         }
         json_object_put(request);
+        put_stream(stream_info);
     } else {
         fprintf(stderr, "[E] parse error\n");
         my_zmsg_fprint(msg, "[E] MSGFRAME=", stderr);

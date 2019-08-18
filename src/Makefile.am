@@ -64,8 +64,8 @@ logjam_importer_SOURCES = \
     importer-resources.h \
     importer-statsupdater.c \
     importer-statsupdater.h \
-    importer-streaminfo.c \
-    importer-streaminfo.h \
+    logjam-streaminfo.c \
+    logjam-streaminfo.h \
     importer-subscriber.c \
     importer-subscriber.h \
     importer-tracker.c \

@@ -2,7 +2,7 @@
 #define __LOGJAM_IMPORTER_LIVESTREAM_H_INCLUDED__
 
 #include "importer-common.h"
-#include "importer-streaminfo.h"
+#include "logjam-streaminfo.h"
 
 #ifdef __cplusplus
 extern "C" {

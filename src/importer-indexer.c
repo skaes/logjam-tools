@@ -1,5 +1,5 @@
 #include "importer-indexer.h"
-#include "importer-streaminfo.h"
+#include "logjam-streaminfo.h"
 #include "importer-mongoutils.h"
 
 
@@ -230,16 +230,15 @@ void indexer_refresh_storage_sizes(indexer_state_t *self)
 {
     if (dryrun) return;
 
-    zlist_t *streams = zhash_keys(configured_streams);
+    zlist_t *streams = get_active_stream_names();
     char *stream = zlist_first(streams);
-    bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
     while (stream && !zsys_interrupted) {
-        stream_info_t *info = zhash_lookup(configured_streams, stream);
-        assert(info);
-        if (!have_subscriptions || zhash_lookup(stream_subscriptions, stream)) {
+        stream_info_t *info = get_stream(stream);
+        if (info) {
             char db_name[1000];
             sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date_today);
             indexer_check_disk_usage(self, db_name, info);
+            put_stream(info);
         }
         stream = zlist_next(streams);
     }
@@ -304,17 +303,16 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
 {
     if (dryrun) return;
 
-    zlist_t *streams = zhash_keys(configured_streams);
+    zlist_t *streams = get_active_stream_names();
     char *stream = zlist_first(streams);
-    bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
     while (stream && !zsys_interrupted) {
-        stream_info_t *info = zhash_lookup(configured_streams, stream);
-        assert(info);
-        if (!have_subscriptions || zhash_lookup(stream_subscriptions, stream)) {
+        stream_info_t *info = get_stream(stream);
+        if (info) {
             char db_name[1000];
             sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
             indexer_create_indexes(self, db_name, info);
             indexer_check_disk_usage(self, db_name, info);
+            put_stream(info);
             if (delay) {
                 zclock_sleep(1000 * delay);
             }
@@ -376,17 +374,16 @@ void ensure_databases_are_known(indexer_state_t *state, const char* iso_date)
 {
     if (dryrun) return;
 
-    zlist_t *streams = zhash_keys(configured_streams);
+    zlist_t *streams = get_active_stream_names();
     char *stream = zlist_first(streams);
-    bool have_subscriptions = zhash_size(stream_subscriptions) > 0;
     while (stream && !zsys_interrupted) {
-        stream_info_t *info = zhash_lookup(configured_streams, stream);
-        assert(info);
-        mongoc_client_t *client = state->mongo_clients[info->db];
-        if (!have_subscriptions || zhash_lookup(stream_subscriptions, stream)) {
+        stream_info_t *info = get_stream(stream);
+        if (info) {
+            mongoc_client_t *client = state->mongo_clients[info->db];
             char db_name[1000];
             sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
             ensure_known_database(client, db_name);
+            put_stream(info);
         }
         stream = zlist_next(streams);
     }
@@ -404,9 +401,14 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
     memcpy(db_name, zframe_data(db_frame), n);
     db_name[n] = '\0';
 
-    stream_info_t *stream_info;
-    assert(zframe_size(stream_frame) == sizeof(stream_info_t*));
-    memcpy(&stream_info, zframe_data(stream_frame), sizeof(stream_info_t*));
+    size_t m = zframe_size(stream_frame);
+    char stream_name[m+1];
+    memcpy(stream_name, zframe_data(stream_frame), m);
+    stream_name[m] = '\0';
+
+    stream_info_t *stream_info = get_stream(stream_name);
+    if (stream_info == NULL)
+        return;
 
     const char *known_db = zhash_lookup(state->databases, db_name);
     if (known_db == NULL) {
@@ -416,6 +418,7 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
     } else {
         // printf("[D] indexer[%zu]: indexes already created: %s\n", state->id, db_name);
     }
+    put_stream(stream_info);
 }
 
 static

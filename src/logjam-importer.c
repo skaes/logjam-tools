@@ -1,5 +1,5 @@
 #include "importer-controller.h"
-#include "importer-streaminfo.h"
+#include "logjam-streaminfo.h"
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
 #include "importer-processor.h"
@@ -17,6 +17,9 @@ char* live_stream_connection_spec = NULL;
 char* prom_collector_connection_spec = NULL;
 const char *metrics_ip = "0.0.0.0";
 zlist_t *hosts = NULL;
+
+static const char *logjam_url = "http://localhost:3000/";
+static char *logjam_stream_url = "http://localhost:3000/admin/streams";
 
 static const char *subscription_pattern = NULL;
 static const char *config_file_name = "logjam.conf";
@@ -80,6 +83,7 @@ void print_usage(char * const *argv)
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "  -m, --metrics-port N       port to use for prometheus path /metrics\n"
             "  -M, --metrics-ip N         ip for binding metrics endpoint\n"
+            "  -L, --logjam-url           url from where to retrieve stream config\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
@@ -118,10 +122,11 @@ void process_arguments(int argc, char * const *argv)
         { "metrics-port",     required_argument, 0, 'm' },
         { "metrics-ip",       required_argument, 0, 'M' },
         { "verbose",          no_argument,       0, 'v' },
+        { "logjam-url",       required_argument, 0, 'L' },
         { 0,                  0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "a:b:c:f:nm:p:qs:u:vw:x:i:P:R:S:l:h:D:t:NM:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "a:b:c:f:nm:p:qs:u:vw:x:i:P:R:S:l:h:D:t:NM:L:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -185,6 +190,10 @@ void process_arguments(int argc, char * const *argv)
                 fprintf(stderr, "[E] parameter value 'b' cannot be larger than %d\n", MAX_SUBSCRIBERS);
                 exit(1);
             }
+            break;
+        }
+        case 'L': {
+            logjam_url = optarg;
             break;
         }
         case 'M': {
@@ -279,6 +288,10 @@ void process_arguments(int argc, char * const *argv)
         else
             snd_hwm = DEFAULT_SND_HWM;
     }
+
+    int l = strlen(logjam_url);
+    int n = asprintf(&logjam_stream_url, "%s%s", logjam_url, (logjam_url[l-1] == '/') ? "admin/streams" : "/admin/streams");
+    assert(n>0);
 }
 
 int main(int argc, char * const *argv)
@@ -344,7 +357,5 @@ int main(int argc, char * const *argv)
     importer_prometheus_client_init(metrics_address);
 
     setup_resource_maps(config);
-    setup_stream_config(config, subscription_pattern);
-
-    return run_controller_loop(config, io_threads);
+    return run_controller_loop(config, io_threads, logjam_stream_url, subscription_pattern);
 }

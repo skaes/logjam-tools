@@ -14,12 +14,13 @@ extern "C" {
 #define FE_MSG_OUTLIER_THRESHOLD_MS 60000
 
 enum fe_msg_drop_reason {
-    FE_MSG_ACCEPTED   = 0, // not dropped at all. must be zero.
-    FE_MSG_OUTLIER    = 1, // page_time larger than FE_MSG_OUTLIER_THRESHOLD_MS
-    FE_MSG_NAV_TIMING = 2, // browser doesn't support navigation timing API
-    FE_MSG_ILLEGAL    = 3, // no corresponding backend request
-    FE_MSG_CORRUPTED  = 4, // missing or excess data
-    FE_MSG_INVALID    = 5  // data couldn't be aranged in order
+    FE_MSG_ACCEPTED    = 0, // not dropped at all. must be zero.
+    FE_MSG_OUTLIER     = 1, // page_time larger than FE_MSG_OUTLIER_THRESHOLD_MS
+    FE_MSG_NAV_TIMING  = 2, // browser doesn't support navigation timing API
+    FE_MSG_ILLEGAL     = 3, // no corresponding backend request
+    FE_MSG_CORRUPTED   = 4, // missing or excess data
+    FE_MSG_INVALID     = 5, // data couldn't be aranged in order
+    FE_MSG_STREAM_GONE = 6  // stream was deleted while processing the message
 };
 #define FE_MSG_NUM_REASONS 6
 

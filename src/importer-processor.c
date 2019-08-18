@@ -3,17 +3,17 @@
 #include "importer-parser.h"
 #include "importer-processor.h"
 #include "importer-livestream.h"
-#include "importer-streaminfo.h"
+#include "logjam-streaminfo.h"
 #include "importer-resources.h"
 
 #define DB_PREFIX "logjam-"
 #define DB_PREFIX_LEN 7
 
-processor_state_t* processor_new(stream_info_t *stream_info, char *db_name)
+processor_state_t* processor_new(char *stream_name, char *db_name)
 {
     processor_state_t *p = zmalloc(sizeof(processor_state_t));
     p->db_name = strdup(db_name);
-    p->stream_info = stream_info;
+    p->stream_name = strdup(stream_name);
     p->request_count = 0;
     p->modules = zhash_new();
     p->totals = zhash_new();
@@ -30,6 +30,7 @@ void processor_destroy(void* processor)
     processor_state_t* p = processor;
     // printf("[D] destroying processor: %s. requests: %zu\n", p->db_name, p->request_count);
     free(p->db_name);
+    free(p->stream_name);
     zhash_destroy(&p->modules);
     zhash_destroy(&p->totals);
     zhash_destroy(&p->minutes);
@@ -813,7 +814,7 @@ int ignore_request(request_data_t *request_data, json_object *request, stream_in
             return 1;
     }
     if (request_data->path) {
-        const char *prefix = info ? info->ignored_request_prefix : global_ignored_request_prefix;
+        const char *prefix = info->ignored_request_prefix;
         if (prefix != NULL) {
             if (strstr(request_data->path, prefix) == request_data->path) {
                 // fprintf(stderr, "[D] ignored request because ignored request prefix matched. url: %s\n", url);
@@ -855,12 +856,12 @@ backend_only_request(const char *action, stream_info_t *stream)
     return 0;
 }
 
-void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request)
+void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request, stream_info_t *stream_info)
 {
     // dump_json_object(stdout, "[D] REQUEST", request);
     request_data_t request_data;
-    extract_request_path(&request_data, request, self->stream_info);
-    if (ignore_request(&request_data, request, self->stream_info)) return;
+    extract_request_path(&request_data, request, stream_info);
+    if (ignore_request(&request_data, request, stream_info)) return;
 
     request_data.page = processor_setup_page(self, request);
     request_data.module = processor_setup_module(self, request_data.page);
@@ -874,7 +875,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     processor_setup_other_time(self, request, request_data.total_time);
     processor_setup_allocated_memory(self, request);
     request_data.heap_growth = processor_setup_heap_growth(self, request);
-    processor_setup_caller_info(&request_data, request, self->stream_info);
+    processor_setup_caller_info(&request_data, request, stream_info);
 
     increments_t* increments = increments_new();
     increments->backend_request_count = 1;
@@ -905,13 +906,13 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
 
     processor_add_agent(self, request);
 
-    if (!backend_only_request(request_data.page, self->stream_info)) {
+    if (!backend_only_request(request_data.page, stream_info)) {
         json_object *request_id_obj;
         if (json_object_object_get_ex(request, "request_id", &request_id_obj)) {
             const char *uuid = json_object_get_string(request_id_obj);
             if (uuid) {
                 char app_env_uuid[1024] = {0};
-                snprintf(app_env_uuid, 1024, "%s-%s", self->stream_info->key, uuid);
+                snprintf(app_env_uuid, 1024, "%s-%s", stream_info->key, uuid);
                 tracker_add_uuid(pstate->tracker, app_env_uuid);
             }
         }
@@ -926,15 +927,15 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         }
     }
 
-    sampling_reason_t sampling_reason = interesting_request(&request_data, request, self->stream_info);
-    if (sampling_reason && !throttle_request(self->stream_info)) {
+    sampling_reason_t sampling_reason = interesting_request(&request_data, request, stream_info);
+    if (sampling_reason && !throttle_request(stream_info)) {
         json_object_get(request);
         zmsg_t *msg = zmsg_new();
         zmsg_addstr(msg, self->db_name);
         zmsg_addstr(msg, "r");
         zmsg_addstr(msg, request_data.module);
         zmsg_addptr(msg, request);
-        zmsg_addptr(msg, self->stream_info);
+        zmsg_addstr(msg, self->stream_name);
         zmsg_addmem(msg, &sampling_reason, sizeof(sampling_reason_t));
         if (!output_socket_ready(pstate->push_socket, 0)) {
             fprintf(stderr, "[W] parser [%zu]: push socket not ready\n", pstate->id);
@@ -980,7 +981,7 @@ char* exctract_key_from_jse_description(json_object *request)
     return result;
 }
 
-void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request)
+void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request, stream_info_t *stream_info)
 {
     char *page = extract_page_for_jse(request);
     char *js_exception = exctract_key_from_jse_description(request);
@@ -1023,12 +1024,12 @@ void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate,
     zmsg_addstr(msg, "j");
     zmsg_addstr(msg, module);
     zmsg_addptr(msg, request);
-    zmsg_addptr(msg, self->stream_info);
+    zmsg_addstr(msg, self->stream_name);
     zmsg_send_with_retry(&msg, pstate->push_socket);
     __sync_add_and_fetch(&queued_inserts, 1);
 }
 
-void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request)
+void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request, stream_info_t *stream_info)
 {
     processor_setup_minute(self, request);
     json_object_get(request);
@@ -1037,7 +1038,7 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
     zmsg_addstr(msg, "e");
     zmsg_addstr(msg, "");
     zmsg_addptr(msg, request);
-    zmsg_addptr(msg, self->stream_info);
+    zmsg_addstr(msg, self->stream_name);
     zmsg_send_with_retry(&msg, pstate->push_socket);
     __sync_add_and_fetch(&queued_inserts, 1);
 }
@@ -1328,7 +1329,7 @@ void print_fe_drop_reason(const char* type, enum fe_msg_drop_reason reason)
         fprintf(stderr, "[W] processor: dropped %s request (%s)\n", type, str_fe_reason(reason));
 }
 
-enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg)
+enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t* msg, stream_info_t *stream_info)
 {
     // dump_json_object(stderr, "[D]", request);
     // if (self->request_count % 100 == 0) {
@@ -1399,7 +1400,7 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
 
     // dump_increments("add_frontend_data", increments);
 
-    send_statsd_updates_for_page(self->stream_info->yek, pstate->statsd_client, mtimes, satisfaction);
+    send_statsd_updates_for_page(stream_info->yek, pstate->statsd_client, mtimes, satisfaction);
 
     increments_destroy(increments);
 
@@ -1425,7 +1426,7 @@ void send_statsd_updates_for_ajax(const char* envapp, statsd_client_t *client, i
     statsd_client_timing(client, buffer, ajax_time);
 }
 
-enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg)
+enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg, stream_info_t *stream_info)
 {
     // dump_json_object(stdout, "[D]", request);
     // if (self->request_count % 100 == 0) {
@@ -1496,7 +1497,7 @@ enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_
     processor_add_histogram(self, request_data.module, request_data.minute, "ajax_time", ajax_time_index, increments, request);
     processor_add_histogram(self, "all_pages", request_data.minute, "ajax_time", ajax_time_index, increments, request);
 
-    send_statsd_updates_for_ajax(self->stream_info->yek, pstate->statsd_client, request_data.total_time, satisfaction);
+    send_statsd_updates_for_ajax(stream_info->yek, pstate->statsd_client, request_data.total_time, satisfaction);
 
     // dump_increments("add_ajax_data", increments);
 

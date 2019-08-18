@@ -648,32 +648,6 @@ zmsg_loadx (zmsg_t *self, FILE *file)
     return self;
 }
 
-void setup_subscriptions_for_sub_socket(zlist_t *subscriptions, zsock_t *socket, size_t id)
-{
-    if (subscriptions==NULL || zlist_size(subscriptions)==0) {
-        printf("[I] subscriber[%zu]: subscribing to all streams\n", id);
-        zsock_set_subscribe(socket, "");
-        return;
-    }
-    // setup subscriptions for only a subset
-    char *stream = zlist_first(subscriptions);
-    while (stream != NULL)  {
-        printf("[I] subscriber[%zu]: subscribing to stream: %s\n", id, stream);
-        zsock_set_subscribe(socket, stream);
-        size_t n = strlen(stream);
-        if (n > 15 && !strncmp(stream, "request-stream-", 15)) {
-            zsock_set_subscribe(socket, stream+15);
-        } else {
-            char old_stream[n+15+1];
-            sprintf(old_stream, "request-stream-%s", stream);
-            zsock_set_subscribe(socket, old_stream);
-        }
-        stream = zlist_next(subscriptions);
-    }
-    // subscribe to heartbeats
-    zsock_set_subscribe(socket, "heartbeat");
-}
-
 // unlike zsys_hostname() this supports IPV6
 const char* my_fqdn()
 {

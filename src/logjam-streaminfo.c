@@ -1,0 +1,514 @@
+#include "logjam-streaminfo.h"
+#include "device-tracker.h"
+#include <pthread.h>
+
+typedef struct {
+    bool received_term_cmd;         // whether we have received a TERM command
+} stream_updater_state_t;
+
+// all configured streams
+static zhash_t *configured_streams = NULL;
+// all active stream names
+static zlist_t *active_stream_names = NULL;
+// all streams we want to subscribe to
+static zlist_t *stream_subscriptions = NULL;
+// lock around all stream access operations
+static pthread_mutex_t lock;
+// logjam url, to be used for retrieving stream information
+static const char* streams_url = NULL;
+// whether we subscribe to a subset of streams
+static bool have_subscription_pattern;
+// sbuscription pattern
+static const char *subscription_pattern = NULL;
+// httpp client
+static zhttp_client_t *client = NULL;
+
+stream_info_t* get_stream(const char* stream_name)
+{
+    pthread_mutex_lock(&lock);
+    stream_info_t *stream_info = zhash_lookup(configured_streams, stream_name);
+    if (stream_info != NULL) {
+        stream_info->ref_count++;
+        // printf("[D] stream-op: get_stream %s: %d\n", stream_info->key, stream_info->ref_count);
+    }
+    pthread_mutex_unlock(&lock);
+    return stream_info;
+}
+
+static void* stream_info_free(stream_info_t *info);
+
+void put_stream(stream_info_t *stream)
+{
+    pthread_mutex_lock(&lock);
+    // printf("[D] stream-op: put_stream %s: %d\n", stream->key, stream->ref_count-1);
+    stream_info_free(stream);
+    pthread_mutex_unlock(&lock);
+}
+
+const char* get_subscription_pattern()
+{
+    return subscription_pattern;
+}
+
+zlist_t* get_stream_subscriptions()
+{
+    pthread_mutex_lock(&lock);
+    zlist_t *names = zlist_dup(stream_subscriptions);
+    pthread_mutex_unlock(&lock);
+    return names;
+}
+
+zlist_t* get_active_stream_names()
+{
+    pthread_mutex_lock(&lock);
+    zlist_t *names = zlist_dup(active_stream_names);
+    pthread_mutex_unlock(&lock);
+    return names;
+}
+
+static
+void add_module_import_threshold_settings(stream_info_t* info, json_object *stream_obj)
+{
+    json_object *import_thresholds;
+    if (!json_object_object_get_ex(stream_obj, "import_thresholds", &import_thresholds)) {
+        return;
+    }
+    if (json_object_get_type(import_thresholds) != json_type_array) {
+        return;
+    }
+    int n = json_object_array_length(import_thresholds);
+    if (n==0) {
+        return;
+    }
+    info->module_thresholds = zmalloc(n * sizeof(module_threshold_t));
+    int m = 0;
+    for (int i = 0; i<n; i++) {
+        json_object *threshold_pair = json_object_array_get_idx(import_thresholds, i);
+        if (json_object_get_type(threshold_pair) != json_type_array) {
+            continue;
+        }
+        if (json_object_array_length(threshold_pair) < 2) {
+            continue;
+        }
+        json_object *name_obj = json_object_array_get_idx(threshold_pair, 0);
+        json_object *value_obj = json_object_array_get_idx(threshold_pair, 1);
+        info->module_thresholds[m].name = strdup(json_object_get_string(name_obj));
+        info->module_thresholds[m].value = json_object_get_int(value_obj);
+        m++;
+    }
+    info->module_threshold_count = m;
+}
+
+static inline size_t str_count(const char* str, char c)
+{
+    size_t count = 0;
+    while (*str) if (*str++ == c) ++count;
+    return count;
+}
+
+static
+void add_backend_only_requests_settings(stream_info_t* info, const char* value)
+{
+    size_t len = strlen(value);
+    if (streq(value, "*")) {
+        info->all_requests_are_backend_only_requests = 1;
+    } else if (len>0) {
+        int n = str_count(value, ',') + 1;
+        info->backend_only_requests_size = n;
+        info->backend_only_requests = zmalloc(sizeof(char*)*n);
+        char *valdup = strdup(value);
+        char *prefix = strtok(valdup, ",");
+        int i = 0;
+        while (prefix) {
+            info->backend_only_requests[i++] = strdup(prefix);
+            prefix = strtok(NULL, ",");
+        }
+        free(valdup);
+    }
+}
+
+static
+void add_api_requests_settings(stream_info_t* info, const char* value)
+{
+    size_t len = strlen(value);
+    if (streq(value, "")) {
+        info->all_requests_are_api_requests = 1;
+    } else if (len>0) {
+        int n = str_count(value, ',') + 1;
+        info->api_requests_size = n;
+        info->api_requests = zmalloc(sizeof(char*)*n);
+        char *valdup = strdup(value);
+        char *prefix = strtok(valdup, ",");
+        int i = 0;
+        while (prefix) {
+            info->api_requests[i++] = strdup(prefix);
+            prefix = strtok(NULL, ",");
+        }
+        free(valdup);
+    }
+}
+
+static
+void add_stream_settings(stream_info_t *info, json_object *stream_obj)
+{
+    json_object *obj;
+    if (json_object_object_get_ex(stream_obj, "import_threshold", &obj)) {
+        info->import_threshold = json_object_get_int(obj);
+    }
+    if (json_object_object_get_ex(stream_obj, "import_thresholds", &obj)) {
+        add_module_import_threshold_settings(info, stream_obj);
+    }
+    if (json_object_object_get_ex(stream_obj, "database_cleaning_threshold", &obj)) {
+        info->database_cleaning_threshold = json_object_get_int(obj);
+    }
+    if (json_object_object_get_ex(stream_obj, "request_cleaning_threshold", &obj)) {
+        info->request_cleaning_threshold = json_object_get_int(obj);
+    }
+    if (json_object_object_get_ex(stream_obj, "ignored_request_uri", &obj)) {
+        info->ignored_request_prefix = strdup(json_object_get_string(obj));
+    }
+    if (json_object_object_get_ex(stream_obj, "backend_only_requests", &obj)) {
+        add_backend_only_requests_settings(info, json_object_get_string(obj));
+    }
+    if (json_object_object_get_ex(stream_obj, "api_requests", &obj)) {
+        add_api_requests_settings(info, json_object_get_string(obj));
+    }
+    if (json_object_object_get_ex(stream_obj, "sampling_rate_400s", &obj)) {
+        info->sampling_rate_400s = json_object_get_double(obj);
+        info->sampling_rate_400s_threshold = MAX_RANDOM_VALUE * info->sampling_rate_400s;
+    }
+    if (json_object_object_get_ex(stream_obj, "database_number", &obj)) {
+        info->db = json_object_get_int(obj);
+    }
+}
+
+static
+stream_info_t* stream_info_new(const char* key, json_object *stream_obj)
+{
+
+    // printf("[D] stream-op: allocating stream %s\n", key);
+
+    stream_info_t *info = zmalloc(sizeof(stream_info_t));
+    assert(info);
+
+    info->ref_count = 1;
+    info->key = strdup(key);
+    info->key_len = strlen(info->key);
+
+    char app[256];
+    char env[256];
+    bool ok = extract_app_env(info->key, 256, app, env);
+    if (!ok) {
+        printf("[E] invalid stream: %s\n", info->key);
+        assert(false);
+    }
+    info->app = strdup(app);
+    info->app_len = strlen(app);
+    assert(info->app_len > 0);
+
+    info->env = strdup(env);
+    info->env_len = strlen(env);
+    assert(info->env_len > 0);
+
+    char yek[info->key_len+1];
+    snprintf(yek, info->key_len+1, "%s.%s", env, app);
+    info->yek = strdup(yek);
+
+    add_stream_settings(info, stream_obj);
+
+    info->known_modules = zhash_new();
+    assert(info->known_modules);
+
+    return info;
+}
+
+static
+void* stream_info_free(stream_info_t *info)
+{
+    info->ref_count--;
+    // printf("[D] stream-op: decreased ref count for stream %s: %d\n", info->key, info->ref_count);
+    if (info->ref_count)
+        return NULL;
+
+    // printf("[D] stream-op: freeing stream %s\n", info->key);
+    free(info->key);
+    free(info->yek);
+    free(info->app);
+    free(info->env);
+    if (info->module_thresholds) {
+        int n = info->module_threshold_count;
+        for (int i=0; i<n; i++)
+            free(info->module_thresholds[i].name);
+        free(info->module_thresholds);
+    }
+    free(info->ignored_request_prefix);
+    if (info->backend_only_requests) {
+        int n = info->backend_only_requests_size;
+        for (int i=0; i<n; i++)
+            free(info->backend_only_requests[i]);
+        free(info->backend_only_requests);
+    }
+    if (info->api_requests) {
+        int n = info->api_requests_size;
+        for (int i=0; i<n; i++)
+            free(info->api_requests[i]);
+        free(info->api_requests);
+    }
+    zhash_destroy(&info->known_modules);
+    free(info);
+    return NULL;
+}
+
+static
+void dump_stream_info(stream_info_t *stream)
+{
+    printf("[D] ====================\n");
+    printf("[D] key: %s\n", stream->key);
+    printf("[D] yek: %s\n", stream->yek);
+    printf("[D] app: %s\n", stream->app);
+    printf("[D] env: %s\n", stream->env);
+    printf("[D] ignored_request_uri: %s\n", stream->ignored_request_prefix);
+    printf("[D] database_cleaning_threshold: %d\n", stream->database_cleaning_threshold);
+    printf("[D] request_cleaning_threshold: %d\n", stream->request_cleaning_threshold);
+    printf("[D] import_threshold: %d\n", stream->import_threshold);
+    for (int i = 0; i<stream->module_threshold_count; i++) {
+        printf("[D] module_import_threshold: %s = %zu\n", stream->module_thresholds[i].name, stream->module_thresholds[i].value);
+    }
+    printf("[D] all requests are backend only requests: %d\n", stream->all_requests_are_backend_only_requests);
+    int n = stream->backend_only_requests_size;
+    printf("[D] backend only requests size: %d\n", n);
+    if (n > 0) {
+        printf("[D] backend only requests: ");
+        printf("%s", stream->backend_only_requests[0]);
+        for (int i=1; i<n; i++)
+            printf(",%s", stream->backend_only_requests[i]);
+        printf("\n");
+    }
+    n = stream->api_requests_size;
+    printf("[D] api requests size: %d\n", n);
+    if (n > 0) {
+        printf("[D] api requests: ");
+        printf("%s", stream->api_requests[0]);
+        for (int i=1; i<n; i++)
+            printf(",%s", stream->api_requests[i]);
+        printf("\n");
+    }
+}
+
+static
+zhash_t* get_streams()
+{
+    zhash_t *streams = NULL;
+
+    zhttp_request_t *request = zhttp_request_new();
+    zhttp_response_t *response = NULL;
+    zhttp_request_set_url(request, streams_url);
+    zhttp_request_set_method(request, "GET");
+    zhttp_request_set_content_type(request, "application/json");
+    int rc = zhttp_request_send(request, client, 10000, NULL, NULL);
+    if (rc) goto cleanup;
+
+    void *user_arg1, *user_arg2;
+    response = zhttp_response_new ();
+    rc = zhttp_response_recv(response, client, &user_arg1, &user_arg2);
+    if (rc) goto cleanup;
+
+    const char* body = zhttp_response_content(response);
+    const int body_len = zhttp_response_content_length(response);
+
+    json_tokener* tokener = json_tokener_new();
+    json_object *streams_obj = parse_json_data(body, body_len, tokener);
+    json_tokener_free(tokener);
+    if (streams_obj == NULL) goto cleanup;
+
+    streams = zhash_new();
+    json_object_object_foreach(streams_obj, key, val) {
+        stream_info_t *stream = stream_info_new(key, val);
+        if (0) dump_stream_info(stream);
+        zhash_insert(streams, key, stream);
+        zhash_freefn(streams, key, (zhash_free_fn*)stream_info_free);
+    }
+    json_object_put(streams_obj);
+
+ cleanup:
+    zhttp_request_destroy(&request);
+    zhttp_response_destroy(&response);
+    return streams;
+}
+
+static
+bool update_stream_config()
+{
+    printf("[I] stream-updater: updating stream config\n");
+
+    zhash_t *new_streams = get_streams();
+    if (new_streams == NULL) {
+        fprintf(stderr, "[E] stream-updater: could not retrieve streams from logjam instance\n");
+        return false;
+    }
+
+    zlist_t *new_subscriptions = zlist_new();
+    zlist_autofree(new_subscriptions);
+    zlist_comparefn(new_subscriptions, (zlist_compare_fn *) strcmp);
+    zlist_t *new_active_streams = zlist_new();
+    zlist_autofree(new_active_streams);
+    zlist_comparefn(new_active_streams, (zlist_compare_fn *) strcmp);
+
+    stream_info_t *info = zhash_first(new_streams);
+    while (info) {
+        const char *key = zhash_cursor(new_streams);
+        if (!have_subscription_pattern) {
+            zlist_append(new_active_streams, (void*)key);
+        } else
+            if (strstr(key, subscription_pattern) != NULL) {
+                zlist_append(new_subscriptions, (void*)key);
+                zlist_append(new_active_streams, (void*)key);
+            }
+        info = zhash_next(new_streams);
+    }
+
+    pthread_mutex_lock(&lock);
+    zhash_destroy(&configured_streams);
+    zlist_destroy(&stream_subscriptions);
+    zlist_destroy(&active_stream_names);
+    configured_streams = new_streams;
+    stream_subscriptions = new_subscriptions;
+    active_stream_names = new_active_streams;
+    pthread_mutex_unlock(&lock);
+
+    printf("[I] stream-updater: updated stream config\n");
+
+    return true;
+}
+
+bool setup_stream_config(const char* logjam_url, const char *pattern)
+{
+    streams_url = logjam_url;
+    subscription_pattern = pattern;
+    have_subscription_pattern = strcmp("", pattern);
+    if (have_subscription_pattern)
+        log_gaps = false;
+
+    int rc = pthread_mutex_init(&lock, NULL);
+    assert(rc == 0);
+
+    client = zhttp_client_new(debug);
+    assert(client);
+    if (update_stream_config()) {
+        return true;
+    }
+    zhttp_client_destroy(&client);
+    return false;
+}
+
+#define ONE_DAY_MS (1000 * 60 * 60 * 24)
+
+void update_known_modules(stream_info_t *stream_info, zhash_t* module_hash)
+{
+    uint64_t now = zclock_time();
+    uint64_t age_threshold = now - ONE_DAY_MS;
+    zhash_t *known_modules = stream_info->known_modules;
+
+    // update timestamps for modules just seen
+    void *elem = zhash_first(module_hash);
+    while (elem) {
+        const char *module = zhash_cursor(module_hash);
+        zhash_update(known_modules, module, (void*)now);
+        elem = zhash_next(module_hash);
+    }
+
+    // delete modules we haven't heard from for over a day
+    zlist_t* modules = zhash_keys(known_modules);
+    const char* module = zlist_first(modules);
+    while (module) {
+        uint64_t last_seen = (uint64_t)zhash_lookup(known_modules, module);
+        if (last_seen < age_threshold) {
+            zhash_delete(known_modules, module);
+        }
+        module = zlist_next(modules);
+    }
+
+    // update all_pages, unless no module is left
+    if (zhash_size(known_modules) > 0)
+        zhash_update(known_modules, "all_pages", (void*)now);
+
+    zlist_destroy(&modules);
+}
+
+static int timer_event(zloop_t *loop, int timer_id, void *arg)
+{
+    update_stream_config();
+    return 0;
+}
+
+static
+int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
+{
+    int rc = 0;
+    stream_updater_state_t *state = arg;
+    zmsg_t *msg = zmsg_recv(socket);
+    if (msg) {
+        char *cmd = zmsg_popstr(msg);
+        if (streq(cmd, "$TERM")) {
+            state->received_term_cmd = true;
+            // fprintf(stderr, "[D] stream-updater: received $TERM command\n");
+            rc = -1;
+        }
+        else if (streq(cmd, "tick")) {
+            if (verbose)
+                printf("[I] stream-updater: tick\n");
+        } else {
+            fprintf(stderr, "[E] stream-updater: received unknown actor command: %s\n", cmd);
+        }
+        free(cmd);
+        zmsg_destroy(&msg);
+    }
+    return rc;
+}
+
+
+void stream_config_updater(zsock_t *pipe, void *args)
+{
+    set_thread_name("stream-updater");
+
+    int rc;
+    stream_updater_state_t state = { .received_term_cmd = false };
+
+    // signal readyiness
+    zsock_signal(pipe, 0);
+
+    // set up event loop
+    zloop_t *loop = zloop_new();
+    assert(loop);
+    zloop_set_verbose(loop, 0);
+    // we rely on the controller shutting us down
+    zloop_ignore_interrupts(loop);
+
+    // setup handler for actor messages
+    rc = zloop_reader(loop, pipe, actor_command, &state);
+    assert(rc == 0);
+
+    // rfresh stream config every 60 seconds
+    rc = zloop_timer(loop, 60000, 0, timer_event, &state);
+    assert(rc != -1);
+
+    // run the loop
+    bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
+    do {
+        rc = zloop_start(loop);
+        should_continue_to_run &= errno == EINTR;
+        if (!state.received_term_cmd)
+            log_zmq_error(rc, __FILE__, __LINE__);
+    } while (should_continue_to_run);
+
+    if (!quiet)
+        printf("[I] stream-updater: shutting down\n");
+
+    // shutdown
+    zloop_destroy(&loop);
+    assert(loop == NULL);
+    zhttp_client_destroy(&client);
+
+    if (!quiet)
+        printf("[I] stream-updater: terminated\n");
+}

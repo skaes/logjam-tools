@@ -1,5 +1,5 @@
 #include "importer-subscriber.h"
-#include "importer-streaminfo.h"
+#include "logjam-streaminfo.h"
 #include "logjam-util.h"
 #include "device-tracker.h"
 #include "statsd-client.h"
@@ -41,6 +41,7 @@ typedef struct {
     size_t message_gap_size;                  // messages missed due to gaps in the stream (since last tick)
     size_t message_drops;                     // messages dropped because push_socket wasn't ready (since last tick)
     size_t message_blocks;                    // how often the subscriber blocked on the push_socket (since last tick)
+    zlist_t *subscriptions;                   // current subscriptions, NULL if socket has not been subscribed before
     statsd_client_t *statsd_client;
 } subscriber_state_t;
 
@@ -189,6 +190,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
     if (msg) {
         state->message_count++;
         state->message_bytes += zmsg_content_size(msg);
+        // printf("[D] received messsage size: %zu\n", zmsg_content_size(msg));
         int n = zmsg_size(msg);
         if (n < 3 || n > 4) {
             fprintf(stderr, "[E] subscriber[%zu]: (%s:%d): dropped invalid message of size %d\n", state->id, __FILE__, __LINE__, n);
@@ -253,7 +255,6 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
     if (n == 4) {
         int is_heartbeat = process_meta_information_and_handle_heartbeat(state, msg);
         if (is_heartbeat) {
-            zmsg_destroy(&msg);
             goto answer;
         }
         is_ping = zframe_streq(zmsg_first(msg), "ping");
@@ -270,6 +271,7 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
             fprintf(stderr, "[E] subscriber[%zu]: dropped message on push socket (%d: %s)\n", state->id, errno, zmq_strerror(errno));
     }
  answer:
+    zmsg_destroy(&msg);
     if (reply) {
         if (is_ping) {
             if (ok) {
@@ -381,14 +383,110 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
 }
 
 static
-void setup_subscriptions(subscriber_state_t *state)
+zhash_t* zlist_to_hash(zlist_t *list)
 {
-    zlist_t *subscriptions = zhash_keys(stream_subscriptions);
-    setup_subscriptions_for_sub_socket(subscriptions, state->sub_socket, state->id);
-    zlist_destroy(&subscriptions);
+    zhash_t *hash = zhash_new();
+    const char* elem = zlist_first(list);
+    while (elem) {
+        zhash_insert(hash, elem, (void*)1);
+        elem = zlist_next(list);
+    }
+    return hash;
 }
 
-static void subscriber(zsock_t *pipe, void *args)
+static
+zlist_t* zlist_added(zlist_t *old, zlist_t *new)
+{
+    zlist_t *added = zlist_new();
+    zlist_autofree(added);
+    zhash_t *old_set = zlist_to_hash(old);
+    char* new_elem = zlist_first(new);
+    while (new_elem) {
+        if (!zhash_lookup(old_set, new_elem))
+            zlist_append(added, new_elem);
+        new_elem = zlist_next(new);
+    }
+    zhash_destroy(&old_set);
+    return added;
+}
+
+static
+zlist_t* zlist_deleted(zlist_t *old, zlist_t *new)
+{
+    zlist_t *deleted = zlist_new();
+    zlist_autofree(deleted);
+    zhash_t *new_set = zlist_to_hash(new);
+    char* old_elem = zlist_first(old);
+    while (old_elem) {
+        if (!zhash_lookup(new_set, old_elem))
+            zlist_append(deleted, old_elem);
+        old_elem = zlist_next(old);
+    }
+    zhash_destroy(&new_set);
+    return deleted;
+}
+
+static
+void update_subscriptions(subscriber_state_t *state, zlist_t *subscriptions)
+{
+    const char* pattern = get_subscription_pattern();
+    if (streq(pattern, "")) {
+        // no pattern set, we only need to subscribe once at startup
+        if (state->subscriptions == NULL) {
+            printf("[I] subscriber[%zu]: subscribing to all streams\n", state->id);
+            zsock_set_subscribe(state->sub_socket, "");
+            state->subscriptions = zlist_new();
+        }
+        return;
+    }
+
+    // only set heartbeat on the first call
+    if (state->subscriptions == NULL) {
+        zsock_set_subscribe(state->sub_socket, "heartbeat");
+        state->subscriptions = zlist_new();
+    }
+
+    // subscribe to added streams
+    zlist_t *added = zlist_added(state->subscriptions, subscriptions);
+    char *new_stream = zlist_first(added);
+    while (new_stream) {
+        printf("[I] subscriber[%zu]: subscribing to stream: %s\n", state->id, new_stream);
+        zsock_set_subscribe(state->sub_socket, new_stream);
+        new_stream = zlist_next(added);
+    }
+
+    // unsubscribe from deleted streams
+    zlist_t *deleted = zlist_deleted(state->subscriptions, subscriptions);
+    char *old_stream = zlist_first(deleted);
+    while (old_stream) {
+        printf("[I] subscriber[%zu]: unsubscribing from stream: %s\n", state->id, old_stream);
+        zsock_set_unsubscribe(state->sub_socket, old_stream);
+        old_stream = zlist_next(deleted);
+    }
+    zlist_destroy(&added);
+    zlist_destroy(&deleted);
+}
+
+static
+void setup_subscriptions(subscriber_state_t *state)
+{
+    zlist_t *new_subscriptions = get_stream_subscriptions();
+    update_subscriptions(state, new_subscriptions);
+    zlist_destroy(&state->subscriptions);
+    state->subscriptions = new_subscriptions;
+}
+
+static
+int timer_function(zloop_t *loop, int timer_id, void* arg)
+{
+    subscriber_state_t *state = arg;
+    printf("[I] subscriber[%zu]: updating subscriptions\n", state->id);
+    setup_subscriptions(state);
+    printf("[I] subscriber[%zu]: subscriptions updated\n", state->id);
+    return 0;
+}
+
+ static void subscriber(zsock_t *pipe, void *args)
 {
     subscriber_state_t *state = (subscriber_state_t*)args;
     state->pipe = pipe;
@@ -406,6 +504,10 @@ static void subscriber(zsock_t *pipe, void *args)
     zloop_t *loop = zloop_new();
     assert(loop);
     zloop_set_verbose(loop, 0);
+
+    // set up timer for adapting socket subscriptions, if we have a subscription pattern
+    if (!streq(get_subscription_pattern(), ""))
+        zloop_timer(loop, 60000, 0, timer_function, state);
 
     // setup handler for actor messages
     rc = zloop_reader(loop, pipe, actor_command, state);

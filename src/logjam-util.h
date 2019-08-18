@@ -191,8 +191,6 @@ static inline zmsg_t* zmsg_recv_with_retry(zsock_t *socket)
     return msg;
 }
 
-extern void setup_subscriptions_for_sub_socket(zlist_t *subscriptions, zsock_t *socket, size_t id);
-
 extern int zmsg_savex (zmsg_t *self, FILE *file);
 extern zmsg_t* zmsg_loadx (zmsg_t *self, FILE *file);
 

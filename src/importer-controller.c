@@ -49,6 +49,7 @@ unsigned long num_adders = 4;
 
 typedef struct {
     zconfig_t *config;
+    zactor_t *stream_config_updater;
     zactor_t *statsd_server;
     zactor_t *indexer;
     zactor_t *tracker;
@@ -92,6 +93,7 @@ void extract_parser_state(controller_state_t *state, zmsg_t* msg, zhash_t **proc
         zhashx_insert(state->unknown_streams, stream, (void*)1);
         elem = zhashx_next(unknowns);
     }
+    zhashx_destroy(&unknowns);
 }
 
 
@@ -143,22 +145,30 @@ void publish_totals_for_every_known_stream(controller_state_t *state, zhash_t *p
     // publish updates for all streams where we received some data
     processor_state_t* processor = zhash_first(processors);
     while (processor) {
-        stream_info_t *stream_info = processor->stream_info;
-        update_known_modules(stream_info, processor->modules);
-        zhash_insert(published_streams, stream_info->key, (void*)1);
-        publish_totals(stream_info, processor->totals, state->live_stream_socket);
+        stream_info_t *stream_info = get_stream(processor->stream_name);
+        if (stream_info) {
+            update_known_modules(stream_info, processor->modules);
+            zhash_insert(published_streams, stream_info->key, (void*)1);
+            publish_totals(stream_info, processor->totals, state->live_stream_socket);
+            put_stream(stream_info);
+        }
         processor = zhash_next(processors);
     }
 
     // publish updates for all streams where we didn't receive anything
-    stream_info_t *stream_info = zhash_first(configured_streams);
-    while (stream_info) {
-        if (!zhash_lookup(published_streams, stream_info->key)) {
-            publish_totals(stream_info, NULL, state->live_stream_socket);
+    zlist_t *streams = get_active_stream_names();
+    const char *stream = zlist_first(streams);
+    while (stream) {
+        stream_info_t *stream_info = get_stream(stream);
+        if (stream_info) {
+            if (!zhash_lookup(published_streams, stream)) {
+                publish_totals(stream_info, NULL, state->live_stream_socket);
+            }
+            put_stream(stream_info);
         }
-        stream_info = zhash_next(configured_streams);
+        stream = zlist_next(streams);
     }
-
+    zlist_destroy(&streams);
     zhash_destroy(&published_streams);
 }
 
@@ -215,7 +225,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "t");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addstr(stats_msg, proc->stream_name);
         zmsg_addptr(stats_msg, proc->totals);
         proc->totals = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
@@ -229,7 +239,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "m");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addstr(stats_msg, proc->stream_name);
         zmsg_addptr(stats_msg, proc->minutes);
         proc->minutes = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
@@ -243,7 +253,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "q");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addstr(stats_msg, proc->stream_name);
         zmsg_addptr(stats_msg, proc->quants);
         proc->quants = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
@@ -257,7 +267,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "h");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addstr(stats_msg, proc->stream_name);
         zmsg_addptr(stats_msg, proc->histograms);
         proc->histograms = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
@@ -271,7 +281,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "a");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addptr(stats_msg, proc->stream_info);
+        zmsg_addstr(stats_msg, proc->stream_name);
         zmsg_addptr(stats_msg, proc->agents);
         proc->agents = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
@@ -459,6 +469,8 @@ bool controller_create_actors(controller_state_t *state)
     if (!dryrun)
         mongoc_init();
 
+    // start the stream config updater
+    state->stream_config_updater = zactor_new(stream_config_updater, NULL);
     // start the statsd updater
     state->statsd_server = zactor_new(statsd_actor_fn, state->config);
     // start the live stream publisher
@@ -515,6 +527,9 @@ void controller_destroy_actors(controller_state_t *state)
 {
     if (verbose) printf("[D] controller: destroying watchdog\n");
     zactor_destroy(&state->watchdog);
+
+    if (verbose) printf("[D] controller: destroying stream config updater\n");
+    zactor_destroy(&state->stream_config_updater);
 
     for (size_t i=0; i<num_subscribers; i++) {
         if (verbose) printf("[D] controller: destroying subscriber[%zu]\n", i);
@@ -607,12 +622,12 @@ static int stop_shutdown_timer() {
     return setitimer(ITIMER_REAL, &its, NULL);
 }
 
-int run_controller_loop(zconfig_t* config, size_t io_threads)
+int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam_url, const char* subscription_pattern)
 {
     set_thread_name("controller[0]");
     printf("[I] controller: starting\n");
 
-    int rc;
+    int rc = 0;
     // set global config
     zsys_init();
 
@@ -627,6 +642,10 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     zsys_set_sndhwm(DEFAULT_SND_HWM);
     zsys_set_linger(0);
 
+    if (!setup_stream_config(logjam_url, subscription_pattern)) {
+        rc = 1;
+        goto shutdown;
+    }
     controller_state_t state = {.ticks = 0, .config = config, .updates_blocked = 0};
     state.statsd_client = statsd_client_new(config, "controller[0]");
     state.collected_processors = zlist_new();
@@ -635,9 +654,10 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     assert(state.unknown_streams);
     bool start_up_complete = controller_create_actors(&state);
 
-    if (!start_up_complete)
-        goto exit;
-
+    if (!start_up_complete) {
+        rc = 1;
+        goto cleanup;
+    }
     // set up event loop
     zloop_t *loop = zloop_new();
     assert(loop);
@@ -646,6 +666,7 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     // combine increments every 1000 ms
     rc = zloop_timer(loop, 1000, 1, collect_stats_and_forward, &state);
     assert(rc != -1);
+    rc = 0;
 
     // run the loop
     // when running under the google profiler, zmq_poll terminates with EINTR
@@ -665,7 +686,7 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     assert(loop == NULL);
 
     zhash_t *p = NULL;
- exit:
+ cleanup:
     // free collected processors
     while ( (p = zlist_pop(state.collected_processors) )) {
         zhash_destroy(&p);
@@ -681,6 +702,7 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
     controller_destroy_actors(&state);
     statsd_client_destroy(&state.statsd_client);
 
+ shutdown:
     // wait for actors to finish
     zsys_shutdown();
 
@@ -695,5 +717,5 @@ int run_controller_loop(zconfig_t* config, size_t io_threads)
         printf("[I] controller: cleared shutdown timer\n");
 
     printf("[I] controller: terminated\n");
-    return 0;
+    return rc;
 }

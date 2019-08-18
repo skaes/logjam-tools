@@ -2,7 +2,7 @@
 #define __LOGJAM_IMPORTER_PROCESSOR_H_INCLUDED__
 
 #include "importer-parser.h"
-#include "importer-streaminfo.h"
+#include "logjam-streaminfo.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -10,7 +10,7 @@ extern "C" {
 
 typedef struct {
     char *db_name;
-    stream_info_t* stream_info;
+    char* stream_name;
     size_t request_count;
     zhash_t *modules;
     zhash_t *totals;
@@ -20,13 +20,13 @@ typedef struct {
     zhash_t *agents;
 } processor_state_t;
 
-extern processor_state_t* processor_new(stream_info_t *stream_info, char *db_name);
+extern processor_state_t* processor_new(char *stream_name, char *db_name);
 extern void processor_destroy(void* processor);
-extern void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request);
-extern void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request);
-extern void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request);
-extern enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
-extern enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
+extern void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request, stream_info_t *stream_info);
+extern void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request, stream_info_t *stream_info);
+extern void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request, stream_info_t *stream_info);
+extern enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg, stream_info_t *stream_info);
+extern enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg, stream_info_t *stream_info);
 extern int processor_set_frontend_apdex_attribute(const char *attr);
 extern void dump_histogram(const char* key, size_t *h);
 extern void dump_histograms(zhash_t* histograms);
