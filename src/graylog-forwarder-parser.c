@@ -9,7 +9,9 @@ typedef struct {
     zsock_t *pipe;                          // actor commands
     zsock_t *pull_socket;                   // incoming messages from subscriber
     zsock_t *push_socket;                   // outgoing messages to writer
-    zchunk_t *decompression_buffer;
+    zchunk_t *decompression_buffer;         // grows dynamically on demand
+    zchunk_t *scratch_buffer;               // scratch buffer for string operations
+    json_tokener *tokener;                  // json tokener instance
 } parser_state_t;
 
 static int process_logjam_message(parser_state_t *state)
@@ -19,7 +21,7 @@ static int process_logjam_message(parser_state_t *state)
     logjam_message *logjam_msg = logjam_message_read(state->pull_socket);
 
     if (logjam_msg && !zsys_interrupted) {
-        gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->decompression_buffer);
+        gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->decompression_buffer, state->scratch_buffer);
         const char *gelf_data = gelf_message_to_string (gelf_msg);
 
         if (debug)
@@ -106,6 +108,8 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->pull_socket = parser_pull_socket_new();
     state->push_socket = parser_push_socket_new();
     state->decompression_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
+    state->scratch_buffer = zchunk_new(NULL, 4096);
+    state->tokener = json_tokener_new();
     return state;
 }
 
@@ -117,6 +121,8 @@ void parser_state_destroy(parser_state_t **state_p)
     zsock_destroy(&state->pull_socket);
     zsock_destroy(&state->push_socket);
     zchunk_destroy(&state->decompression_buffer);
+    zchunk_destroy(&state->scratch_buffer);
+    json_tokener_free(state->tokener);
     free(state);
     *state_p = NULL;
 }

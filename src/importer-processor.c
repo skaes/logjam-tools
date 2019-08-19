@@ -89,75 +89,6 @@ const char* append_to_json_string(json_object **jobj, const char* old_str, const
 }
 
 static
-void processor_setup_caller_info(request_data_t *request_data, json_object *request, stream_info_t *stream_info)
-{
-    // check whether we have a HTTP request
-    if (request_data->path == NULL)
-        return;
-    // check whether app has no api requests at all
-    if (!stream_info->all_requests_are_api_requests && stream_info->api_requests_size == 0)
-        return;
-    // check whether we have an api request
-    const char *module = request_data->module;
-    // skip colons
-    while (*module == ':') module++;
-    bool api_request = stream_info->all_requests_are_api_requests;
-    if (!api_request) {
-        for (int i = 0; i < stream_info->api_requests_size; i++) {
-            if (streq(module, stream_info->api_requests[i])) {
-                api_request = true;
-                break;
-            }
-        }
-        if (!api_request)
-            return;
-    }
-    // set caller_id if not present
-    bool dump = false;
-    json_object *caller_id_obj;
-    if (!json_object_object_get_ex(request, "caller_id", &caller_id_obj)) {
-        char rid[256] = {'\0'};
-        sprintf(rid, "unknown-%s-unknown", stream_info->env);
-        json_object_object_add(request, "caller_id", json_object_new_string(rid));
-        if (debug) {
-            printf("[D] added missing caller id for %s\n", stream_info->key);
-            dump = true;
-        }
-    } else {
-        const char *caller_id = json_object_get_string(caller_id_obj);
-        if (caller_id == NULL || *caller_id == '\0') {
-            char rid[256] = {'\0'};
-            sprintf(rid, "unknown-%s-unknown", stream_info->env);
-            json_object_object_add(request, "caller_id", json_object_new_string(rid));
-            if (debug) {
-                printf("[D] added missing caller id for %s\n", stream_info->key);
-                dump = true;
-            }
-        }
-    }
-    // set caller_action if not present
-    json_object *caller_action_obj;
-    if (!json_object_object_get_ex(request, "caller_action", &caller_action_obj)) {
-        json_object_object_add(request, "caller_action", json_object_new_string("Unknown#unknown"));
-        if (debug) {
-            printf("[D] added missing caller action for %s\n", stream_info->key);
-            dump = true;
-        }
-    } else {
-        const char *caller_action = json_object_get_string(caller_action_obj);
-        if (caller_action == NULL || *caller_action == '\0') {
-            json_object_object_add(request, "caller_action", json_object_new_string("Unknown#unknown"));
-            if (debug) {
-                printf("[D] added missing caller action for %s\n", stream_info->key);
-                dump = true;
-            }
-        }
-    }
-    if (dump)
-        dump_json_object(stderr, "[D] modified caller info", request);
-}
-
-static
 const char* processor_setup_page(processor_state_t *self, json_object *request)
 {
     json_object *page_obj = NULL;
@@ -875,7 +806,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     processor_setup_other_time(self, request, request_data.total_time);
     processor_setup_allocated_memory(self, request);
     request_data.heap_growth = processor_setup_heap_growth(self, request);
-    processor_setup_caller_info(&request_data, request, stream_info);
+    adjust_caller_info(request_data.path, request_data.module, request, stream_info);
 
     increments_t* increments = increments_new();
     increments->backend_request_count = 1;

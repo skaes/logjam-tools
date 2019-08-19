@@ -1,9 +1,5 @@
 #include "graylog-forwarder-common.h"
 
-bool dryrun = false;
-bool verbose = false;
-bool debug = false;
-bool quiet = false;
 bool compress_gelf = false;
 
 zlist_t *hosts = NULL;

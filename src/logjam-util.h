@@ -16,6 +16,11 @@ extern "C" {
 #include <stdint.h>
 #include <json-c/json.h>
 
+extern bool dryrun;
+extern bool verbose;
+extern bool debug;
+extern bool quiet;
+
 #if CZMQ_VERSION >= 30003
 #define zloop_ignore_interrupts(l) zloop_set_nonstop(l, true)
 #endif
@@ -193,6 +198,11 @@ static inline zmsg_t* zmsg_recv_with_retry(zsock_t *socket)
 
 extern int zmsg_savex (zmsg_t *self, FILE *file);
 extern zmsg_t* zmsg_loadx (zmsg_t *self, FILE *file);
+
+extern zhash_t* zlist_to_hash(zlist_t *list);
+extern zlist_t* zlist_added(zlist_t *older, zlist_t *newer);
+extern zlist_t* zlist_deleted(zlist_t *older, zlist_t *newer);
+extern size_t zchunk_ensure_size(zchunk_t *buffer, size_t desired_size);
 
 extern void logjam_util_test (int verbose);
 extern const char* my_fqdn();

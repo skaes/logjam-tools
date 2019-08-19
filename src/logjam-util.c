@@ -427,6 +427,26 @@ int decompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body,
     return 1;
 }
 
+size_t zchunk_ensure_size(zchunk_t *buffer, size_t desired_size)
+{
+    size_t current_size = zchunk_max_size(buffer);
+
+    if (desired_size <= current_size)
+        return current_size;
+
+    size_t next_size = 2 * current_size;
+
+    while (next_size < max_buffer_size)
+        next_size *= 2;
+
+    if (next_size > max_buffer_size)
+        next_size = max_buffer_size;
+
+    zchunk_resize(buffer, next_size);
+
+    return next_size;
+}
+
 int decompress_frame_lz4(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
 {
     const char *source = (char*) zframe_data(body_frame);
@@ -646,6 +666,47 @@ zmsg_loadx (zmsg_t *self, FILE *file)
         self = NULL;
     }
     return self;
+}
+
+zhash_t* zlist_to_hash(zlist_t *list)
+{
+    zhash_t *hash = zhash_new();
+    const char* elem = zlist_first(list);
+    while (elem) {
+        zhash_insert(hash, elem, (void*)1);
+        elem = zlist_next(list);
+    }
+    return hash;
+}
+
+zlist_t* zlist_added(zlist_t *old, zlist_t *new)
+{
+    zlist_t *added = zlist_new();
+    zlist_autofree(added);
+    zhash_t *old_set = zlist_to_hash(old);
+    char* new_elem = zlist_first(new);
+    while (new_elem) {
+        if (!zhash_lookup(old_set, new_elem))
+            zlist_append(added, new_elem);
+        new_elem = zlist_next(new);
+    }
+    zhash_destroy(&old_set);
+    return added;
+}
+
+zlist_t* zlist_deleted(zlist_t *old, zlist_t *new)
+{
+    zlist_t *deleted = zlist_new();
+    zlist_autofree(deleted);
+    zhash_t *new_set = zlist_to_hash(new);
+    char* old_elem = zlist_first(old);
+    while (old_elem) {
+        if (!zhash_lookup(new_set, old_elem))
+            zlist_append(deleted, old_elem);
+        old_elem = zlist_next(old);
+    }
+    zhash_destroy(&new_set);
+    return deleted;
 }
 
 // unlike zsys_hostname() this supports IPV6

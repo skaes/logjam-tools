@@ -1,13 +1,15 @@
 #include "logjam-util.h"
 #include <getopt.h>
 
+bool dryrun = false;
+bool verbose = false;
+bool debug = false;
+bool quiet = false;
+
 FILE* dump_file = NULL;
 static char *dump_file_name = "logjam-stream.dump";
 static size_t dump_file_size = 0;
 static size_t bytes_read_from_file = 0;
-
-static bool verbose = false;
-static bool debug = false;
 
 static size_t io_threads = 1;
 static char *connection_spec = NULL;

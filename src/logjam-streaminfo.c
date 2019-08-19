@@ -512,3 +512,69 @@ void stream_config_updater(zsock_t *pipe, void *args)
     if (!quiet)
         printf("[I] stream-updater: terminated\n");
 }
+
+void adjust_caller_info(const char* path, const char* module, json_object *request, stream_info_t *stream_info)
+{
+    // check whether we have a HTTP request
+    if (path == NULL)
+        return;
+    // check whether app has no api requests at all
+    if (!stream_info->all_requests_are_api_requests && stream_info->api_requests_size == 0)
+        return;
+    // check whether we have an api request
+    while (*module == ':') module++;
+    bool api_request = stream_info->all_requests_are_api_requests;
+    if (!api_request) {
+        for (int i = 0; i < stream_info->api_requests_size; i++) {
+            if (streq(module, stream_info->api_requests[i])) {
+                api_request = true;
+                break;
+            }
+        }
+        if (!api_request)
+            return;
+    }
+    // set caller_id if not present
+    bool dump = false;
+    json_object *caller_id_obj;
+    if (!json_object_object_get_ex(request, "caller_id", &caller_id_obj)) {
+        char rid[256] = {'\0'};
+        sprintf(rid, "unknown-%s-unknown", stream_info->env);
+        json_object_object_add(request, "caller_id", json_object_new_string(rid));
+        if (debug) {
+            printf("[D] added missing caller id for %s\n", stream_info->key);
+            dump = true;
+        }
+    } else {
+        const char *caller_id = json_object_get_string(caller_id_obj);
+        if (caller_id == NULL || *caller_id == '\0') {
+            char rid[256] = {'\0'};
+            sprintf(rid, "unknown-%s-unknown", stream_info->env);
+            json_object_object_add(request, "caller_id", json_object_new_string(rid));
+            if (debug) {
+                printf("[D] added missing caller id for %s\n", stream_info->key);
+                dump = true;
+            }
+        }
+    }
+    // set caller_action if not present
+    json_object *caller_action_obj;
+    if (!json_object_object_get_ex(request, "caller_action", &caller_action_obj)) {
+        json_object_object_add(request, "caller_action", json_object_new_string("Unknown#unknown"));
+        if (debug) {
+            printf("[D] added missing caller action for %s\n", stream_info->key);
+            dump = true;
+        }
+    } else {
+        const char *caller_action = json_object_get_string(caller_action_obj);
+        if (caller_action == NULL || *caller_action == '\0') {
+            json_object_object_add(request, "caller_action", json_object_new_string("Unknown#unknown"));
+            if (debug) {
+                printf("[D] added missing caller action for %s\n", stream_info->key);
+                dump = true;
+            }
+        }
+    }
+    if (dump)
+        dump_json_object(stderr, "[D] modified caller info", request);
+}

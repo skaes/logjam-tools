@@ -1,8 +1,8 @@
 #include "logjam-util.h"
 #include <getopt.h>
 
-static bool verbose = false;
-static bool debug = false;
+bool verbose = false;
+bool debug = false;
 static bool prefix = false;
 
 static size_t io_threads = 1;

@@ -9,10 +9,6 @@
 extern "C" {
 #endif
 
-extern bool dryrun;
-extern bool verbose;
-extern bool quiet;
-extern bool debug;
 extern bool compress_gelf;
 
 #define DEFAULT_RCV_HWM       10000

@@ -2,6 +2,7 @@
 #include "graylog-forwarder-subscriber.h"
 #include "graylog-forwarder-parser.h"
 #include "graylog-forwarder-writer.h"
+#include "logjam-streaminfo.h"
 
 /*
  *                 --- PIPE ---  subscriber
@@ -18,14 +19,19 @@ typedef struct {
     zactor_t *subscriber;
     zactor_t *parsers[MAX_PARSERS];
     zactor_t *writer;
+    zactor_t *stream_config_updater;
 } controller_state_t;
 
 
 static
-bool controller_create_actors(controller_state_t *state, zlist_t* devices, zlist_t *subscriptions, int rcv_hwm, int send_hwm)
+bool controller_create_actors(controller_state_t *state, zlist_t* devices, int rcv_hwm, int send_hwm)
 {
+
+    // start the stream config updater
+    state->stream_config_updater = zactor_new(stream_config_updater, NULL);
+
     // create subscriber
-    state->subscriber = graylog_forwarder_subscriber_new(state->config, devices, subscriptions, rcv_hwm, send_hwm);
+    state->subscriber = graylog_forwarder_subscriber_new(state->config, devices, rcv_hwm, send_hwm);
 
     // create the parsers
     for (size_t i=0; i<num_parsers; i++) {
@@ -41,6 +47,7 @@ bool controller_create_actors(controller_state_t *state, zlist_t* devices, zlist
 static
 void controller_destroy_actors(controller_state_t *state)
 {
+    zactor_destroy(&state->stream_config_updater);
     zactor_destroy(&state->subscriber);
     zactor_destroy(&state->writer);
     for (size_t i=0; i<num_parsers; i++) {
@@ -63,17 +70,25 @@ int send_tick_commands(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
-int graylog_forwarder_run_controller_loop(zconfig_t* config, zlist_t* devices, zlist_t *subscriptions, int rcv_hwm, int send_hwm)
+int graylog_forwarder_run_controller_loop(zconfig_t* config, zlist_t* devices, const char *subscription_pattern, const char* logjam_url, int rcv_hwm, int send_hwm)
 {
     set_thread_name("controller");
 
     zsys_init();
 
-    controller_state_t state = {.config = config};
-    bool start_up_complete = controller_create_actors(&state, devices, subscriptions, rcv_hwm, send_hwm);
+    int rc = 0;
+    if (!setup_stream_config(logjam_url, subscription_pattern)) {
+        rc = 1;
+        goto shutdown;
+    }
 
-    if (!start_up_complete)
+    controller_state_t state = {.config = config};
+    bool start_up_complete = controller_create_actors(&state, devices, rcv_hwm, send_hwm);
+
+    if (!start_up_complete) {
+        rc = 1;
         goto exit;
+    }
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -81,8 +96,9 @@ int graylog_forwarder_run_controller_loop(zconfig_t* config, zlist_t* devices, z
     zloop_set_verbose(loop, 0);
 
     // send tick commands every second
-    int rc = zloop_timer(loop, 1000, 1, send_tick_commands, &state);
+    rc = zloop_timer(loop, 1000, 1, send_tick_commands, &state);
     assert(rc != -1);
+    rc = 0;
 
     // run the loop
     // when running under the google profiler, zmq_poll terminates with EINTR
@@ -104,9 +120,10 @@ int graylog_forwarder_run_controller_loop(zconfig_t* config, zlist_t* devices, z
  exit:
     printf("[I] controller: destroying actor threads\n");
     controller_destroy_actors(&state);
+ shutdown:
     printf("[I] controller: calling zsys_shutdown\n");
     zsys_shutdown();
 
     printf("[I] controller: terminated\n");
-    return 0;
+    return rc;
 }

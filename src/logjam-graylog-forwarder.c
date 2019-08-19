@@ -10,12 +10,21 @@
 #include "graylog-forwarder-common.h"
 #include "graylog-forwarder-controller.h"
 
+// flags
+bool dryrun = false;
+bool verbose = false;
+bool debug = false;
+bool quiet = false;
+
 // global config
 static zconfig_t* config = NULL;
 static zfile_t *config_file = NULL;
 static char *config_file_name = "logjam.conf";
 static time_t config_file_last_modified = 0;
 static char *config_file_digest = "";
+static const char *logjam_url = "http://localhost:3000/";
+static char *logjam_stream_url = "http://localhost:3000/admin/streams";
+static const char* subscription_pattern = NULL;
 
 static void print_usage(char * const *argv)
 {
@@ -30,6 +39,7 @@ static void print_usage(char * const *argv)
             "  -z, --compress             compress data sent to graylog\n"
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
+            "  -L, --logjam-url U         url from where to retrieve stream config\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
@@ -60,10 +70,11 @@ static void process_arguments(int argc, char * const *argv)
         { "snd-hwm",       required_argument, 0, 'S' },
         { "subscribe",     required_argument, 0, 'e' },
         { "verbose",       no_argument,       0, 'v' },
+        { "logjam-url",    required_argument, 0, 'L' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:eL:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -104,13 +115,16 @@ static void process_arguments(int argc, char * const *argv)
             interface = optarg;
             break;
         case 'e':
-            subscriptions = split_delimited_string(optarg);
+            subscription_pattern = optarg;
             break;
         case 'R':
             rcv_hwm = atoi(optarg);
             break;
         case 'S':
             snd_hwm = atoi(optarg);
+            break;
+        case 'L':
+            logjam_url = optarg;
             break;
         case 0:
             print_usage(argv);
@@ -142,14 +156,20 @@ static void process_arguments(int argc, char * const *argv)
     if (interface)
         interface = augment_zmq_connection_spec(interface, 9610);
 
-    if (subscriptions == NULL)
-        subscriptions = split_delimited_string(getenv("LOGJAM_SUBSCRIPTIONS"));
+    if (subscription_pattern == NULL)
+        subscription_pattern = getenv("LOGJAM_SUBSCRIPTIONS");
+    if (subscription_pattern == NULL)
+        subscription_pattern = "";
 
     if (rcv_hwm == -1 && (v = getenv("LOGJAM_RCV_HWM")))
         rcv_hwm = atoi(v);
 
     if (snd_hwm == -1 && (v = getenv("LOGJAM_SND_HWM")))
         snd_hwm = atoi(v);
+
+    int l = strlen(logjam_url);
+    int n = asprintf(&logjam_stream_url, "%s%s", logjam_url, (logjam_url[l-1] == '/') ? "admin/streams" : "/admin/streams");
+    assert(n>0);
 }
 
 static void config_file_init()
@@ -195,5 +215,5 @@ int main(int argc, char * const *argv)
                "[I] snd-hwm:  %d\n"
                , argv[0], interface, rcv_hwm, snd_hwm);
 
-    return graylog_forwarder_run_controller_loop(config, hosts, subscriptions, rcv_hwm, snd_hwm);
+    return graylog_forwarder_run_controller_loop(config, hosts, subscription_pattern, logjam_stream_url, rcv_hwm, snd_hwm);
 }

@@ -83,7 +83,7 @@ void print_usage(char * const *argv)
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "  -m, --metrics-port N       port to use for prometheus path /metrics\n"
             "  -M, --metrics-ip N         ip for binding metrics endpoint\n"
-            "  -L, --logjam-url           url from where to retrieve stream config\n"
+            "  -L, --logjam-url U         url from where to retrieve stream config\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"

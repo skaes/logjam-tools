@@ -101,6 +101,8 @@ logjam_graylog_forwarder_SOURCES = \
     graylog-forwarder-writer.h \
     logjam-util.c \
     logjam-util.h \
+    logjam-streaminfo.c \
+    logjam-streaminfo.h \
     gelf-message.c \
     gelf-message.h \
     logjam-message.c \

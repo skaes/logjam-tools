@@ -1,6 +1,7 @@
 #include "graylog-forwarder-subscriber.h"
 #include "logjam-message.h"
 #include "device-tracker.h"
+#include "logjam-streaminfo.h"
 
 // actor state
 typedef struct {
@@ -16,7 +17,7 @@ typedef struct {
     size_t message_gap_size;    // messages missed due to gaps in the stream (since last tick)
     size_t message_drops;       // messages dropped because push_socket wasn't ready (since last tick)
     size_t message_blocks;      // how often the subscriber blocked on the push_socket (since last tick)
-    zlist_t *subscriptions;
+    zlist_t *subscriptions;     // streams to subscribe to
     int rcv_hwm;
     int snd_hwm;
 } subscriber_state_t;
@@ -24,21 +25,79 @@ typedef struct {
 typedef struct {
     zconfig_t *config;
     zlist_t *devices;
-    zlist_t *subscriptions;
     int rcv_hwm;
     int snd_hwm;
 } subscriber_args_t;
 
 
-static subscriber_args_t* subscriber_args_new(zconfig_t *config, zlist_t *devices, zlist_t *subscriptions, int rcv_hwm, int snd_hwm)
+static subscriber_args_t* subscriber_args_new(zconfig_t *config, zlist_t *devices, int rcv_hwm, int snd_hwm)
 {
     subscriber_args_t *args = zmalloc(sizeof(*args));
     args->config = config;
     args->devices = devices;
-    args->subscriptions = subscriptions;
     args->rcv_hwm = rcv_hwm;
     args->snd_hwm = snd_hwm;
     return args;
+}
+
+static
+void update_subscriptions(subscriber_state_t *state, zlist_t *subscriptions)
+{
+    const char* pattern = get_subscription_pattern();
+    if (streq(pattern, "")) {
+        // no pattern set, we only need to subscribe once at startup
+        if (state->subscriptions == NULL) {
+            printf("[I] subscriber: subscribing to all streams\n");
+            zsock_set_subscribe(state->sub_socket, "");
+            state->subscriptions = zlist_new();
+        }
+        return;
+    }
+
+    // only set heartbeat on the first call
+    if (state->subscriptions == NULL) {
+        zsock_set_subscribe(state->sub_socket, "heartbeat");
+        state->subscriptions = zlist_new();
+    }
+
+    // subscribe to added streams
+    zlist_t *added = zlist_added(state->subscriptions, subscriptions);
+    char *new_stream = zlist_first(added);
+    while (new_stream) {
+        printf("[I] subscriber: subscribing to stream: %s\n", new_stream);
+        zsock_set_subscribe(state->sub_socket, new_stream);
+        new_stream = zlist_next(added);
+    }
+
+    // unsubscribe from deleted streams
+    zlist_t *deleted = zlist_deleted(state->subscriptions, subscriptions);
+    char *old_stream = zlist_first(deleted);
+    while (old_stream) {
+        printf("[I] subscriber: unsubscribing from stream: %s\n", old_stream);
+        zsock_set_unsubscribe(state->sub_socket, old_stream);
+        old_stream = zlist_next(deleted);
+    }
+    zlist_destroy(&added);
+    zlist_destroy(&deleted);
+}
+
+static
+void setup_subscriptions(subscriber_state_t *state)
+{
+    zlist_t *new_subscriptions = get_stream_subscriptions();
+    update_subscriptions(state, new_subscriptions);
+    zlist_destroy(&state->subscriptions);
+    state->subscriptions = new_subscriptions;
+}
+
+static
+int timer_function(zloop_t *loop, int timer_id, void* arg)
+{
+    subscriber_state_t *state = arg;
+    printf("[I] subscriber: updating subscriptions\n");
+    setup_subscriptions(state);
+    printf("[I] subscriber: subscriptions updated\n");
+    return 0;
 }
 
 static
@@ -47,43 +106,6 @@ zsock_t* subscriber_sub_socket_new(subscriber_state_t *state)
     zsock_t *socket = zsock_new(ZMQ_SUB);
     assert(socket);
     zsock_set_rcvhwm(socket, state->rcv_hwm);
-
-    // set subscription
-    if (!state->subscriptions || zlist_size(state->subscriptions) == 0) {
-        if (!state->subscriptions)
-            state->subscriptions = zlist_new();
-        zlist_append(state->subscriptions, zconfig_resolve(state->config, "/logjam/subscription", ""));
-    }
-
-    char *subscription = zlist_first(state->subscriptions);
-    bool subscribed_to_all = false;
-    while (subscription) {
-        printf("[I] subscriber: subscribing to '%s'\n", subscription);
-        if (streq(subscription, ""))
-            subscribed_to_all = true;
-        zsock_set_subscribe(socket, subscription);
-        subscription = zlist_next(state->subscriptions);
-    }
-    if (!subscribed_to_all)
-        zsock_set_subscribe(socket, "heartbeat");
-
-    if (!state->devices || zlist_size(state->devices) == 0) {
-        // convert config file to list of devices
-        if (!state->devices)
-            state->devices = zlist_new();
-        zconfig_t *endpoints = zconfig_locate(state->config, "/logjam/endpoints");
-        if (!endpoints) {
-            zlist_append(state->devices, "tcp://localhost:9606");
-        } else {
-            zconfig_t *endpoint = zconfig_child(endpoints);
-            while (endpoint) {
-                char *spec = zconfig_value(endpoint);
-                char *new_spec = augment_zmq_connection_spec(spec, 9606);
-                zlist_append(state->devices, new_spec);
-                endpoint = zconfig_next(endpoint);
-            }
-        }
-    }
 
     char* device = zlist_first(state->devices);
     while (device) {
@@ -102,6 +124,7 @@ zsock_t* subscriber_push_socket_new()
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
+    zsock_set_sndtimeo(socket, 10);
     int rc = zsock_bind(socket, "inproc://graylog-forwarder-subscriber");
     assert(rc == 0);
     return socket;
@@ -114,7 +137,6 @@ subscriber_state_t* subscriber_state_new(zsock_t* pipe, subscriber_args_t* args)
     state->pipe = pipe;
     state->config = args->config;
     state->devices = args->devices;
-    state->subscriptions = args->subscriptions;
     state->rcv_hwm = args->rcv_hwm;
     state->snd_hwm = args->snd_hwm;
     state->sub_socket = subscriber_sub_socket_new(state);
@@ -244,6 +266,9 @@ void graylog_forwarder_subscriber(zsock_t *pipe, void *args)
     int rc;
     subscriber_state_t *state = subscriber_state_new(pipe, args);
 
+    // subscribe to either all messages, or a subset
+    setup_subscriptions(state);
+
     // signal readyiness after sockets have been created
     zsock_signal(pipe, 0);
 
@@ -261,6 +286,10 @@ void graylog_forwarder_subscriber(zsock_t *pipe, void *args)
     // setup handler for the sub socket
     rc = zloop_reader(loop, state->sub_socket, read_request_and_forward, state);
     assert(rc == 0);
+
+    // set up timer for adapting socket subscriptions, if we have a subscription pattern
+    if (!streq(get_subscription_pattern(), ""))
+        zloop_timer(loop, 60000, 0, timer_function, state);
 
     // run the loop
     fprintf(stdout, "[I] subscriber: listening\n");
@@ -283,8 +312,8 @@ void graylog_forwarder_subscriber(zsock_t *pipe, void *args)
     fprintf(stdout, "[I] subscriber: terminated\n");
 }
 
-zactor_t* graylog_forwarder_subscriber_new(zconfig_t *config, zlist_t *devices, zlist_t *subscriptions, int rcv_hwm, int snd_hwm)
+zactor_t* graylog_forwarder_subscriber_new(zconfig_t *config, zlist_t *devices, int rcv_hwm, int snd_hwm)
 {
-    subscriber_args_t *args = subscriber_args_new(config, devices, subscriptions, rcv_hwm, snd_hwm);
+    subscriber_args_t *args = subscriber_args_new(config, devices, rcv_hwm, snd_hwm);
     return zactor_new(graylog_forwarder_subscriber, args);
 }

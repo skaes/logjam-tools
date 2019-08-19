@@ -4,6 +4,7 @@
 #include "gelf-message.h"
 #include "str-builder.h"
 #include "logjam-message.h"
+#include "logjam-streaminfo.h"
 
 const char *LOG_LEVELS_NAMES[6] = {
     "Debug",
@@ -89,18 +90,46 @@ logjam_message* logjam_message_read(zsock_t *receiver)
     return msg;
 }
 
-gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, zchunk_t *decompression_buffer)
+char* extract_module(const char *action)
+{
+    int max_mod_len = strlen(action);
+    char module_str[max_mod_len+1];
+    char *mod_ptr = strchr(action, ':');
+    strcpy(module_str, "::");
+    if (mod_ptr != NULL){
+        if (mod_ptr != action) {
+            int mod_len = mod_ptr - action;
+            memcpy(module_str+2, action, mod_len);
+            module_str[mod_len+2] = '\0';
+        }
+    } else {
+        char *action_ptr = strchr(action, '#');
+        if (action_ptr != NULL) {
+            int mod_len = action_ptr - action;
+            memcpy(module_str+2, action, mod_len);
+            module_str[mod_len+2] = '\0';
+        }
+    }
+   return strdup(module_str);
+}
+
+gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zchunk_t *decompression_buffer, zchunk_t *buffer)
 {
     json_object *obj = NULL, *http_request = NULL, *lines = NULL;
-    const char *host = "Not found", *action = "Not found";
+    const char *host = "Not found", *action = "";
     char *str = NULL;
-
-    // TODO: no need to allocate a new tokener for each message
-    json_tokener* tokener = json_tokener_new();
 
     // extract meta information
     msg_meta_t meta;
     frame_extract_meta_info(logjam_msg->frames[3], &meta);
+
+    char *app_env = zframe_strdup (logjam_msg->frames[0]);
+    stream_info_t *stream_info = get_stream(app_env);
+    if (stream_info == NULL) {
+        fprintf(stderr, "[W] dropped request from unknown stream: %s\n", app_env);
+        free(app_env);
+        return NULL;
+    }
 
     // decompress if necessary
     char *json_data;
@@ -116,7 +145,7 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, zchunk_t *decom
     json_object *request = parse_json_data(json_data, json_data_len, tokener);
 
     if (!request) {
-        json_tokener_free(tokener);
+        free(app_env);
         return NULL;
     }
 
@@ -125,14 +154,29 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, zchunk_t *decom
     if (json_object_object_get_ex (request, "host", &obj)) {
         host = json_object_get_string (obj);
     }
-
     if (json_object_object_get_ex (request, "action", &obj)) {
         action = json_object_get_string (obj);
+        if (action == NULL)
+            action = "";
     }
+
+    int action_len = strlen (action);
+    zchunk_ensure_size (buffer, action_len + 100);
+    char *buf = (char*) zchunk_data (buffer);
+    *buf = '\0';
+    strcat(buf, action);
+    char *pos = buf + action_len;
+
+    if (action_len == 0)
+        strcat (pos, "Unknown#unknown_method");
+    else if (!strchr(action, '#'))
+        strcat (pos, "#unknown_method");
+    else if (action[action_len-1] == '#')
+        strcat (pos, "unknown_method");
+    action = buf;
 
     gelf_message *gelf_msg = gelf_message_new (host, action);
 
-    char *app_env = zframe_strdup (logjam_msg->frames[0]);
     gelf_message_add_string (gelf_msg, "_app", app_env);
 
     double timestamp;
@@ -187,6 +231,10 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, zchunk_t *decom
 
         if (json_object_object_get_ex (http_request, "url", &obj)) {
             gelf_message_add_json_object (gelf_msg, "_http_url", obj);
+            const char *path = json_object_get_string(obj);
+            char* module = extract_module(action);
+            adjust_caller_info(path, module, http_request, stream_info);
+            free(module);
         }
 
         if (json_object_object_get_ex (http_request, "headers", &obj)) {
@@ -249,8 +297,8 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, zchunk_t *decom
     gelf_message_add_int (gelf_msg, "_logjam_message_size", json_data_len);
 
     free (app_env);
+    put_stream(stream_info);
     json_object_put (request);
-    json_tokener_free (tokener);
 
     return gelf_msg;
 }

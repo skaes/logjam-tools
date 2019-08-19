@@ -383,50 +383,6 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
 }
 
 static
-zhash_t* zlist_to_hash(zlist_t *list)
-{
-    zhash_t *hash = zhash_new();
-    const char* elem = zlist_first(list);
-    while (elem) {
-        zhash_insert(hash, elem, (void*)1);
-        elem = zlist_next(list);
-    }
-    return hash;
-}
-
-static
-zlist_t* zlist_added(zlist_t *old, zlist_t *new)
-{
-    zlist_t *added = zlist_new();
-    zlist_autofree(added);
-    zhash_t *old_set = zlist_to_hash(old);
-    char* new_elem = zlist_first(new);
-    while (new_elem) {
-        if (!zhash_lookup(old_set, new_elem))
-            zlist_append(added, new_elem);
-        new_elem = zlist_next(new);
-    }
-    zhash_destroy(&old_set);
-    return added;
-}
-
-static
-zlist_t* zlist_deleted(zlist_t *old, zlist_t *new)
-{
-    zlist_t *deleted = zlist_new();
-    zlist_autofree(deleted);
-    zhash_t *new_set = zlist_to_hash(new);
-    char* old_elem = zlist_first(old);
-    while (old_elem) {
-        if (!zhash_lookup(new_set, old_elem))
-            zlist_append(deleted, old_elem);
-        old_elem = zlist_next(old);
-    }
-    zhash_destroy(&new_set);
-    return deleted;
-}
-
-static
 void update_subscriptions(subscriber_state_t *state, zlist_t *subscriptions)
 {
     const char* pattern = get_subscription_pattern();

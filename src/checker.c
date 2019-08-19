@@ -10,7 +10,7 @@
 #include "logjam-util.h"
 #include "zring.h"
 
-int verbose = 0;
+bool verbose = false;
 
 static void print_usage(char * const *argv)
 {
