@@ -126,7 +126,7 @@ time_t valid_database_date(const char *date)
 }
 
 static
-processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request)
+processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request, bool *known_stream)
 {
     // extract stream name onto the stack and add null char
     const char *stream_chars = (char*)zframe_data(stream_frame);
@@ -137,6 +137,7 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
 
     // check whether it's a known stream and return NULL if not
     stream_info_t *stream_info = get_stream_info(stream_name, parser_state->stream_info_cache);
+    *known_stream = stream_info != NULL;
     if (stream_info == NULL) {
         zhashx_insert(parser_state->unknown_streams, stream_name, (void*)1);
         return NULL;
@@ -237,9 +238,11 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         // dump_json_object(stdout, "[D] REQUEST", request);
         char *topic_str = (char*) zframe_data(topic_frame);
         int n = zframe_size(topic_frame);
-        processor_state_t *processor = processor_create(stream_frame, parser_state, request);
+        bool known_stream;
+        processor_state_t *processor = processor_create(stream_frame, parser_state, request, &known_stream);
         if (processor == NULL) {
-            dump_json_object(stderr, "[E] could not create processor for request: ", request);
+            if (known_stream)
+                dump_json_object(stderr, "[E] could not create processor for request: ", request);
             json_object_put(request);
             return;
         }
