@@ -196,6 +196,24 @@ int main(int argc, char * const *argv)
         config = zconfig_load((char*)config_file_name);
     }
 
+    // convert config file to list of devices if none where specified as a parameter or env variable
+    if (hosts == NULL || zlist_size(hosts) == 0) {
+        if (hosts == NULL)
+            hosts = zlist_new();
+        zconfig_t *endpoints = zconfig_locate(config, "/logjam/endpoints");
+        if (!endpoints) {
+            zlist_append(hosts, "tcp://localhost:9606");
+        } else {
+            zconfig_t *endpoint = zconfig_child(endpoints);
+            while (endpoint) {
+                char *spec = zconfig_value(endpoint);
+                char *new_spec = augment_zmq_connection_spec(spec, 9606);
+                zlist_append(hosts, new_spec);
+                endpoint = zconfig_next(endpoint);
+            }
+        }
+    }
+
     // configure graylog endpoint
     if (interface == NULL)
         interface = zconfig_resolve(config, "/graylog/endpoint", DEFAULT_INTERFACE);
