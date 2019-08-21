@@ -113,7 +113,7 @@ char* extract_module(const char *action)
    return strdup(module_str);
 }
 
-gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zchunk_t *decompression_buffer, zchunk_t *buffer)
+gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t *stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *buffer)
 {
     json_object *obj = NULL, *http_request = NULL, *lines = NULL;
     const char *host = "Not found", *action = "";
@@ -124,7 +124,7 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     frame_extract_meta_info(logjam_msg->frames[3], &meta);
 
     char *app_env = zframe_strdup (logjam_msg->frames[0]);
-    stream_info_t *stream_info = get_stream_info(app_env, NULL);
+    stream_info_t *stream_info = get_stream_info(app_env, stream_info_cache);
     if (stream_info == NULL) {
         if (verbose)
             fprintf(stderr, "[W] dropped request from unknown stream: %s\n", app_env);
@@ -254,9 +254,13 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     if (json_object_object_get_ex (request, "caller_id", &obj)) {
         gelf_message_add_json_object (gelf_msg, "_caller_id", obj);
         const char *caller_id = json_object_get_string(obj);
-        char app[256], env[256], rid[256];
-        extract_app_env_rid (caller_id, 256, app, env, rid);
-        gelf_message_add_json_object (gelf_msg, "_caller_app", json_object_new_string(app));
+        if (caller_id) {
+            char app[256], env[256], rid[256];
+            extract_app_env_rid (caller_id, 256, app, env, rid);
+            json_object *app_obj = json_object_new_string(app);
+            gelf_message_add_json_object (gelf_msg, "_caller_app", app_obj);
+            json_object_put(app_obj);
+        }
     }
 
     // needs to happen after the call to adjust_caller_info

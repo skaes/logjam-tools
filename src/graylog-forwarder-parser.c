@@ -12,16 +12,20 @@ typedef struct {
     zchunk_t *decompression_buffer;         // grows dynamically on demand
     zchunk_t *scratch_buffer;               // scratch buffer for string operations
     json_tokener *tokener;                  // json tokener instance
+    zhash_t *stream_info_cache;             // thread local stream info cache
+    bool received_term_cmd;
 } parser_state_t;
 
-static int process_logjam_message(parser_state_t *state)
+
+static
+int process_message(zloop_t *loop, zsock_t *socket, void *arg)
 {
     // printf("[I] graylog-forwarder-parser [%zu]: process_logjam_message\n", state->id);
-
-    logjam_message *logjam_msg = logjam_message_read(state->pull_socket);
+    parser_state_t *state = arg;
+    logjam_message *logjam_msg = logjam_message_read(socket);
 
     if (logjam_msg && !zsys_interrupted) {
-        gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->decompression_buffer, state->scratch_buffer);
+        gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer);
         const char *gelf_data = gelf_message_to_string (gelf_msg);
 
         if (debug)
@@ -110,6 +114,7 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->decompression_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
     state->scratch_buffer = zchunk_new(NULL, 4096);
     state->tokener = json_tokener_new();
+    state->stream_info_cache = zhash_new();
     return state;
 }
 
@@ -123,8 +128,40 @@ void parser_state_destroy(parser_state_t **state_p)
     zchunk_destroy(&state->decompression_buffer);
     zchunk_destroy(&state->scratch_buffer);
     json_tokener_free(state->tokener);
+    zhash_destroy(&state->stream_info_cache);
     free(state);
     *state_p = NULL;
+}
+
+static
+int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
+{
+    int rc = 0;
+    parser_state_t* state = arg;
+    zmsg_t *msg = zmsg_recv(socket);
+    if (msg) {
+        char *cmd = zmsg_popstr(msg);
+        zmsg_destroy(&msg);
+        if (streq(cmd, "$TERM")) {
+            fprintf(stderr, "[D] parser [%zu]: received $TERM command\n", state->id);
+            free(cmd);
+            state->received_term_cmd = true;
+            rc = -1;
+        } else {
+            fprintf(stderr, "[E] parser [%zu]: received unknown command: %s\n", state->id, cmd);
+            free(cmd);
+        }
+    }
+    return rc;
+}
+
+static
+int timer_event(zloop_t *loop, int timer_id, void *args)
+{
+    parser_state_t* state = (parser_state_t*)args;
+    zhash_destroy(&state->stream_info_cache);
+    state->stream_info_cache = zhash_new();
+    return 0;
 }
 
 static
@@ -135,36 +172,35 @@ void parser(zsock_t *pipe, void *args)
     set_thread_name(state->me);
     size_t id = state->id;
 
-    // signal readyiness after sockets have been created
+    // signal readiness after sockets have been created
     zsock_signal(pipe, 0);
 
-    zpoller_t *poller = zpoller_new(state->pipe, state->pull_socket, NULL);
-    assert(poller);
+    // set up event loop
+    zloop_t *loop = zloop_new();
+    assert(loop);
+    zloop_set_verbose(loop, 0);
 
-    while (!zsys_interrupted) {
-        // -1 == block until something is readable
-        void *socket = zpoller_wait(poller, -1);
-        zmsg_t *msg = NULL;
-        if (socket == state->pipe) {
-            msg = zmsg_recv(state->pipe);
-            char *cmd = zmsg_popstr(msg);
-            zmsg_destroy(&msg);
-            if (streq(cmd, "$TERM")) {
-                fprintf(stderr, "[D] parser [%zu]: received $TERM command\n", id);
-                free(cmd);
-                break;
-            } else {
-                fprintf(stderr, "[E] parser [%zu]: received unknown command: %s\n", id, cmd);
-                free(cmd);
-                assert(false);
-            }
-        } else if (socket == state->pull_socket) {
-            process_logjam_message(state);
-        } else {
-            // socket == NULL, probably interrupted by signal handler
-            break;
-        }
-    }
+    // setup handler for actor messages
+    int rc = zloop_reader(loop, pipe, actor_command, state);
+    assert(rc == 0);
+
+    // setup handler for the pull socket
+    rc = zloop_reader(loop, state->pull_socket, process_message, state);
+    assert(rc == 0);
+
+    // setup timer to throw away stream_info cache every minute
+    int timer_id = zloop_timer(loop, 60000, 0, timer_event, state);
+    assert(timer_id != -1);
+
+    printf("[I] parser [%zu]: starting\n", id);
+
+    bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
+    do {
+        rc = zloop_start(loop);
+        should_continue_to_run &= errno == EINTR;
+        if (!state->received_term_cmd)
+            log_zmq_error(rc, __FILE__, __LINE__);
+    } while (should_continue_to_run);
 
     printf("[I] parser [%zu]: shutting down\n", id);
     parser_state_destroy(&state);
