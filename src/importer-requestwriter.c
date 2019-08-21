@@ -607,14 +607,8 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     db_name[db_name_len] = '\0';
     // printf("[D] request_writer: db name: %s\n", db_name);
 
-    size_t m = zframe_size(stream_frame);
-    char stream_name[m+1];
-    memcpy(stream_name, zframe_data(stream_frame), m);
-    stream_name[m] = '\0';
     // printf("[D] request_writer: stream name: %s\n", stream_name);
-    stream_info_t *stream_info = get_stream(stream_name);
-    if (stream_info == NULL)
-        return;
+    stream_info_t *stream_info = zframe_getptr(stream_frame);
 
     size_t mod_len = zframe_size(mod_frame);
     char module[mod_len+1];
@@ -648,7 +642,7 @@ void handle_request_msg(zmsg_t* msg, request_writer_state_t* state)
     }
 
     json_object_put(request);
-    put_stream(stream_info);
+    release_stream_info(stream_info);
 }
 
 static

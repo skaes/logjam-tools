@@ -233,12 +233,12 @@ void indexer_refresh_storage_sizes(indexer_state_t *self)
     zlist_t *streams = get_active_stream_names();
     char *stream = zlist_first(streams);
     while (stream && !zsys_interrupted) {
-        stream_info_t *info = get_stream(stream);
+        stream_info_t *info = get_stream_info(stream, NULL);
         if (info) {
             char db_name[1000];
             sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date_today);
             indexer_check_disk_usage(self, db_name, info);
-            put_stream(info);
+            release_stream_info(info);
         }
         stream = zlist_next(streams);
     }
@@ -306,13 +306,13 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
     zlist_t *streams = get_active_stream_names();
     char *stream = zlist_first(streams);
     while (stream && !zsys_interrupted) {
-        stream_info_t *info = get_stream(stream);
+        stream_info_t *info = get_stream_info(stream, NULL);
         if (info) {
             char db_name[1000];
             sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
             indexer_create_indexes(self, db_name, info);
             indexer_check_disk_usage(self, db_name, info);
-            put_stream(info);
+            release_stream_info(info);
             if (delay) {
                 zclock_sleep(1000 * delay);
             }
@@ -377,13 +377,13 @@ void ensure_databases_are_known(indexer_state_t *state, const char* iso_date)
     zlist_t *streams = get_active_stream_names();
     char *stream = zlist_first(streams);
     while (stream && !zsys_interrupted) {
-        stream_info_t *info = get_stream(stream);
+        stream_info_t *info = get_stream_info(stream, NULL);
         if (info) {
             mongoc_client_t *client = state->mongo_clients[info->db];
             char db_name[1000];
             sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
             ensure_known_database(client, db_name);
-            put_stream(info);
+            release_stream_info(info);
         }
         stream = zlist_next(streams);
     }
@@ -406,9 +406,7 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
     memcpy(stream_name, zframe_data(stream_frame), m);
     stream_name[m] = '\0';
 
-    stream_info_t *stream_info = get_stream(stream_name);
-    if (stream_info == NULL)
-        return;
+    stream_info_t *stream_info = zframe_getptr(stream_frame);
 
     const char *known_db = zhash_lookup(state->databases, db_name);
     if (known_db == NULL) {
@@ -418,7 +416,7 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
     } else {
         // printf("[D] indexer[%zu]: indexes already created: %s\n", state->id, db_name);
     }
-    put_stream(stream_info);
+    release_stream_info(stream_info);
 }
 
 static

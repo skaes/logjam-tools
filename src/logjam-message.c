@@ -124,9 +124,10 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     frame_extract_meta_info(logjam_msg->frames[3], &meta);
 
     char *app_env = zframe_strdup (logjam_msg->frames[0]);
-    stream_info_t *stream_info = get_stream(app_env);
+    stream_info_t *stream_info = get_stream_info(app_env, NULL);
     if (stream_info == NULL) {
-        fprintf(stderr, "[W] dropped request from unknown stream: %s\n", app_env);
+        if (verbose)
+            fprintf(stderr, "[W] dropped request from unknown stream: %s\n", app_env);
         free(app_env);
         return NULL;
     }
@@ -195,14 +196,6 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
         gelf_message_add_json_object (gelf_msg, "_code", obj);
     }
 
-    if (json_object_object_get_ex (request, "caller_id", &obj)) {
-        gelf_message_add_json_object (gelf_msg, "_caller_id", obj);
-    }
-
-    if (json_object_object_get_ex (request, "caller_action", &obj)) {
-        gelf_message_add_json_object (gelf_msg, "_caller_action", obj);
-    }
-
     if (json_object_object_get_ex (request, "request_id", &obj)) {
         gelf_message_add_json_object (gelf_msg, "_request_id", obj);
     }
@@ -257,6 +250,15 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
         }
     }
 
+    // these need to happen after the call to adjust_caller_info
+    if (json_object_object_get_ex (request, "caller_id", &obj)) {
+        gelf_message_add_json_object (gelf_msg, "_caller_id", obj);
+    }
+
+    if (json_object_object_get_ex (request, "caller_action", &obj)) {
+        gelf_message_add_json_object (gelf_msg, "_caller_action", obj);
+    }
+
     int level = 0; // Debug
     if (json_object_object_get_ex (request, "severity", &obj)) {
         level = json_object_get_int (obj);
@@ -297,7 +299,7 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     gelf_message_add_int (gelf_msg, "_logjam_message_size", json_data_len);
 
     free (app_env);
-    put_stream(stream_info);
+    release_stream_info(stream_info);
     json_object_put (request);
 
     return gelf_msg;

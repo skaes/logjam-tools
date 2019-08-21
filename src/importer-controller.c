@@ -145,13 +145,10 @@ void publish_totals_for_every_known_stream(controller_state_t *state, zhash_t *p
     // publish updates for all streams where we received some data
     processor_state_t* processor = zhash_first(processors);
     while (processor) {
-        stream_info_t *stream_info = get_stream(processor->stream_name);
-        if (stream_info) {
-            update_known_modules(stream_info, processor->modules);
-            zhash_insert(published_streams, stream_info->key, (void*)1);
-            publish_totals(stream_info, processor->totals, state->live_stream_socket);
-            put_stream(stream_info);
-        }
+        stream_info_t *stream_info = processor->stream_info;
+        update_known_modules(stream_info, processor->modules);
+        zhash_insert(published_streams, stream_info->key, (void*)1);
+        publish_totals(stream_info, processor->totals, state->live_stream_socket);
         processor = zhash_next(processors);
     }
 
@@ -159,12 +156,12 @@ void publish_totals_for_every_known_stream(controller_state_t *state, zhash_t *p
     zlist_t *streams = get_active_stream_names();
     const char *stream = zlist_first(streams);
     while (stream) {
-        stream_info_t *stream_info = get_stream(stream);
+        stream_info_t *stream_info = get_stream_info(stream, NULL);
         if (stream_info) {
             if (!zhash_lookup(published_streams, stream)) {
                 publish_totals(stream_info, NULL, state->live_stream_socket);
             }
-            put_stream(stream_info);
+            release_stream_info(stream_info);
         }
         stream = zlist_next(streams);
     }
@@ -225,71 +222,86 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "t");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addstr(stats_msg, proc->stream_name);
+        zmsg_addptr(stats_msg, proc->stream_info);
+        reference_stream_info(proc->stream_info);
         zmsg_addptr(stats_msg, proc->totals);
         proc->totals = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             if (!state->updates_blocked++)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
-        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
-        __sync_add_and_fetch(&queued_updates, 1);
+        if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
+            release_stream_info(proc->stream_info);
+        else
+            __sync_add_and_fetch(&queued_updates, 1);
 
         // send minutes updates
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "m");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addstr(stats_msg, proc->stream_name);
+        zmsg_addptr(stats_msg, proc->stream_info);
+        reference_stream_info(proc->stream_info);
         zmsg_addptr(stats_msg, proc->minutes);
         proc->minutes = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             if (!state->updates_blocked++)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
-        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
-        __sync_add_and_fetch(&queued_updates, 1);
+        if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
+            release_stream_info(proc->stream_info);
+        else
+            __sync_add_and_fetch(&queued_updates, 1);
 
         // send quants updates
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "q");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addstr(stats_msg, proc->stream_name);
+        zmsg_addptr(stats_msg, proc->stream_info);
+        reference_stream_info(proc->stream_info);
         zmsg_addptr(stats_msg, proc->quants);
         proc->quants = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             if (!state->updates_blocked++)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
-        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
-        __sync_add_and_fetch(&queued_updates, 1);
+        if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
+            release_stream_info(proc->stream_info);
+        else
+            __sync_add_and_fetch(&queued_updates, 1);
 
         // send histogram updates
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "h");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addstr(stats_msg, proc->stream_name);
+        zmsg_addptr(stats_msg, proc->stream_info);
+        reference_stream_info(proc->stream_info);
         zmsg_addptr(stats_msg, proc->histograms);
         proc->histograms = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             if (!state->updates_blocked++)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
-        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
-        __sync_add_and_fetch(&queued_updates, 1);
+        if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
+            release_stream_info(proc->stream_info);
+        else
+            __sync_add_and_fetch(&queued_updates, 1);
 
         // send agents updates
         stats_msg = zmsg_new();
         zmsg_addstr(stats_msg, "a");
         zmsg_addstr(stats_msg, proc->db_name);
-        zmsg_addstr(stats_msg, proc->stream_name);
+        zmsg_addptr(stats_msg, proc->stream_info);
+        reference_stream_info(proc->stream_info);
         zmsg_addptr(stats_msg, proc->agents);
         proc->agents = NULL;
         if (!output_socket_ready(state->updates_socket, 0)) {
             if (!state->updates_blocked++)
                 fprintf(stderr, "[W] controller: updates push socket not ready. blocking!\n");
         }
-        zmsg_send_and_destroy(&stats_msg, state->updates_socket);
-        __sync_add_and_fetch(&queued_updates, 1);
+        if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
+            release_stream_info(proc->stream_info);
+        else
+            __sync_add_and_fetch(&queued_updates, 1);
 
         db_name = zlist_next(db_names);
     }
@@ -361,12 +373,12 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
 
     merge_processors(state, additions);
-    zhash_t *processor = zlist_pop(additions);
+    zhash_t *merged_processors = zlist_pop(additions);
     zlist_destroy(&additions);
 
     // publish on live stream (need to do this while we still own the processor)
     // printf("[D] controller: publishing live streams\n");
-    publish_totals_for_every_known_stream(state, processor);
+    publish_totals_for_every_known_stream(state, merged_processors);
 
     // tell indexer to tick
     // printf("[D] controller: ticking indexer\n");
@@ -378,7 +390,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zstr_send(state->updaters[i], "tick");
     }
 
-    zlist_append(state->collected_processors, processor);
+    zlist_append(state->collected_processors, merged_processors);
     // combine stats of collected processor from last tick with current one
     if (zlist_size(state->collected_processors) > 1) {
         // printf("[D] controller: merging processors\n");
@@ -388,9 +400,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     // forward to stats_updaters
     if (state->ticks % DATABASE_UPDATE_INTERVAL == 0) {
         // printf("[D] controller: forwarding updates\n");
-        processor = zlist_pop(state->collected_processors);
-        forward_updates(state, processor);
-        zhash_destroy(&processor);
+        zhash_t *processors = zlist_pop(state->collected_processors);
+        forward_updates(state, processors);
+        zhash_destroy(&processors);
     }
 
     // tell request writers to tick

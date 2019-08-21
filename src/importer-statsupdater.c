@@ -576,24 +576,14 @@ static void stats_updater(zsock_t *pipe, void *args)
             memcpy(db_name, zframe_data(db_frame), n);
             db_name[n] = '\0';
 
-            size_t m = zframe_size(stream_frame);
-            char stream_name[m+1];
-            memcpy(stream_name, zframe_data(stream_frame), m);
-            stream_name[m] = '\0';
-
             zhash_t *updates;
             assert(zframe_size(hash_frame) == sizeof(updates));
             memcpy(&updates, zframe_data(hash_frame), sizeof(updates));
 
-            stream_info_t *stream_info = get_stream(stream_name);
-            if (stream_info == NULL) {
-                zmsg_destroy(&msg);
-                zhash_destroy(&updates);
-                continue;
-            }
+            stream_info_t *stream_info = zframe_getptr(stream_frame);
 
             stats_collections_t *collections = stats_updater_get_collections(state, db_name, stream_info);
-            put_stream(stream_info);
+            release_stream_info(stream_info);
 
             collection_update_callback_t cb;
             cb.db_name = db_name;

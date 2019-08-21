@@ -155,6 +155,12 @@ static inline int zmsg_addptr(zmsg_t* msg, void* ptr)
     return zmsg_addmem(msg, &ptr, sizeof(void*));
 }
 
+static inline void* zframe_getptr(zframe_t* frame)
+{
+    assert(zframe_size(frame) == sizeof(void*));
+    return *((void **) zframe_data(frame));
+}
+
 static inline void* zmsg_popptr(zmsg_t* msg)
 {
     zframe_t *frame = zmsg_pop(msg);

@@ -40,8 +40,11 @@ typedef struct {
     zhash_t *known_modules;
 } stream_info_t;
 
-extern stream_info_t* get_stream(const char* stream_name);
-extern void put_stream(stream_info_t *stream);
+extern stream_info_t* get_stream_info(const char* stream_name, zhash_t* thread_local_cache);
+static inline void reference_stream_info(stream_info_t *stream_info) {
+    __sync_fetch_and_add(&stream_info->ref_count, 1);
+}
+extern void release_stream_info(stream_info_t *stream_info);
 extern const char* get_subscription_pattern();
 extern zlist_t* get_stream_subscriptions();
 extern zlist_t* get_active_stream_names();

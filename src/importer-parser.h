@@ -20,7 +20,6 @@ enum fe_msg_drop_reason {
     FE_MSG_ILLEGAL     = 3, // no corresponding backend request
     FE_MSG_CORRUPTED   = 4, // missing or excess data
     FE_MSG_INVALID     = 5, // data couldn't be aranged in order
-    FE_MSG_STREAM_GONE = 6  // stream was deleted while processing the message
 };
 #define FE_MSG_NUM_REASONS 6
 
@@ -50,6 +49,7 @@ typedef struct {
     json_tokener* tokener;
     zhash_t *processors;
     zhashx_t *unknown_streams;
+    zhash_t *stream_info_cache;
     uuid_tracker_t *tracker;
     statsd_client_t *statsd_client;
     zchunk_t *decompression_buffer;

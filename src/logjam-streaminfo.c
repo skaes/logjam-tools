@@ -23,26 +23,27 @@ static const char *subscription_pattern = NULL;
 // httpp client
 static zhttp_client_t *client = NULL;
 
-stream_info_t* get_stream(const char* stream_name)
+stream_info_t* get_stream_info(const char* stream_name, zhash_t *thread_local_cache)
 {
-    pthread_mutex_lock(&lock);
-    stream_info_t *stream_info = zhash_lookup(configured_streams, stream_name);
-    if (stream_info != NULL) {
-        stream_info->ref_count++;
-        // printf("[D] stream-op: get_stream %s: %d\n", stream_info->key, stream_info->ref_count);
+    stream_info_t *stream_info = NULL;
+    if (thread_local_cache) {
+        stream_info = zhash_lookup(thread_local_cache, stream_name);
+        if (stream_info) {
+            __sync_fetch_and_add(&stream_info->ref_count, 1);
+            return stream_info;
+        }
     }
-    pthread_mutex_unlock(&lock);
-    return stream_info;
-}
-
-static void* stream_info_free(stream_info_t *info);
-
-void put_stream(stream_info_t *stream)
-{
     pthread_mutex_lock(&lock);
-    // printf("[D] stream-op: put_stream %s: %d\n", stream->key, stream->ref_count-1);
-    stream_info_free(stream);
+    stream_info = zhash_lookup(configured_streams, stream_name);
+    if (stream_info)
+        __sync_fetch_and_add(&stream_info->ref_count, 1);
     pthread_mutex_unlock(&lock);
+    if (stream_info && thread_local_cache) {
+        zhash_insert(thread_local_cache, stream_name, stream_info);
+        zhash_freefn(thread_local_cache, stream_name, (zhash_free_fn*)release_stream_info);
+        __sync_fetch_and_add(&stream_info->ref_count, 1);
+    }
+    return stream_info;
 }
 
 const char* get_subscription_pattern()
@@ -222,13 +223,12 @@ stream_info_t* stream_info_new(const char* key, json_object *stream_obj)
     return info;
 }
 
-static
-void* stream_info_free(stream_info_t *info)
+void release_stream_info(stream_info_t *info)
 {
-    info->ref_count--;
-    // printf("[D] stream-op: decreased ref count for stream %s: %d\n", info->key, info->ref_count);
-    if (info->ref_count)
-        return NULL;
+    int32_t ref_count = __sync_fetch_and_add(&info->ref_count, -1);
+    // printf("[D] stream-op: decreased ref count for stream %s: %d\n", info->key, ref_count-1);
+    if (ref_count > 1)
+        return;
 
     // printf("[D] stream-op: freeing stream %s\n", info->key);
     free(info->key);
@@ -256,7 +256,6 @@ void* stream_info_free(stream_info_t *info)
     }
     zhash_destroy(&info->known_modules);
     free(info);
-    return NULL;
 }
 
 static
@@ -326,7 +325,7 @@ zhash_t* get_streams()
         stream_info_t *stream = stream_info_new(key, val);
         if (0) dump_stream_info(stream);
         zhash_insert(streams, key, stream);
-        zhash_freefn(streams, key, (zhash_free_fn*)stream_info_free);
+        zhash_freefn(streams, key, (zhash_free_fn*)release_stream_info);
     }
     json_object_put(streams_obj);
 
