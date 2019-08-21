@@ -250,11 +250,16 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
         }
     }
 
-    // these need to happen after the call to adjust_caller_info
+    // needs to happen after the call to adjust_caller_info
     if (json_object_object_get_ex (request, "caller_id", &obj)) {
         gelf_message_add_json_object (gelf_msg, "_caller_id", obj);
+        const char *caller_id = json_object_get_string(obj);
+        char app[256], env[256], rid[256];
+        extract_app_env_rid (caller_id, 256, app, env, rid);
+        gelf_message_add_json_object (gelf_msg, "_caller_app", json_object_new_string(app));
     }
 
+    // needs to happen after the call to adjust_caller_info
     if (json_object_object_get_ex (request, "caller_action", &obj)) {
         gelf_message_add_json_object (gelf_msg, "_caller_action", obj);
     }
