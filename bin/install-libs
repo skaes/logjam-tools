@@ -235,12 +235,11 @@ function handle_czmq()
     fi
     [ $forced == "1" ] && git clean -qfdx
     if [ "$documentation" == "0" ]; then
-      sed -ie 's/czmq_build_doc="yes"/czmq_build_doc="no"/g' configure.ac &&
-        sed -ie 's/czmq_install_man="yes"/czmq_install_man="no"/g' configure.ac
+      additional_configure_flags="--with-docs=no"
     fi
     test -f config.status || (
       sh autogen.sh &&
-      ./configure --prefix=$prefix
+      ./configure --enable-drafts --prefix=$prefix $additional_configure_flags
     )
     make -j4
     $LSUDO make $cmd
