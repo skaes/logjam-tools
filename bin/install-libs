@@ -239,7 +239,7 @@ function handle_czmq()
     fi
     test -f config.status || (
       sh autogen.sh &&
-      ./configure --enable-drafts --prefix=$prefix $additional_configure_flags
+      ./configure --prefix=$prefix $additional_configure_flags
     )
     make -j4
     $LSUDO make $cmd
