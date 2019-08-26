@@ -226,7 +226,7 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
             gelf_message_add_json_object (gelf_msg, "_http_url", obj);
             const char *path = json_object_get_string(obj);
             char* module = extract_module(action);
-            adjust_caller_info(path, module, http_request, stream_info);
+            adjust_caller_info(path, module, request, stream_info);
             free(module);
         }
 
