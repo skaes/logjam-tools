@@ -74,7 +74,7 @@ static void process_arguments(int argc, char * const *argv)
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:eL:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
