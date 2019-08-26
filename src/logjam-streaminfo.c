@@ -129,23 +129,23 @@ void add_backend_only_requests_settings(stream_info_t* info, const char* value)
 }
 
 static
-void add_api_requests_settings(stream_info_t* info, const char* value)
+void add_api_requests_settings(stream_info_t* info, json_object* obj)
 {
-    size_t len = strlen(value);
-    if (streq(value, "")) {
-        info->all_requests_are_api_requests = 1;
-    } else if (len>0) {
-        int n = str_count(value, ',') + 1;
-        info->api_requests_size = n;
-        info->api_requests = zmalloc(sizeof(char*)*n);
-        char *valdup = strdup(value);
-        char *prefix = strtok(valdup, ",");
-        int i = 0;
-        while (prefix) {
-            info->api_requests[i++] = strdup(prefix);
-            prefix = strtok(NULL, ",");
-        }
-        free(valdup);
+    if (json_object_get_type(obj) != json_type_array)
+        return;
+    int len = json_object_array_length(obj);
+    if (len == 0) {
+        info->all_requests_are_api_requests = 0;
+        return;
+    }
+    info->api_requests_size = len;
+    info->api_requests = zmalloc(len * sizeof(char*));
+    for (int i=0; i<len; i++) {
+        json_object *prefix_obj = json_object_array_get_idx(obj, i);
+        const char *prefix = json_object_get_string(prefix_obj);
+        if (i==0 && streq(prefix, ""))
+            info->all_requests_are_api_requests = 1;
+        info->api_requests[i] = strdup(prefix);
     }
 }
 
@@ -172,7 +172,7 @@ void add_stream_settings(stream_info_t *info, json_object *stream_obj)
         add_backend_only_requests_settings(info, json_object_get_string(obj));
     }
     if (json_object_object_get_ex(stream_obj, "api_requests", &obj)) {
-        add_api_requests_settings(info, json_object_get_string(obj));
+        add_api_requests_settings(info, obj);
     }
     if (json_object_object_get_ex(stream_obj, "sampling_rate_400s", &obj)) {
         info->sampling_rate_400s = json_object_get_double(obj);
