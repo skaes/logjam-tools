@@ -720,6 +720,7 @@ static void request_writer(zsock_t *pipe, void *args)
                 importer_prometheus_client_count_inserts(state->updates_count);
                 importer_prometheus_client_time_inserts(((double)state->update_time)/1000000);
                 importer_prometheus_client_count_inserts_failed(state->updates_failed);
+                importer_prometheus_client_record_rusage_writer(state->id);
                 if (ticks++ % PING_INTERVAL == 0) {
                     // ping mongodb to reestablish connection if it got lost
                     for (int i=0; i<num_databases; i++) {

@@ -354,7 +354,8 @@ int main(int argc, char * const *argv)
 
     initialize_mongo_db_globals(config);
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
-    importer_prometheus_client_init(metrics_address);
+    importer_prometheus_client_params_t prometheus_params = { .num_subscribers = num_subscribers, .num_parsers = num_parsers, .num_writers = num_writers, .num_updaters = num_updaters};
+    importer_prometheus_client_init(metrics_address, prometheus_params);
 
     setup_resource_maps(config);
     return run_controller_loop(config, io_threads, logjam_stream_url, subscription_pattern);

@@ -7,7 +7,14 @@
 extern "C" {
 #endif
 
-extern void importer_prometheus_client_init(const char* address);
+typedef struct {
+    uint num_subscribers;
+    uint num_parsers;
+    uint num_writers;
+    uint num_updaters;
+} importer_prometheus_client_params_t;
+
+extern void importer_prometheus_client_init(const char* address, importer_prometheus_client_params_t params);
 extern void importer_prometheus_client_shutdown();
 
 extern void importer_prometheus_client_count_updates(double value);
@@ -24,6 +31,10 @@ extern void importer_prometheus_client_gauge_queued_inserts(double value);
 extern void importer_prometheus_client_gauge_queued_updates(double value);
 extern void importer_prometheus_client_time_inserts(double value);
 extern void importer_prometheus_client_time_updates(double value);
+extern void importer_prometheus_client_record_rusage_subscriber(uint i);
+extern void importer_prometheus_client_record_rusage_parser(uint i);
+extern void importer_prometheus_client_record_rusage_writer(uint i);
+extern void importer_prometheus_client_record_rusage_updater(uint i);
 
 #ifdef __cplusplus
 }

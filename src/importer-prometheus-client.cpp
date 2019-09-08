@@ -1,6 +1,7 @@
 #include <prometheus/exposer.h>
 #include <prometheus/registry.h>
 #include "importer-prometheus-client.h"
+#include <sys/resource.h>
 
 static struct prometheus_client_t {
     prometheus::Exposer *exposer;
@@ -33,9 +34,14 @@ static struct prometheus_client_t {
     prometheus::Family<prometheus::Counter> *blocked_updates_total_family;
     prometheus::Counter *failed_inserts_total;
     prometheus::Family<prometheus::Counter> *failed_inserts_total_family;
+    std::vector<prometheus::Counter*> cpu_seconds_total_subscribers;
+    std::vector<prometheus::Counter*> cpu_seconds_total_parsers;
+    std::vector<prometheus::Counter*> cpu_seconds_total_writers;
+    std::vector<prometheus::Counter*> cpu_seconds_total_updaters;
+    prometheus::Family<prometheus::Counter> *cpu_seconds_total_family;
 } client;
 
-void importer_prometheus_client_init(const char* address)
+void importer_prometheus_client_init(const char* address, importer_prometheus_client_params_t params)
 {
     // create a http server running on the given address
     client.exposer = new prometheus::Exposer{address};
@@ -141,6 +147,31 @@ void importer_prometheus_client_init(const char* address)
 
     client.failed_inserts_total = &client.failed_inserts_total_family->Add({});
 
+    client.cpu_seconds_total_family = &prometheus::BuildCounter()
+        .Name("logjam:importer:cpu_seconds_total")
+        .Help("How many CPU seconds importer threads have used")
+        .Register(*client.registry);
+
+    for (uint i=0; i<params.num_subscribers; i++) {
+        char name[256];
+        sprintf(name, "subscriber%d", i);
+        client.cpu_seconds_total_subscribers.push_back(&client.cpu_seconds_total_family->Add({{"thread", name}}));
+    }
+    for (uint i=0; i<params.num_parsers; i++) {
+        char name[256];
+        sprintf(name, "parser%d", i);
+        client.cpu_seconds_total_parsers.push_back(&client.cpu_seconds_total_family->Add({{"thread", name}}));
+    }
+    for (uint i=0; i<params.num_writers; i++) {
+        char name[256];
+        sprintf(name, "writer%d", i);
+        client.cpu_seconds_total_writers.push_back(&client.cpu_seconds_total_family->Add({{"thread", name}}));
+    }
+    for (uint i=0; i<params.num_updaters; i++) {
+        char name[256];
+        sprintf(name, "updater%d", i);
+        client.cpu_seconds_total_updaters.push_back(&client.cpu_seconds_total_family->Add({{"thread", name}}));
+    }
 
     // ask the exposer to scrape the registry on incoming scrapes
     client.exposer->RegisterCollectable(client.registry);
@@ -220,4 +251,49 @@ void importer_prometheus_client_time_inserts(double value)
 void importer_prometheus_client_count_inserts_failed(double value)
 {
     client.failed_inserts_total->Increment(value);
+}
+
+static
+double get_combined_cpu_usage()
+{
+    struct rusage usage;
+    int rc;
+#ifdef RUSAGE_THREAD
+    rc = getrusage(RUSAGE_THREAD, &usage);
+#else
+    rc = getrusage(RUSAGE_SELF, &usage);
+#endif
+    if (rc) return 0;
+
+    struct timeval total;
+    timeradd(&usage.ru_utime, &usage.ru_stime, &total);
+    return total.tv_sec + (double)total.tv_usec/1000000;
+}
+
+void importer_prometheus_client_record_rusage_subscriber(uint i)
+{
+    double value = get_combined_cpu_usage();
+    double oldvalue = client.cpu_seconds_total_subscribers[i]->Value();
+    client.cpu_seconds_total_subscribers[i]->Increment(value - oldvalue);
+}
+
+void importer_prometheus_client_record_rusage_parser(uint i)
+{
+    double value = get_combined_cpu_usage();
+    double oldvalue = client.cpu_seconds_total_parsers[i]->Value();
+    client.cpu_seconds_total_parsers[i]->Increment(value - oldvalue);
+}
+
+void importer_prometheus_client_record_rusage_writer(uint i)
+{
+    double value = get_combined_cpu_usage();
+    double oldvalue = client.cpu_seconds_total_writers[i]->Value();
+    client.cpu_seconds_total_writers[i]->Increment(value - oldvalue);
+}
+
+void importer_prometheus_client_record_rusage_updater(uint i)
+{
+    double value = get_combined_cpu_usage();
+    double oldvalue = client.cpu_seconds_total_updaters[i]->Value();
+    client.cpu_seconds_total_updaters[i]->Increment(value - oldvalue);
 }
