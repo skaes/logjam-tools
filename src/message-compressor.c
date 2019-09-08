@@ -25,6 +25,7 @@ typedef struct {
     int compression_method;
     zchunk_t *compression_buffer;
     bool decompress;
+    compressor_callback_fn *cb;
 } compressor_state_t;
 
 #define COMPRESS false
@@ -152,6 +153,9 @@ void message_compressor(zsock_t *pipe, void *args)
             if (streq(cmd, "tick")) {
                 if (verbose)
                     printf("[D] compressor[%zu]: tick\n", id);
+                if (state->cb) {
+                    state->cb(id);
+                }
             } else if (streq(cmd, "$TERM")) {
                 if (verbose)
                     printf("[D] compressor[%zu]: received $TERM command\n", id);
@@ -186,14 +190,16 @@ void message_compressor(zsock_t *pipe, void *args)
         printf("[I] compressor[%zu]: terminated\n", id);
 }
 
-zactor_t* message_compressor_new(size_t id, int compression_method)
+zactor_t* message_compressor_new(size_t id, int compression_method, compressor_callback_fn cb)
 {
     compressor_state_t *state = compressor_state_new(id, compression_method, COMPRESS);
+    state->cb = cb;
     return zactor_new(message_compressor, state);
 }
 
-zactor_t* message_decompressor_new(size_t id)
+zactor_t* message_decompressor_new(size_t id, compressor_callback_fn cb)
 {
     compressor_state_t *state = compressor_state_new(id, NO_COMPRESSION, DECOMPRESS);
+    state->cb = cb;
     return zactor_new(message_compressor, state);
 }

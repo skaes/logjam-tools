@@ -454,7 +454,7 @@ int main(int argc, char * const *argv)
     // create compressor agents
     zactor_t *compressors[MAX_COMPRESSORS];
     for (size_t i = 0; i < num_compressors; i++)
-        compressors[i] = message_decompressor_new(i);
+        compressors[i] = message_decompressor_new(i, NULL);
 
     // set up event loop
     zloop_t *loop = zloop_new();

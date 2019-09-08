@@ -7,8 +7,10 @@
 extern "C" {
 #endif
 
-extern zactor_t* message_compressor_new(size_t id, int compression_method);
-extern zactor_t* message_decompressor_new(size_t id);
+typedef void (compressor_callback_fn) (int i);
+
+extern zactor_t* message_compressor_new(size_t id, int compression_method, compressor_callback_fn cb);
+extern zactor_t* message_decompressor_new(size_t id, compressor_callback_fn cb);
 
 #ifdef __cplusplus
 }

@@ -42,6 +42,7 @@ static msg_meta_t msg_meta = META_INFO_EMPTY;
 static char device_number_s[11] = {'0', 0};
 
 #define MAX_COMPRESSORS 64
+static zactor_t *compressors[MAX_COMPRESSORS];
 static int compression_method = NO_COMPRESSION;
 static zchunk_t *compression_buffer;
 static uint64_t global_time = 0;
@@ -79,6 +80,7 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     device_prometheus_client_count_bytes_received(message_bytes);
     device_prometheus_client_count_msgs_compressed(compressed_count);
     device_prometheus_client_count_bytes_compressed(compressed_bytes);
+    device_prometheus_client_record_rusage();
 
     double avg_msg_size        = message_count ? (message_bytes / 1024.0) / message_count : 0;
     double max_msg_size        = received_messages_max_bytes / 1024.0;
@@ -112,6 +114,10 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
             printf("[I] sending heartbeat\n");
         send_heartbeat(pub_socket, &msg_meta, pub_port);
     }
+
+    // tick compressors
+    for (size_t i = 0; i < num_compressors; i++)
+        zstr_send(compressors[i], "tick");
 
     return 0;
 }
@@ -410,7 +416,7 @@ int main(int argc, char * const *argv)
 
     // initalize prometheus client
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
-    device_prometheus_client_init(metrics_address, device_number_s);
+    device_prometheus_client_init(metrics_address, device_number_s, num_compressors);
 
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_PULL);
@@ -459,9 +465,8 @@ int main(int argc, char * const *argv)
     assert_x(rc==0, "compressor output socket bind failed", __FILE__, __LINE__);
 
     // create compressor agents
-    zactor_t *compressors[MAX_COMPRESSORS];
     for (size_t i = 0; i < num_compressors; i++)
-        compressors[i] = message_compressor_new(i, compression_method);
+        compressors[i] = message_compressor_new(i, compression_method, device_prometheus_client_record_rusage_compressor);
 
     // set up event loop
     zloop_t *loop = zloop_new();
