@@ -9,6 +9,7 @@
 #include <getopt.h>
 #include "logjam-util.h"
 #include "message-compressor.h"
+#include "importer-watchdog.h"
 #include "device-prometheus-client.h"
 
 // shared globals
@@ -46,6 +47,8 @@ static zactor_t *compressors[MAX_COMPRESSORS];
 static int compression_method = NO_COMPRESSION;
 static zchunk_t *compression_buffer;
 static uint64_t global_time = 0;
+
+static zactor_t *device_watchdog = NULL;
 
 int metrics_port = 8082;
 char metrics_address[256] = {0};
@@ -118,6 +121,9 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     // tick compressors
     for (size_t i = 0; i < num_compressors; i++)
         zstr_send(compressors[i], "tick");
+
+    // tick watchdog
+    zstr_send(device_watchdog, "tick");
 
     return 0;
 }
@@ -468,6 +474,9 @@ int main(int argc, char * const *argv)
     for (size_t i = 0; i < num_compressors; i++)
         compressors[i] = message_compressor_new(i, compression_method, device_prometheus_client_record_rusage_compressor);
 
+    // create watchdog
+    device_watchdog = zactor_new(watchdog, NULL);
+
     // set up event loop
     zloop_t *loop = zloop_new();
     assert(loop);
@@ -526,6 +535,7 @@ int main(int argc, char * const *argv)
 
     printf("[I] shutting down\n");
 
+    zactor_destroy(&device_watchdog);
     zsock_destroy(&receiver);
     zsock_destroy(&router_receiver);
     zsock_destroy(&router_output);

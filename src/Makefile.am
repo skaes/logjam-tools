@@ -33,6 +33,8 @@ logjam_device_SOURCES = \
     logjam-util.h \
     message-compressor.c \
     message-compressor.h \
+    importer-watchdog.c \
+    importer-watchdog.h \
     device-prometheus-client.cpp \
     device-prometheus-client.h
 

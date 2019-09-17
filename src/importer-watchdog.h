@@ -1,7 +1,7 @@
 #ifndef __LOGJAM_IMPORTER_WATCHDOG_H_INCLUDED__
 #define __LOGJAM_IMPORTER_WATCHDOG_H_INCLUDED__
 
-#include "importer-common.h"
+#include "logjam-util.h"
 
 #ifdef __cplusplus
 extern "C" {
