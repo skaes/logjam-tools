@@ -156,6 +156,7 @@ void message_compressor(zsock_t *pipe, void *args)
                 if (state->cb) {
                     state->cb(id);
                 }
+                free(cmd);
             } else if (streq(cmd, "$TERM")) {
                 if (verbose)
                     printf("[D] compressor[%zu]: received $TERM command\n", id);
