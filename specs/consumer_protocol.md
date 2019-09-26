@@ -55,6 +55,7 @@ topic /= javascript *( ALPHA / "." )     ; javascript errors
 topic /= events *( ALPHA / "." )         ; logjam event
 topic /= frontend.page                   ; frontend metric (page render)
 topic /= frontend.ajax                   ; frontend metric (ajax call)
+topic /= mobile                          ; mobile metric
 
 body = *OCTET                            ; JSON string, possibly compressed
 
