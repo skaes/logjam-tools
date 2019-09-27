@@ -589,6 +589,15 @@ void my_zmq_msg_fprint(zmq_msg_t* msg, size_t n, const char* prefix, FILE* file 
     }
 }
 
+int zmsg_savex_frame(zframe_t *frame, FILE *file) {
+    size_t frame_size = zframe_size (frame);
+    if (fwrite (&frame_size, sizeof (frame_size), 1, file) != 1)
+        return -1;
+    if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
+        return -1;
+    return 0;
+}
+
 //  --------------------------------------------------------------------------
 //  Save message to an open file, return 0 if OK, else -1. The message is
 //  saved as a series of frames, each with length and data. Note that the
@@ -628,15 +637,6 @@ int zmsg_savex_payload(zmsg_t *self, FILE *file) {
     frame = zmsg_next (self); //payload
 
     return zmsg_savex_frame(frame, file);
-}
-
-int zmsg_savex_frame(zframe_t *frame, FILE *file) {
-    size_t frame_size = zframe_size (frame);
-    if (fwrite (&frame_size, sizeof (frame_size), 1, file) != 1)
-        return -1;
-    if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
-        return -1;
-    return 0;
 }
 
 //  --------------------------------------------------------------------------
