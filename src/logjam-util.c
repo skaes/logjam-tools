@@ -609,13 +609,33 @@ zmsg_savex (zmsg_t *self, FILE *file)
 
     zframe_t *frame = zmsg_first (self);
     while (frame) {
-        size_t frame_size = zframe_size (frame);
-        if (fwrite (&frame_size, sizeof (frame_size), 1, file) != 1)
+        if (zmsg_savex_frame(frame, file) != 0) {
             return -1;
-        if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
-            return -1;
+        } 
         frame = zmsg_next (self);
     }
+    return 0;
+}
+
+// Save the payload frame of the message only
+int zmsg_savex_payload(zmsg_t *self, FILE *file) {
+    assert (self);
+    assert (zmsg_is (self));
+    assert (file);
+
+    zframe_t *frame = zmsg_first (self); // topic
+    frame = zmsg_next (self); // routing key
+    frame = zmsg_next (self); //payload
+
+    return zmsg_savex_frame(frame, file);
+}
+
+int zmsg_savex_frame(zframe_t *frame, FILE *file) {
+    size_t frame_size = zframe_size (frame);
+    if (fwrite (&frame_size, sizeof (frame_size), 1, file) != 1)
+        return -1;
+    if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
+        return -1;
     return 0;
 }
 

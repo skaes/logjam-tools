@@ -203,6 +203,7 @@ static inline zmsg_t* zmsg_recv_with_retry(zsock_t *socket)
 }
 
 extern int zmsg_savex (zmsg_t *self, FILE *file);
+extern int zmsg_savex_payload(zmsg_t *self, FILE *file);
 extern zmsg_t* zmsg_loadx (zmsg_t *self, FILE *file);
 
 extern zhash_t* zlist_to_hash(zlist_t *list);
