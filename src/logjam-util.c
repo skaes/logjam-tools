@@ -535,6 +535,30 @@ void dump_json_object(FILE *f, const char* prefix, json_object *jobj)
     // don't try to free the json string. it will crash.
 }
 
+void dump_json_object_limiting_log_lines(FILE *f, const char* prefix, json_object *jobj, int max_lines)
+{
+    json_object *lines = NULL;
+    json_object *new_lines = NULL;
+    if (json_object_object_get_ex(jobj, "lines", &lines) && json_object_is_type(lines, json_type_array)) {
+        int len = json_object_array_length(lines);
+        if (len > max_lines) {
+            json_object_get(lines);
+            new_lines = json_object_new_array();
+            for (int i = 0; i < max_lines; i++) {
+                json_object *elem = json_object_array_get_idx(lines, i);
+                json_object_get(elem);
+                json_object_array_add(new_lines, elem);
+            }
+            json_object_array_add(new_lines, json_object_new_string("LINES DROPPED BY IMPORTER"));
+            json_object_object_add(jobj, "lines", new_lines);
+        }
+    }
+    dump_json_object(f, prefix, jobj);
+    if (new_lines)
+        json_object_object_add(jobj, "lines", lines);
+}
+
+
 static void print_msg(byte* data, size_t size, const char *prefix, FILE *file)
 {
     if (prefix)

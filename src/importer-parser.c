@@ -235,14 +235,14 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
 
     json_object *request = parse_json_data(body, body_len, parser_state->tokener);
     if (request != NULL) {
-        // dump_json_object(stdout, "[D] REQUEST", request);
+        // dump_json_object_limiting_log_lines(stdout, "[D] REQUEST", request, 10);
         char *topic_str = (char*) zframe_data(topic_frame);
         int n = zframe_size(topic_frame);
         bool known_stream;
         processor_state_t *processor = processor_create(stream_frame, parser_state, request, &known_stream);
         if (processor == NULL) {
             if (known_stream)
-                dump_json_object(stderr, "[E] could not create processor for request: ", request);
+                dump_json_object_limiting_log_lines(stderr, "[E] could not create processor for request: ", request, 10);
             json_object_put(request);
             return;
         }
