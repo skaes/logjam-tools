@@ -275,12 +275,6 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         json_object_put(request);
     } else {
         fprintf(stderr, "[E] parse error\n");
-        if (body) {
-            if (meta.compression_method)
-                fprintf(stderr, "[E] decompressed json body: %.*s\n", (int)body_len, body);
-            else
-                fprintf(stderr, "[E] json body: %.*s\n", (int)body_len, body);
-        }
         my_zmsg_fprint(msg, "[E] MSGFRAME=", stderr);
     }
 }
