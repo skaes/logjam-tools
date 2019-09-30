@@ -81,7 +81,7 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
     // dump message to file annd free memory
     if (!is_heartbeat) {
         if (payload_only) {
-            zmsg_savex_payload(msg, dump_file);
+            dump_message_payload(msg, dump_file);
         } else {
             zmsg_savex(msg, dump_file);
         }

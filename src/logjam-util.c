@@ -619,8 +619,8 @@ zmsg_savex (zmsg_t *self, FILE *file)
     return 0;
 }
 
-// Save the payload frame of the message only
-int zmsg_savex_payload (zmsg_t *self, FILE *file) 
+// dump the payload frame of the message only
+int dump_message_payload (zmsg_t *self, FILE *file) 
 {
     assert (self);
     assert (zmsg_is (self));
