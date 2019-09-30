@@ -620,7 +620,7 @@ zmsg_savex (zmsg_t *self, FILE *file)
 }
 
 // dump the payload frame of the message only
-int dump_message_payload (zmsg_t *self, FILE *file) 
+int dump_message_payload (zmsg_t *self, FILE *file, zchunk_t *buffer) 
 {
     assert (self);
     assert (zmsg_is (self));
@@ -636,9 +636,7 @@ int dump_message_payload (zmsg_t *self, FILE *file)
     if (compression_method) {
         char *body;
         size_t body_len;
-        zchunk_t *buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
         int rc = decompress_frame(frame, compression_method, buffer, &body, &body_len);
-        zchunk_destroy(&buffer);
         if (rc == 0) {
             fprintf(stderr, "[E] decompressor: could not decompress payload from\n");
             return -1;

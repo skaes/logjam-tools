@@ -3,6 +3,7 @@
 #include <getopt.h>
 
 FILE* dump_file = NULL;
+zchunk_t *dump_decompress_buffer;
 static char *dump_file_name = "logjam-stream.dump";
 
 static size_t io_threads = 1;
@@ -81,7 +82,7 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
     // dump message to file annd free memory
     if (!is_heartbeat) {
         if (payload_only) {
-            dump_message_payload(msg, dump_file);
+            dump_message_payload(msg, dump_file, dump_decompress_buffer);
         } else {
             zmsg_savex(msg, dump_file);
         }
@@ -198,6 +199,7 @@ int main(int argc, char * const *argv)
 
     process_arguments(argc, argv);
 
+    dump_decompress_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
     // open dump file
     dump_file = fopen(dump_file_name, "w");
     if (!dump_file) {
@@ -205,6 +207,7 @@ int main(int argc, char * const *argv)
         exit(1);
     }
     if (verbose) printf("[I] dumping stream to %s\n", dump_file_name);
+
 
     // set global config
     zsys_init();
@@ -217,6 +220,7 @@ int main(int argc, char * const *argv)
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_SUB);
     assert_x(receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
+    
 
     // connect socket
     char *spec = zlist_first(connection_specs);
@@ -285,6 +289,7 @@ int main(int argc, char * const *argv)
 
     device_tracker_destroy(&tracker);
     fclose(dump_file);
+    zchunk_destroy(&dump_decompress_buffer);
     zloop_destroy(&loop);
     assert(loop == NULL);
     zsock_destroy(&receiver);
