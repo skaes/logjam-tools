@@ -114,7 +114,7 @@ A ZeroMQ PUB socket on which live stream messages are published
 
 A websocket which listens for connects from logjam livestream clients
 running in browsers (livestream server, currently in ruby, see
-https://githum.com/skaes/logjam-core).
+https://github.com/skaes/logjam_core).
 
 ### 9609
 
