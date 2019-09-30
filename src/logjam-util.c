@@ -643,6 +643,39 @@ zmsg_savex (zmsg_t *self, FILE *file)
     return 0;
 }
 
+// dump the payload frame of the message only
+int dump_message_payload (zmsg_t *self, FILE *file, zchunk_t *buffer) 
+{
+    assert (self);
+    assert (zmsg_is (self));
+    assert (file);
+
+    zframe_t *frame = zmsg_first (self); //stream frame
+    frame = zmsg_next (self);  //topic frame
+    frame = zmsg_next (self);  // payload frame
+    
+    msg_meta_t meta;
+    msg_extract_meta_info(self, &meta);
+    int compression_method = meta.compression_method;
+    if (compression_method) {
+        char *body;
+        size_t body_len;
+        int rc = decompress_frame(frame, compression_method, buffer, &body, &body_len);
+        if (rc == 0) {
+            fprintf(stderr, "[E] decompressor: could not decompress payload from\n");
+            return -1;
+        }
+        if (fputs (body, file) != 1)
+            return -1;
+    } else {
+        size_t frame_size = zframe_size (frame);
+        if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
+            return -1;
+    }
+
+    return 0;
+}
+
 //  --------------------------------------------------------------------------
 //  Load/append an open file into message, create new message if
 //  null message provided. Returns NULL if the message could not be
