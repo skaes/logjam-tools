@@ -638,11 +638,11 @@ int zmsg_savex_payload (zmsg_t *self, FILE *file)
         size_t body_len;
         zchunk_t *buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
         int rc = decompress_frame(frame, compression_method, buffer, &body, &body_len);
+        zchunk_destroy(&buffer);
         if (rc == 0) {
             fprintf(stderr, "[E] decompressor: could not decompress payload from\n");
             return -1;
         }
-        zchunk_destroy(&buffer);
         if (fputs (body, file) != 1)
             return -1;
     } else {
