@@ -589,15 +589,6 @@ void my_zmq_msg_fprint(zmq_msg_t* msg, size_t n, const char* prefix, FILE* file 
     }
 }
 
-int zmsg_savex_frame(zframe_t *frame, FILE *file) {
-    size_t frame_size = zframe_size (frame);
-    if (fwrite (&frame_size, sizeof (frame_size), 1, file) != 1)
-        return -1;
-    if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
-        return -1;
-    return 0;
-}
-
 //  --------------------------------------------------------------------------
 //  Save message to an open file, return 0 if OK, else -1. The message is
 //  saved as a series of frames, each with length and data. Note that the
@@ -618,25 +609,49 @@ zmsg_savex (zmsg_t *self, FILE *file)
 
     zframe_t *frame = zmsg_first (self);
     while (frame) {
-        if (zmsg_savex_frame(frame, file) != 0) {
+        size_t frame_size = zframe_size (frame);
+        if (fwrite (&frame_size, sizeof (frame_size), 1, file) != 1)
             return -1;
-        } 
+        if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
+            return -1;
         frame = zmsg_next (self);
     }
     return 0;
 }
 
 // Save the payload frame of the message only
-int zmsg_savex_payload(zmsg_t *self, FILE *file) {
+int zmsg_savex_payload (zmsg_t *self, FILE *file) 
+{
     assert (self);
     assert (zmsg_is (self));
     assert (file);
 
-    zframe_t *frame = zmsg_first (self); // topic
-    frame = zmsg_next (self); // routing key
-    frame = zmsg_next (self); //payload
+    zframe_t *frame = zmsg_first (self); //stream frame
+    frame = zmsg_next (self);  //topic frame
+    frame = zmsg_next (self);  // payload frame
+    
+    msg_meta_t meta;
+    msg_extract_meta_info(self, &meta);
+    int compression_method = meta.compression_method;
+    if (compression_method) {
+        char *body;
+        size_t body_len;
+        zchunk_t *buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
+        int rc = decompress_frame(frame, compression_method, buffer, &body, &body_len);
+        if (rc == 0) {
+            fprintf(stderr, "[E] decompressor: could not decompress payload from\n");
+            return -1;
+        }
+        zchunk_destroy(&buffer);
+        if (fputs (body, file) != 1)
+            return -1;
+    } else {
+        size_t frame_size = zframe_size (frame);
+        if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
+            return -1;
+    }
 
-    return zmsg_savex_frame(frame, file);
+    return 0;
 }
 
 //  --------------------------------------------------------------------------
