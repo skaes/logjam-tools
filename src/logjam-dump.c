@@ -11,6 +11,8 @@ bool verbose = false;
 bool debug = false;
 bool quiet = false;
 bool payload_only = false;
+bool filter_on_topic = false;
+static char *filter_topic = NULL;
 
 static int sub_port = -1;
 static zlist_t *connection_specs = NULL;
@@ -79,9 +81,15 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
     if (msg_bytes > received_messages_max_bytes)
         received_messages_max_bytes = msg_bytes;
 
+    zmsg_first(msg);  // iterate to topic frame
+    zframe_t *topic_frame = zmsg_next(msg);
+    char *topic_str = (char*) zframe_data(topic_frame);
     // dump message to file annd free memory
     if (!is_heartbeat) {
-        if (payload_only) {
+        if (filter_on_topic && strncmp(filter_topic, topic_str, strlen(filter_topic))) {
+            // do nothing, frame topic does not match filter topic
+        }
+        else if (payload_only) {
             dump_message_payload(msg, dump_file, dump_decompress_buffer);
         } else {
             zmsg_savex(msg, dump_file);
@@ -102,6 +110,7 @@ static void print_usage(char * const *argv)
             "  -i, --io-threads N         zeromq io threads\n"
             "  -p, --input-port N         port number of zeromq input socket\n"
             "  -l, --payload-only         only write the message payload\n"
+            "  -t, --topic                only write the messages from given app-env\n"
             "  -q, --quiet                don't log anything\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "      --help                 display this message\n"
@@ -123,10 +132,11 @@ static void process_arguments(int argc, char * const *argv)
         { "quiet",         no_argument,       0, 'q' },
         { "verbose",       no_argument,       0, 'v' },
         { "payload-only",  no_argument,       0, 'l' },
+        { "topic",         required_argument, 0, 't' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqi:h:p:s:l", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqi:h:p:s:lt:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -153,6 +163,10 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'l':
             payload_only = true;
+            break;
+        case 't':
+            filter_on_topic = true;
+            filter_topic = optarg;
             break;
         case 0:
             print_usage(argv);
