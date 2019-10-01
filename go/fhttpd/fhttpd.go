@@ -292,7 +292,7 @@ func serveMobileMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	appEnv := "mobile-production"
-	routingKey := fmt.Sprintf("%s", "mobile")
+	routingKey := "mobile"
 	publisher.Publish(appEnv, routingKey, bytes)
 	writeImageResponse(w)
 }

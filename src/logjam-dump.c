@@ -81,11 +81,13 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
     if (msg_bytes > received_messages_max_bytes)
         received_messages_max_bytes = msg_bytes;
 
-    byte *app_env_data = zframe_data(first);
+    zmsg_first(msg);  // iterate to topic frame
+    zframe_t *topic_frame = zmsg_next(msg);
+    char *topic_str = (char*) zframe_data(topic_frame);
     // dump message to file annd free memory
     if (!is_heartbeat) {
-        if (filter_on_topic && strcmp((char *)app_env_data, filter_topic) != 0) {
-            // do nothing, app-env does not match filter topic
+        if (filter_on_topic && strncmp(filter_topic, topic_str, strlen(filter_topic))) {
+            // do nothing, frame topic does not match filter topic
         }
         else if (payload_only) {
             dump_message_payload(msg, dump_file, dump_decompress_buffer);
