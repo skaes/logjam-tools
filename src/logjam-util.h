@@ -126,6 +126,7 @@ extern int decompress_message_data(zmq_msg_t *msg, int compression_method, zchun
 extern json_object* parse_json_data(const char *json_data, size_t json_data_len, json_tokener* tokener);
 
 extern void dump_json_object(FILE *f, const char* prefix, json_object *jobj);
+extern void dump_json_object_limiting_log_lines(FILE *f, const char* prefix, json_object *jobj, int max_lines);
 
 extern void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file);
 
@@ -203,7 +204,7 @@ static inline zmsg_t* zmsg_recv_with_retry(zsock_t *socket)
 }
 
 extern int zmsg_savex (zmsg_t *self, FILE *file);
-extern int zmsg_savex_payload(zmsg_t *self, FILE *file);
+extern int dump_message_payload(zmsg_t *self, FILE *file, zchunk_t *buffer);
 extern zmsg_t* zmsg_loadx (zmsg_t *self, FILE *file);
 
 extern zhash_t* zlist_to_hash(zlist_t *list);

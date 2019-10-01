@@ -535,6 +535,30 @@ void dump_json_object(FILE *f, const char* prefix, json_object *jobj)
     // don't try to free the json string. it will crash.
 }
 
+void dump_json_object_limiting_log_lines(FILE *f, const char* prefix, json_object *jobj, int max_lines)
+{
+    json_object *lines = NULL;
+    json_object *new_lines = NULL;
+    if (json_object_object_get_ex(jobj, "lines", &lines) && json_object_is_type(lines, json_type_array)) {
+        int len = json_object_array_length(lines);
+        if (len > max_lines) {
+            json_object_get(lines);
+            new_lines = json_object_new_array();
+            for (int i = 0; i < max_lines; i++) {
+                json_object *elem = json_object_array_get_idx(lines, i);
+                json_object_get(elem);
+                json_object_array_add(new_lines, elem);
+            }
+            json_object_array_add(new_lines, json_object_new_string("LINES DROPPED BY IMPORTER"));
+            json_object_object_add(jobj, "lines", new_lines);
+        }
+    }
+    dump_json_object(f, prefix, jobj);
+    if (new_lines)
+        json_object_object_add(jobj, "lines", lines);
+}
+
+
 static void print_msg(byte* data, size_t size, const char *prefix, FILE *file)
 {
     if (prefix)
@@ -589,15 +613,6 @@ void my_zmq_msg_fprint(zmq_msg_t* msg, size_t n, const char* prefix, FILE* file 
     }
 }
 
-int zmsg_savex_frame(zframe_t *frame, FILE *file) {
-    size_t frame_size = zframe_size (frame);
-    if (fwrite (&frame_size, sizeof (frame_size), 1, file) != 1)
-        return -1;
-    if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
-        return -1;
-    return 0;
-}
-
 //  --------------------------------------------------------------------------
 //  Save message to an open file, return 0 if OK, else -1. The message is
 //  saved as a series of frames, each with length and data. Note that the
@@ -618,25 +633,47 @@ zmsg_savex (zmsg_t *self, FILE *file)
 
     zframe_t *frame = zmsg_first (self);
     while (frame) {
-        if (zmsg_savex_frame(frame, file) != 0) {
+        size_t frame_size = zframe_size (frame);
+        if (fwrite (&frame_size, sizeof (frame_size), 1, file) != 1)
             return -1;
-        } 
+        if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
+            return -1;
         frame = zmsg_next (self);
     }
     return 0;
 }
 
-// Save the payload frame of the message only
-int zmsg_savex_payload(zmsg_t *self, FILE *file) {
+// dump the payload frame of the message only
+int dump_message_payload (zmsg_t *self, FILE *file, zchunk_t *buffer) 
+{
     assert (self);
     assert (zmsg_is (self));
     assert (file);
 
-    zframe_t *frame = zmsg_first (self); // topic
-    frame = zmsg_next (self); // routing key
-    frame = zmsg_next (self); //payload
+    zframe_t *frame = zmsg_first (self); //stream frame
+    frame = zmsg_next (self);  //topic frame
+    frame = zmsg_next (self);  // payload frame
+    
+    msg_meta_t meta;
+    msg_extract_meta_info(self, &meta);
+    int compression_method = meta.compression_method;
+    if (compression_method) {
+        char *body;
+        size_t body_len;
+        int rc = decompress_frame(frame, compression_method, buffer, &body, &body_len);
+        if (rc == 0) {
+            fprintf(stderr, "[E] decompressor: could not decompress payload from\n");
+            return -1;
+        }
+        if (fputs (body, file) != 1)
+            return -1;
+    } else {
+        size_t frame_size = zframe_size (frame);
+        if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
+            return -1;
+    }
 
-    return zmsg_savex_frame(frame, file);
+    return 0;
 }
 
 //  --------------------------------------------------------------------------

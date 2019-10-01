@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
+
 	// _ "net/http/pprof"
 	"os"
 	"strconv"
@@ -281,10 +283,25 @@ func serveAlive(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "ALIVE\n")
 }
 
+func serveMobileMetrics(w http.ResponseWriter, r *http.Request) {
+	defer recordRequest(r)
+	bytes, err := ioutil.ReadAll(r.Body)
+	defer r.Body.Close()
+	if err != nil {
+		writeErrorResponse(w, err.Error())
+		return
+	}
+	appEnv := "mobile-production"
+	routingKey := fmt.Sprintf("%s.%s", "frontend", "mobile")
+	publisher.Publish(appEnv, routingKey, bytes)
+	writeImageResponse(w)
+}
+
 func webServer() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/logjam/ajax", serveFrontendRequest)
 	mux.HandleFunc("/logjam/page", serveFrontendRequest)
+	mux.HandleFunc("/logjam/mobile", serveMobileMetrics)
 	mux.HandleFunc("/alive.txt", serveAlive)
 	log.Info("starting http server on port %d", opts.InputPort)
 	spec := ":" + strconv.Itoa(opts.InputPort)
