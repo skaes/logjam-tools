@@ -57,6 +57,9 @@ func (p *MessageParser) createSocket() *zmq.Socket {
 	socket.SetLinger(100)
 	socket.SetRcvhwm(1000000)
 	socket.SetSubscribe("")
+	socket.SetConnectTimeout(time.Duration(1) * time.Minute)
+	socket.SetReconnectIvl(time.Duration(500) * time.Millisecond)
+
 	for _, s := range p.deviceSpecs {
 		log.Info("connection sub socket to %s", s)
 		err := socket.Connect(s)
@@ -85,7 +88,11 @@ func (p *MessageParser) Run() {
 	}
 
 	for !util.Interrupted() {
-		sockets, _ := poller.Poll(1 * time.Second)
+		sockets, err := poller.Poll(1 * time.Second)
+		if err != nil {
+			log.Error("Error polling a message: %s", err)
+			continue
+		}
 		for _, socket := range sockets {
 			s := socket.Socket
 			msg, err := s.RecvMessageBytes(0)
