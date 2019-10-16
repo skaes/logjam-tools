@@ -246,7 +246,10 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
             fprintf(stderr, "[E] could not send response (%d: %s)\n", errno, zmq_strerror(errno));
 
         // don't forward pings
-        if (is_ping) return 0;
+        if (is_ping) {
+            zmsg_destroy(&msg);
+            return 0;
+        }
     }
 
     // put message back on to the event loop
