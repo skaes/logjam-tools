@@ -17,6 +17,8 @@ static struct prometheus_client_t {
     prometheus::Family<prometheus::Counter> *cpu_usage_total_family;
     prometheus::Counter *cpu_usage_total;
     std::vector<prometheus::Counter*> cpu_usage_total_compressors;
+    prometheus::Family<prometheus::Counter> *ping_count_total_family;
+    prometheus::Counter *ping_count_total;
 } client;
 
 void device_prometheus_client_init(const char* address, const char* device, int num_compressors)
@@ -72,6 +74,14 @@ void device_prometheus_client_init(const char* address, const char* device, int 
         client.cpu_usage_total_compressors.push_back(&client.cpu_usage_total_family->Add({{"thread", name}}));
     }
 
+    client.ping_count_total_family = &prometheus::BuildCounter()
+        .Name("logjam:device:ping_count_total")
+        .Help("How many ping requests this device has processed")
+        .Labels({{"device", device}})
+        .Register(*client.registry);
+
+    client.ping_count_total = &client.ping_count_total_family->Add({});
+
     // ask the exposer to scrape the registry on incoming scrapes
     client.exposer->RegisterCollectable(client.registry);
 }
@@ -100,6 +110,11 @@ void device_prometheus_client_count_msgs_compressed(double value)
 void device_prometheus_client_count_bytes_compressed(double value)
 {
     client.compressed_bytes_total->Increment(value);
+}
+
+void device_prometheus_client_count_pings(double value)
+{
+    client.ping_count_total->Increment(value);
 }
 
 static

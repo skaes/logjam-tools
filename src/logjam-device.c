@@ -31,6 +31,7 @@ static int pub_port = 9606;
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
+static size_t ping_count_total = 0;
 
 static size_t compressed_messages_count = 0;
 static size_t compressed_messages_bytes = 0;
@@ -73,16 +74,19 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     static size_t last_received_bytes   = 0;
     static size_t last_compressed_count = 0;
     static size_t last_compressed_bytes = 0;
+    static size_t last_ping_count = 0;
 
     size_t message_count    = received_messages_count - last_received_count;
     size_t message_bytes    = received_messages_bytes - last_received_bytes;
     size_t compressed_count = compressed_messages_count - last_compressed_count;
     size_t compressed_bytes = compressed_messages_bytes - last_compressed_bytes;
+    size_t ping_count       = ping_count_total - last_ping_count;
 
     device_prometheus_client_count_msgs_received(message_count);
     device_prometheus_client_count_bytes_received(message_bytes);
     device_prometheus_client_count_msgs_compressed(compressed_count);
     device_prometheus_client_count_bytes_compressed(compressed_bytes);
+    device_prometheus_client_count_pings(ping_count);
     device_prometheus_client_record_rusage();
 
     double avg_msg_size        = message_count ? (message_bytes / 1024.0) / message_count : 0;
@@ -96,7 +100,10 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     printf("[I] compressd %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
            compressed_count, compressed_bytes/1024.0, avg_compressed_size, max_compressed_size);
 
+    printf("[I] processed %zu pings\n", ping_count);
+
     last_received_count = received_messages_count;
+    last_ping_count = ping_count_total;
     last_received_bytes = received_messages_bytes;
     received_messages_max_bytes = 0;
     last_compressed_count = compressed_messages_count;
@@ -247,6 +254,7 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
 
         // don't forward pings
         if (is_ping) {
+            ping_count_total++;
             zmsg_destroy(&msg);
             return 0;
         }
