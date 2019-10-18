@@ -49,6 +49,24 @@ static int timer_event( zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
+static void send_ping(zsock_t *socket, msg_meta_t *meta, const char* app_env)
+{
+    zmsg_t *msg = zmsg_new();
+    zmsg_addstr(msg, "");
+    zmsg_addstr(msg, "ping");
+    if (random()&01)
+        zmsg_addstr(msg, "");
+    else
+        zmsg_addstr(msg, app_env);
+    zmsg_addstr(msg, "{}");
+    zmsg_add_meta_info(msg, meta);
+    zmsg_send_and_destroy(&msg, socket);
+    zmsg_t *reply = zmsg_recv(socket);
+    if (!zsys_interrupted)
+        assert(reply);
+    zmsg_destroy(&reply);
+}
+
 static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item, void* arg)
 {
     zsock_t *socket = arg;
@@ -61,7 +79,7 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
     zmsg_t *msg = zmsg_loadx(NULL, dump_file);
     if (!msg) return 1;
 
-    // update device and seqeunce number
+    // update device and sequence number
     static uint64_t sequence_number = 0;
     zmsg_set_device_and_sequence_number(msg, device_number, ++sequence_number);
 
@@ -73,15 +91,24 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
     if (msg_bytes > replayed_messages_max_bytes)
         replayed_messages_max_bytes = msg_bytes;
 
+    msg_meta_t meta;
+    msg_extract_meta_info(msg, &meta);
+
     if (debug) {
         my_zmsg_fprint(msg, "[D]", stdout);
-        msg_meta_t meta;
-        msg_extract_meta_info(msg, &meta);
         dump_meta_info("[D]", &meta);
     }
 
+    const char *app_env = zframe_strdup(zmsg_first(msg));
+
     // send message and destroy it
     zmsg_send(&msg, socket);
+
+    // send a ping once in a while if socket is a dealer
+    if (socket_type == ZMQ_DEALER && (sequence_number % 20 == 0))
+        send_ping(socket, &meta, app_env);
+
+    free(&app_env);
 
     if (bytes_read_from_file == dump_file_size) {
         if (endless_loop) {
