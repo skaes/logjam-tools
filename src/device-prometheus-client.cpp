@@ -131,7 +131,7 @@ void device_prometheus_client_count_ping(const char* app_env)
     std::unordered_map<std::string,prometheus::Counter*>::const_iterator got = client.ping_count_by_stream_total_map.find(stream);
     prometheus::Counter *counter;
     if (got == client.ping_count_by_stream_total_map.end()) {
-        counter = &client.ping_count_by_stream_total_family->Add({{"stream", strdup(app_env)}});
+        counter = &client.ping_count_by_stream_total_family->Add({{"stream", app_env}});
         client.ping_count_by_stream_total_map[stream] = counter;
     } else
         counter = got->second;
