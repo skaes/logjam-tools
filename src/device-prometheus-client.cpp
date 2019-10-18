@@ -3,6 +3,11 @@
 #include "device-prometheus-client.h"
 #include <sys/resource.h>
 
+typedef struct {
+    prometheus::Counter *counter;
+    int64_t last_seen;
+} stream_counter_t;
+
 static struct prometheus_client_t {
     prometheus::Exposer *exposer;
     std::shared_ptr<prometheus::Registry> registry;
@@ -20,7 +25,7 @@ static struct prometheus_client_t {
     prometheus::Family<prometheus::Counter> *ping_count_total_family;
     prometheus::Counter *ping_count_total;
     prometheus::Family<prometheus::Counter> *ping_count_by_stream_total_family;
-    std::unordered_map<std::string, prometheus::Counter*> ping_count_by_stream_total_map;
+    std::unordered_map<std::string, stream_counter_t*> ping_count_by_stream_total_map;
 } client;
 
 void device_prometheus_client_init(const char* address, const char* device, int num_compressors)
@@ -128,14 +133,32 @@ void device_prometheus_client_count_pings(double value)
 void device_prometheus_client_count_ping(const char* app_env)
 {
     std::string stream(app_env);
-    std::unordered_map<std::string,prometheus::Counter*>::const_iterator got = client.ping_count_by_stream_total_map.find(stream);
-    prometheus::Counter *counter;
+    std::unordered_map<std::string,stream_counter_t*>::const_iterator got = client.ping_count_by_stream_total_map.find(stream);
+    stream_counter_t *counter;
     if (got == client.ping_count_by_stream_total_map.end()) {
-        counter = &client.ping_count_by_stream_total_family->Add({{"stream", app_env}});
+        counter = new(stream_counter_t);
+        counter->counter = &client.ping_count_by_stream_total_family->Add({{"stream", app_env}});
         client.ping_count_by_stream_total_map[stream] = counter;
     } else
         counter = got->second;
-    counter->Increment(1);
+    counter->counter->Increment(1);
+    counter->last_seen = zclock_time();
+}
+
+void device_prometheus_client_delete_old_ping_counters(int64_t max_age)
+{
+    int64_t threshold = zclock_time() - max_age;
+    std::unordered_map<std::string,stream_counter_t*>::iterator it = client.ping_count_by_stream_total_map.begin();
+    while (it != client.ping_count_by_stream_total_map.end()) {
+        if (it->second->last_seen < threshold) {
+            stream_counter_t *counter = it->second;
+            client.ping_count_by_stream_total_family->Remove(counter->counter);
+            delete counter;
+            it = client.ping_count_by_stream_total_map.erase(it);
+        } else {
+            it++;
+        }
+    }
 }
 
 static

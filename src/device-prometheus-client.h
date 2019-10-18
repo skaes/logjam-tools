@@ -16,6 +16,7 @@ extern void device_prometheus_client_count_msgs_compressed(double value);
 extern void device_prometheus_client_count_bytes_compressed(double value);
 extern void device_prometheus_client_count_pings(double value);
 extern void device_prometheus_client_count_ping(const char* app_env);
+extern void device_prometheus_client_delete_old_ping_counters(int64_t max_age);
 extern void device_prometheus_client_record_rusage();
 extern void device_prometheus_client_record_rusage_compressor(int i);
 

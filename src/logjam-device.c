@@ -55,7 +55,39 @@ int metrics_port = 8082;
 char metrics_address[256] = {0};
 const char *metrics_ip = "0.0.0.0";
 
-static zhash_t *routing_id_to_app_env= NULL;
+typedef struct {
+    char *app_env;
+    int64_t last_seen;
+} app_env_record_t;
+
+static zhashx_t *routing_id_to_app_env= NULL;
+
+static void free_app_env_record(void *self)
+{
+    app_env_record_t *r = self;
+    free(r->app_env);
+    free(r);
+}
+
+static void clean_old_routing_id_entries(int64_t max_age)
+{
+    zlist_t *deletions = zlist_new();
+    int64_t threshold = zclock_time() - max_age;
+    app_env_record_t* r = zhashx_first(routing_id_to_app_env);
+    while (r) {
+        if (r->last_seen < threshold) {
+            const char *key = zhashx_cursor(routing_id_to_app_env);
+            zlist_append(deletions, (void*)key);
+        }
+        r = zhashx_next(routing_id_to_app_env);
+    }
+    r = zlist_first(deletions);
+    while (r) {
+        zhashx_delete(routing_id_to_app_env, r);
+        r = zlist_next(deletions);
+    }
+    zlist_destroy(&deletions);
+}
 
 typedef struct {
     // raw zmq sockets, to avoid zsock_resolve
@@ -133,6 +165,14 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
 
     // tick watchdog
     zstr_send(device_watchdog, "tick");
+
+    // delete old ping counters, once per minute.
+    if (ticks % 60 == 0) {
+        int64_t max_age = 1000 * (debug ? 60 : 60 * 60);
+        // max age is given in milliseconds.
+        clean_old_routing_id_entries(max_age);
+        device_prometheus_client_delete_old_ping_counters(max_age);
+    }
 
     return 0;
 }
@@ -221,8 +261,12 @@ static void record_routing_id_and_app_env(zframe_t *sender_id, zframe_t *stream)
     char routing_id[n+1];
     memcpy(routing_id, zframe_data(sender_id), n);
     routing_id[n] = '\0';
-    if (!zhash_lookup(routing_id_to_app_env, routing_id))
-        zhash_update(routing_id_to_app_env, routing_id, zframe_strdup(stream));
+    if (!zhashx_lookup(routing_id_to_app_env, routing_id)) {
+        app_env_record_t *r = zmalloc(sizeof(*r));
+        r->app_env = zframe_strdup(stream);
+        zhashx_update(routing_id_to_app_env, routing_id, r);
+        zhashx_freefn(routing_id_to_app_env, routing_id, free_app_env_record);
+    }
 }
 
 static void record_ping_count(zframe_t *sender_id, zframe_t *routing_key)
@@ -239,9 +283,12 @@ static void record_ping_count(zframe_t *sender_id, zframe_t *routing_key)
         char routing_id[sender_id_len+1];
         memcpy(routing_id, zframe_data(sender_id), sender_id_len);
         routing_id[sender_id_len] = '\0';
-        const char* app_env = zhash_lookup(routing_id_to_app_env, routing_id);
-        if (app_env == NULL)
-            app_env = "unknown-unknown";
+        const char* app_env = "unknown-unknown";
+        app_env_record_t *r = zhashx_lookup(routing_id_to_app_env, routing_id);
+        if (r) {
+            r->last_seen = zclock_time();
+            app_env = r->app_env;
+        }
         device_prometheus_client_count_ping(app_env);
     }
 }
@@ -475,7 +522,7 @@ int main(int argc, char * const *argv)
     zsys_set_io_threads(io_threads);
 
     compression_buffer = zchunk_new(NULL, INITIAL_COMPRESSION_BUFFER_SIZE);
-    routing_id_to_app_env = zhash_new();
+    routing_id_to_app_env = zhashx_new();
 
     // initalize prometheus client
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
