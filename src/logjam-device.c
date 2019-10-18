@@ -217,26 +217,33 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
 
 static void record_routing_id_and_app_env(zframe_t *sender_id, zframe_t *stream)
 {
-    char routing_id[256];
     int n = zframe_size(sender_id);
-    assert(n < 256);
+    char routing_id[n+1];
     memcpy(routing_id, zframe_data(sender_id), n);
     routing_id[n] = '\0';
     if (!zhash_lookup(routing_id_to_app_env, routing_id))
         zhash_update(routing_id_to_app_env, routing_id, zframe_strdup(stream));
 }
 
-static void record_ping_count(zframe_t *sender_id)
+static void record_ping_count(zframe_t *sender_id, zframe_t *routing_key)
 {
-    char routing_id[256];
-    int n = zframe_size(sender_id);
-    assert(n < 256);
-    memcpy(routing_id, zframe_data(sender_id), n);
-    routing_id[n] = '\0';
-    const char* app_env = zhash_lookup(routing_id_to_app_env, routing_id);
-    if (app_env == NULL)
-        app_env = "unknown-unknown";
-    device_prometheus_client_count_ping(app_env);
+    int routing_key_len = zframe_size(routing_key);
+    if (routing_key_len > 0) {
+        // application sent app-env as the routing key
+        char app_env[routing_key_len+1];
+        memcpy(app_env, zframe_data(routing_key), routing_key_len);
+        app_env[routing_key_len] = '\0';
+        device_prometheus_client_count_ping(app_env);
+    } else {
+        int sender_id_len = zframe_size(sender_id);
+        char routing_id[sender_id_len+1];
+        memcpy(routing_id, zframe_data(sender_id), sender_id_len);
+        routing_id[sender_id_len] = '\0';
+        const char* app_env = zhash_lookup(routing_id_to_app_env, routing_id);
+        if (app_env == NULL)
+            app_env = "unknown-unknown";
+        device_prometheus_client_count_ping(app_env);
+    }
 }
 
 static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
@@ -245,12 +252,14 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
     zmsg_t* msg = zmsg_recv(socket);
     assert(msg);
 
+    // if (debug) my_zmsg_fprint(msg, "[D] ", stdout);
+
     zframe_t *sender_id = zmsg_pop(msg);
     zframe_t *first = zmsg_first(msg);
 
     // if the second frame is empty, we need to send a reply
     if (zframe_size(first) > 0) {
-        // this is a not ping message. this means the first frame contains the app-env string.
+        // this is a not synchnronous message. this means the first frame contains the app-env string.
         // record the routing id to app association for detailed ping counting.
         record_routing_id_and_app_env(sender_id, first);
         zframe_destroy(&sender_id);
@@ -258,6 +267,7 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
         // pop the empty frame
         zmsg_pop(msg);
         zmsg_t *reply = zmsg_new();
+        zframe_t *routing_id = sender_id;
         zmsg_append(reply, &sender_id);
         zmsg_append(reply, &first);
 
@@ -272,11 +282,16 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
             if (decodable) {
                 zmsg_addstr(reply, "200 Pong");
                 zmsg_addstr(reply, my_fqdn());
-            } else
+            } else {
                 zmsg_addstr(reply, "400 Bad Request");
-            record_ping_count(sender_id);
-        } else
+            }
+            zframe_t *routing_key = zmsg_next(msg);
+            record_ping_count(routing_id, routing_key);
+        } else {
+            // a normal message, but asking for a reply
             zmsg_addstr(reply, decodable ? "202 Accepted" : "400 Bad Request");
+            record_routing_id_and_app_env(routing_id, app_env);
+        }
 
         int rc = zmsg_send_and_destroy(&reply, socket);
         if (rc)
