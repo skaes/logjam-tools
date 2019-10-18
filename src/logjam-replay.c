@@ -99,7 +99,7 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
         dump_meta_info("[D]", &meta);
     }
 
-    const char *app_env = zframe_strdup(zmsg_first(msg));
+    char *app_env = zframe_strdup(zmsg_first(msg));
 
     // send message and destroy it
     zmsg_send(&msg, socket);
@@ -108,7 +108,7 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
     if (socket_type == ZMQ_DEALER && (sequence_number % 20 == 0))
         send_ping(socket, &meta, app_env);
 
-    free(&app_env);
+    free(app_env);
 
     if (bytes_read_from_file == dump_file_size) {
         if (endless_loop) {
