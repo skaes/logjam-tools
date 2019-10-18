@@ -55,6 +55,8 @@ int metrics_port = 8082;
 char metrics_address[256] = {0};
 const char *metrics_ip = "0.0.0.0";
 
+static zhash_t *routing_id_to_app_env= NULL;
+
 typedef struct {
     // raw zmq sockets, to avoid zsock_resolve
     void *receiver;
@@ -213,6 +215,30 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     return 0;
 }
 
+static void record_routing_id_and_app_env(zframe_t *sender_id, zframe_t *stream)
+{
+    char routing_id[256];
+    int n = zframe_size(sender_id);
+    assert(n < 256);
+    memcpy(routing_id, zframe_data(sender_id), n);
+    routing_id[n] = '\0';
+    if (!zhash_lookup(routing_id_to_app_env, routing_id))
+        zhash_update(routing_id_to_app_env, routing_id, zframe_strdup(stream));
+}
+
+static void record_ping_count(zframe_t *sender_id)
+{
+    char routing_id[256];
+    int n = zframe_size(sender_id);
+    assert(n < 256);
+    memcpy(routing_id, zframe_data(sender_id), n);
+    routing_id[n] = '\0';
+    const char* app_env = zhash_lookup(routing_id_to_app_env, routing_id);
+    if (app_env == NULL)
+        app_env = "unknown-unknown";
+    device_prometheus_client_count_ping(app_env);
+}
+
 static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
     publisher_state_t *state = (publisher_state_t*)callback_data;
@@ -220,17 +246,20 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
     assert(msg);
 
     zframe_t *sender_id = zmsg_pop(msg);
-    zframe_t *empty = zmsg_first(msg);
+    zframe_t *first = zmsg_first(msg);
 
     // if the second frame is empty, we need to send a reply
-    if (zframe_size(empty) > 0)
+    if (zframe_size(first) > 0) {
+        // this is a not ping message. this means the first frame contains the app-env string.
+        // record the routing id to app association for detailed ping counting.
+        record_routing_id_and_app_env(sender_id, first);
         zframe_destroy(&sender_id);
-    else {
+    } else {
         // pop the empty frame
-        empty = zmsg_pop(msg);
+        zmsg_pop(msg);
         zmsg_t *reply = zmsg_new();
         zmsg_append(reply, &sender_id);
-        zmsg_append(reply, &empty);
+        zmsg_append(reply, &first);
 
         // return bad request if we don't receive 4 frames and meta frame can't be decoded
         size_t n = zmsg_size(msg);
@@ -245,6 +274,7 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
                 zmsg_addstr(reply, my_fqdn());
             } else
                 zmsg_addstr(reply, "400 Bad Request");
+            record_ping_count(sender_id);
         } else
             zmsg_addstr(reply, decodable ? "202 Accepted" : "400 Bad Request");
 
@@ -430,6 +460,7 @@ int main(int argc, char * const *argv)
     zsys_set_io_threads(io_threads);
 
     compression_buffer = zchunk_new(NULL, INITIAL_COMPRESSION_BUFFER_SIZE);
+    routing_id_to_app_env = zhash_new();
 
     // initalize prometheus client
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);

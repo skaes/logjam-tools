@@ -19,6 +19,8 @@ static struct prometheus_client_t {
     std::vector<prometheus::Counter*> cpu_usage_total_compressors;
     prometheus::Family<prometheus::Counter> *ping_count_total_family;
     prometheus::Counter *ping_count_total;
+    prometheus::Family<prometheus::Counter> *ping_count_by_stream_total_family;
+    std::unordered_map<std::string, prometheus::Counter*> ping_count_by_stream_total_map;
 } client;
 
 void device_prometheus_client_init(const char* address, const char* device, int num_compressors)
@@ -82,6 +84,12 @@ void device_prometheus_client_init(const char* address, const char* device, int 
 
     client.ping_count_total = &client.ping_count_total_family->Add({});
 
+    client.ping_count_by_stream_total_family = &prometheus::BuildCounter()
+        .Name("logjam:device:ping_count_by_stream_total")
+        .Help("How many ping requests this device has processed for a given stream")
+        .Labels({{"device", device}})
+        .Register(*client.registry);
+
     // ask the exposer to scrape the registry on incoming scrapes
     client.exposer->RegisterCollectable(client.registry);
 }
@@ -115,6 +123,19 @@ void device_prometheus_client_count_bytes_compressed(double value)
 void device_prometheus_client_count_pings(double value)
 {
     client.ping_count_total->Increment(value);
+}
+
+void device_prometheus_client_count_ping(const char* app_env)
+{
+    std::string stream(app_env);
+    std::unordered_map<std::string,prometheus::Counter*>::const_iterator got = client.ping_count_by_stream_total_map.find(stream);
+    prometheus::Counter *counter;
+    if (got == client.ping_count_by_stream_total_map.end()) {
+        counter = &client.ping_count_by_stream_total_family->Add({{"stream", strdup(app_env)}});
+        client.ping_count_by_stream_total_map[stream] = counter;
+    } else
+        counter = got->second;
+    counter->Increment(1);
 }
 
 static
