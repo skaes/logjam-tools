@@ -261,6 +261,13 @@ static void record_routing_id_and_app_env(zframe_t *sender_id, zframe_t *stream)
     char routing_id[n+1];
     memcpy(routing_id, zframe_data(sender_id), n);
     routing_id[n] = '\0';
+    if (debug) {
+        int m = zframe_size(stream);
+        char stream_str[m+1];
+        memcpy(stream_str, zframe_data(stream), m);
+        stream_str[m] = '\0';
+        printf("[D] routingid, stream: %s,%s\n", routing_id, stream_str);
+    }
     if (!zhashx_lookup(routing_id_to_app_env, routing_id)) {
         app_env_record_t *r = zmalloc(sizeof(*r));
         r->app_env = zframe_strdup(stream);
