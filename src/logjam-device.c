@@ -258,15 +258,16 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
 static void record_routing_id_and_app_env(zframe_t *sender_id, zframe_t *stream)
 {
     int n = zframe_size(sender_id);
-    char routing_id[n+1];
-    memcpy(routing_id, zframe_data(sender_id), n);
-    routing_id[n] = '\0';
+    char routing_id[2*n+1];
+    unsigned char* data = zframe_data(sender_id);
+    for (int i=0; i<n; i++)
+        sprintf(&routing_id[2*i], "%02X", data[i]);
     if (debug) {
         int m = zframe_size(stream);
         char stream_str[m+1];
         memcpy(stream_str, zframe_data(stream), m);
         stream_str[m] = '\0';
-        printf("[D] routingid, stream: %s,%s\n", routing_id, stream_str);
+        printf("[D] routingid[%d], stream[%d]: %s,%s\n", 2*n, m, routing_id, stream_str);
     }
     if (!zhashx_lookup(routing_id_to_app_env, routing_id)) {
         app_env_record_t *r = zmalloc(sizeof(*r));
@@ -287,9 +288,10 @@ static void record_ping_count(zframe_t *sender_id, zframe_t *routing_key)
         device_prometheus_client_count_ping(app_env);
     } else {
         int sender_id_len = zframe_size(sender_id);
-        char routing_id[sender_id_len+1];
-        memcpy(routing_id, zframe_data(sender_id), sender_id_len);
-        routing_id[sender_id_len] = '\0';
+        char routing_id[2*sender_id_len+1];
+        unsigned char* data = zframe_data(sender_id);
+        for (int i=0; i<sender_id_len; i++)
+            sprintf(&routing_id[2*i], "%02X", data[i]);
         const char* app_env = "unknown-unknown";
         app_env_record_t *r = zhashx_lookup(routing_id_to_app_env, routing_id);
         if (r) {
@@ -306,14 +308,14 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
     zmsg_t* msg = zmsg_recv(socket);
     assert(msg);
 
-    // if (debug) my_zmsg_fprint(msg, "[D] ", stdout);
+    if (debug) my_zmsg_fprint(msg, "[D] ", stdout);
 
     zframe_t *sender_id = zmsg_pop(msg);
     zframe_t *first = zmsg_first(msg);
 
     // if the second frame is empty, we need to send a reply
     if (zframe_size(first) > 0) {
-        // this is a not synchnronous message. this means the first frame contains the app-env string.
+        // this is not a synchronous message. this means the first frame contains the app-env string.
         // record the routing id to app association for detailed ping counting.
         record_routing_id_and_app_env(sender_id, first);
         zframe_destroy(&sender_id);
