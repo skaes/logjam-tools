@@ -45,9 +45,13 @@ reply-msg     = accepted / bad-request
 accepted      = %s"202 Accepted"
 bad-request   = %s"400 Bad Request"
 
-ping-msg      = %s"ping" empty-frame json-body meta-info
+ping-msg      = %s"ping" app-env json-body meta-info
 pong-msg      = %s"200 OK" fqdn
 fqdn          = *( ALPHA / "." )
+
+app-env      = application "-" environment
+application  = ALPHA *(ALPHA / "_" / "-")
+environment  = ALPHA *(ALPHA / "_")
 ```
 
 The client signals its desire to receive a response for a given
@@ -80,10 +84,6 @@ produced and a message sequence number.
 
 ```
 data-msg  = app-env topic json-body meta-info
-
-app-env      = application "-" environment
-application  = ALPHA *(ALPHA / "_" / "-")
-environment  = ALPHA *(ALPHA / "_")
 
 topic = logs *( ALPHA / "." )            ; normal log messages
 topic /= javascript *( ALPHA / "." )     ; javascript errors
