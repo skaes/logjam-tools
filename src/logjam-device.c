@@ -332,8 +332,8 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
         msg_meta_t meta;
         bool decodable = n==4 && msg_extract_meta_info(msg, &meta);
 
-        zframe_t *app_env = zmsg_first(msg);
-        bool is_ping = zframe_streq(app_env, "ping");
+        zframe_t *app_env_or_ping = zmsg_first(msg);
+        bool is_ping = zframe_streq(app_env_or_ping, "ping");
         if (is_ping) {
             if (decodable) {
                 zmsg_addstr(reply, "200 Pong");
@@ -346,7 +346,7 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
         } else {
             // a normal message, but asking for a reply
             zmsg_addstr(reply, decodable ? "202 Accepted" : "400 Bad Request");
-            record_routing_id_and_app_env(routing_id, app_env);
+            record_routing_id_and_app_env(routing_id, app_env_or_ping);
         }
 
         int rc = zmsg_send_and_destroy(&reply, socket);
