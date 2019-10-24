@@ -45,7 +45,7 @@ reply-msg     = accepted / bad-request
 accepted      = %s"202 Accepted"
 bad-request   = %s"400 Bad Request"
 
-ping-msg      = %s"ping" app-env json-body meta-info
+ping-msg      = empty-frame %s"ping" app-env json-body meta-info
 pong-msg      = %s"200 OK" fqdn
 fqdn          = *( ALPHA / "." )
 
