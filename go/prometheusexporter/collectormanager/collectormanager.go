@@ -35,16 +35,21 @@ func Initialize(logjamURL string, env string, options collector.Options) {
 	go StreamsUpdater(url, env)
 }
 
-func AddCollector(appEnv string, stream util.Stream) {
+func AddCollector(appEnv string, stream *util.Stream) {
 	mutex.Lock()
 	defer mutex.Unlock()
-	_, found := collectors[appEnv]
-	if !found {
+	c, found := collectors[appEnv]
+	if found {
 		if opts.Verbose {
-			log.Info("adding stream: %s : %+v", appEnv, stream)
+			log.Info("updating collector: %s : %+v", appEnv, stream)
 		}
-		collectors[appEnv] = collector.New(appEnv, stream, opts)
+		c.Update(stream)
+		return
 	}
+	if opts.Verbose {
+		log.Info("adding stream: %s : %+v", appEnv, stream)
+	}
+	collectors[appEnv] = collector.New(appEnv, stream, opts)
 }
 
 func GetCollector(appEnv string) *collector.Collector {

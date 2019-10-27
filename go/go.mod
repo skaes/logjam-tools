@@ -32,3 +32,5 @@ require (
 	golang.org/x/text v0.3.0
 	gopkg.in/tylerb/graceful.v1 v1.2.15
 )
+
+go 1.13

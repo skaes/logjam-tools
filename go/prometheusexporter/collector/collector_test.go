@@ -17,7 +17,7 @@ func TestDeletingLabels(t *testing.T) {
 		Datacenters: "a,b",
 		CleanAfter:  60,
 	}
-	c := New(s.AppEnv(), s, options)
+	c := New(s.AppEnv(), &s, options)
 	metrics1 := &metric{
 		kind: logMetric,
 		props: map[string]string{
