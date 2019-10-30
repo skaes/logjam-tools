@@ -212,7 +212,6 @@ func (c *Collector) observeMetrics(m *metric) {
 func (c *Collector) observer() {
 	for !util.Interrupted() && atomic.LoadUint32(&c.stopped) == 0 {
 		m := <-c.metricsChannel
-		c.mutex.Lock()
 		switch m.kind {
 		case logMetric:
 			c.recordLogMetrics(m)
