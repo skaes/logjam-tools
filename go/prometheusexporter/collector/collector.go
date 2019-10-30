@@ -242,16 +242,25 @@ func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
 	return labels
 }
 
-func (c *Collector) deleteSummaryLabels(summary *prometheus.SummaryVec, labels prometheus.Labels) bool {
+func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
-	return summary.Delete(labels)
-}
-
-func (c *Collector) deleteHistogramLabels(histogram *prometheus.HistogramVec, labels prometheus.Labels) bool {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
-	return histogram.Delete(labels)
+	deleted := false
+	switch name {
+	case "logjam:action:http_response_time_summary_seconds":
+		deleted = c.httpRequestSummaryVec.Delete(labels)
+	case "logjam:action:job_execution_time_summary_seconds":
+		deleted = c.jobExecutionSummaryVec.Delete(labels)
+	case "logjam:action:http_response_time_distribution_seconds":
+		deleted = c.httpRequestHistogramVec.Delete(labels)
+	case "logjam:action:job_execution_time_distribution_seconds":
+		deleted = c.jobExecutionHistogramVec.Delete(labels)
+	case "logjam:action:page_time_distribution_seconds":
+		deleted = c.pageHistogramVec.Delete(labels)
+	case "logjam:action:ajax_time_distribution_seconds":
+		deleted = c.ajaxHistogramVec.Delete(labels)
+	}
+	return deleted
 }
 
 func (c *Collector) removeAction(a string) bool {
@@ -273,22 +282,7 @@ func (c *Collector) removeAction(a string) bool {
 			if hasLabel(pairs, "action", a) {
 				numProcessed++
 				labels := labelsFromLabelPairs(pairs)
-				deleted := false
-				switch name {
-				case "logjam:action:http_response_time_summary_seconds":
-					deleted = c.deleteSummaryLabels(c.httpRequestSummaryVec, labels)
-				case "logjam:action:job_execution_time_summary_seconds":
-					deleted = c.deleteSummaryLabels(c.jobExecutionSummaryVec, labels)
-				case "logjam:action:http_response_time_distribution_seconds":
-					deleted = c.deleteHistogramLabels(c.httpRequestHistogramVec, labels)
-				case "logjam:action:job_execution_time_distribution_seconds":
-					deleted = c.deleteHistogramLabels(c.jobExecutionHistogramVec, labels)
-				case "logjam:action:page_time_distribution_seconds":
-					deleted = c.deleteHistogramLabels(c.pageHistogramVec, labels)
-				case "logjam:action:ajax_time_distribution_seconds":
-					deleted = c.deleteHistogramLabels(c.ajaxHistogramVec, labels)
-				}
-				if deleted {
+				if c.deleteLabels(name, labels) {
 					numDeleted++
 				} else {
 					log.Error("Could not delete labels: %v", labels)
