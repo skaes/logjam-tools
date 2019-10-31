@@ -117,98 +117,141 @@ func New(appEnv string, stream *util.Stream, opts Options) *Collector {
 	return &c
 }
 
+func (c *Collector) registerHttpRequestSummaryVec() {
+	c.httpRequestSummaryVec = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "logjam:action:http_response_time_summary_seconds",
+			Help:       "logjam http response time summary by action",
+			Objectives: map[float64]float64{},
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "type", "code", "method", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.httpRequestSummaryVec)
+}
+
+func (c *Collector) registerJobExecutionSummaryVec() {
+	c.jobExecutionSummaryVec = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "logjam:action:job_execution_time_summary_seconds",
+			Help:       "logjam job execution time summary by action",
+			Objectives: map[float64]float64{},
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "code", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.jobExecutionSummaryVec)
+}
+
+func (c *Collector) registerHttpRequestHistogramVec(stream *util.Stream) {
+	c.httpRequestHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:http_response_time_distribution_seconds",
+			Help:    "logjam http response time distribution by action",
+			Buckets: stream.HttpBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "type", "method", "instance"},
+	)
+	c.registry.MustRegister(c.httpRequestHistogramVec)
+}
+
+func (c *Collector) registerJobExecutionHistogramVec(stream *util.Stream) {
+	c.jobExecutionHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:job_execution_time_distribution_seconds",
+			Help:    "logjam background job execution time distribution by action",
+			Buckets: stream.JobsBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "instance"},
+	)
+	c.registry.MustRegister(c.jobExecutionHistogramVec)
+}
+
+func (c *Collector) registerPageHistogramVec(stream *util.Stream) {
+	c.pageHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:page_time_distribution_seconds",
+			Help:    "logjam page loading time distribution by action",
+			Buckets: stream.PageBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "instance"},
+	)
+	c.registry.MustRegister(c.pageHistogramVec)
+}
+
+func (c *Collector) registerAjaxHistogramVec(stream *util.Stream) {
+	c.ajaxHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:ajax_time_distribution_seconds",
+			Help:    "logjam ajax response time distribution by action",
+			Buckets: stream.AjaxBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "instance"},
+	)
+	c.registry.MustRegister(c.ajaxHistogramVec)
+}
+
 func (c *Collector) Update(stream *util.Stream) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	locked := false
 	if c.httpRequestSummaryVec == nil {
-		c.httpRequestSummaryVec = prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Name:       "logjam:action:http_response_time_summary_seconds",
-				Help:       "logjam http response time summary by action",
-				Objectives: map[float64]float64{},
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "type", "code", "method", "instance", "cluster", "dc"},
-		)
-		c.registry.MustRegister(c.httpRequestSummaryVec)
+		c.registerHttpRequestSummaryVec()
 	}
 	if c.jobExecutionSummaryVec == nil {
-		c.jobExecutionSummaryVec = prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Name:       "logjam:action:job_execution_time_summary_seconds",
-				Help:       "logjam job execution time summary by action",
-				Objectives: map[float64]float64{},
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "code", "instance", "cluster", "dc"},
-		)
-		c.registry.MustRegister(c.jobExecutionSummaryVec)
+		c.registerJobExecutionSummaryVec()
 	}
 	if c.httpRequestHistogramVec != nil && !c.stream.SameHttpBuckets(stream) {
+		c.mutex.Lock()
+		defer c.mutex.Unlock()
+		locked = true
 		c.registry.Unregister(c.httpRequestHistogramVec)
 		c.httpRequestHistogramVec = nil
 	}
 	if c.httpRequestHistogramVec == nil {
-		c.httpRequestHistogramVec = prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "logjam:action:http_response_time_distribution_seconds",
-				Help:    "logjam http response time distribution by action",
-				Buckets: stream.HttpBuckets,
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "type", "method", "instance"},
-		)
-		c.registry.MustRegister(c.httpRequestHistogramVec)
+		c.registerHttpRequestHistogramVec(stream)
 	}
 	if c.jobExecutionHistogramVec != nil && !c.stream.SameJobsBuckets(stream) {
+		if !locked {
+			c.mutex.Lock()
+			defer c.mutex.Unlock()
+			locked = true
+		}
 		c.registry.Unregister(c.jobExecutionHistogramVec)
 		c.jobExecutionHistogramVec = nil
 	}
 	if c.jobExecutionHistogramVec == nil {
-		c.jobExecutionHistogramVec = prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "logjam:action:job_execution_time_distribution_seconds",
-				Help:    "logjam background job execution time distribution by action",
-				Buckets: stream.JobsBuckets,
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "instance"},
-		)
-		c.registry.MustRegister(c.jobExecutionHistogramVec)
+		c.registerJobExecutionHistogramVec(stream)
 	}
 	if c.pageHistogramVec != nil && !c.stream.SamePageBuckets(stream) {
+		if !locked {
+			c.mutex.Lock()
+			defer c.mutex.Unlock()
+			locked = true
+		}
 		c.registry.Unregister(c.pageHistogramVec)
 		c.pageHistogramVec = nil
 	}
 	if c.pageHistogramVec == nil {
-		c.pageHistogramVec = prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "logjam:action:page_time_distribution_seconds",
-				Help:    "logjam page loading time distribution by action",
-				Buckets: stream.PageBuckets,
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "instance"},
-		)
-		c.registry.MustRegister(c.pageHistogramVec)
+		c.registerPageHistogramVec(stream)
 	}
 	if c.ajaxHistogramVec != nil && !c.stream.SameAjaxBuckets(stream) {
+		if !locked {
+			c.mutex.Lock()
+			defer c.mutex.Unlock()
+			locked = true
+		}
 		c.registry.Unregister(c.ajaxHistogramVec)
 		c.ajaxHistogramVec = nil
 	}
 	if c.ajaxHistogramVec == nil {
-		c.ajaxHistogramVec = prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "logjam:action:ajax_time_distribution_seconds",
-				Help:    "logjam ajax response time distribution by action",
-				Buckets: stream.AjaxBuckets,
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "instance"},
-		)
-		c.registry.MustRegister(c.ajaxHistogramVec)
+		c.registerAjaxHistogramVec(stream)
 	}
-	c.stream = stream
+	if locked {
+		c.stream = stream
+	}
 }
 
 func (c *Collector) observeMetrics(m *metric) {
