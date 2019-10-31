@@ -50,7 +50,7 @@ type Collector struct {
 	stream                   *util.Stream
 	app                      string
 	env                      string
-	mutex                    sync.Mutex
+	mutex                    sync.RWMutex
 	httpRequestSummaryVec    *prometheus.SummaryVec
 	jobExecutionSummaryVec   *prometheus.SummaryVec
 	httpRequestHistogramVec  *prometheus.HistogramVec
@@ -66,9 +66,15 @@ type Collector struct {
 	datacenters              []dcPair
 }
 
+// Lock contention for the collector state is between four go
+// routines: message parser, observer, action registry updater and
+// streams updater, where the streams updater is the only one needing
+// a write lock on the stream and the histogram vectors. Thus a
+// RWMutex seems appropriate.
+
 func (c *Collector) Stream() *util.Stream {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	return c.stream
 }
 
@@ -76,6 +82,7 @@ func (c *Collector) appEnv() string {
 	return c.app + "-" + c.env
 }
 
+// requestType is only called when the caller already has a read lock on the stream.
 func (c *Collector) requestType(action string) string {
 	for _, p := range c.stream.APIRequests {
 		if strings.HasPrefix(action, p) {
@@ -243,8 +250,8 @@ func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
 }
 
 func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	deleted := false
 	switch name {
 	case "logjam:action:http_response_time_summary_seconds":
@@ -335,8 +342,8 @@ func (c *Collector) fixDatacenter(m map[string]string, instance string) {
 }
 
 func (c *Collector) recordLogMetrics(m *metric) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	p := m.props
 	metric := p["metric"]
 	instance := p["instance"]
@@ -364,8 +371,8 @@ func (c *Collector) recordLogMetrics(m *metric) {
 }
 
 func (c *Collector) recordPageMetrics(m *metric) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	p := m.props
 	p["instance"] = ""
 	action := p["action"]
@@ -374,8 +381,8 @@ func (c *Collector) recordPageMetrics(m *metric) {
 }
 
 func (c *Collector) recordAjaxMetrics(m *metric) {
-	c.mutex.Lock()
-	defer c.mutex.Unlock()
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	p := m.props
 	p["instance"] = ""
 	action := p["action"]
