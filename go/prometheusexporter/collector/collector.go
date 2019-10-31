@@ -249,6 +249,11 @@ func (c *Collector) Update(stream *util.Stream) {
 	if c.ajaxHistogramVec == nil {
 		c.registerAjaxHistogramVec(stream)
 	}
+	if (!c.stream.SameAPIRequests(stream) || c.stream.IgnoredRequestURI != stream.IgnoredRequestURI) && !locked {
+		c.mutex.Lock()
+		defer c.mutex.Unlock()
+		locked = true
+	}
 	if locked {
 		c.stream = stream
 	}

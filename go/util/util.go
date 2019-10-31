@@ -246,6 +246,18 @@ func sameBuckets(a, b []float64) bool {
 	return true
 }
 
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := 0; i < len(a); i += 1 {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
 func (s1 *Stream) SameHttpBuckets(s2 *Stream) bool {
 	return sameBuckets(s1.HttpBuckets, s2.HttpBuckets)
 }
@@ -260,6 +272,10 @@ func (s1 *Stream) SamePageBuckets(s2 *Stream) bool {
 
 func (s1 *Stream) SameAjaxBuckets(s2 *Stream) bool {
 	return sameBuckets(s1.AjaxBuckets, s2.AjaxBuckets)
+}
+
+func (s1 *Stream) SameAPIRequests(s2 *Stream) bool {
+	return sameStrings(s1.APIRequests, s2.APIRequests)
 }
 
 func RetrieveStreams(url, env string) map[string]*Stream {
