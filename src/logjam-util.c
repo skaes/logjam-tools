@@ -667,6 +667,7 @@ int dump_message_payload (zmsg_t *self, FILE *file, zchunk_t *buffer)
         }
         if (fputs (body, file) != 1)
             return -1;
+        fwrite ("\n", strlen("\n"), 1, file);
     } else {
         size_t frame_size = zframe_size (frame);
         if (fwrite (zframe_data (frame), frame_size, 1, file) != 1)
