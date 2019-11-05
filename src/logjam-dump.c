@@ -10,6 +10,7 @@ static size_t io_threads = 1;
 bool verbose = false;
 bool debug = false;
 bool quiet = false;
+bool append_to_dump_file = false;
 bool payload_only = false;
 bool filter_on_topic = false;
 static char *filter_topic = NULL;
@@ -106,6 +107,7 @@ static void print_usage(char * const *argv)
     fprintf(stderr,
             "usage: %s [options] [dump-file-name]\n"
             "\nOptions:\n"
+            "  -a, --append               append dump file instead of overwriting it"
             "  -s, --subscribe A,B        subscription patterns\n"
             "  -h, --hosts H,I            specs of devices to connect to\n"
             "  -i, --io-threads N         zeromq io threads\n"
@@ -126,6 +128,7 @@ static void process_arguments(int argc, char * const *argv)
 
     static struct option long_options[] = {
         { "help",          no_argument,       0,  0  },
+        { "append",        no_argument,       0, 'a' },
         { "hosts",         required_argument, 0, 'h' },
         { "subscribe",     required_argument, 0, 's' },
         { "input-port",    required_argument, 0, 'p' },
@@ -137,11 +140,11 @@ static void process_arguments(int argc, char * const *argv)
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqi:h:p:s:lt:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqi:h:p:s:lt:a", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
-                debug= true;
+                debug = true;
             else
                 verbose = true;
             break;
@@ -149,6 +152,9 @@ static void process_arguments(int argc, char * const *argv)
             quiet = true;
             verbose = false;
             debug= false;
+            break;
+        case 'a':
+            append_to_dump_file = true;
             break;
         case 'i':
             io_threads = atoi(optarg);
@@ -216,7 +222,7 @@ int main(int argc, char * const *argv)
 
     dump_decompress_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
     // open dump file
-    dump_file = fopen(dump_file_name, "w");
+    dump_file = fopen(dump_file_name, append_to_dump_file ? "a" : "w");
     if (!dump_file) {
         fprintf(stderr, "[E] could not open dump file: %s\n", strerror(errno));
         exit(1);
@@ -235,7 +241,6 @@ int main(int argc, char * const *argv)
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_SUB);
     assert_x(receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
-    
 
     // connect socket
     char *spec = zlist_first(connection_specs);
