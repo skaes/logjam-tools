@@ -46,6 +46,7 @@ static int timer_event( zloop_t *loop, int timer_id, void *arg)
     message_gaps = 0;
     if (++ticks % HEART_BEAT_INTERVAL == 0)
         device_tracker_reconnect_stale_devices(tracker);
+    fflush(dump_file);
     return 0;
 }
 
