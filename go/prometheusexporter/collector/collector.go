@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -44,12 +45,12 @@ type Options struct {
 }
 
 type Collector struct {
-	opts                     Options
 	Name                     string
+	opts                     Options
+	stream                   *util.Stream
 	app                      string
 	env                      string
-	apiRequests              []string
-	ignoredRequestURI        string
+	mutex                    sync.RWMutex
 	httpRequestSummaryVec    *prometheus.SummaryVec
 	jobExecutionSummaryVec   *prometheus.SummaryVec
 	httpRequestHistogramVec  *prometheus.HistogramVec
@@ -65,12 +66,25 @@ type Collector struct {
 	datacenters              []dcPair
 }
 
+// Lock contention for the collector state is between four go
+// routines: message parser, observer, action registry updater and
+// streams updater, where the streams updater is the only one needing
+// a write lock on the stream and the histogram vectors. Thus a
+// RWMutex seems appropriate.
+
+func (c *Collector) Stream() *util.Stream {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	return c.stream
+}
+
 func (c *Collector) appEnv() string {
 	return c.app + "-" + c.env
 }
 
+// requestType is only called when the caller already has a read lock on the stream.
 func (c *Collector) requestType(action string) string {
-	for _, p := range c.apiRequests {
+	for _, p := range c.stream.APIRequests {
 		if strings.HasPrefix(action, p) {
 			return "api"
 		}
@@ -78,89 +92,171 @@ func (c *Collector) requestType(action string) string {
 	return "web"
 }
 
-func New(appEnv string, stream util.Stream, opts Options) *Collector {
+func New(appEnv string, stream *util.Stream, opts Options) *Collector {
 	app, env := util.ParseStreamName(appEnv)
 	c := Collector{
-		opts: opts,
-		app:  app,
-		env:  env,
-		httpRequestSummaryVec: prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Name:       "logjam:action:http_response_time_summary_seconds",
-				Help:       "logjam http response time summary by action",
-				Objectives: map[float64]float64{},
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "type", "code", "method", "instance", "cluster", "dc"},
-		),
-		jobExecutionSummaryVec: prometheus.NewSummaryVec(
-			prometheus.SummaryOpts{
-				Name:       "logjam:action:job_execution_time_summary_seconds",
-				Help:       "logjam job execution time summary by action",
-				Objectives: map[float64]float64{},
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "code", "instance", "cluster", "dc"},
-		),
-		httpRequestHistogramVec: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "logjam:action:http_response_time_distribution_seconds",
-				Help:    "logjam http response time distribution by action",
-				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100},
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "type", "method", "instance"},
-		),
-		jobExecutionHistogramVec: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "logjam:action:job_execution_time_distribution_seconds",
-				Help:    "logjam background job execution time distribution by action",
-				Buckets: []float64{0.001, 0.0025, .005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100},
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "instance"},
-		),
-		pageHistogramVec: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "logjam:action:page_time_distribution_seconds",
-				Help:    "logjam page loading time distribution by action",
-				Buckets: []float64{.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "instance"},
-		),
-		ajaxHistogramVec: prometheus.NewHistogramVec(
-			prometheus.HistogramOpts{
-				Name:    "logjam:action:ajax_time_distribution_seconds",
-				Help:    "logjam ajax response time distribution by action",
-				Buckets: []float64{.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
-			},
-			// instance always set to the empty string
-			[]string{"app", "env", "action", "instance"},
-		),
-		registry:          prometheus.NewRegistry(),
-		actionRegistry:    make(chan string, 10000),
-		apiRequests:       stream.APIRequests,
-		ignoredRequestURI: stream.IgnoredRequestURI,
-		knownActions:      make(map[string]time.Time),
-		metricsChannel:    make(chan *metric, 10000),
-		datacenters:       make([]dcPair, 0),
+		opts:           opts,
+		app:            app,
+		env:            env,
+		stream:         stream,
+		registry:       prometheus.NewRegistry(),
+		actionRegistry: make(chan string, 10000),
+		knownActions:   make(map[string]time.Time),
+		metricsChannel: make(chan *metric, 10000),
+		datacenters:    make([]dcPair, 0),
 	}
 	for _, dc := range strings.Split(opts.Datacenters, ",") {
 		if dc != "" {
 			c.datacenters = append(c.datacenters, dcPair{name: dc, withDots: "." + dc + "."})
 		}
 	}
-	c.registry.MustRegister(c.httpRequestHistogramVec)
-	c.registry.MustRegister(c.jobExecutionHistogramVec)
-	c.registry.MustRegister(c.httpRequestSummaryVec)
-	c.registry.MustRegister(c.jobExecutionSummaryVec)
-	c.registry.MustRegister(c.pageHistogramVec)
-	c.registry.MustRegister(c.ajaxHistogramVec)
+	c.Update(stream)
 	c.RequestHandler = promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{})
 	go c.actionRegistryHandler()
 	go c.observer()
 	return &c
+}
+
+func (c *Collector) registerHttpRequestSummaryVec() {
+	c.httpRequestSummaryVec = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "logjam:action:http_response_time_summary_seconds",
+			Help:       "logjam http response time summary by action",
+			Objectives: map[float64]float64{},
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "type", "code", "method", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.httpRequestSummaryVec)
+}
+
+func (c *Collector) registerJobExecutionSummaryVec() {
+	c.jobExecutionSummaryVec = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "logjam:action:job_execution_time_summary_seconds",
+			Help:       "logjam job execution time summary by action",
+			Objectives: map[float64]float64{},
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "code", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.jobExecutionSummaryVec)
+}
+
+func (c *Collector) registerHttpRequestHistogramVec(stream *util.Stream) {
+	c.httpRequestHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:http_response_time_distribution_seconds",
+			Help:    "logjam http response time distribution by action",
+			Buckets: stream.HttpBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "type", "method", "instance"},
+	)
+	c.registry.MustRegister(c.httpRequestHistogramVec)
+}
+
+func (c *Collector) registerJobExecutionHistogramVec(stream *util.Stream) {
+	c.jobExecutionHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:job_execution_time_distribution_seconds",
+			Help:    "logjam background job execution time distribution by action",
+			Buckets: stream.JobsBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "instance"},
+	)
+	c.registry.MustRegister(c.jobExecutionHistogramVec)
+}
+
+func (c *Collector) registerPageHistogramVec(stream *util.Stream) {
+	c.pageHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:page_time_distribution_seconds",
+			Help:    "logjam page loading time distribution by action",
+			Buckets: stream.PageBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "instance"},
+	)
+	c.registry.MustRegister(c.pageHistogramVec)
+}
+
+func (c *Collector) registerAjaxHistogramVec(stream *util.Stream) {
+	c.ajaxHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:ajax_time_distribution_seconds",
+			Help:    "logjam ajax response time distribution by action",
+			Buckets: stream.AjaxBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "instance"},
+	)
+	c.registry.MustRegister(c.ajaxHistogramVec)
+}
+
+func (c *Collector) Update(stream *util.Stream) {
+	locked := false
+	if c.httpRequestSummaryVec == nil {
+		c.registerHttpRequestSummaryVec()
+	}
+	if c.jobExecutionSummaryVec == nil {
+		c.registerJobExecutionSummaryVec()
+	}
+	if c.httpRequestHistogramVec != nil && !c.stream.SameHttpBuckets(stream) {
+		c.mutex.Lock()
+		defer c.mutex.Unlock()
+		locked = true
+		c.registry.Unregister(c.httpRequestHistogramVec)
+		c.httpRequestHistogramVec = nil
+	}
+	if c.httpRequestHistogramVec == nil {
+		c.registerHttpRequestHistogramVec(stream)
+	}
+	if c.jobExecutionHistogramVec != nil && !c.stream.SameJobsBuckets(stream) {
+		if !locked {
+			c.mutex.Lock()
+			defer c.mutex.Unlock()
+			locked = true
+		}
+		c.registry.Unregister(c.jobExecutionHistogramVec)
+		c.jobExecutionHistogramVec = nil
+	}
+	if c.jobExecutionHistogramVec == nil {
+		c.registerJobExecutionHistogramVec(stream)
+	}
+	if c.pageHistogramVec != nil && !c.stream.SamePageBuckets(stream) {
+		if !locked {
+			c.mutex.Lock()
+			defer c.mutex.Unlock()
+			locked = true
+		}
+		c.registry.Unregister(c.pageHistogramVec)
+		c.pageHistogramVec = nil
+	}
+	if c.pageHistogramVec == nil {
+		c.registerPageHistogramVec(stream)
+	}
+	if c.ajaxHistogramVec != nil && !c.stream.SameAjaxBuckets(stream) {
+		if !locked {
+			c.mutex.Lock()
+			defer c.mutex.Unlock()
+			locked = true
+		}
+		c.registry.Unregister(c.ajaxHistogramVec)
+		c.ajaxHistogramVec = nil
+	}
+	if c.ajaxHistogramVec == nil {
+		c.registerAjaxHistogramVec(stream)
+	}
+	if (!c.stream.SameAPIRequests(stream) || c.stream.IgnoredRequestURI != stream.IgnoredRequestURI) && !locked {
+		c.mutex.Lock()
+		defer c.mutex.Unlock()
+		locked = true
+	}
+	if locked {
+		c.stream = stream
+	}
 }
 
 func (c *Collector) observeMetrics(m *metric) {
@@ -201,6 +297,27 @@ func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
 	return labels
 }
 
+func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	deleted := false
+	switch name {
+	case "logjam:action:http_response_time_summary_seconds":
+		deleted = c.httpRequestSummaryVec.Delete(labels)
+	case "logjam:action:job_execution_time_summary_seconds":
+		deleted = c.jobExecutionSummaryVec.Delete(labels)
+	case "logjam:action:http_response_time_distribution_seconds":
+		deleted = c.httpRequestHistogramVec.Delete(labels)
+	case "logjam:action:job_execution_time_distribution_seconds":
+		deleted = c.jobExecutionHistogramVec.Delete(labels)
+	case "logjam:action:page_time_distribution_seconds":
+		deleted = c.pageHistogramVec.Delete(labels)
+	case "logjam:action:ajax_time_distribution_seconds":
+		deleted = c.ajaxHistogramVec.Delete(labels)
+	}
+	return deleted
+}
+
 func (c *Collector) removeAction(a string) bool {
 	if c.opts.Verbose {
 		log.Info("removing action: %s", a)
@@ -220,22 +337,7 @@ func (c *Collector) removeAction(a string) bool {
 			if hasLabel(pairs, "action", a) {
 				numProcessed++
 				labels := labelsFromLabelPairs(pairs)
-				deleted := false
-				switch name {
-				case "logjam:action:http_response_time_summary_seconds":
-					deleted = c.httpRequestSummaryVec.Delete(labels)
-				case "logjam:action:job_execution_time_summary_seconds":
-					deleted = c.jobExecutionSummaryVec.Delete(labels)
-				case "logjam:action:http_response_time_distribution_seconds":
-					deleted = c.httpRequestHistogramVec.Delete(labels)
-				case "logjam:action:job_execution_time_distribution_seconds":
-					deleted = c.jobExecutionHistogramVec.Delete(labels)
-				case "logjam:action:page_time_distribution_seconds":
-					deleted = c.pageHistogramVec.Delete(labels)
-				case "logjam:action:ajax_time_distribution_seconds":
-					deleted = c.ajaxHistogramVec.Delete(labels)
-				}
-				if deleted {
+				if c.deleteLabels(name, labels) {
 					numDeleted++
 				} else {
 					log.Error("Could not delete labels: %v", labels)
@@ -288,6 +390,8 @@ func (c *Collector) fixDatacenter(m map[string]string, instance string) {
 }
 
 func (c *Collector) recordLogMetrics(m *metric) {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	p := m.props
 	metric := p["metric"]
 	instance := p["instance"]
@@ -315,6 +419,8 @@ func (c *Collector) recordLogMetrics(m *metric) {
 }
 
 func (c *Collector) recordPageMetrics(m *metric) {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	p := m.props
 	p["instance"] = ""
 	action := p["action"]
@@ -323,6 +429,8 @@ func (c *Collector) recordPageMetrics(m *metric) {
 }
 
 func (c *Collector) recordAjaxMetrics(m *metric) {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
 	p := m.props
 	p["instance"] = ""
 	action := p["action"]
@@ -336,13 +444,12 @@ func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{
 		log.Info("processMessage\n%s", s)
 	}
 	var m *metric
-	if strings.HasPrefix(routingKey, "logs") {
+	switch {
+	case strings.HasPrefix(routingKey, "logs"):
 		m = c.processLogMessage(routingKey, data)
-	}
-	if strings.HasPrefix(routingKey, "frontend.page") {
+	case strings.HasPrefix(routingKey, "frontend.page"):
 		m = c.processPageMessage(routingKey, data)
-	}
-	if strings.HasPrefix(routingKey, "frontend.ajax") {
+	case strings.HasPrefix(routingKey, "frontend.ajax"):
 		m = c.processAjaxMessage(routingKey, data)
 	}
 	if c.opts.Debug {
@@ -372,7 +479,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 		uri := extractString(info, "url", "")
 		if uri != "" {
 			u, err := url.Parse(uri)
-			if err == nil && strings.HasPrefix(u.Path, c.ignoredRequestURI) {
+			if err == nil && strings.HasPrefix(u.Path, c.Stream().IgnoredRequestURI) {
 				atomic.AddUint64(&stats.Stats.Ignored, 1)
 				if c.opts.Verbose {
 					log.Info("ignoring request because of url match: %s", u.String())
