@@ -251,19 +251,24 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     }
 
     // needs to happen after the call to adjust_caller_info
-    if (json_object_object_get_ex (request, "caller_id", &obj) && !json_object_is_type(obj, json_type_null)) {
-        gelf_message_add_json_object (gelf_msg, "_caller_id", obj);
+    if (json_object_object_get_ex (request, "caller_id", &obj) && json_object_get_type(obj) == json_type_string) {
         const char *caller_id = json_object_get_string(obj);
-        char app[256], env[256], rid[256];
-        extract_app_env_rid (caller_id, 256, app, env, rid);
-        json_object *app_obj = json_object_new_string(app);
-        gelf_message_add_json_object (gelf_msg, "_caller_app", app_obj);
-        json_object_put(app_obj);
+        if (caller_id && *caller_id) {
+            gelf_message_add_json_object (gelf_msg, "_caller_id", obj);
+            char app[256], env[256], rid[256];
+            if (extract_app_env_rid (caller_id, 256, app, env, rid)) {
+                json_object *app_obj = json_object_new_string(app);
+                gelf_message_add_json_object (gelf_msg, "_caller_app", app_obj);
+                json_object_put(app_obj);
+            }
+        }
     }
 
     // needs to happen after the call to adjust_caller_info
-    if (json_object_object_get_ex (request, "caller_action", &obj) && !json_object_is_type(obj, json_type_null)) {
-        gelf_message_add_json_object (gelf_msg, "_caller_action", obj);
+    if (json_object_object_get_ex (request, "caller_action", &obj) && json_object_get_type(obj) == json_type_string) {
+        const char *caller_action = json_object_get_string(obj);
+        if (caller_action && *caller_action)
+            gelf_message_add_json_object (gelf_msg, "_caller_action", obj);
     }
 
     int level = 0; // Debug
