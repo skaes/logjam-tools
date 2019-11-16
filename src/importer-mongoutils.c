@@ -39,6 +39,16 @@ void my_mongo_log_handler(mongoc_log_level_t log_level, const char *log_domain, 
    fprintf(stream, "[%c] monogc[%s]: %s\n", level, log_domain, message);
 }
 
+char* uri_with_server_selection_try_once_set_to_false(const char * uri) {
+    const char* option = "&serverSelectionTryOnce=false";
+    const size_t n = strlen(uri);
+    const size_t m = strlen(option);
+    char* muri = malloc((n+m+1) * sizeof(char));
+    strcpy(muri, uri);
+    strcpy(muri+n, option);
+    return muri;
+}
+
 void initialize_mongo_db_globals(zconfig_t* config)
 {
     mongoc_init();
@@ -50,7 +60,7 @@ void initialize_mongo_db_globals(zconfig_t* config)
     wc_no_wait = mongoc_write_concern_new();
     if (USE_UNACKNOWLEDGED_WRITES)
         // TODO: this leads to illegal opcodes on the server
-       mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_UNACKNOWLEDGED);
+        mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_UNACKNOWLEDGED);
     else
         mongoc_write_concern_set_w(wc_no_wait, MONGOC_WRITE_CONCERN_W_DEFAULT);
 
@@ -61,8 +71,8 @@ void initialize_mongo_db_globals(zconfig_t* config)
             assert(num_databases < MAX_DATABASES);
             char *uri = zconfig_value(db);
             if (uri != NULL) {
-                databases[num_databases] = strdup(uri);
-                printf("[I] database[%zu]: %s\n", num_databases, uri);
+                databases[num_databases] = uri_with_server_selection_try_once_set_to_false(uri);
+                printf("[I] database[%zu]: %s\n", num_databases, databases[num_databases]);
                 num_databases++;
             }
             db = zconfig_next(db);
