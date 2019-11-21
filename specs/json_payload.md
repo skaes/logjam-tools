@@ -44,8 +44,8 @@ The following fields, with the exception of `caller_id` and `caller_action`, are
 | code           | Integer   | usually a http response code (but could be anything) |
 | severity       | 0..5      | highest log level used (DEBUG,INFO,WARN,ERROR,FATAL,ANY); will be extracted from lines if not set, or 1 (INFO) by default |
 | caller\_id     | String    | value of http request header X-Logjam-Caller-Id (if present) |
-| caller\_action | String | value of http request header X-Logjam-Action (if present) |
-| request_id     | String  |	version 1 UUID (32 characters, without hyphens) |
+| caller\_action | String    | value of http request header X-Logjam-Action (if present) |
+| request_id     | String    | version 1 UUID (32 characters, without hyphens) |
 
 Note: the logjam interface benefits from using http response codes
 even for non http requests.
