@@ -654,6 +654,9 @@ int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam
     zsys_set_sndhwm(DEFAULT_SND_HWM);
     zsys_set_linger(0);
 
+    set_stream_create_fn(importer_prometheus_client_create_stream_counters);
+    set_stream_free_fn(importer_prometheus_client_destroy_stream_counters);
+
     if (!setup_stream_config(logjam_url, subscription_pattern)) {
         rc = 1;
         goto shutdown;

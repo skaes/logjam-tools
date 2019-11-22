@@ -23,6 +23,21 @@ static const char *subscription_pattern = NULL;
 // httpp client
 static zhttp_client_t *client = NULL;
 
+// callback for creating streams
+static stream_fn *create_stream_callback = NULL;
+// callback for freeing streams
+static stream_fn *free_stream_callback = NULL;
+
+void set_stream_create_fn(stream_fn *f)
+{
+    create_stream_callback = f;
+}
+
+void set_stream_free_fn(stream_fn *f)
+{
+    free_stream_callback = f;
+}
+
 stream_info_t* get_stream_info(const char* stream_name, zhash_t *thread_local_cache)
 {
     stream_info_t *stream_info = NULL;
@@ -220,6 +235,9 @@ stream_info_t* stream_info_new(const char* key, json_object *stream_obj)
     info->known_modules = zhash_new();
     assert(info->known_modules);
 
+    if (create_stream_callback)
+        create_stream_callback(info);
+
     return info;
 }
 
@@ -255,6 +273,10 @@ void release_stream_info(stream_info_t *info)
         free(info->api_requests);
     }
     zhash_destroy(&info->known_modules);
+
+    if (free_stream_callback)
+        free_stream_callback(info);
+
     free(info);
 }
 

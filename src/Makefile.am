@@ -68,6 +68,7 @@ logjam_importer_SOURCES = \
     importer-statsupdater.h \
     logjam-streaminfo.c \
     logjam-streaminfo.h \
+    logjam-streaminfo-types.h \
     importer-subscriber.c \
     importer-subscriber.h \
     importer-tracker.c \
@@ -104,6 +105,7 @@ logjam_graylog_forwarder_SOURCES = \
     logjam-util.c \
     logjam-util.h \
     logjam-streaminfo.c \
+    logjam-streaminfo-types.h \
     logjam-streaminfo.h \
     gelf-message.c \
     gelf-message.h \
@@ -113,6 +115,8 @@ logjam_graylog_forwarder_SOURCES = \
     str-builder.h \
     device-tracker.c \
     device-tracker.h
+
+logjam_graylog_forwarder_LDADD = $(PROMETHEUS_LIBS) $(LDADD)
 
 logjam_dump_SOURCES = \
     ../config.h \

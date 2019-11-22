@@ -5,6 +5,7 @@
 #include "importer-livestream.h"
 #include "logjam-streaminfo.h"
 #include "importer-resources.h"
+#include "importer-prometheus-client.h"
 
 #define DB_PREFIX "logjam-"
 #define DB_PREFIX_LEN 7
@@ -873,8 +874,10 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         }
         if (zmsg_send_with_retry(&msg, pstate->push_socket))
             release_stream_info(self->stream_info);
-        else
+        else {
             __sync_add_and_fetch(&queued_inserts, 1);
+            importer_prometheus_client_count_inserts_for_stream(self->stream_info, 1);
+        }
     }
 }
 

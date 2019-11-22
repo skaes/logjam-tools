@@ -1,44 +1,15 @@
 #ifndef __LOGJAM_IMPORTER_STREAM_INFO_H_INCLUDED__
 #define __LOGJAM_IMPORTER_STREAM_INFO_H_INCLUDED__
 
-#include "logjam-util.h"
+#include "logjam-streaminfo-types.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef struct {
-    char* name;
-    size_t value;
-} module_threshold_t;
-
-typedef struct {
-    int32_t ref_count;
-    char *key;      // [app,env].join('-')
-    char *yek;      // [env,app].join('.')
-    char *app;
-    char *env;
-    size_t key_len;
-    size_t app_len;
-    size_t env_len;
-    int db;
-    int database_cleaning_threshold;
-    int request_cleaning_threshold;
-    int import_threshold;
-    int module_threshold_count;
-    int64_t storage_size;
-    double sampling_rate_400s;
-    long sampling_rate_400s_threshold;
-    module_threshold_t *module_thresholds;
-    char *ignored_request_prefix;
-    char **backend_only_requests;
-    int backend_only_requests_size;
-    int all_requests_are_backend_only_requests;
-    char **api_requests;
-    int api_requests_size;
-    int all_requests_are_api_requests;
-    zhash_t *known_modules;
-} stream_info_t;
+typedef void (stream_fn) (stream_info_t *stream);
+extern void set_stream_create_fn(stream_fn *f);
+extern void set_stream_free_fn(stream_fn *f);
 
 extern stream_info_t* get_stream_info(const char* stream_name, zhash_t* thread_local_cache);
 static inline void reference_stream_info(stream_info_t *stream_info) {

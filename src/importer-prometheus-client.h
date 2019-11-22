@@ -2,6 +2,7 @@
 #define __LOGJAM_IMPORTER_PROMETHEUS_CLIENT_H_INCLUDED__
 
 #include "importer-common.h"
+#include "logjam-streaminfo-types.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -35,6 +36,10 @@ extern void importer_prometheus_client_record_rusage_subscriber(uint i);
 extern void importer_prometheus_client_record_rusage_parser(uint i);
 extern void importer_prometheus_client_record_rusage_writer(uint i);
 extern void importer_prometheus_client_record_rusage_updater(uint i);
+
+extern void importer_prometheus_client_create_stream_counters(stream_info_t *stream);
+extern void importer_prometheus_client_destroy_stream_counters(stream_info_t *stream);
+extern void importer_prometheus_client_count_inserts_for_stream(stream_info_t *stream, double value);
 
 #ifdef __cplusplus
 }
