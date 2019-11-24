@@ -389,6 +389,16 @@ bool update_stream_config()
     }
 
     pthread_mutex_lock(&lock);
+    if (configured_streams) {
+        // make sure not to remove an existing stream from prometheus client
+        info = zhash_first(new_streams);
+        while (info) {
+            stream_info_t *old_info = zhash_lookup(configured_streams, info->key);
+            if (old_info)
+                old_info->inserts_total = NULL;
+            info = zhash_next(new_streams);
+        }
+    }
     zhash_destroy(&configured_streams);
     zlist_destroy(&stream_subscriptions);
     zlist_destroy(&active_stream_names);

@@ -311,9 +311,11 @@ void importer_prometheus_client_create_stream_counters(stream_info_t *stream)
 
 void importer_prometheus_client_destroy_stream_counters(stream_info_t *stream)
 {
-    prometheus::Counter* counter = (prometheus::Counter*)stream->inserts_total;
-    client.inserts_by_stream_total_family->Remove(counter);
-    delete counter;
+    if (stream->inserts_total) {
+        prometheus::Counter* counter = (prometheus::Counter*)stream->inserts_total;
+        client.inserts_by_stream_total_family->Remove(counter);
+        delete counter;
+    }
 }
 
 void importer_prometheus_client_count_inserts_for_stream(stream_info_t *stream, double value)
