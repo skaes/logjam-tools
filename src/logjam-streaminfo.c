@@ -394,8 +394,10 @@ bool update_stream_config()
         info = zhash_first(new_streams);
         while (info) {
             stream_info_t *old_info = zhash_lookup(configured_streams, info->key);
-            if (old_info)
+            if (old_info) {
+                assert(old_info->inserts_total == info->inserts_total);
                 old_info->inserts_total = NULL;
+            }
             info = zhash_next(new_streams);
         }
     }

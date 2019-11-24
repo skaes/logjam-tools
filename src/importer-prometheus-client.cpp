@@ -320,5 +320,7 @@ void importer_prometheus_client_destroy_stream_counters(stream_info_t *stream)
 
 void importer_prometheus_client_count_inserts_for_stream(stream_info_t *stream, double value)
 {
-    ((prometheus::Counter*)stream->inserts_total)->Increment(value);
+    if (stream->inserts_total) {
+        ((prometheus::Counter*)stream->inserts_total)->Increment(value);
+    }
 }
