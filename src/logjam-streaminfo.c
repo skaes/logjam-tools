@@ -235,9 +235,6 @@ stream_info_t* stream_info_new(const char* key, json_object *stream_obj)
     info->known_modules = zhash_new();
     assert(info->known_modules);
 
-    if (create_stream_callback)
-        create_stream_callback(info);
-
     return info;
 }
 
@@ -274,8 +271,8 @@ void release_stream_info(stream_info_t *info)
     }
     zhash_destroy(&info->known_modules);
 
-    if (free_stream_callback)
-        free_stream_callback(info);
+    if (info->free_callback)
+        info->free_callback(info);
 
     free(info);
 }
@@ -389,17 +386,19 @@ bool update_stream_config()
     }
 
     pthread_mutex_lock(&lock);
-    if (configured_streams) {
-        // make sure not to remove an existing stream from prometheus client
-        info = zhash_first(new_streams);
-        while (info) {
-            stream_info_t *old_info = zhash_lookup(configured_streams, info->key);
-            if (old_info) {
-                assert(old_info->inserts_total == info->inserts_total);
-                old_info->inserts_total = NULL;
-            }
-            info = zhash_next(new_streams);
+    info = zhash_first(new_streams);
+    while (info) {
+        info->free_callback = free_stream_callback;
+        stream_info_t *old_info = configured_streams ? zhash_lookup(configured_streams, info->key) : NULL;
+        if (old_info) {
+            // stream already existed
+            info->inserts_total = old_info->inserts_total;
+            old_info->free_callback = NULL;
+        } else if (create_stream_callback) {
+            // create inserts_total counter for new stream
+            create_stream_callback(info);
         }
+        info = zhash_next(new_streams);
     }
     zhash_destroy(&configured_streams);
     zlist_destroy(&stream_subscriptions);

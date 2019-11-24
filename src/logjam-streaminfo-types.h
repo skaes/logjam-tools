@@ -12,6 +12,8 @@ typedef struct {
     size_t value;
 } module_threshold_t;
 
+typedef void (stream_fn) (void *stream);
+
 typedef struct {
     int32_t ref_count;
     char *key;      // [app,env].join('-')
@@ -39,6 +41,7 @@ typedef struct {
     int all_requests_are_api_requests;
     zhash_t *known_modules;
     void *inserts_total;
+    stream_fn *free_callback;
 } stream_info_t;
 
 

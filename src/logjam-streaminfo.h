@@ -7,7 +7,6 @@
 extern "C" {
 #endif
 
-typedef void (stream_fn) (stream_info_t *stream);
 extern void set_stream_create_fn(stream_fn *f);
 extern void set_stream_free_fn(stream_fn *f);
 

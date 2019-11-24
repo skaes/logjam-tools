@@ -304,23 +304,22 @@ void importer_prometheus_client_record_rusage_updater(uint i)
     client.cpu_seconds_total_updaters[i]->Increment(value - oldvalue);
 }
 
+// caller must hold lock on stream
 void importer_prometheus_client_create_stream_counters(stream_info_t *stream)
 {
     stream->inserts_total = &client.inserts_by_stream_total_family->Add({{"stream", stream->key}});
 }
 
+// caller must hold lock on stream
 void importer_prometheus_client_destroy_stream_counters(stream_info_t *stream)
 {
-    if (stream->inserts_total) {
-        prometheus::Counter* counter = (prometheus::Counter*)stream->inserts_total;
-        client.inserts_by_stream_total_family->Remove(counter);
-        delete counter;
-    }
+    prometheus::Counter* counter = (prometheus::Counter*)stream->inserts_total;
+    client.inserts_by_stream_total_family->Remove(counter);
+    delete counter;
 }
 
+// caller must hold lock on stream
 void importer_prometheus_client_count_inserts_for_stream(stream_info_t *stream, double value)
 {
-    if (stream->inserts_total) {
-        ((prometheus::Counter*)stream->inserts_total)->Increment(value);
-    }
+    ((prometheus::Counter*)stream->inserts_total)->Increment(value);
 }
