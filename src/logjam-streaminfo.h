@@ -39,6 +39,7 @@ typedef int sampling_reason_t;
 #define SAMPLE_400          1<<3
 #define SAMPLE_EXCEPTIONS   1<<4
 #define SAMPLE_HEAP_GROWTH  1<<5
+#define SAMPLE_000          1<<6
 
 #define LOG_SEVERITY_DEBUG 0
 #define LOG_SEVERITY_INFO  1

@@ -694,6 +694,8 @@ sampling_reason_t interesting_request(request_data_t *request_data, json_object 
         reason |= SAMPLE_500;
     else if (request_data->response_code >= 400 && sample_randomly(info))
         reason |= SAMPLE_400;
+    else if (request_data->response_code == 0)
+        reason |= SAMPLE_000;
 
     if (request_data->exceptions != NULL)
         reason |= SAMPLE_EXCEPTIONS;
