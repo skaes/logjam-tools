@@ -38,6 +38,11 @@ type decodeAndUnmarshalTask struct {
 	meta *util.MetaInfo
 }
 
+// MessageProcessor indicate that the type can process logjam messages
+type MessageProcessor interface {
+	ProcessMessage(routingKey string, data map[string]interface{})
+}
+
 // New creates a new message parser
 func New(options Options) *MessageParser {
 	p := MessageParser{opts: options}
@@ -169,7 +174,7 @@ func (p *MessageParser) decodeAndUnmarshal() {
 				}
 				continue
 			}
-			c := collectormanager.GetCollector(appEnv)
+			c := collectormanager.GetMessageProcessor(appEnv)
 			if c == nil {
 				log.Error("could not retrieve collector for %s", appEnv)
 				continue

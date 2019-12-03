@@ -10,17 +10,21 @@ import (
 
 	log "github.com/skaes/logjam-tools/go/logging"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/collector"
+	"github.com/skaes/logjam-tools/go/prometheusexporter/messageparser"
+	"github.com/skaes/logjam-tools/go/prometheusexporter/mobile"
 	"github.com/skaes/logjam-tools/go/util"
 )
 
 var (
-	collectors = make(map[string]*collector.Collector)
-	mutex      sync.Mutex
-	opts       collector.Options
+	collectors    = make(map[string]*collector.Collector)
+	mutex         sync.Mutex
+	opts          collector.Options
+	mobileMetrics mobile.Metrics
 )
 
 func Initialize(logjamURL string, env string, options collector.Options) {
 	opts = options
+	mobileMetrics = mobile.New()
 	if logjamURL == "" {
 		return
 	}
@@ -50,6 +54,15 @@ func AddCollector(appEnv string, stream *util.Stream) {
 		log.Info("adding stream: %s : %+v", appEnv, stream)
 	}
 	collectors[appEnv] = collector.New(appEnv, stream, opts)
+}
+
+func GetMessageProcessor(appEnv string) messageparser.MessageProcessor {
+	if strings.HasPrefix(appEnv, "mobile") {
+		return mobileMetrics
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	return collectors[appEnv]
 }
 
 func GetCollector(appEnv string) *collector.Collector {
