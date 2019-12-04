@@ -1,11 +1,15 @@
 package mobile
 
 import (
+	"fmt"
 	"net/http"
 
+	"github.com/mitchellh/mapstructure"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+var metricLabels []string = []string{"app", "env", "instance"}
 
 // Metrics holds different metrics from mobile requests
 type Metrics struct {
@@ -17,7 +21,44 @@ type Metrics struct {
 	AppHangTime   *prometheus.HistogramVec
 }
 
-var metricLabels []string = []string{"app", "env", "instance"}
+type Metric struct {
+	Value     int
+	Timestamp string
+}
+
+type Gauge struct {
+	Name    string
+	Metrics []Metric
+}
+
+type Bucket struct {
+	BucketRange
+	Count int
+}
+
+type BucketRange struct {
+	StartValue int `json:"start_value"`
+	EndValue   int `json:"end_value"`
+}
+
+type Histogram struct {
+	Name    string
+	Begin   string
+	End     string
+	Buckets []Bucket
+}
+
+type Metadata struct {
+	Os      string
+	Device  string
+	Version string
+}
+
+type Payload struct {
+	Meta       Metadata
+	Histograms []Histogram
+	Gauges     []Gauge
+}
 
 // New Returns a new instance of mobile Metrics
 func New() Metrics {
@@ -51,6 +92,19 @@ func (m Metrics) initMetrics() {
 	)
 }
 
+// ProcessMessage extracts mobile metrics from logjam payload and exposes it to Prometheus
 func (m Metrics) ProcessMessage(routingKey string, data map[string]interface{}) {
-	
+	payload := parseData(data)
+	for _, p := range payload.Histograms {
+		fmt.Println("histo: ", p.Name)
+	}
+}
+
+func parseData(data map[string]interface{}) Payload {
+	var payload Payload
+	if err := mapstructure.Decode(data, &payload); err != nil {
+		fmt.Println("Error unmarshalling", err)
+		return Payload{}
+	}
+	return payload
 }

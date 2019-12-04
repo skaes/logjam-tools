@@ -10,10 +10,14 @@ import (
 
 	log "github.com/skaes/logjam-tools/go/logging"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/collector"
-	"github.com/skaes/logjam-tools/go/prometheusexporter/messageparser"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/mobile"
 	"github.com/skaes/logjam-tools/go/util"
 )
+
+// MessageProcessor indicates that a type can process logjam messages
+type MessageProcessor interface {
+	ProcessMessage(routingKey string, data map[string]interface{})
+}
 
 var (
 	collectors    = make(map[string]*collector.Collector)
@@ -56,7 +60,7 @@ func AddCollector(appEnv string, stream *util.Stream) {
 	collectors[appEnv] = collector.New(appEnv, stream, opts)
 }
 
-func GetMessageProcessor(appEnv string) messageparser.MessageProcessor {
+func GetMessageProcessor(appEnv string) MessageProcessor {
 	if strings.HasPrefix(appEnv, "mobile") {
 		return mobileMetrics
 	}
