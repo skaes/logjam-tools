@@ -96,7 +96,11 @@ func New() Metrics {
 
 // ProcessMessage extracts mobile metrics from logjam payload and exposes it to Prometheus
 func (m Metrics) ProcessMessage(routingKey string, data map[string]interface{}) {
-	payload := m.parseData(data)
+	payload, err := m.parseData(data)
+	if err != nil {
+		log.Error("Error parsing mobile payload: %s", err)
+		return
+	}
 	m.payloadsChannel <- payload
 }
 
@@ -104,13 +108,12 @@ func (m Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m.RequestHandler.ServeHTTP(w, r)
 }
 
-func (m Metrics) parseData(data map[string]interface{}) Payload {
+func (m Metrics) parseData(data map[string]interface{}) (Payload, error) {
 	var payload Payload
 	if err := mapstructure.Decode(data, &payload); err != nil {
-		log.Error("Error unmarshalling mobile payload: %s", err)
-		return Payload{}
+		return Payload{}, err
 	}
-	return payload
+	return payload, nil
 }
 
 func (m Metrics) observer() {
