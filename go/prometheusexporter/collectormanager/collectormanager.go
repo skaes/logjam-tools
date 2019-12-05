@@ -7,6 +7,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"net/http"
 
 	log "github.com/skaes/logjam-tools/go/logging"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/collector"
@@ -18,6 +19,12 @@ import (
 type MessageProcessor interface {
 	ProcessMessage(routingKey string, data map[string]interface{})
 }
+
+// RequestHandler defines a type that can serve http requests
+type RequestHandler interface {
+	ServeHTTP(w http.ResponseWriter, r *http.Request)
+}
+
 
 var (
 	collectors    = make(map[string]*collector.Collector)
@@ -61,12 +68,23 @@ func AddCollector(appEnv string, stream *util.Stream) {
 }
 
 func GetMessageProcessor(appEnv string) MessageProcessor {
-	if strings.HasPrefix(appEnv, "mobile") {
+	if isMobileApp(appEnv) {
 		return mobileMetrics
 	}
 	mutex.Lock()
 	defer mutex.Unlock()
 	return collectors[appEnv]
+}
+
+func GetRequestHandler(appEnv string) RequestHandler {
+	if isMobileApp(appEnv) {
+		return mobileMetrics
+	}
+	return GetCollector(appEnv)
+}
+
+func isMobileApp(appEnv string) bool {
+	return strings.HasPrefix(appEnv, "mobile")
 }
 
 func GetCollector(appEnv string) *collector.Collector {
