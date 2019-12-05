@@ -1,7 +1,9 @@
 package mobile
 
 import (
+	"fmt"
 	"net/http"
+	"strconv"
 
 	"github.com/mitchellh/mapstructure"
 	"github.com/prometheus/client_golang/prometheus"
@@ -17,9 +19,9 @@ type Metrics struct {
 
 	payloadsChannel chan Payload
 
-	AppFirstDraw  prometheus.Histogram
-	AppResumeTime prometheus.Histogram
-	AppHangTime   prometheus.Histogram
+	AppFirstDraw  *prometheus.HistogramVec
+	AppResumeTime *prometheus.HistogramVec
+	AppHangTime   *prometheus.HistogramVec
 }
 
 type Metric struct {
@@ -46,9 +48,10 @@ type Histogram struct {
 }
 
 type Metadata struct {
-	Os      string
-	Device  string
-	Version string
+	Os            string
+	Device        string
+	Version       string
+	InternalBuild bool
 }
 
 type Payload struct {
@@ -57,6 +60,8 @@ type Payload struct {
 	Gauges     []Gauge
 }
 
+var metricLabels []string = []string{"version", "internalBuild"}
+
 // New Returns a new instance of mobile Metrics
 func New() Metrics {
 	r := prometheus.NewRegistry()
@@ -64,25 +69,26 @@ func New() Metrics {
 		Registry:        r,
 		RequestHandler:  promhttp.HandlerFor(r, promhttp.HandlerOpts{}),
 		payloadsChannel: make(chan Payload, 10000),
-		AppFirstDraw: prometheus.NewHistogram(
+		AppFirstDraw: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "application_time_firstdraw_ms",
 				Help:    "A histogram of the different amounts of time taken to launch the app.",
-				Buckets: prometheus.LinearBuckets(100, 100, 30)}),
+				Buckets: prometheus.LinearBuckets(100, 100, 30)},
+			metricLabels),
 
-		AppResumeTime: prometheus.NewHistogram(
+		AppResumeTime: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "application_resume_time_ms",
 				Help:    "A histogram of the different amounts of time taken to resume the app from the background.",
 				Buckets: append(prometheus.LinearBuckets(100, 100, 9), prometheus.ExponentialBuckets(1000, 10, 3)...)},
-		),
+			metricLabels),
 
-		AppHangTime: prometheus.NewHistogram(
+		AppHangTime: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "application_hang_time_ms",
 				Help:    "How often is the main / UI thread blocked, such that the app is unresponsive to user input.",
 				Buckets: append(prometheus.LinearBuckets(50, 50, 19), prometheus.LinearBuckets(1000, 250, 12)...)},
-		),
+			metricLabels),
 	}
 
 	r.MustRegister(m.AppFirstDraw)
@@ -113,6 +119,7 @@ func (m Metrics) parseData(data map[string]interface{}) (Payload, error) {
 	if err := mapstructure.Decode(data, &payload); err != nil {
 		return Payload{}, err
 	}
+	fmt.Println("data: #+v", data)
 	return payload, nil
 }
 
@@ -120,26 +127,34 @@ func (m Metrics) observer() {
 	for !util.Interrupted() {
 		p := <-m.payloadsChannel
 		for _, h := range p.Histograms {
-			m.record(h)
+			m.record(h, p.Meta)
 		}
 	}
 }
 
-func (m Metrics) record(h Histogram) {
+func (m Metrics) record(h Histogram, meta Metadata) {
 	switch h.Name {
 	case "application_time_firstdraw_ms":
-		observe(m.AppFirstDraw, h.Buckets)
+		observe(m.AppFirstDraw, h.Buckets, meta)
 	case "application_resume_time_ms":
-		observe(m.AppResumeTime, h.Buckets)
+		observe(m.AppResumeTime, h.Buckets, meta)
 	case "application_hang_time_ms":
-		observe(m.AppHangTime, h.Buckets)
+		observe(m.AppHangTime, h.Buckets, meta)
 	}
 }
 
-func observe(h prometheus.Histogram, buckets []Bucket) {
+func observe(h *prometheus.HistogramVec, buckets []Bucket, meta Metadata) {
+	vec, err := h.GetMetricWith(getMetaLabels(meta))
+	if err != nil {
+		log.Error("Error getting histogram observer: %s", err)
+	}
 	for _, b := range buckets {
 		for i := 0; i < b.Count; i++ {
-			h.Observe(float64(b.End_value))
+			vec.Observe(float64(b.End_value))
 		}
 	}
+}
+
+func getMetaLabels(meta Metadata) map[string]string {
+	return map[string]string{"version": meta.Version, "internalBuild": strconv.FormatBool(meta.InternalBuild)}
 }
