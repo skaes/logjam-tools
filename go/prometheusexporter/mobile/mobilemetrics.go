@@ -1,7 +1,6 @@
 package mobile
 
 import (
-	"fmt"
 	"net/http"
 	"strconv"
 
@@ -119,7 +118,6 @@ func (m Metrics) parseData(data map[string]interface{}) (Payload, error) {
 	if err := mapstructure.Decode(data, &payload); err != nil {
 		return Payload{}, err
 	}
-	fmt.Println("data: #+v", data)
 	return payload, nil
 }
 
