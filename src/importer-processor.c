@@ -761,13 +761,13 @@ int ignore_request(request_data_t *request_data, json_object *request, stream_in
 static
 bool throttle_request(stream_info_t *stream)
 {
-    if (stream->storage_size > HARD_LIMIT_STORAGE_SIZE) {
+    if (throttle_request_for_stream(stream))
         return true;
-    } else if (stream->storage_size > SOFT_LIMIT_STORAGE_SIZE) {
-        return random() <= TEN_PERCENT_OF_MAX_RANDOM;
-    } else {
-        return false;
-    }
+    if (stream->storage_size > HARD_LIMIT_STORAGE_SIZE)
+        return true;
+    if (stream->storage_size > SOFT_LIMIT_STORAGE_SIZE)
+        return random() > TEN_PERCENT_OF_MAX_RANDOM;
+    return false;
 }
 
 static int

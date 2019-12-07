@@ -28,6 +28,9 @@ static stream_fn *create_stream_callback = NULL;
 // callback for freeing streams
 static stream_fn *free_stream_callback = NULL;
 
+// one tick per second
+static uint64_t ticks = 0;
+
 void set_stream_create_fn(stream_fn *f)
 {
     create_stream_callback = f;
@@ -473,6 +476,47 @@ void update_known_modules(stream_info_t *stream_info, zhash_t* module_hash)
     zlist_destroy(&modules);
 }
 
+static uint64_t count_inserted_requests(stream_info_t *stream_info)
+{
+    int64_t count = 0;
+    for (int i = 0; i < INSERTED_RING_SIZE; i++) {
+        int64_t c;
+        __atomic_load(&stream_info->requests_inserted.count[i], &c, __ATOMIC_SEQ_CST);
+        count += c;
+    }
+    return count;
+}
+
+bool throttle_request_for_stream(stream_info_t *stream_info)
+{
+    int64_t current, cap;
+    __atomic_load(&stream_info->requests_inserted.current, &current, __ATOMIC_SEQ_CST);
+    __atomic_load(&stream_info->requests_inserted.cap, &cap, __ATOMIC_SEQ_CST);
+    if (current < cap) {
+        __atomic_add_fetch(&stream_info->requests_inserted.current, 1, __ATOMIC_SEQ_CST);
+        return false;
+    }
+    return true;
+}
+
+static void shift_request_counters()
+{
+    zlist_t* stream_names = get_active_stream_names();
+    const char* stream_name = zlist_first(stream_names);
+    while (stream_name) {
+        stream_info_t* stream_info = get_stream_info(stream_name, NULL);
+        int index = ticks % INSERTED_RING_SIZE;
+        int64_t current, zero = 0;
+        __atomic_exchange(&stream_info->requests_inserted.current, &zero, &current, __ATOMIC_SEQ_CST);
+        __atomic_store(&stream_info->requests_inserted.count[index], &current, __ATOMIC_SEQ_CST);
+        int64_t new_cap = INSERTED_RING_CAP - count_inserted_requests(stream_info);
+        __atomic_store(&stream_info->requests_inserted.cap, &new_cap, __ATOMIC_SEQ_CST);
+        release_stream_info(stream_info);
+        stream_name = zlist_next(stream_names);
+    }
+    zlist_destroy(&stream_names);
+}
+
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
     update_stream_config();
@@ -495,6 +539,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
         else if (streq(cmd, "tick")) {
             if (verbose)
                 printf("[I] stream-updater: tick\n");
+            ticks++;
+            shift_request_counters();
         } else {
             fprintf(stderr, "[E] stream-updater: received unknown actor command: %s\n", cmd);
         }

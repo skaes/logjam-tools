@@ -31,6 +31,7 @@ extern void stream_config_updater(zsock_t *pipe, void *args);
 extern bool setup_stream_config(const char* logjam_url, const char* pattern);
 extern void update_known_modules(stream_info_t *stream_info, zhash_t* module_hash);
 extern void adjust_caller_info(const char* path, const char* module, json_object *request, stream_info_t *stream_info);
+extern bool throttle_request_for_stream(stream_info_t *stream_info);
 
 typedef int sampling_reason_t;
 #define SAMPLE_SLOW_REQUEST    1

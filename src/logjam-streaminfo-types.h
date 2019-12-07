@@ -12,6 +12,16 @@ typedef struct {
     size_t value;
 } module_threshold_t;
 
+#define INSERTED_RING_SIZE 60
+#define INSERTED_RING_CAP 600
+
+typedef struct {
+    int64_t count[INSERTED_RING_SIZE]; // requests inserted during the previous INSERTED_RING_SIZE ticks
+    int64_t sum;                       // sum of what is stored in count array
+    int64_t cap;                       // number of insertions allowed during this tick
+    int64_t current;                   // number of requests inserted since the last tick
+} requests_inserted_t;
+
 typedef void (stream_fn) (void *stream);
 
 typedef struct {
@@ -42,6 +52,7 @@ typedef struct {
     zhash_t *known_modules;
     void *inserts_total;
     stream_fn *free_callback;
+    requests_inserted_t requests_inserted;
 } stream_info_t;
 
 
