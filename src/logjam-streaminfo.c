@@ -44,19 +44,19 @@ stream_info_t* get_stream_info(const char* stream_name, zhash_t *thread_local_ca
     if (thread_local_cache) {
         stream_info = zhash_lookup(thread_local_cache, stream_name);
         if (stream_info) {
-            __sync_fetch_and_add(&stream_info->ref_count, 1);
+            __atomic_fetch_add(&stream_info->ref_count, 1, __ATOMIC_SEQ_CST);
             return stream_info;
         }
     }
     pthread_mutex_lock(&lock);
     stream_info = zhash_lookup(configured_streams, stream_name);
     if (stream_info)
-        __sync_fetch_and_add(&stream_info->ref_count, 1);
+        __atomic_fetch_add(&stream_info->ref_count, 1, __ATOMIC_SEQ_CST);
     pthread_mutex_unlock(&lock);
     if (stream_info && thread_local_cache) {
         zhash_insert(thread_local_cache, stream_name, stream_info);
         zhash_freefn(thread_local_cache, stream_name, (zhash_free_fn*)release_stream_info);
-        __sync_fetch_and_add(&stream_info->ref_count, 1);
+        __atomic_fetch_add(&stream_info->ref_count, 1, __ATOMIC_SEQ_CST);
     }
     return stream_info;
 }
@@ -240,7 +240,7 @@ stream_info_t* stream_info_new(const char* key, json_object *stream_obj)
 
 void release_stream_info(stream_info_t *info)
 {
-    int32_t ref_count = __sync_fetch_and_add(&info->ref_count, -1);
+    int32_t ref_count = __atomic_fetch_add(&info->ref_count, -1, __ATOMIC_SEQ_CST);
     // printf("[D] stream-op: decreased ref count for stream %s: %d\n", info->key, ref_count-1);
     if (ref_count > 1)
         return;

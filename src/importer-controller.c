@@ -233,7 +233,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
             release_stream_info(proc->stream_info);
         else
-            __sync_add_and_fetch(&queued_updates, 1);
+            __atomic_add_fetch(&queued_updates, 1, __ATOMIC_SEQ_CST);
 
         // send minutes updates
         stats_msg = zmsg_new();
@@ -250,7 +250,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
             release_stream_info(proc->stream_info);
         else
-            __sync_add_and_fetch(&queued_updates, 1);
+            __atomic_add_fetch(&queued_updates, 1, __ATOMIC_SEQ_CST);
 
         // send quants updates
         stats_msg = zmsg_new();
@@ -267,7 +267,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
             release_stream_info(proc->stream_info);
         else
-            __sync_add_and_fetch(&queued_updates, 1);
+            __atomic_add_fetch(&queued_updates, 1, __ATOMIC_SEQ_CST);
 
         // send histogram updates
         stats_msg = zmsg_new();
@@ -284,7 +284,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
             release_stream_info(proc->stream_info);
         else
-            __sync_add_and_fetch(&queued_updates, 1);
+            __atomic_add_fetch(&queued_updates, 1, __ATOMIC_SEQ_CST);
 
         // send agents updates
         stats_msg = zmsg_new();
@@ -301,7 +301,7 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
         if (zmsg_send_and_destroy(&stats_msg, state->updates_socket))
             release_stream_info(proc->stream_info);
         else
-            __sync_add_and_fetch(&queued_updates, 1);
+            __atomic_add_fetch(&queued_updates, 1, __ATOMIC_SEQ_CST);
 
         db_name = zlist_next(db_names);
     }
@@ -417,8 +417,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     int next_tick = runtime > 999 ? 1 : 1000 - runtime;
     double received_percent = parsed_msgs_count == 0 ? 0 : ((double) front_stats.received / parsed_msgs_count) * 100;
     double dropped_percent  = front_stats.received == 0 ? 0 : ((double) front_stats.dropped / front_stats.received) * 100;
-    int updates = __sync_add_and_fetch(&queued_updates, 0);
-    int inserts = __sync_add_and_fetch(&queued_inserts, 0);
+    int updates, inserts;
+    __atomic_load(&queued_updates, &updates, __ATOMIC_SEQ_CST);
+    __atomic_load(&queued_inserts, &inserts, __ATOMIC_SEQ_CST);
     printf("[I] controller: %5zu messages (%3d ms); frontend: %3zu [%4.1f%%] (dropped: %2zu [%4.1f%%]); queued updates/inserts: %4d/%4d\n",
            parsed_msgs_count, runtime,
            front_stats.received, received_percent,

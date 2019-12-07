@@ -755,7 +755,7 @@ static void request_writer(zsock_t *pipe, void *args)
                 int64_t start_time_us = zclock_usecs();
                 handle_request_msg(msg, state);
                 zmsg_destroy(&msg);
-                __sync_sub_and_fetch(&queued_inserts, 1);
+                __atomic_sub_fetch(&queued_inserts, 1, __ATOMIC_SEQ_CST);
                 int64_t end_time_us = zclock_usecs();
                 state->updates_count++;
                 state->update_time += end_time_us - start_time_us;

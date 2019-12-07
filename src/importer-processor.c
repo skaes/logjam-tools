@@ -877,7 +877,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         if (zmsg_send_with_retry(&msg, pstate->push_socket))
             release_stream_info(self->stream_info);
         else {
-            __sync_add_and_fetch(&queued_inserts, 1);
+            __atomic_add_fetch(&queued_inserts, 1, __ATOMIC_SEQ_CST);
             importer_prometheus_client_count_inserts_for_stream(self->stream_info, 1);
         }
     }
@@ -965,7 +965,7 @@ void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate,
     zmsg_addptr(msg, self->stream_info);
     reference_stream_info(self->stream_info);
     zmsg_send_with_retry(&msg, pstate->push_socket);
-    __sync_add_and_fetch(&queued_inserts, 1);
+    __atomic_add_fetch(&queued_inserts, 1, __ATOMIC_SEQ_CST);
 }
 
 void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request)
@@ -980,7 +980,7 @@ void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_o
     zmsg_addptr(msg, self->stream_info);
     reference_stream_info(self->stream_info);
     zmsg_send_with_retry(&msg, pstate->push_socket);
-    __sync_add_and_fetch(&queued_inserts, 1);
+    __atomic_add_fetch(&queued_inserts, 1, __ATOMIC_SEQ_CST);
 }
 
 static inline

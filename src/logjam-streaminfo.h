@@ -12,7 +12,7 @@ extern void set_stream_free_fn(stream_fn *f);
 
 extern stream_info_t* get_stream_info(const char* stream_name, zhash_t* thread_local_cache);
 static inline void reference_stream_info(stream_info_t *stream_info) {
-    __sync_fetch_and_add(&stream_info->ref_count, 1);
+    __atomic_fetch_add(&stream_info->ref_count, 1, __ATOMIC_SEQ_CST);
 }
 extern void release_stream_info(stream_info_t *stream_info);
 extern const char* get_subscription_pattern();
