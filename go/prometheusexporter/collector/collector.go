@@ -92,6 +92,10 @@ func (c *Collector) requestType(action string) string {
 	return "web"
 }
 
+func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	c.RequestHandler.ServeHTTP(w, r)
+}
+
 func New(appEnv string, stream *util.Stream, opts Options) *Collector {
 	app, env := util.ParseStreamName(appEnv)
 	c := Collector{

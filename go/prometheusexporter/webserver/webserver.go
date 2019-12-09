@@ -41,11 +41,11 @@ func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	app := vars["application"]
 	env := vars["environment"]
-	c := collectormanager.GetCollector(app + "-" + env)
-	if c == nil {
+	h := collectormanager.GetRequestHandler(app + "-" + env)
+	if h == nil {
 		http.NotFound(w, r)
 	} else {
-		c.RequestHandler.ServeHTTP(w, r)
+		h.ServeHTTP(w, r)
 	}
 }
 
