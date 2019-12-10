@@ -170,7 +170,7 @@ func (p *MessageParser) decodeAndUnmarshal() {
 				continue
 			}
 			c := collectormanager.GetMessageProcessor(appEnv)
-			if c == nil {
+			if !c.IsCollector() {
 				log.Error("could not retrieve collector for %s", appEnv)
 				continue
 			}

@@ -1,13 +1,13 @@
 package collectormanager
 
 import (
+	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"strings"
 	"sync"
 	"time"
-	"net/http"
 
 	log "github.com/skaes/logjam-tools/go/logging"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/collector"
@@ -18,13 +18,13 @@ import (
 // MessageProcessor indicates that a type can process logjam messages
 type MessageProcessor interface {
 	ProcessMessage(routingKey string, data map[string]interface{})
+	IsCollector() bool
 }
 
 // RequestHandler defines a type that can serve http requests
 type RequestHandler interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
 }
-
 
 var (
 	collectors    = make(map[string]*collector.Collector)
@@ -71,9 +71,7 @@ func GetMessageProcessor(appEnv string) MessageProcessor {
 	if isMobileApp(appEnv) {
 		return mobileMetrics
 	}
-	mutex.Lock()
-	defer mutex.Unlock()
-	return collectors[appEnv]
+	return GetCollector(appEnv)
 }
 
 func GetRequestHandler(appEnv string) RequestHandler {
@@ -84,13 +82,18 @@ func GetRequestHandler(appEnv string) RequestHandler {
 }
 
 func isMobileApp(appEnv string) bool {
-	return strings.HasPrefix(appEnv, "mobile")
+	app, _ := util.ParseStreamName(appEnv)
+	return app == "mobile"
 }
 
 func GetCollector(appEnv string) *collector.Collector {
 	mutex.Lock()
 	defer mutex.Unlock()
-	return collectors[appEnv]
+	c, ok := collectors[appEnv]
+	if !ok {
+		return &collector.NoCollector
+	}
+	return c
 }
 
 func RemoveCollector(c *collector.Collector) {

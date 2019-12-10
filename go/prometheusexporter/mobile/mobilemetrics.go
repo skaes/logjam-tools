@@ -61,6 +61,10 @@ type Payload struct {
 
 var metricLabels []string = []string{"version", "internalBuild"}
 
+func (m Metrics) IsCollector() bool {
+	return true
+}
+
 // New Returns a new instance of mobile Metrics
 func New() Metrics {
 	r := prometheus.NewRegistry()

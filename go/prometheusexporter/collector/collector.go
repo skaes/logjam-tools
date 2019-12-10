@@ -66,6 +66,14 @@ type Collector struct {
 	datacenters              []dcPair
 }
 
+// NoCollector is a placeholder and not a real collector
+var NoCollector Collector = Collector{}
+
+// IsCollector is true only for real collectors
+func (c *Collector) IsCollector() bool {
+	return c != &NoCollector
+}
+
 // Lock contention for the collector state is between four go
 // routines: message parser, observer, action registry updater and
 // streams updater, where the streams updater is the only one needing
