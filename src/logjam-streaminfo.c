@@ -215,8 +215,10 @@ stream_info_t* stream_info_new(const char* key, json_object *stream_obj)
     char env[256];
     bool ok = extract_app_env(info->key, 256, app, env);
     if (!ok) {
-        printf("[E] invalid stream: %s\n", info->key);
-        assert(false);
+        fprintf(stderr, "[E] ignored invalid stream: %s\n", info->key);
+        free(info->key);
+        free(info);
+        return NULL;
     }
     info->app = strdup(app);
     info->app_len = strlen(app);
@@ -342,9 +344,11 @@ zhash_t* get_streams()
     streams = zhash_new();
     json_object_object_foreach(streams_obj, key, val) {
         stream_info_t *stream = stream_info_new(key, val);
-        if (0) dump_stream_info(stream);
-        zhash_insert(streams, key, stream);
-        zhash_freefn(streams, key, (zhash_free_fn*)release_stream_info);
+        if (stream) {
+            if (0) dump_stream_info(stream);
+            zhash_insert(streams, key, stream);
+            zhash_freefn(streams, key, (zhash_free_fn*)release_stream_info);
+        }
     }
     json_object_put(streams_obj);
 
