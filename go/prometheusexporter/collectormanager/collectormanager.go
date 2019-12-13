@@ -5,7 +5,6 @@ import (
 	"net/url"
 	"os"
 	"path"
-	"strings"
 	"sync"
 	"time"
 
@@ -122,9 +121,13 @@ func UpdateStreams(url string, env string) {
 		return
 	}
 	log.Info("updating streams")
-	suffix := "-" + env
 	for s, r := range streams {
-		if env == "" || strings.HasSuffix(s, suffix) {
+		sApp, sEnv := util.ParseStreamName(s)
+		if sApp == "" || sEnv == "" {
+			log.Error("ignored invalid stream name: '%s'", s)
+			continue
+		}
+		if env == "" || env == sEnv {
 			AddCollector(s, r)
 		}
 	}
