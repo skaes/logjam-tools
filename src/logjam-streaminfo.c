@@ -480,9 +480,7 @@ static uint64_t count_inserted_requests(stream_info_t *stream_info)
 {
     int64_t count = 0;
     for (int i = 0; i < INSERTED_RING_SIZE; i++) {
-        int64_t c;
-        __atomic_load(&stream_info->requests_inserted.count[i], &c, __ATOMIC_SEQ_CST);
-        count += c;
+        count += stream_info->requests_inserted.count[i];
     }
     return count;
 }
