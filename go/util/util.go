@@ -231,7 +231,7 @@ type Stream struct {
 }
 
 func (s *Stream) AppEnv() string {
-	return s.App + "+" + s.Env
+	return s.App + "-" + s.Env
 }
 
 func sameBuckets(a, b []float64) bool {
