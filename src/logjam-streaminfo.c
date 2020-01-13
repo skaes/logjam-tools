@@ -324,7 +324,9 @@ zhash_t* get_streams()
     zhttp_response_t *response = NULL;
     zhttp_request_set_url(request, streams_url);
     zhttp_request_set_method(request, "GET");
-    zhttp_request_set_content_type(request, "application/json");
+    zhash_t *headers = zhttp_request_headers(request);
+    zhash_insert (headers, "Accept", "application/json");
+
     int rc = zhttp_request_send(request, client, 10000, NULL, NULL);
     if (rc) goto cleanup;
 
