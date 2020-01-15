@@ -140,7 +140,9 @@ logjam_pubsub_bridge_SOURCES = \
     message-compressor.c \
     message-compressor.h \
     device-tracker.c \
-    device-tracker.h
+    device-tracker.h \
+    importer-watchdog.c \
+    importer-watchdog.h
 
 logjam_forwarder_SOURCES = \
     ../config.h \

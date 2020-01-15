@@ -10,11 +10,15 @@
 #include "logjam-util.h"
 #include "message-compressor.h"
 #include "device-tracker.h"
+#include "importer-watchdog.h"
 
 // shared globals
 bool verbose = false;
 bool quiet = false;
 bool debug = false;
+
+#define DEFAULT_ABORT_TICKS 60
+int heartbeat_abort_ticks = -1;
 
 /* global config */
 static zconfig_t* config = NULL;
@@ -63,6 +67,7 @@ typedef struct {
     void *publisher;
     void *compressor_input;
     void *compressor_output;
+    zactor_t *watchdog;
 } publisher_state_t;
 
 
@@ -89,6 +94,8 @@ static bool config_file_has_changed()
 
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
+    publisher_state_t *state = arg;
+
     static size_t last_received_count = 0;
     static size_t last_received_bytes = 0;
     static size_t last_decompressed_count = 0;
@@ -114,6 +121,9 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
         if (dropped_messages > 0)
             printf("[W] dropped      %zu messages\n", message_count);
     }
+
+    if ( message_count > 0)
+        zstr_send(state->watchdog, "tick");
 
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
@@ -248,12 +258,14 @@ static void print_usage(char * const *argv)
             "  -P, --output-port N        port number of zeromq ouput socket\n"
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
+            "  -A, --abort                abort after missing heartbeats for this many seconds\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
             "  LOGJAM_SUBSCRIPTIONS       subscription patterns\n"
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
             "  LOGJAM_SND_HWM             high watermark for output socket\n"
+            "  LOGJAM_ABORT_TICKS         abort after missing heartbeats for this many seconds\n"
             , argv[0]);
 }
 
@@ -277,11 +289,12 @@ static void process_arguments(int argc, char * const *argv)
         { "rcv-hwm",       required_argument, 0, 'R' },
         { "snd-hwm",       required_argument, 0, 'S' },
         { "subscribe",     required_argument, 0, 'e' },
+        { "abort",         required_argument, 0, 'A' },
         { "verbose",       no_argument,       0, 'v' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:p:P:R:S:c:e:i:s:h:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:P:R:S:c:e:i:s:h:A:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -303,6 +316,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'P':
             pub_port = atoi(optarg);
+            break;
+        case 'A':
+            heartbeat_abort_ticks = atoi(optarg);
             break;
         case 'c':
             config_file_name = optarg;
@@ -382,6 +398,14 @@ static void process_arguments(int argc, char * const *argv)
         else
             snd_hwm = DEFAULT_SND_HWM;
     }
+
+    if (heartbeat_abort_ticks == -1) {
+        if (( v = getenv("LOGJAM_ABORT_TICKS") ))
+            heartbeat_abort_ticks = atoi(v);
+        else
+            heartbeat_abort_ticks = DEFAULT_ABORT_TICKS;
+    }
+
 }
 
 int main(int argc, char * const *argv)
@@ -399,7 +423,8 @@ int main(int argc, char * const *argv)
                "[I] io-threads:  %lu\n"
                "[I] rcv-hwm:  %d\n"
                "[I] snd-hwm:  %d\n"
-               , argv[0], pull_port, pub_port, io_threads, rcv_hwm, snd_hwm);
+               "[I] abort-ticks:  %d\n"
+               , argv[0], pull_port, pub_port, io_threads, rcv_hwm, snd_hwm, heartbeat_abort_ticks);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
@@ -471,6 +496,7 @@ int main(int argc, char * const *argv)
         .publisher = zsock_resolve(publisher),
         .compressor_input = zsock_resolve(compressor_input),
         .compressor_output = zsock_resolve(compressor_output),
+        .watchdog = watchdog_new(heartbeat_abort_ticks, 0),
     };
 
     // setup handler for compression results
@@ -531,6 +557,7 @@ int main(int argc, char * const *argv)
     zsock_destroy(&compressor_input);
     zsock_destroy(&compressor_output);
     device_tracker_destroy(&tracker);
+    watchdog_destroy(&publisher_state.watchdog);
     for (size_t i = 0; i < num_compressors; i++)
         zactor_destroy(&compressors[i]);
     zsys_shutdown();
