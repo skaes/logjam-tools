@@ -1,10 +1,14 @@
 #include "logjam-util.h"
 #include "device-tracker.h"
+#include "importer-watchdog.h"
 #include <getopt.h>
 
 FILE* dump_file = NULL;
 zchunk_t *dump_decompress_buffer;
 static char *dump_file_name = "logjam-stream.dump";
+
+#define DEFAULT_ABORT_TICKS 60
+int heartbeat_abort_ticks = -1;
 
 static size_t io_threads = 1;
 bool verbose = false;
@@ -114,9 +118,12 @@ static void print_usage(char * const *argv)
             "  -p, --input-port N         port number of zeromq input socket\n"
             "  -l, --payload-only         only write the message payload\n"
             "  -t, --topic                only write the messages from given app-env\n"
+            "  -A, --abort                abort after missing heartbeats for this many seconds\n"
             "  -q, --quiet                don't log anything\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "      --help                 display this message\n"
+            "\nEnvironment: (parameters take precedence)\n"
+            "  LOGJAM_ABORT_TICKS         abort after missing heartbeats for this many seconds\n"
             , argv[0]);
 }
 
@@ -137,10 +144,11 @@ static void process_arguments(int argc, char * const *argv)
         { "verbose",       no_argument,       0, 'v' },
         { "payload-only",  no_argument,       0, 'l' },
         { "topic",         required_argument, 0, 't' },
+        { "abort",         required_argument, 0, 'A' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqi:h:p:s:lt:a", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqi:h:p:s:lt:aA:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -174,6 +182,9 @@ static void process_arguments(int argc, char * const *argv)
         case 't':
             filter_on_topic = true;
             filter_topic = optarg;
+            break;
+        case 'A':
+            heartbeat_abort_ticks = atoi(optarg);
             break;
         case 0:
             print_usage(argv);
@@ -210,6 +221,14 @@ static void process_arguments(int argc, char * const *argv)
         zlist_append(connection_specs, strdup("localhost"));
     }
     augment_zmq_connection_specs(&connection_specs, sub_port);
+
+    const char *v;
+    if (heartbeat_abort_ticks == -1) {
+        if (( v = getenv("LOGJAM_ABORT_TICKS") ))
+            heartbeat_abort_ticks = atoi(v);
+        else
+            heartbeat_abort_ticks = DEFAULT_ABORT_TICKS;
+    }
 }
 
 int main(int argc, char * const *argv)

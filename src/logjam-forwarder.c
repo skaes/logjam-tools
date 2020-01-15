@@ -224,7 +224,7 @@ static void print_usage(char * const *argv)
             "  -P, --output-port N         port number of downstream broker sockets\n"
             "  -R, --rcv-hwm N             high watermark for input socket\n"
             "  -S, --snd-hwm N             high watermark for output socket\n"
-            "  -A, --abort                abort after missing heartbeats for this many seconds\n"
+            "  -A, --abort                 abort after missing heartbeats for this many seconds\n"
             "      --help                  display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES              specs of devices to retrieve messages from\n"

@@ -126,7 +126,9 @@ logjam_dump_SOURCES = \
     logjam-util.c \
     logjam-util.h \
     device-tracker.c \
-    device-tracker.h
+    device-tracker.h \
+    importer-watchdog.c \
+    importer-watchdog.h
 
 logjam_replay_SOURCES = \
     ../config.h \
