@@ -152,7 +152,9 @@ logjam_forwarder_SOURCES = \
     logjam-util.c \
     logjam-util.h \
     device-tracker.c \
-    device-tracker.h
+    device-tracker.h \
+    importer-watchdog.c \
+    importer-watchdog.h
 
 logjam_logger_SOURCES = \
     ../config.h \

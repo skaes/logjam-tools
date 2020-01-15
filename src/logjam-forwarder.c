@@ -9,11 +9,15 @@
 #include <getopt.h>
 #include "logjam-util.h"
 #include "device-tracker.h"
+#include "importer-watchdog.h"
 
 // shared globals
 bool verbose = false;
 bool quiet = false;
 bool debug = false;
+
+#define DEFAULT_ABORT_TICKS 60
+int heartbeat_abort_ticks = -1;
 
 /* global config */
 static zconfig_t* config = NULL;
@@ -55,6 +59,7 @@ typedef struct {
     // raw zmq sockets, to avoid zsock_resolve
     void *receiver;
     void *publisher;
+    zactor_t *watchdog;
 } publisher_state_t;
 
 
@@ -85,6 +90,8 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     static size_t last_received_bytes   = 0;
     static size_t last_dropped_count   = 0;
 
+    publisher_state_t *state = arg;
+
     size_t message_count    = received_messages_count - last_received_count;
     size_t message_bytes    = received_messages_bytes - last_received_bytes;
     size_t dropped_messages = dropped_messages_count - last_dropped_count;
@@ -96,6 +103,8 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
         printf("[I] processed %5zu messages[dropped: %zu] (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
                message_count, dropped_messages, message_bytes/1024.0, avg_msg_size, max_msg_size);
     }
+    if (message_count>0)
+        zstr_send(state->watchdog, "tick");
 
     last_received_count = received_messages_count;
     last_received_bytes = received_messages_bytes;
@@ -215,6 +224,7 @@ static void print_usage(char * const *argv)
             "  -P, --output-port N         port number of downstream broker sockets\n"
             "  -R, --rcv-hwm N             high watermark for input socket\n"
             "  -S, --snd-hwm N             high watermark for output socket\n"
+            "  -A, --abort                abort after missing heartbeats for this many seconds\n"
             "      --help                  display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES              specs of devices to retrieve messages from\n"
@@ -222,6 +232,7 @@ static void print_usage(char * const *argv)
             "  LOGJAM_DOWNSTREAM_DEVICES   specs of devices to forward messages to\n"
             "  LOGJAM_RCV_HWM              high watermark for input socket\n"
             "  LOGJAM_SND_HWM              high watermark for output socket\n"
+            "  LOGJAM_ABORT_TICKS         abort after missing heartbeats for this many seconds\n"
             , argv[0]);
 }
 
@@ -246,10 +257,11 @@ static void process_arguments(int argc, char * const *argv)
         { "snd-hwm",       required_argument, 0, 'S' },
         { "subscribe",     required_argument, 0, 'e' },
         { "verbose",       no_argument,       0, 'v' },
+        { "abort",         required_argument, 0, 'A' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:p:P:R:S:c:e:i:s:h:f:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:P:R:S:c:e:i:s:h:f:A:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -301,6 +313,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'S':
             snd_hwm = atoi(optarg);
+            break;
+        case 'A':
+            heartbeat_abort_ticks = atoi(optarg);
             break;
         case 0:
             print_usage(argv);
@@ -355,6 +370,13 @@ static void process_arguments(int argc, char * const *argv)
         else
             snd_hwm = DEFAULT_SND_HWM;
     }
+
+    if (heartbeat_abort_ticks == -1) {
+        if (( v = getenv("LOGJAM_ABORT_TICKS") ))
+            heartbeat_abort_ticks = atoi(v);
+        else
+            heartbeat_abort_ticks = DEFAULT_ABORT_TICKS;
+    }
 }
 
 int main(int argc, char * const *argv)
@@ -372,7 +394,8 @@ int main(int argc, char * const *argv)
                "[I] io-threads:  %lu\n"
                "[I] rcv-hwm:  %d\n"
                "[I] snd-hwm:  %d\n"
-               , argv[0], pull_port, downstream_port, io_threads, rcv_hwm, snd_hwm);
+               "[I] abort:  %d\n"
+               , argv[0], pull_port, downstream_port, io_threads, rcv_hwm, snd_hwm, heartbeat_abort_ticks);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
@@ -433,6 +456,7 @@ int main(int argc, char * const *argv)
     publisher_state_t publisher_state = {
         .receiver = zsock_resolve(receiver),
         .publisher = zsock_resolve(publisher),
+        .watchdog = watchdog_new(heartbeat_abort_ticks, 0),
     };
 
     // setup handdler for messages incoming from the outside
@@ -487,6 +511,7 @@ int main(int argc, char * const *argv)
     zsock_destroy(&receiver);
     zsock_destroy(&publisher);
     device_tracker_destroy(&tracker);
+    watchdog_destroy(&publisher_state.watchdog);
     zsys_shutdown();
 
     if (!quiet)
