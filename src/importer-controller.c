@@ -53,7 +53,8 @@ typedef struct {
     zactor_t *statsd_server;
     zactor_t *indexer;
     zactor_t *tracker;
-    zactor_t *watchdog;
+    zactor_t *controller_watchdog;
+    zactor_t *subscriber_watchdog;
     zactor_t *subscribers[MAX_SUBSCRIBERS];
     zactor_t *parsers[MAX_PARSERS];
     zactor_t *adders[MAX_ADDERS];
@@ -340,9 +341,23 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     // tell tracker, subscribers, live stream publisher and  stats server to tick
     zstr_send(state->statsd_server, "tick");
+
+    size_t messages_received = 0;
     for (size_t i=0; i<num_subscribers; i++) {
         zstr_send(state->subscribers[i], "tick");
+        zmsg_t *response = zmsg_recv(state->subscribers[i]);
+        if (response) {
+            zframe_t *frame = zmsg_first(response);
+            assert(zframe_size(frame) == sizeof(size_t));
+            size_t s;
+            memcpy(&s, zframe_data(frame), sizeof(size_t));
+            messages_received += s;
+            zmsg_destroy(&response);
+        }
     }
+    if (messages_received > 0)
+        zstr_send(state->subscriber_watchdog, "tick");
+
     zstr_send(state->tracker, "tick");
     zstr_send(state->live_stream_publisher, "tick");
 
@@ -457,7 +472,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     }
     // signal liveness to watchdog, unless we're dropping all frontend requests
     if (front_stats.received == 0 || front_stats.dropped < front_stats.received) {
-        zstr_send(state->watchdog, "tick");
+        zstr_send(state->controller_watchdog, "tick");
     } else {
         fprintf(stderr, "[W] controller: dropped all frontend stats: %zu\n", front_stats.dropped);
     }
@@ -529,8 +544,9 @@ bool controller_create_actors(controller_state_t *state)
         state->adders[i] = zactor_new(adder, (void*)i);
     }
 
-    // create watchdog
-    state->watchdog = watchdog_new(10, 0);
+    // create watchdogs
+    state->controller_watchdog = watchdog_new(10, 0);
+    state->subscriber_watchdog = watchdog_new(60, 1);
 
     return !zsys_interrupted;
 }
@@ -538,8 +554,11 @@ bool controller_create_actors(controller_state_t *state)
 static
 void controller_destroy_actors(controller_state_t *state)
 {
-    if (verbose) printf("[D] controller: destroying watchdog\n");
-    watchdog_destroy(&state->watchdog);
+    if (verbose) printf("[D] controller: destroying controller watchdog\n");
+    watchdog_destroy(&state->controller_watchdog);
+
+    if (verbose) printf("[D] controller: destroying subscriber watchdog\n");
+    watchdog_destroy(&state->subscriber_watchdog);
 
     if (verbose) printf("[D] controller: destroying stream config updater\n");
     zactor_destroy(&state->stream_config_updater);

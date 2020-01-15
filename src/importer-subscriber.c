@@ -320,6 +320,9 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             importer_prometheus_client_count_msgs_dropped(state->message_drops);
             importer_prometheus_client_count_msgs_blocked(state->message_blocks);
             importer_prometheus_client_record_rusage_subscriber(state->id);
+            zmsg_t* response = zmsg_new();
+            zmsg_addmem(response, &state->message_count, sizeof(state->message_count));
+            zmsg_send(&response, socket);
             state->message_count = 0;
             state->message_bytes = 0;
             state->message_gap_size = 0;
