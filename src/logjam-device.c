@@ -588,7 +588,7 @@ int main(int argc, char * const *argv)
         compressors[i] = message_compressor_new(i, compression_method, device_prometheus_client_record_rusage_compressor);
 
     // create watchdog
-    device_watchdog = zactor_new(watchdog, NULL);
+    device_watchdog = watchdog_new(10, 0);
 
     // set up event loop
     zloop_t *loop = zloop_new();
@@ -648,7 +648,7 @@ int main(int argc, char * const *argv)
 
     printf("[I] shutting down\n");
 
-    zactor_destroy(&device_watchdog);
+    watchdog_destroy(&device_watchdog);
     zsock_destroy(&receiver);
     zsock_destroy(&router_receiver);
     zsock_destroy(&router_output);

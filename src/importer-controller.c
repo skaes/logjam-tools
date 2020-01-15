@@ -530,7 +530,7 @@ bool controller_create_actors(controller_state_t *state)
     }
 
     // create watchdog
-    state->watchdog = zactor_new(watchdog, state->config);
+    state->watchdog = watchdog_new(10, 0);
 
     return !zsys_interrupted;
 }
@@ -539,7 +539,7 @@ static
 void controller_destroy_actors(controller_state_t *state)
 {
     if (verbose) printf("[D] controller: destroying watchdog\n");
-    zactor_destroy(&state->watchdog);
+    watchdog_destroy(&state->watchdog);
 
     if (verbose) printf("[D] controller: destroying stream config updater\n");
     zactor_destroy(&state->stream_config_updater);

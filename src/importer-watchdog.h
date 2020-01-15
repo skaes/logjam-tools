@@ -7,7 +7,8 @@
 extern "C" {
 #endif
 
-extern void watchdog(zsock_t *pipe, void *args);
+extern zactor_t* watchdog_new(uint32_t credit, size_t id);
+extern void watchdog_destroy(zactor_t **watchdog_p);
 
 #ifdef __cplusplus
 }
