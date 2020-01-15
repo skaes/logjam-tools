@@ -16,6 +16,9 @@ bool verbose = false;
 bool debug = false;
 bool quiet = false;
 
+#define DEFAULT_ABORT_TICKS 60
+int heartbeat_abort_ticks = -1;
+
 // global config
 static zconfig_t* config = NULL;
 static zfile_t *config_file = NULL;
@@ -40,6 +43,7 @@ static void print_usage(char * const *argv)
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "  -L, --logjam-url U         url from where to retrieve stream config\n"
+            "  -A, --abort                abort after missing heartbeats for this many seconds\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
@@ -47,6 +51,7 @@ static void print_usage(char * const *argv)
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
             "  LOGJAM_SND_HWM             high watermark for output socket\n"
             "  LOGJAM_INTERFACE           zmq spec of interface on which to liste\n"
+            "  LOGJAM_ABORT_TICKS         abort after missing heartbeats for this many seconds\n"
             , argv[0]);
 }
 
@@ -71,10 +76,11 @@ static void process_arguments(int argc, char * const *argv)
         { "subscribe",     required_argument, 0, 'e' },
         { "verbose",       no_argument,       0, 'v' },
         { "logjam-url",    required_argument, 0, 'L' },
+        { "abort",         required_argument, 0, 'A' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:A:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -126,6 +132,9 @@ static void process_arguments(int argc, char * const *argv)
         case 'L':
             logjam_url = optarg;
             break;
+        case 'A':
+            heartbeat_abort_ticks = atoi(optarg);
+            break;
         case 0:
             print_usage(argv);
             exit(0);
@@ -170,6 +179,13 @@ static void process_arguments(int argc, char * const *argv)
     int l = strlen(logjam_url);
     int n = asprintf(&logjam_stream_url, "%s%s", logjam_url, (logjam_url[l-1] == '/') ? "admin/streams" : "/admin/streams");
     assert(n>0);
+
+    if (heartbeat_abort_ticks == -1) {
+        if (( v = getenv("LOGJAM_ABORT_TICKS") ))
+            heartbeat_abort_ticks = atoi(v);
+        else
+            heartbeat_abort_ticks = DEFAULT_ABORT_TICKS;
+    }
 }
 
 static void config_file_init()
@@ -231,7 +247,8 @@ int main(int argc, char * const *argv)
                "[I] interface %s\n"
                "[I] rcv-hwm:  %d\n"
                "[I] snd-hwm:  %d\n"
-               , argv[0], interface, rcv_hwm, snd_hwm);
+               "[I] abort:  %d\n"
+               , argv[0], interface, rcv_hwm, snd_hwm, heartbeat_abort_ticks);
 
-    return graylog_forwarder_run_controller_loop(config, hosts, subscription_pattern, logjam_stream_url, rcv_hwm, snd_hwm);
+    return graylog_forwarder_run_controller_loop(config, hosts, subscription_pattern, logjam_stream_url, rcv_hwm, snd_hwm, heartbeat_abort_ticks);
 }

@@ -348,10 +348,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         zmsg_t *response = zmsg_recv(state->subscribers[i]);
         if (response) {
             zframe_t *frame = zmsg_first(response);
-            assert(zframe_size(frame) == sizeof(size_t));
-            size_t s;
-            memcpy(&s, zframe_data(frame), sizeof(size_t));
-            messages_received += s;
+            messages_received += zframe_getsize(frame);
             zmsg_destroy(&response);
         }
     }

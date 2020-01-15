@@ -156,6 +156,11 @@ static inline int zmsg_addptr(zmsg_t* msg, void* ptr)
     return zmsg_addmem(msg, &ptr, sizeof(void*));
 }
 
+static inline int zmsg_addsize(zmsg_t* msg, size_t size)
+{
+    return zmsg_addmem(msg, &size, sizeof(size));
+}
+
 static inline void* zframe_getptr(zframe_t* frame)
 {
     assert(zframe_size(frame) == sizeof(void*));
@@ -170,6 +175,12 @@ static inline void* zmsg_popptr(zmsg_t* msg)
     void *ptr = *((void **) zframe_data(frame));
     zframe_destroy(&frame);
     return ptr;
+}
+
+static inline size_t zframe_getsize(zframe_t* frame)
+{
+    assert(zframe_size(frame) == sizeof(size_t));
+    return *((size_t *) zframe_data(frame));
 }
 
 static inline int zmsg_send_and_destroy(zmsg_t** msg, zsock_t *socket)

@@ -114,7 +114,9 @@ logjam_graylog_forwarder_SOURCES = \
     str-builder.c \
     str-builder.h \
     device-tracker.c \
-    device-tracker.h
+    device-tracker.h \
+    importer-watchdog.c \
+    importer-watchdog.h
 
 logjam_graylog_forwarder_LDADD = $(PROMETHEUS_LIBS) $(LDADD)
 

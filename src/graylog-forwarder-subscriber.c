@@ -242,6 +242,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
                    "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
                    state->message_count, state->message_gap_size, state->meta_info_failures,
                    state->messages_dev_zero, state->message_blocks, state->message_drops);
+            zmsg_t* response = zmsg_new();
+            zmsg_addmem(response, &state->message_count, sizeof(state->message_count));
             state->message_count = 0;
             state->message_gap_size = 0;
             state->meta_info_failures = 0;

@@ -3,12 +3,14 @@
 #include "graylog-forwarder-parser.h"
 #include "graylog-forwarder-writer.h"
 #include "logjam-streaminfo.h"
+#include "importer-watchdog.h"
 
 /*
  *                 --- PIPE ---  subscriber
  *  controller:    --- PIPE ---  parsers(NUM_PARSERS)
  *                 --- PIPE ---  writer
-*/
+ *                 --- PIPE ---  watchdog
+ */
 
 // The controller creates all other threads/actors.
 
@@ -20,11 +22,12 @@ typedef struct {
     zactor_t *parsers[MAX_PARSERS];
     zactor_t *writer;
     zactor_t *stream_config_updater;
+    zactor_t *watchdog;
 } controller_state_t;
 
 
 static
-bool controller_create_actors(controller_state_t *state, zlist_t* devices, int rcv_hwm, int send_hwm)
+bool controller_create_actors(controller_state_t *state, zlist_t* devices, int rcv_hwm, int send_hwm, int heartbeat_abort_ticks)
 {
 
     // start the stream config updater
@@ -41,6 +44,9 @@ bool controller_create_actors(controller_state_t *state, zlist_t* devices, int r
     // create writer
     state->writer = zactor_new(graylog_forwarder_writer, state->config);
 
+    // create watchdog
+    state->watchdog = watchdog_new(heartbeat_abort_ticks, 0);
+
     return !zsys_interrupted;
 }
 
@@ -53,6 +59,7 @@ void controller_destroy_actors(controller_state_t *state)
     for (size_t i=0; i<num_parsers; i++) {
         graylog_forwarder_parser_destroy(&state->parsers[i]);
     }
+    watchdog_destroy(&state->watchdog);
 }
 
 static
@@ -61,8 +68,19 @@ int send_tick_commands(zloop_t *loop, int timer_id, void *arg)
     controller_state_t *state = arg;
 
     // send tick commands to actors to let them print out their stats
-    zstr_send(state->subscriber, "tick");
     zstr_send(state->writer, "tick");
+    zstr_send(state->subscriber, "tick");
+
+    // get number of messages received by subscriber
+    size_t messages_received = 0;
+    zmsg_t *response = zmsg_recv(state->subscriber);
+    if (response) {
+        zframe_t *frame = zmsg_first(response);
+        messages_received = zframe_getsize(frame);
+        zmsg_destroy(&response);
+    }
+    if (messages_received > 0)
+        zstr_send(state->watchdog, "tick");
 
     int rc = zloop_timer(loop, 1000, 1, send_tick_commands, state);
     assert(rc != -1);
@@ -70,7 +88,7 @@ int send_tick_commands(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
-int graylog_forwarder_run_controller_loop(zconfig_t* config, zlist_t* devices, const char *subscription_pattern, const char* logjam_url, int rcv_hwm, int send_hwm)
+int graylog_forwarder_run_controller_loop(zconfig_t* config, zlist_t* devices, const char *subscription_pattern, const char* logjam_url, int rcv_hwm, int send_hwm, int heartbeart_abort_ticks)
 {
     set_thread_name("controller");
 
@@ -83,7 +101,7 @@ int graylog_forwarder_run_controller_loop(zconfig_t* config, zlist_t* devices, c
     }
 
     controller_state_t state = {.config = config};
-    bool start_up_complete = controller_create_actors(&state, devices, rcv_hwm, send_hwm);
+    bool start_up_complete = controller_create_actors(&state, devices, rcv_hwm, send_hwm, heartbeart_abort_ticks);
 
     if (!start_up_complete) {
         rc = 1;
