@@ -122,7 +122,7 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
             printf("[W] dropped      %zu messages\n", message_count);
     }
 
-    if ( message_count > 0)
+    if (message_count > 0)
         zstr_send(state->watchdog, "tick");
 
     last_received_count = received_messages_count;
@@ -423,7 +423,7 @@ int main(int argc, char * const *argv)
                "[I] io-threads:  %lu\n"
                "[I] rcv-hwm:  %d\n"
                "[I] snd-hwm:  %d\n"
-               "[I] abort-ticks:  %d\n"
+               "[I] abort-after:  %d\n"
                , argv[0], pull_port, pub_port, io_threads, rcv_hwm, snd_hwm, heartbeat_abort_after);
 
     // load config
@@ -481,16 +481,7 @@ int main(int argc, char * const *argv)
     for (size_t i = 0; i < num_compressors; i++)
         compressors[i] = message_decompressor_new(i, NULL);
 
-    // set up event loop
-    zloop_t *loop = zloop_new();
-    assert(loop);
-    zloop_set_verbose(loop, 0);
-
-    // calculate statistics every 1000 ms
-    int timer_id = zloop_timer(loop, 1000, 0, timer_event, NULL);
-    assert(timer_id != -1);
-
-    // setup handler for the receiver socket
+    // setup publisher state
     publisher_state_t publisher_state = {
         .receiver = zsock_resolve(receiver),
         .publisher = zsock_resolve(publisher),
@@ -499,12 +490,21 @@ int main(int argc, char * const *argv)
         .watchdog = watchdog_new(heartbeat_abort_after, HEART_BEAT_INTERVAL, 0),
     };
 
+    // set up event loop
+    zloop_t *loop = zloop_new();
+    assert(loop);
+    zloop_set_verbose(loop, 0);
+
+    // calculate statistics every 1000 ms
+    int timer_id = zloop_timer(loop, 1000, 0, timer_event, &publisher_state);
+    assert(timer_id != -1);
+
     // setup handler for compression results
     rc = zloop_reader(loop, compressor_output, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, compressor_output);
 
-    // setup handdler for messages incoming from the outside
+    // setup handler for messages coming from the outside
     rc = zloop_reader(loop, receiver, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, receiver);

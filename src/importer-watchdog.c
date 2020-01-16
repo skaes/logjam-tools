@@ -18,9 +18,13 @@ static watchdog_state_t* watchdog_state_new(uint abort_after, uint heartbeat_int
     state->id = id;
     snprintf(state->me, 16, "watchdog[%zu]", id);
     state->heartbeat_interval = heartbeat_interval;
-    state->initial_credit = abort_after % heartbeat_interval;
+    state->initial_credit = abort_after / heartbeat_interval;
     state->credit = state->initial_credit;
     state->received_term_cmd = false;
+    if (debug) {
+        printf("%s: abort_after: %d, inital_credit:%d, credit: %d, heartbeat_interval: %d\n",
+               state->me, abort_after, state->initial_credit, state->credit, state->heartbeat_interval);
+    }
     return state;
 }
 
@@ -28,7 +32,7 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
     watchdog_state_t *state = arg;
     state->credit--;
-    if (state->credit == 0) {
+    if (state->credit <= 0) {
         fflush(stdout);
         fprintf(stderr, "[E] watchdog[%zu]: no credit left, aborting process\n", state->id);
         abort();

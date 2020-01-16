@@ -448,10 +448,6 @@ int main(int argc, char * const *argv)
     assert(loop);
     zloop_set_verbose(loop, 0);
 
-    // calculate statistics every 1000 ms
-    int timer_id = zloop_timer(loop, 1000, 0, timer_event, NULL);
-    assert(timer_id != -1);
-
     // setup handler for the receiver socket
     publisher_state_t publisher_state = {
         .receiver = zsock_resolve(receiver),
@@ -459,7 +455,11 @@ int main(int argc, char * const *argv)
         .watchdog = watchdog_new(heartbeat_abort_after, HEART_BEAT_INTERVAL, 0),
     };
 
-    // setup handdler for messages incoming from the outside
+    // calculate statistics every 1000 ms
+    int timer_id = zloop_timer(loop, 1000, 0, timer_event, &publisher_state);
+    assert(timer_id != -1);
+
+    // setup handler for messages coming from the outside
     rc = zloop_reader(loop, receiver, read_zmq_message_and_forward, &publisher_state);
     assert(rc == 0);
     zloop_reader_set_tolerant(loop, receiver);
