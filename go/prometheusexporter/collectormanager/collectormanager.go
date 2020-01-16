@@ -23,6 +23,7 @@ type MessageProcessor interface {
 // RequestHandler defines a type that can serve http requests
 type RequestHandler interface {
 	ServeHTTP(w http.ResponseWriter, r *http.Request)
+	IsCollector() bool
 }
 
 var (
