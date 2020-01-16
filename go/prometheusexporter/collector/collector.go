@@ -62,6 +62,7 @@ type Collector struct {
 	RequestHandler           http.Handler
 	actionRegistry           chan string
 	knownActions             map[string]time.Time
+	knownActionsSize         int32
 	stopped                  uint32
 	datacenters              []dcPair
 }
@@ -100,22 +101,32 @@ func (c *Collector) requestType(action string) string {
 	return "web"
 }
 
+func (c *Collector) hasKnownActions() bool {
+	return atomic.LoadInt32(&c.knownActionsSize) > 0
+}
+
 func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.RequestHandler.ServeHTTP(w, r)
+	contentLength := w.Header()["Content-Length"][0]
+	if contentLength == "0" && c.hasKnownActions() {
+		atomic.AddUint64(&stats.Stats.EmptyMetricsResponse, 1)
+		log.Error("prometheus erroneously served empty response for stream %s", c.appEnv())
+	}
 }
 
 func New(appEnv string, stream *util.Stream, opts Options) *Collector {
 	app, env := util.ParseStreamName(appEnv)
 	c := Collector{
-		opts:           opts,
-		app:            app,
-		env:            env,
-		stream:         stream,
-		registry:       prometheus.NewRegistry(),
-		actionRegistry: make(chan string, 10000),
-		knownActions:   make(map[string]time.Time),
-		metricsChannel: make(chan *metric, 10000),
-		datacenters:    make([]dcPair, 0),
+		opts:             opts,
+		app:              app,
+		env:              env,
+		stream:           stream,
+		registry:         prometheus.NewRegistry(),
+		actionRegistry:   make(chan string, 10000),
+		knownActions:     make(map[string]time.Time),
+		knownActionsSize: 0,
+		metricsChannel:   make(chan *metric, 10000),
+		datacenters:      make([]dcPair, 0),
 	}
 	for _, dc := range strings.Split(opts.Datacenters, ",") {
 		if dc != "" {
@@ -335,6 +346,7 @@ func (c *Collector) removeAction(a string) bool {
 		log.Info("removing action: %s", a)
 	}
 	delete(c.knownActions, a)
+	atomic.StoreInt32(&c.knownActionsSize, int32(len(c.knownActions)))
 	mfs, err := c.registry.Gather()
 	if err != nil {
 		log.Error("could not gather metric families for deletion: %s", err)
@@ -368,6 +380,7 @@ func (c *Collector) actionRegistryHandler() {
 		select {
 		case action := <-c.actionRegistry:
 			c.knownActions[action] = time.Now()
+			atomic.StoreInt32(&c.knownActionsSize, int32(len(c.knownActions)))
 		case <-ticker.C:
 			threshold := time.Now().Add(-1 * time.Duration(c.opts.CleanAfter) * time.Minute)
 			for a, v := range c.knownActions {

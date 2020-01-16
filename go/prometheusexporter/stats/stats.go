@@ -16,14 +16,15 @@ import (
 // Stats collects prometheus exporter statistics. The various compoments of the
 // exporter update the stats using atomic.SwapUint64 on its members.
 var Stats struct {
-	Processed      uint64 // number of ZeroMQ messages processed
-	ProcessedBytes uint64 // msg bytes processed
-	Dropped        uint64 // number of messages dropped
-	Missed         uint64 // number if messages dropped by the zeroMQ SUB socket
-	Observed       uint64 // number of observed metrics
-	Ignored        uint64 // number of invalid messages
-	Raw            int64  // number of messages not yet decompressed and parsed
-	Invisible      int64  // number of messages not yet observed by the prometheus collectors
+	Processed            uint64 // number of ZeroMQ messages processed
+	ProcessedBytes       uint64 // msg bytes processed
+	Dropped              uint64 // number of messages dropped
+	Missed               uint64 // number if messages dropped by the zeroMQ SUB socket
+	Observed             uint64 // number of observed metrics
+	Ignored              uint64 // number of invalid messages
+	Raw                  int64  // number of messages not yet decompressed and parsed
+	Invisible            int64  // number of messages not yet observed by the prometheus collectors
+	EmptyMetricsResponse uint64 // number of erroneously empty metrics responses
 }
 
 var registry *prometheus.Registry
@@ -32,14 +33,15 @@ var registry *prometheus.Registry
 var RequestHandler http.Handler
 
 var promStats struct {
-	Processed      prometheus.Counter
-	ProcessedBytes prometheus.Counter
-	Dropped        prometheus.Counter
-	Missed         prometheus.Counter
-	Observed       prometheus.Counter
-	Ignored        prometheus.Counter
-	Raw            prometheus.Gauge
-	Invisible      prometheus.Gauge
+	Processed            prometheus.Counter
+	ProcessedBytes       prometheus.Counter
+	Dropped              prometheus.Counter
+	Missed               prometheus.Counter
+	Observed             prometheus.Counter
+	Ignored              prometheus.Counter
+	Raw                  prometheus.Gauge
+	Invisible            prometheus.Gauge
+	EmptyMetricsResponse prometheus.Counter
 }
 
 func initializePromStats() {
@@ -76,6 +78,10 @@ func initializePromStats() {
 		Name: "logjam:exporter:msgs_invisible",
 		Help: "How many logjam messages are waiting to be recorded by this exporter",
 	})
+	promStats.EmptyMetricsResponse = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "logjam:exporter:empty_metrics_response",
+		Help: "How many times a metrics request erroneously produced an empty response",
+	})
 	registry.MustRegister(promStats.Processed)
 	registry.MustRegister(promStats.ProcessedBytes)
 	registry.MustRegister(promStats.Dropped)
@@ -84,6 +90,7 @@ func initializePromStats() {
 	registry.MustRegister(promStats.Ignored)
 	registry.MustRegister(promStats.Raw)
 	registry.MustRegister(promStats.Invisible)
+	registry.MustRegister(promStats.EmptyMetricsResponse)
 	RequestHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 }
 
@@ -113,6 +120,7 @@ func ReporterAndWatchdog(abortAfter uint) {
 		_ignored := atomic.SwapUint64(&Stats.Ignored, 0)
 		_raw := atomic.LoadInt64(&Stats.Raw)
 		_invisible := atomic.LoadInt64(&Stats.Invisible)
+		_empty_metrics := atomic.SwapUint64(&Stats.EmptyMetricsResponse, 0)
 
 		promStats.Observed.Add(float64(_observed))
 		promStats.Processed.Add(float64(_processed))
@@ -123,8 +131,8 @@ func ReporterAndWatchdog(abortAfter uint) {
 		promStats.Raw.Set(float64(_raw))
 		promStats.Invisible.Set(float64(_invisible))
 
-		log.Info("processed: %d, bytes: %d, ignored: %d, observed %d, dropped: %d, missed: %d, raw: %d, invisible: %d",
-			_processed, _processedBytes, _ignored, _observed, _dropped, _missed, _raw, _invisible)
+		log.Info("processed: %d, bytes: %d, ignored: %d, observed %d, dropped: %d, missed: %d, raw: %d, invisible: %d, empty: %s",
+			_processed, _processedBytes, _ignored, _observed, _dropped, _missed, _raw, _invisible, _empty_metrics)
 
 		processedSinceLastHeartbeat += _processed
 		if ticks%heartbeatInterval == 0 {
