@@ -2,6 +2,7 @@ package stats
 
 import (
 	"net/http"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -86,12 +87,21 @@ func initializePromStats() {
 	RequestHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 }
 
-// Reporter reports exporter stats. The export starts it as a go routine.
-func Reporter() {
+const heartbeatInterval = 5
+
+// ReporterAndWatchdog reports exporter stats and aborts the exporter if no message has
+// bee processed for some time. This works because logjam devices send heartbeats. The
+// exporter starts it as a go routine.
+func ReporterAndWatchdog(abortAfter uint) {
 	initializePromStats()
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+	initialCredit := uint64(abortAfter / heartbeatInterval)
+	credit := initialCredit
+	ticks := 0
+	processedSinceLastHeartbeat := uint64(0)
 	for range ticker.C {
+		ticks++
 		if util.Interrupted() {
 			break
 		}
@@ -115,5 +125,21 @@ func Reporter() {
 
 		log.Info("processed: %d, bytes: %d, ignored: %d, observed %d, dropped: %d, missed: %d, raw: %d, invisible: %d",
 			_processed, _processedBytes, _ignored, _observed, _dropped, _missed, _raw, _invisible)
+
+		processedSinceLastHeartbeat += _processed
+		if ticks%heartbeatInterval == 0 {
+			if processedSinceLastHeartbeat > 0 {
+				credit = initialCredit
+			} else {
+				credit--
+				if credit == 0 {
+					log.Error("no credit left. aborting process.")
+					os.Exit(1)
+				} else if credit < initialCredit-1 {
+					log.Info("credit left: %d", credit)
+				}
+			}
+			processedSinceLastHeartbeat = 0
+		}
 	}
 }
