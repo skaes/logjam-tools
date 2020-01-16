@@ -542,8 +542,8 @@ bool controller_create_actors(controller_state_t *state)
     }
 
     // create watchdogs
-    state->controller_watchdog = watchdog_new(10, 0);
-    state->subscriber_watchdog = watchdog_new(60, 1);
+    state->controller_watchdog = watchdog_new(10, 1, 0);
+    state->subscriber_watchdog = watchdog_new(60, HEART_BEAT_INTERVAL, 1);
 
     return !zsys_interrupted;
 }

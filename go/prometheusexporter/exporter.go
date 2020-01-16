@@ -24,7 +24,7 @@ var opts struct {
 	Parsers     uint   `short:"P" long:"parsers" default:"4" description:"Number of message parsers to run in parallel."`
 	CleanAfter  uint   `short:"c" long:"clean-after" default:"5" description:"Minutes to wait before cleaning old time series."`
 	Port        string `short:"p" long:"port" default:"8081" description:"Port to expose metrics on."`
-	AbortAfter  uint   `short:"A" long:"abort" env:"LOGJAM_ABORT_TICKS" default:"60" description:"Exit exporter after given number of seconds inactivity."`
+	AbortAfter  uint   `short:"A" long:"abort" env:"LOGJAM_ABORT_AFTER" default:"60" description:"Abort after missing heartbeats for this many seconds."`
 }
 
 func parseArgs() {

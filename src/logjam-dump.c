@@ -7,8 +7,8 @@ FILE* dump_file = NULL;
 zchunk_t *dump_decompress_buffer;
 static char *dump_file_name = "logjam-stream.dump";
 
-#define DEFAULT_ABORT_TICKS 60
-int heartbeat_abort_ticks = -1;
+#define DEFAULT_ABORT_AFTER 60
+int heartbeat_abort_after = -1;
 
 static size_t io_threads = 1;
 bool verbose = false;
@@ -123,7 +123,7 @@ static void print_usage(char * const *argv)
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
-            "  LOGJAM_ABORT_TICKS         abort after missing heartbeats for this many seconds\n"
+            "  LOGJAM_ABORT_AFTER         abort after missing heartbeats for this many seconds\n"
             , argv[0]);
 }
 
@@ -184,7 +184,7 @@ static void process_arguments(int argc, char * const *argv)
             filter_topic = optarg;
             break;
         case 'A':
-            heartbeat_abort_ticks = atoi(optarg);
+            heartbeat_abort_after = atoi(optarg);
             break;
         case 0:
             print_usage(argv);
@@ -223,11 +223,11 @@ static void process_arguments(int argc, char * const *argv)
     augment_zmq_connection_specs(&connection_specs, sub_port);
 
     const char *v;
-    if (heartbeat_abort_ticks == -1) {
-        if (( v = getenv("LOGJAM_ABORT_TICKS") ))
-            heartbeat_abort_ticks = atoi(v);
+    if (heartbeat_abort_after == -1) {
+        if (( v = getenv("LOGJAM_ABORT_AFTER") ))
+            heartbeat_abort_after = atoi(v);
         else
-            heartbeat_abort_ticks = DEFAULT_ABORT_TICKS;
+            heartbeat_abort_after = DEFAULT_ABORT_AFTER;
     }
 }
 

@@ -27,7 +27,7 @@ typedef struct {
 
 
 static
-bool controller_create_actors(controller_state_t *state, zlist_t* devices, int rcv_hwm, int send_hwm, int heartbeat_abort_ticks)
+bool controller_create_actors(controller_state_t *state, zlist_t* devices, int rcv_hwm, int send_hwm, int heartbeat_abort_after)
 {
 
     // start the stream config updater
@@ -45,7 +45,7 @@ bool controller_create_actors(controller_state_t *state, zlist_t* devices, int r
     state->writer = zactor_new(graylog_forwarder_writer, state->config);
 
     // create watchdog
-    state->watchdog = watchdog_new(heartbeat_abort_ticks, 0);
+    state->watchdog = watchdog_new(heartbeat_abort_after, HEART_BEAT_INTERVAL, 0);
 
     return !zsys_interrupted;
 }

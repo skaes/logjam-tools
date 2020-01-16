@@ -16,8 +16,8 @@ bool verbose = false;
 bool debug = false;
 bool quiet = false;
 
-#define DEFAULT_ABORT_TICKS 60
-int heartbeat_abort_ticks = -1;
+#define DEFAULT_ABORT_AFTER 60
+int heartbeat_abort_after = -1;
 
 // global config
 static zconfig_t* config = NULL;
@@ -51,7 +51,7 @@ static void print_usage(char * const *argv)
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
             "  LOGJAM_SND_HWM             high watermark for output socket\n"
             "  LOGJAM_INTERFACE           zmq spec of interface on which to liste\n"
-            "  LOGJAM_ABORT_TICKS         abort after missing heartbeats for this many seconds\n"
+            "  LOGJAM_ABORT_AFTER         abort after missing heartbeats for this many seconds\n"
             , argv[0]);
 }
 
@@ -133,7 +133,7 @@ static void process_arguments(int argc, char * const *argv)
             logjam_url = optarg;
             break;
         case 'A':
-            heartbeat_abort_ticks = atoi(optarg);
+            heartbeat_abort_after = atoi(optarg);
             break;
         case 0:
             print_usage(argv);
@@ -180,11 +180,11 @@ static void process_arguments(int argc, char * const *argv)
     int n = asprintf(&logjam_stream_url, "%s%s", logjam_url, (logjam_url[l-1] == '/') ? "admin/streams" : "/admin/streams");
     assert(n>0);
 
-    if (heartbeat_abort_ticks == -1) {
-        if (( v = getenv("LOGJAM_ABORT_TICKS") ))
-            heartbeat_abort_ticks = atoi(v);
+    if (heartbeat_abort_after == -1) {
+        if (( v = getenv("LOGJAM_ABORT_AFTER") ))
+            heartbeat_abort_after = atoi(v);
         else
-            heartbeat_abort_ticks = DEFAULT_ABORT_TICKS;
+            heartbeat_abort_after = DEFAULT_ABORT_AFTER;
     }
 }
 
@@ -248,7 +248,7 @@ int main(int argc, char * const *argv)
                "[I] rcv-hwm:  %d\n"
                "[I] snd-hwm:  %d\n"
                "[I] abort:  %d\n"
-               , argv[0], interface, rcv_hwm, snd_hwm, heartbeat_abort_ticks);
+               , argv[0], interface, rcv_hwm, snd_hwm, heartbeat_abort_after);
 
-    return graylog_forwarder_run_controller_loop(config, hosts, subscription_pattern, logjam_stream_url, rcv_hwm, snd_hwm, heartbeat_abort_ticks);
+    return graylog_forwarder_run_controller_loop(config, hosts, subscription_pattern, logjam_stream_url, rcv_hwm, snd_hwm, heartbeat_abort_after);
 }

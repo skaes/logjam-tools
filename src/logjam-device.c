@@ -588,7 +588,7 @@ int main(int argc, char * const *argv)
         compressors[i] = message_compressor_new(i, compression_method, device_prometheus_client_record_rusage_compressor);
 
     // create watchdog
-    device_watchdog = watchdog_new(10, 0);
+    device_watchdog = watchdog_new(10, 1, 0);
 
     // set up event loop
     zloop_t *loop = zloop_new();

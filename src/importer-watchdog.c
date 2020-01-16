@@ -6,18 +6,20 @@
 typedef struct {
     size_t id;
     char me[16];
-    int initial_credit;             // initial credit
-    int credit;                     // number of ticks left before we shut down
-    bool received_term_cmd;         // whether we have received a TERM command
+    uint heartbeat_interval;   // heartbeat interval (seconds)
+    int initial_credit;        // initial credit
+    int credit;                // number of ticks left before we shut down
+    bool received_term_cmd;    // whether we have received a TERM command
 } watchdog_state_t;
 
-static watchdog_state_t* watchdog_state_new(int credit, size_t id)
+static watchdog_state_t* watchdog_state_new(uint abort_after, uint heartbeat_interval, size_t id)
 {
     watchdog_state_t *state = zmalloc(sizeof(watchdog_state_t));
     state->id = id;
     snprintf(state->me, 16, "watchdog[%zu]", id);
-    state->initial_credit = credit;
-    state->credit = credit;
+    state->heartbeat_interval = heartbeat_interval;
+    state->initial_credit = abort_after % heartbeat_interval;
+    state->credit = state->initial_credit;
     state->received_term_cmd = false;
     return state;
 }
@@ -50,7 +52,7 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
             rc = -1;
         }
         else if (streq(cmd, "tick")) {
-            if (verbose)
+            if (debug)
                 printf("[I] watchdog[%zu]: credit: %d\n", state->id, state->credit);
             state->credit = state->initial_credit;
         } else {
@@ -80,8 +82,8 @@ void watchdog(zsock_t *pipe, void *args)
     // we rely on the controller shutting us down
     zloop_ignore_interrupts(loop);
 
-    // decrease credit every second
-    rc = zloop_timer(loop, 1000, 0, timer_event, state);
+    // decrease credit every heartbeat interval seconds
+    rc = zloop_timer(loop, 1000*state->heartbeat_interval, 0, timer_event, state);
     assert(rc != -1);
 
     // setup handler for actor messages
@@ -112,9 +114,9 @@ void watchdog(zsock_t *pipe, void *args)
         printf("[I] watchdog[%zu]: terminated\n", id);
 }
 
-zactor_t* watchdog_new(uint32_t credit, size_t id)
+zactor_t* watchdog_new(uint credit, uint heartbeat_interval, size_t id)
 {
-    watchdog_state_t *state = watchdog_state_new(credit, id);
+    watchdog_state_t *state = watchdog_state_new(credit, heartbeat_interval, id);
     return zactor_new(watchdog, state);
 }
 

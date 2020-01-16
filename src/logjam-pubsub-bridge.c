@@ -17,8 +17,8 @@ bool verbose = false;
 bool quiet = false;
 bool debug = false;
 
-#define DEFAULT_ABORT_TICKS 60
-int heartbeat_abort_ticks = -1;
+#define DEFAULT_ABORT_AFTER 60
+int heartbeat_abort_after = -1;
 
 /* global config */
 static zconfig_t* config = NULL;
@@ -265,7 +265,7 @@ static void print_usage(char * const *argv)
             "  LOGJAM_SUBSCRIPTIONS       subscription patterns\n"
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
             "  LOGJAM_SND_HWM             high watermark for output socket\n"
-            "  LOGJAM_ABORT_TICKS         abort after missing heartbeats for this many seconds\n"
+            "  LOGJAM_ABORT_AFTER         abort after missing heartbeats for this many seconds\n"
             , argv[0]);
 }
 
@@ -318,7 +318,7 @@ static void process_arguments(int argc, char * const *argv)
             pub_port = atoi(optarg);
             break;
         case 'A':
-            heartbeat_abort_ticks = atoi(optarg);
+            heartbeat_abort_after = atoi(optarg);
             break;
         case 'c':
             config_file_name = optarg;
@@ -399,11 +399,11 @@ static void process_arguments(int argc, char * const *argv)
             snd_hwm = DEFAULT_SND_HWM;
     }
 
-    if (heartbeat_abort_ticks == -1) {
-        if (( v = getenv("LOGJAM_ABORT_TICKS") ))
-            heartbeat_abort_ticks = atoi(v);
+    if (heartbeat_abort_after == -1) {
+        if (( v = getenv("LOGJAM_ABORT_AFTER") ))
+            heartbeat_abort_after = atoi(v);
         else
-            heartbeat_abort_ticks = DEFAULT_ABORT_TICKS;
+            heartbeat_abort_after = DEFAULT_ABORT_AFTER;
     }
 
 }
@@ -424,7 +424,7 @@ int main(int argc, char * const *argv)
                "[I] rcv-hwm:  %d\n"
                "[I] snd-hwm:  %d\n"
                "[I] abort-ticks:  %d\n"
-               , argv[0], pull_port, pub_port, io_threads, rcv_hwm, snd_hwm, heartbeat_abort_ticks);
+               , argv[0], pull_port, pub_port, io_threads, rcv_hwm, snd_hwm, heartbeat_abort_after);
 
     // load config
     config_file_exists = zsys_file_exists(config_file_name);
@@ -496,7 +496,7 @@ int main(int argc, char * const *argv)
         .publisher = zsock_resolve(publisher),
         .compressor_input = zsock_resolve(compressor_input),
         .compressor_output = zsock_resolve(compressor_output),
-        .watchdog = watchdog_new(heartbeat_abort_ticks, 0),
+        .watchdog = watchdog_new(heartbeat_abort_after, HEART_BEAT_INTERVAL, 0),
     };
 
     // setup handler for compression results

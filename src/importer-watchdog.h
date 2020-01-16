@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-extern zactor_t* watchdog_new(uint32_t credit, size_t id);
+extern zactor_t* watchdog_new(uint credit, uint heartbeat_interval, size_t id);
 extern void watchdog_destroy(zactor_t **watchdog_p);
 
 #ifdef __cplusplus
