@@ -149,13 +149,11 @@ ZMQ pub port for logjam-http-forwarder
 
 # Dependencies
 
-* libzmq (4.1.4)
-* libczmq (3.0.2)
-* mongo-c-driver (1.3.5)
-* libbson (included in mongo-c-driver as a submodule)
-* json-c (0.12 patched)
-* libsnappy (1.1.3)
-* go (1.11.2)
+logjam-tools depends on a number of libraries, some of which are patched versions of
+official packages. These dependencies are managed in a separate project:
+https://github.com/skaes/logjam-libs. Please follow the instructions of this projects'
+README.
+
 
 # Installation
 
@@ -181,45 +179,26 @@ can be found [here](https://packagecloud.io/stkaes/logjam/install).
 
 The final step is then `apt-get install logjam-tools`.
 
-Currently, 12.04 LTS and 14.04 LTS are supported.
+Currently, 18.04 LTS and 16.04 LTS are supported.
 
 ## From source
 
-Start by cloning the repository:
+Install dependencies as described here: https://github.com/skaes/logjam-libs. Remember
+your choice for the `--prefix` argument. Let's assume you stuck to the default
+`/usr/local`.
+
+* Install go (https://golang.org/doc/install) and set up PATH for it
+
+
+Clone the repository:
 ```
 git clone git://github.com/skaes/logjam-tools.git
 cd logjam-tools
 ```
 
-Then, run `./bin/install-libs` to install all dependecies in `/usr/local`.
-
-If you want to install everything into a separate hierarchy, you can
-use the `--prefix` argument like so:
-
+Configure your build pipeline:
 ```
-./bin/install-libs --prefix=/opt/logjam
-```
-
-If you are using Homebrew as your package manager on Mac OS it is recommended to
-install the libraries with `--without-documentation` to prevent issues arising
-from trying to validate XML files that can seemingly only be validated when
-`docbook-xsl-nons` is installed.
-
-Or install them manually:
-* Download and install zmq 4.1.4 from http://zeromq.org/intro:get-the-software
-* Dowmload and install czmq 3.0.2 from http://czmq.zeromq.org/page:get-the-software
-* Dowmload and install libsodium 1.0.11 from https://github.com/jedisct1/libsodium/releases/tag/1.0.11
-* Clone https://github.com/skaes/json-c.git, checkout
-  36be1c4c7ade78fae8ef67280cd4f98ff9f81016, build and install
-* Clone https://github.com/mongodb/mongo-c-driver, checkout
-  b391c273622b8f8b2fae9b43021cda546c0c3486, build and install
-* Clone https://github.com/skaes/snappy.git, checkout
-  10c7088336f490e646de7d40e9ace0958b269047, build and install
-* Install go (https://golang.org/doc/install) and set up PATH for it
-
-Finally
-```
-sh autogen.sh
+sh autogen.sh --prefix=/usr/local
 make
 sudo make install
 ```
@@ -239,7 +218,6 @@ run `sh autogen.sh --prefix=/opt/logjam`
 If you want to get rid of the installed software, run
 ```
 sudo make uninstall
-./bin/install-libs uninstall
 ```
 
 # Profiling with gperftools
