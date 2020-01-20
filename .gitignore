@@ -62,3 +62,7 @@ proml-queries.txt
 .rvmrc
 TAGS
 src/TAGS
+packages
+docker-token
+railsexpress-key
+secrets.tar

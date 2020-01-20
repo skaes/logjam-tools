@@ -1,0 +1,40 @@
+FROM buildpack-deps:xenial-scm as builder
+
+RUN apt-get update -y && apt-get install apt-transport-https ca-certificates -y
+RUN echo 'deb [trusted=yes] https://railsexpress.de/packages/ubuntu/xenial ./' >> /etc/apt/sources.list
+
+ARG suffix
+RUN apt-get update && apt-get -y upgrade && \
+    apt-get install -y locales && \
+    locale-gen en_US.UTF-8 && \
+    update-locale LANG=en_US.UTF-8 LANGUAGE=en_US.UTF-8 LC_ALL=en_US.UTF-8; \
+    apt-get install -y \
+        autoconf \
+        automake \
+        bison \
+        build-essential \
+        checkinstall \
+        gawk \
+        libcurl4-openssl-dev \
+        libicu-dev \
+        libssl-dev \
+        libtool \
+        logjam-go \
+        logjam-libs${suffix} \
+        pkg-config \
+        zlib1g-dev
+
+# build context is the bin dir
+ADD . /logjam-tools
+WORKDIR /logjam-tools
+ARG prefix
+RUN sh autogen.sh --prefix=$prefix && make clean && make && make check && make install
+
+FROM ubuntu:xenial
+ARG prefix
+COPY --from=builder $prefix $prefix
+LABEL maintainer "Stefan Kaes <skaes@railsexpress.de>"
+
+RUN apt-get update && \
+        apt-get install -y libc6 zlib1g openssl libcurl3 && \
+        rm -rf /var/lib/apt/lists/*

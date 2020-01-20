@@ -1,0 +1,6 @@
+*.o
+murks
+*.dump
+*.log
+go/logjam-*
+.deps/*
