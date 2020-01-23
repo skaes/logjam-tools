@@ -94,13 +94,20 @@ LOGJAM_PACKAGE_USER:=uploader
 .PHONY: publish publish-bionic publish-xenial
 publish: publish-bionic publish-xenial
 
+define tmpdir
+$(shell ssh $(LOGJAM_PACKAGE_USER)@$(LOGJAM_PACKAGE_HOST) mktemp -d)
+endef
+
+define upload-package
+  rsync -vrlptDz -e "ssh -l $(LOGJAM_PACKAGE_USER)" packages/ubuntu/$(1)/* $(LOGJAM_PACKAGE_HOST):$(2)
+  ssh $(LOGJAM_PACKAGE_USER)@$(LOGJAM_PACKAGE_HOST) /usr/local/bin/add-new-debian-packages $(1) $(2)
+endef
+
 publish-bionic:
-	rsync -vrlptDz -e "ssh -l $(LOGJAM_PACKAGE_USER)" packages/ubuntu/bionic/* $(LOGJAM_PACKAGE_HOST):/var/www/packages/ubuntu/bionic/
-	ssh $(LOGJAM_PACKAGE_USER)@$(LOGJAM_PACKAGE_HOST) make -C /var/www/packages/ubuntu/bionic
+	$(call upload-package,bionic,$(call tmpdir))
 
 publish-xenial:
-	rsync -vrlptDz -e "ssh -l $(LOGJAM_PACKAGE_USER)" packages/ubuntu/xenial/* $(LOGJAM_PACKAGE_HOST):/var/www/packages/ubuntu/xenial/
-	ssh $(LOGJAM_PACKAGE_USER)@$(LOGJAM_PACKAGE_HOST) make -C /var/www/packages/ubuntu/xenial
+	$(call upload-package,xenial,$(call tmpdir))
 
 .PHONY: all
 all: containers tag push release packages publish
