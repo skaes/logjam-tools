@@ -20,6 +20,6 @@ jobs:
     - script:
         - make -f Makefile.docker container-xenial package-xenial push-xenial publish-xenial
     - script:
-        - make -f Makefile.docker container-bionic-usr-local package-bionic-usr-local push-bionic-usr-local publish-bionic
+        - make -f Makefile.docker container-bionic-usr-local package-bionic-usr-local push-bionic-usr-local publish-bionic-usr-local
     - script:
-        - make -f Makefile.docker container-xenial-usr-local package-xenial-usr-local push-xenial-usr-local publish-xenial
+        - make -f Makefile.docker container-xenial-usr-local package-xenial-usr-local push-xenial-usr-local publish-xenial-usr-local
