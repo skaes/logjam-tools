@@ -76,7 +76,7 @@ func New() Metrics {
 			prometheus.HistogramOpts{
 				Name:    "logjam:mobile:application_time_firstdraw_ms",
 				Help:    "A histogram of the different amounts of time taken to launch the app.",
-				Buckets: prometheus.LinearBuckets(100, 100, 30)},
+				Buckets: prometheus.LinearBuckets(100, 100, 50)},
 			metricLabels),
 
 		AppResumeTime: prometheus.NewHistogramVec(
