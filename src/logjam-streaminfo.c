@@ -199,6 +199,11 @@ void add_stream_settings(stream_info_t *info, json_object *stream_obj)
     if (json_object_object_get_ex(stream_obj, "database_number", &obj)) {
         info->db = json_object_get_int(obj);
     }
+    if (json_object_object_get_ex(stream_obj, "max_inserts_per_second", &obj)) {
+        info->requests_inserted.cap = json_object_get_int(obj);
+    } else {
+        info->requests_inserted.cap = DEFAULT_MAX_INSERTS_PER_SECOND;
+    }
 }
 
 static
@@ -476,21 +481,12 @@ void update_known_modules(stream_info_t *stream_info, zhash_t* module_hash)
     zlist_destroy(&modules);
 }
 
-static uint64_t count_inserted_requests(stream_info_t *stream_info)
-{
-    int64_t count = 0;
-    for (int i = 0; i < INSERTED_RING_SIZE; i++) {
-        count += stream_info->requests_inserted.count[i];
-    }
-    return count;
-}
 
 bool throttle_request_for_stream(stream_info_t *stream_info)
 {
-    int64_t current, cap;
+    int64_t current;
     __atomic_load(&stream_info->requests_inserted.current, &current, __ATOMIC_SEQ_CST);
-    __atomic_load(&stream_info->requests_inserted.cap, &cap, __ATOMIC_SEQ_CST);
-    if (current < cap) {
+    if (current < stream_info->requests_inserted.cap) {
         __atomic_add_fetch(&stream_info->requests_inserted.current, 1, __ATOMIC_SEQ_CST);
         return false;
     }
@@ -503,12 +499,8 @@ static void shift_request_counters()
     const char* stream_name = zlist_first(stream_names);
     while (stream_name) {
         stream_info_t* stream_info = get_stream_info(stream_name, NULL);
-        int index = ticks % INSERTED_RING_SIZE;
         int64_t current, zero = 0;
         __atomic_exchange(&stream_info->requests_inserted.current, &zero, &current, __ATOMIC_SEQ_CST);
-        __atomic_store(&stream_info->requests_inserted.count[index], &current, __ATOMIC_SEQ_CST);
-        int64_t new_cap = INSERTED_RING_CAP - count_inserted_requests(stream_info);
-        __atomic_store(&stream_info->requests_inserted.cap, &new_cap, __ATOMIC_SEQ_CST);
         release_stream_info(stream_info);
         stream_name = zlist_next(stream_names);
     }

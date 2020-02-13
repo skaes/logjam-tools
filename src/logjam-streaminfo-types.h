@@ -12,13 +12,10 @@ typedef struct {
     size_t value;
 } module_threshold_t;
 
-#define INSERTED_RING_SIZE 60
-#define INSERTED_RING_CAP 600
+#define DEFAULT_MAX_INSERTS_PER_SECOND 100
 
 typedef struct {
-    int64_t count[INSERTED_RING_SIZE]; // requests inserted during the previous INSERTED_RING_SIZE ticks
-    int64_t sum;                       // sum of what is stored in count array
-    int64_t cap;                       // number of insertions allowed during this tick
+    int64_t cap;                       // number of insertions allowed during one tick
     int64_t current;                   // number of requests inserted since the last tick
 } requests_inserted_t;
 
