@@ -857,6 +857,14 @@ bool extract_app_env_rid(const char* s, int n, char* app, char* env, char* rid)
     return extract_app_env(buf, n, app, env);
 }
 
+bool is_mobile_app(const char* stream_name)
+{
+    char app[256];
+    char env[256];
+    bool ok = extract_app_env(stream_name, 256, app, env);
+    return ok && !strcmp(app, "mobile");
+}
+
 void ensure_chunk_can_take(zchunk_t* buffer, size_t data_size)
 {
     size_t buffer_size = zchunk_max_size(buffer);

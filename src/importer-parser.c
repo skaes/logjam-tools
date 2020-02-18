@@ -139,7 +139,8 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
     stream_info_t *stream_info = get_stream_info(stream_name, parser_state->stream_info_cache);
     *known_stream = stream_info != NULL;
     if (stream_info == NULL) {
-        zhashx_insert(parser_state->unknown_streams, stream_name, (void*)1);
+        if (!is_mobile_app(stream_name))
+            zhashx_insert(parser_state->unknown_streams, stream_name, (void*)1);
         return NULL;
     }
     // printf("[D] found stream info for stream %s: %s\n", stream_name, stream_info->key);

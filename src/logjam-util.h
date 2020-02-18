@@ -228,6 +228,7 @@ extern const char* my_fqdn();
 extern void send_heartbeat(zsock_t *socket, msg_meta_t* meta, int pub_port);
 extern bool extract_app_env(const char* app_env, int n, char* app, char* env);
 extern bool extract_app_env_rid(const char* s, int n, char* app, char* env, char* rid);
+extern bool is_mobile_app(const char* stream_name);
 
 extern void ensure_chunk_can_take(zchunk_t* buffer, size_t data_size);
 extern void append_line(zchunk_t* buffer, const char* format, ...);
