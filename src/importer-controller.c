@@ -339,8 +339,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     state->ticks++;
 
-    // tell tracker, subscribers, live stream publisher and  stats server to tick
+    // tell tracker, subscribers, live stream publisher, stats server and stream updater to tick
     zstr_send(state->statsd_server, "tick");
+    zstr_send(state->stream_config_updater, "tick");
 
     size_t messages_received = 0;
     for (size_t i=0; i<num_subscribers; i++) {
