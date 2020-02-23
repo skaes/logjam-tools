@@ -499,13 +499,8 @@ const char* throttling_reason_str(throttling_reason_t reason)
 
 bool throttle_request_for_stream(stream_info_t *stream_info)
 {
-    int64_t current;
-    __atomic_load(&stream_info->requests_inserted.current, &current, __ATOMIC_SEQ_CST);
-    if (current < stream_info->requests_inserted.cap) {
-        __atomic_add_fetch(&stream_info->requests_inserted.current, 1, __ATOMIC_SEQ_CST);
-        return false;
-    }
-    return true;
+    int64_t current = __atomic_add_fetch(&stream_info->requests_inserted.current, 1, __ATOMIC_SEQ_CST);
+    return current > stream_info->requests_inserted.cap;
 }
 
 static void shift_request_counters()
@@ -516,6 +511,11 @@ static void shift_request_counters()
         stream_info_t* stream_info = get_stream_info(stream_name, NULL);
         int64_t current, zero = 0;
         __atomic_exchange(&stream_info->requests_inserted.current, &zero, &current, __ATOMIC_SEQ_CST);
+        // int64_t cap = stream_info->requests_inserted.cap;
+        // if (current > cap)
+        //     printf("[D] stream-updater: %s: inserted/throttled: %lld/%lld\n", stream_name, current, current - cap);
+        // else
+        //     printf("[D] stream-updater: %s: inserted/throttled %lld/0\n", stream_name, current);
         release_stream_info(stream_info);
         stream_name = zlist_next(stream_names);
     }
