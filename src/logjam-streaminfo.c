@@ -513,7 +513,7 @@ static void shift_request_counters()
         __atomic_exchange(&stream_info->requests_inserted.current, &zero, &current, __ATOMIC_SEQ_CST);
         int64_t cap = stream_info->requests_inserted.cap;
         if (current > cap)
-             printf("[I] stream-updater: %s: inserted %" PRIi64 ", throttled: %" PRIi64 "\n", stream_name, current, current - cap);
+             printf("[I] stream-updater: %s: inserted %" PRIi64 ", throttled: %" PRIi64 "\n", stream_name, cap, current - cap);
         release_stream_info(stream_info);
         stream_name = zlist_next(stream_names);
     }
