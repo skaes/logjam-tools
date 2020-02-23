@@ -34,6 +34,7 @@ extern void adjust_caller_info(const char* path, const char* module, json_object
 extern bool throttle_request_for_stream(stream_info_t *stream_info);
 
 typedef int sampling_reason_t;
+#define NOT_SAMPLED 0
 #define SAMPLE_SLOW_REQUEST    1
 #define SAMPLE_LOG_SEVERITY 1<<1
 #define SAMPLE_500          1<<2
@@ -41,6 +42,14 @@ typedef int sampling_reason_t;
 #define SAMPLE_EXCEPTIONS   1<<4
 #define SAMPLE_HEAP_GROWTH  1<<5
 #define SAMPLE_000          1<<6
+
+typedef int throttling_reason_t;
+#define NOT_THROTTLED 0
+#define THROTTLE_SOFT_LIMIT_STORAGE_SIZE    1
+#define THROTTLE_HARD_LIMIT_STORAGE_SIZE 1<<1
+#define THROTTLE_MAX_INSERTS_PER_SECOND  1<<2
+
+extern const char* throttling_reason_str(throttling_reason_t reason);
 
 #define LOG_SEVERITY_DEBUG 0
 #define LOG_SEVERITY_INFO  1

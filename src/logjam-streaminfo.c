@@ -481,6 +481,21 @@ void update_known_modules(stream_info_t *stream_info, zhash_t* module_hash)
     zlist_destroy(&modules);
 }
 
+const char* throttling_reason_str(throttling_reason_t reason)
+{
+    switch (reason) {
+    case NOT_THROTTLED:
+        return "not throttled";
+    case THROTTLE_MAX_INSERTS_PER_SECOND:
+        return "max inserts reached";
+    case THROTTLE_SOFT_LIMIT_STORAGE_SIZE:
+        return "disk soft limit reached";
+    case THROTTLE_HARD_LIMIT_STORAGE_SIZE:
+        return "disk hard limit reached";
+    default:
+        return "unknown throttling reason";
+    }
+}
 
 bool throttle_request_for_stream(stream_info_t *stream_info)
 {
@@ -530,6 +545,7 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
             if (verbose)
                 printf("[I] stream-updater: tick\n");
             ticks++;
+            // printf("[D] stream-updater: shifting request counters\n");
             shift_request_counters();
         } else {
             fprintf(stderr, "[E] stream-updater: received unknown actor command: %s\n", cmd);

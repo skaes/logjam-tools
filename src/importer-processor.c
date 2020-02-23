@@ -759,15 +759,15 @@ int ignore_request(request_data_t *request_data, json_object *request, stream_in
 }
 
 static
-bool throttle_request(stream_info_t *stream)
+throttling_reason_t throttle_request(stream_info_t *stream)
 {
     if (throttle_request_for_stream(stream))
-        return true;
+        return THROTTLE_MAX_INSERTS_PER_SECOND;
     if (stream->storage_size > HARD_LIMIT_STORAGE_SIZE)
-        return true;
-    if (stream->storage_size > SOFT_LIMIT_STORAGE_SIZE)
-        return random() > TEN_PERCENT_OF_MAX_RANDOM;
-    return false;
+        return THROTTLE_HARD_LIMIT_STORAGE_SIZE;
+    if (stream->storage_size > SOFT_LIMIT_STORAGE_SIZE && random() > TEN_PERCENT_OF_MAX_RANDOM)
+        return THROTTLE_SOFT_LIMIT_STORAGE_SIZE;
+    return NOT_THROTTLED;
 }
 
 static int
@@ -861,25 +861,32 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     }
 
     sampling_reason_t sampling_reason = interesting_request(&request_data, request, self->stream_info);
-    if (sampling_reason && !throttle_request(self->stream_info)) {
-        json_object_get(request);
-        zmsg_t *msg = zmsg_new();
-        zmsg_addstr(msg, self->db_name);
-        zmsg_addstr(msg, "r");
-        zmsg_addstr(msg, request_data.module);
-        zmsg_addptr(msg, request);
-        zmsg_addptr(msg, self->stream_info);
-        reference_stream_info(self->stream_info);
-        zmsg_addmem(msg, &sampling_reason, sizeof(sampling_reason_t));
-        if (!output_socket_ready(pstate->push_socket, 0)) {
-            fprintf(stderr, "[W] parser [%zu]: push socket not ready\n", pstate->id);
-        }
-        if (zmsg_send_with_retry(&msg, pstate->push_socket))
-            release_stream_info(self->stream_info);
-        else {
-            __atomic_add_fetch(&queued_inserts, 1, __ATOMIC_SEQ_CST);
-            importer_prometheus_client_count_inserts_for_stream(self->stream_info, 1);
-        }
+    if (!sampling_reason) {
+        return;
+    }
+    // printf("[D] sampling: %s, reason: %x\n", request_data.page, sampling_reason);
+    throttling_reason_t throttling_reason = throttle_request(self->stream_info);
+    if (throttling_reason) {
+        // printf("[D] throttled: %s, reason: %s\n", request_data.page, throttling_reason_str(throttling_reason));
+        return;
+    }
+    json_object_get(request);
+    zmsg_t *msg = zmsg_new();
+    zmsg_addstr(msg, self->db_name);
+    zmsg_addstr(msg, "r");
+    zmsg_addstr(msg, request_data.module);
+    zmsg_addptr(msg, request);
+    zmsg_addptr(msg, self->stream_info);
+    reference_stream_info(self->stream_info);
+    zmsg_addmem(msg, &sampling_reason, sizeof(sampling_reason_t));
+    if (!output_socket_ready(pstate->push_socket, 0)) {
+        fprintf(stderr, "[W] parser [%zu]: push socket not ready\n", pstate->id);
+    }
+    if (zmsg_send_with_retry(&msg, pstate->push_socket))
+        release_stream_info(self->stream_info);
+    else {
+        __atomic_add_fetch(&queued_inserts, 1, __ATOMIC_SEQ_CST);
+        importer_prometheus_client_count_inserts_for_stream(self->stream_info, 1);
     }
 }
 
