@@ -346,5 +346,6 @@ void importer_prometheus_client_count_inserts_for_stream(stream_info_t *stream, 
 // caller must hold lock on stream
 void importer_prometheus_client_count_throttled_inserts_for_stream(stream_info_t *stream, double value)
 {
+    client.inserts_throttled_total->Increment(value);
     ((prometheus::Counter*)stream->inserts_throttled_total)->Increment(value);
 }
