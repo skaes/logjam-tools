@@ -200,9 +200,9 @@ void add_stream_settings(stream_info_t *info, json_object *stream_obj)
         info->db = json_object_get_int(obj);
     }
     if (json_object_object_get_ex(stream_obj, "max_inserts_per_second", &obj)) {
-        info->requests_inserted.cap = json_object_get_int(obj);
+        info->requests_inserted->cap = json_object_get_int(obj);
     } else {
-        info->requests_inserted.cap = DEFAULT_MAX_INSERTS_PER_SECOND;
+        info->requests_inserted->cap = DEFAULT_MAX_INSERTS_PER_SECOND;
     }
 }
 
@@ -240,6 +240,8 @@ stream_info_t* stream_info_new(const char* key, json_object *stream_obj)
     snprintf(yek, info->key_len+1, "%s.%s", env, app);
     info->yek = strdup(yek);
 
+    info->requests_inserted = zmalloc(sizeof(requests_inserted_t));
+    info->free_requests_inserted = true;
     add_stream_settings(info, stream_obj);
 
     info->known_modules = zhash_new();
@@ -280,6 +282,9 @@ void release_stream_info(stream_info_t *info)
         free(info->api_requests);
     }
     zhash_destroy(&info->known_modules);
+
+    if (info->free_requests_inserted)
+        free(info->requests_inserted);
 
     if (info->free_callback)
         info->free_callback(info);
@@ -407,6 +412,11 @@ bool update_stream_config()
         if (old_info) {
             // stream already existed
             info->inserts_total = old_info->inserts_total;
+            int64_t new_cap = info->requests_inserted->cap;
+            __atomic_store_n(&old_info->requests_inserted->cap, new_cap, __ATOMIC_SEQ_CST);
+            free(info->requests_inserted);
+            old_info->free_requests_inserted = false;
+            info->requests_inserted = old_info->requests_inserted;
             old_info->free_callback = NULL;
         } else if (create_stream_callback) {
             // create inserts_total counter for new stream
@@ -499,21 +509,26 @@ const char* throttling_reason_str(throttling_reason_t reason)
 
 bool throttle_request_for_stream(stream_info_t *stream_info)
 {
-    int64_t current = __atomic_add_fetch(&stream_info->requests_inserted.current, 1, __ATOMIC_SEQ_CST);
-    return current > stream_info->requests_inserted.cap;
+    int64_t current = __atomic_add_fetch(&stream_info->requests_inserted->current, 1, __ATOMIC_SEQ_CST);
+    int64_t cap = __atomic_load_n(&stream_info->requests_inserted->cap, __ATOMIC_SEQ_CST);
+    // printf("[D] throttle_request_for_stream %s(%p): cap: %" PRIi64 ", inserted: %" PRIi64 "\n", stream_info->key, stream_info, cap, current);
+    return current > cap;
 }
 
-static void shift_request_counters()
+static void reset_request_counters()
 {
     zlist_t* stream_names = get_active_stream_names();
     const char* stream_name = zlist_first(stream_names);
     while (stream_name) {
         stream_info_t* stream_info = get_stream_info(stream_name, NULL);
-        int64_t current, zero = 0;
-        __atomic_exchange(&stream_info->requests_inserted.current, &zero, &current, __ATOMIC_SEQ_CST);
-        int64_t cap = stream_info->requests_inserted.cap;
-        if (current > cap)
-             printf("[I] stream-updater: %s: inserted %" PRIi64 ", throttled: %" PRIi64 "\n", stream_name, cap, current - cap);
+        int64_t current = __atomic_exchange_n(&stream_info->requests_inserted->current, 0, __ATOMIC_SEQ_CST);
+        if (verbose) {
+            int64_t cap = __atomic_load_n(&stream_info->requests_inserted->cap, __ATOMIC_SEQ_CST);
+            if (current > cap)
+                printf("[I] stream-updater: %s(%p): inserted %" PRIi64 ", throttled: %" PRIi64 "\n", stream_name, stream_info, cap, current - cap);
+            else
+                printf("[D] stream-updater: %s(%p): inserted %" PRIi64 ", capacity: %" PRIi64 "\n", stream_name, stream_info, current, cap);
+        }
         release_stream_info(stream_info);
         stream_name = zlist_next(stream_names);
     }
@@ -543,8 +558,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
             if (verbose)
                 printf("[I] stream-updater: tick\n");
             ticks++;
-            // printf("[D] stream-updater: shifting request counters\n");
-            shift_request_counters();
+            // printf("[D] stream-updater: resetting request counters\n");
+            reset_request_counters();
         } else {
             fprintf(stderr, "[E] stream-updater: received unknown actor command: %s\n", cmd);
         }

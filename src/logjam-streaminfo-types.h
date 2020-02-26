@@ -49,7 +49,8 @@ typedef struct {
     zhash_t *known_modules;
     void *inserts_total;
     stream_fn *free_callback;
-    requests_inserted_t requests_inserted;
+    requests_inserted_t *requests_inserted;
+    bool free_requests_inserted;
 } stream_info_t;
 
 
