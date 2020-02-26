@@ -412,6 +412,7 @@ bool update_stream_config()
         if (old_info) {
             // stream already existed
             info->inserts_total = old_info->inserts_total;
+            info->inserts_throttled_total = old_info->inserts_throttled_total;
             int64_t new_cap = info->requests_inserted->cap;
             __atomic_store_n(&old_info->requests_inserted->cap, new_cap, __ATOMIC_SEQ_CST);
             free(info->requests_inserted);

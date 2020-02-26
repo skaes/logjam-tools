@@ -11,8 +11,11 @@ static struct prometheus_client_t {
     prometheus::Family<prometheus::Counter> *updates_seconds_family;
     prometheus::Counter *updates_seconds;
     prometheus::Family<prometheus::Counter> *inserts_total_family;
+    prometheus::Family<prometheus::Counter> *inserts_throttled_total_family;
     prometheus::Counter *inserts_total;
+    prometheus::Counter *inserts_throttled_total;
     prometheus::Family<prometheus::Counter> *inserts_by_stream_total_family;
+    prometheus::Family<prometheus::Counter> *inserts_throttled_by_stream_total_family;
     prometheus::Family<prometheus::Counter> *inserts_seconds_family;
     prometheus::Counter *inserts_seconds;
     prometheus::Family<prometheus::Counter> *received_msgs_total_family;
@@ -71,9 +74,21 @@ void importer_prometheus_client_init(const char* address, importer_prometheus_cl
 
     client.inserts_total = &client.inserts_total_family->Add({});
 
+    client.inserts_throttled_total_family = &prometheus::BuildCounter()
+        .Name("logjam:importer:inserts_throttled_total")
+        .Help("How many inserts has this importer rejected")
+        .Register(*client.registry);
+
+    client.inserts_throttled_total = &client.inserts_throttled_total_family->Add({});
+
     client.inserts_by_stream_total_family = &prometheus::BuildCounter()
         .Name("logjam:importer:inserts_by_stream_total")
         .Help("How many inserts has this importer performed for the given stream")
+        .Register(*client.registry);
+
+    client.inserts_throttled_by_stream_total_family = &prometheus::BuildCounter()
+        .Name("logjam:importer:inserts_throttled_by_stream_total")
+        .Help("How many inserts has this importer rejected for the given stream")
         .Register(*client.registry);
 
     client.inserts_seconds_family = &prometheus::BuildCounter()
@@ -308,6 +323,7 @@ void importer_prometheus_client_record_rusage_updater(uint i)
 void importer_prometheus_client_create_stream_counters(stream_info_t *stream)
 {
     stream->inserts_total = &client.inserts_by_stream_total_family->Add({{"stream", stream->key}});
+    stream->inserts_throttled_total = &client.inserts_throttled_by_stream_total_family->Add({{"stream", stream->key}});
 }
 
 // caller must hold lock on stream
@@ -316,10 +332,19 @@ void importer_prometheus_client_destroy_stream_counters(stream_info_t *stream)
     prometheus::Counter* counter = (prometheus::Counter*)stream->inserts_total;
     client.inserts_by_stream_total_family->Remove(counter);
     delete counter;
+    counter = (prometheus::Counter*)stream->inserts_throttled_total;
+    client.inserts_throttled_by_stream_total_family->Remove(counter);
+    delete counter;
 }
 
 // caller must hold lock on stream
 void importer_prometheus_client_count_inserts_for_stream(stream_info_t *stream, double value)
 {
     ((prometheus::Counter*)stream->inserts_total)->Increment(value);
+}
+
+// caller must hold lock on stream
+void importer_prometheus_client_count_throttled_inserts_for_stream(stream_info_t *stream, double value)
+{
+    ((prometheus::Counter*)stream->inserts_throttled_total)->Increment(value);
 }

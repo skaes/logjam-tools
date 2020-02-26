@@ -867,6 +867,7 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
     // printf("[D] sampling: %s, reason: %x\n", request_data.page, sampling_reason);
     throttling_reason_t throttling_reason = throttle_request(self->stream_info);
     if (throttling_reason) {
+        importer_prometheus_client_count_throttled_inserts_for_stream(self->stream_info, 1);
         // printf("[D] throttled: %s, reason: %s\n", request_data.page, throttling_reason_str(throttling_reason));
         return;
     }

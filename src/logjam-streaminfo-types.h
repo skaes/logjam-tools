@@ -48,6 +48,7 @@ typedef struct {
     int all_requests_are_api_requests;
     zhash_t *known_modules;
     void *inserts_total;
+    void *inserts_throttled_total;
     stream_fn *free_callback;
     requests_inserted_t *requests_inserted;
     bool free_requests_inserted;

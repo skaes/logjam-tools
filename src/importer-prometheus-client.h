@@ -40,6 +40,7 @@ extern void importer_prometheus_client_record_rusage_updater(uint i);
 extern void importer_prometheus_client_create_stream_counters(stream_info_t *stream);
 extern void importer_prometheus_client_destroy_stream_counters(stream_info_t *stream);
 extern void importer_prometheus_client_count_inserts_for_stream(stream_info_t *stream, double value);
+extern void importer_prometheus_client_count_throttled_inserts_for_stream(stream_info_t *stream, double value);
 
 #ifdef __cplusplus
 }
