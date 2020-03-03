@@ -131,7 +131,7 @@ func ReporterAndWatchdog(abortAfter uint) {
 		promStats.Raw.Set(float64(_raw))
 		promStats.Invisible.Set(float64(_invisible))
 
-		log.Info("processed: %d, bytes: %d, ignored: %d, observed %d, dropped: %d, missed: %d, raw: %d, invisible: %d, empty: %s",
+		log.Info("processed: %d, bytes: %d, ignored: %d, observed %d, dropped: %d, missed: %d, raw: %d, invisible: %d, empty: %d",
 			_processed, _processedBytes, _ignored, _observed, _dropped, _missed, _raw, _invisible, _empty_metrics)
 
 		processedSinceLastHeartbeat += _processed
