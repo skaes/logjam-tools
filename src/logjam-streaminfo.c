@@ -4,6 +4,7 @@
 
 typedef struct {
     bool received_term_cmd;         // whether we have received a TERM command
+    zsock_t *indexer_socket;        // send indexing requests to indexer
 } stream_updater_state_t;
 
 // all configured streams
@@ -570,13 +571,26 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
     return rc;
 }
 
+static
+zsock_t* indexer_socket_new()
+{
+    zsock_t *socket = zsock_new(ZMQ_PUSH);
+    assert(socket);
+    zsock_set_sndtimeo(socket, 10);
+    int rc = zsock_connect(socket, "inproc://indexer");
+    assert (rc == 0);
+    return socket;
+}
 
-void stream_config_updater(zsock_t *pipe, void *args)
+
+static void stream_config_updater(zsock_t *pipe, void *args)
 {
     set_thread_name("stream-updater");
 
     int rc;
-    stream_updater_state_t state = { .received_term_cmd = false };
+    stream_updater_state_t state = {.received_term_cmd = false, .indexer_socket = NULL};
+    if (args)
+        state.indexer_socket = indexer_socket_new();
 
     // signal readyiness
     zsock_signal(pipe, 0);
@@ -612,6 +626,7 @@ void stream_config_updater(zsock_t *pipe, void *args)
     zloop_destroy(&loop);
     assert(loop == NULL);
     zhttp_client_destroy(&client);
+    zsock_destroy(&state.indexer_socket);
 
     if (!quiet)
         printf("[I] stream-updater: terminated\n");
@@ -681,4 +696,25 @@ void adjust_caller_info(const char* path, const char* module, json_object *reque
     }
     if (dump)
         dump_json_object(stderr, "[D] modified caller info", request);
+}
+
+void indexer_ensure_indexes(stream_info_t *stream_info, const char* db_name, zsock_t* indexer_socket)
+{
+    zmsg_t *msg = zmsg_new();
+    assert(msg);
+    zmsg_addstr(msg, db_name);
+    zmsg_addptr(msg, stream_info);
+    reference_stream_info(stream_info);
+    if (zmsg_send_with_retry(&msg, indexer_socket))
+        release_stream_info(stream_info);
+}
+
+zactor_t* stream_config_updater_new(void *importer)
+{
+    return zactor_new(stream_config_updater, importer);
+}
+
+void stream_config_updater_destroy(zactor_t **updater)
+{
+    zactor_destroy(updater);
 }

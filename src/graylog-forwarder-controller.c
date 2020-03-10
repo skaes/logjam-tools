@@ -31,7 +31,7 @@ bool controller_create_actors(controller_state_t *state, zlist_t* devices, int r
 {
 
     // start the stream config updater
-    state->stream_config_updater = zactor_new(stream_config_updater, NULL);
+    state->stream_config_updater = stream_config_updater_new(NULL);
 
     // create subscriber
     state->subscriber = graylog_forwarder_subscriber_new(state->config, devices, rcv_hwm, send_hwm);
@@ -53,7 +53,7 @@ bool controller_create_actors(controller_state_t *state, zlist_t* devices, int r
 static
 void controller_destroy_actors(controller_state_t *state)
 {
-    zactor_destroy(&state->stream_config_updater);
+    stream_config_updater_destroy(&state->stream_config_updater);
     zactor_destroy(&state->subscriber);
     zactor_destroy(&state->writer);
     for (size_t i=0; i<num_parsers; i++) {

@@ -495,8 +495,8 @@ bool controller_create_actors(controller_state_t *state)
     if (!dryrun)
         mongoc_init();
 
-    // start the stream config updater
-    state->stream_config_updater = zactor_new(stream_config_updater, NULL);
+    // start the stream config updater (pass something not null to make it send indexer messages)
+    state->stream_config_updater = stream_config_updater_new((void*)1);
     // start the statsd updater
     state->statsd_server = zactor_new(statsd_actor_fn, state->config);
     // start the live stream publisher
@@ -559,7 +559,7 @@ void controller_destroy_actors(controller_state_t *state)
     watchdog_destroy(&state->subscriber_watchdog);
 
     if (verbose) printf("[D] controller: destroying stream config updater\n");
-    zactor_destroy(&state->stream_config_updater);
+    stream_config_updater_destroy(&state->stream_config_updater);
 
     for (size_t i=0; i<num_subscribers; i++) {
         if (verbose) printf("[D] controller: destroying subscriber[%zu]\n", i);

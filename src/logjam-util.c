@@ -6,7 +6,25 @@
 #include <lz4.h>
 #include "logjam-util.h"
 
-zlist_t *split_delimited_string(const char* s)
+time_t get_iso_date_info(char today[ISO_DATE_STR_LEN], char tomorrow[ISO_DATE_STR_LEN])
+{
+    time_t now = time(NULL);
+    struct tm lt;
+    assert( localtime_r(&now, &lt) );
+    // calling mktime fills in potentially missing TZ and DST info
+    assert( mktime(&lt) != -1 );
+    sprintf(today,  "%04d-%02d-%02d", 1900 + lt.tm_year, 1 + lt.tm_mon, lt.tm_mday);
+
+    // calculate toomorrows date
+    lt.tm_mday += 1;
+    assert( mktime(&lt) != -1 );
+
+    sprintf(tomorrow,  "%04d-%02d-%02d", 1900 + lt.tm_year, 1 + lt.tm_mon, lt.tm_mday);
+
+    return now;
+}
+
+ zlist_t *split_delimited_string(const char* s)
 {
     zlist_t *strings = zlist_new();
     if (!s) return strings;

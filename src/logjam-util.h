@@ -29,6 +29,9 @@ extern zlist_t *split_delimited_string(const char* s);
 extern char* augment_zmq_connection_spec(char* spec, int default_port);
 extern void augment_zmq_connection_specs(zlist_t** specs, int default_port);
 
+// length of arrays used to store character representation of iso dates
+#define ISO_DATE_STR_LEN 11
+extern time_t get_iso_date_info(char today[ISO_DATE_STR_LEN], char tomorrow[ISO_DATE_STR_LEN]);
 
 // check every 10 ticks whether config file has changed
 #define CONFIG_FILE_CHECK_INTERVAL 10

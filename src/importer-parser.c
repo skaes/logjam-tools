@@ -185,13 +185,7 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
         assert(rc ==0);
         zhash_freefn(parser_state->processors, db_name, processor_destroy);
         // send msg to indexer to create db indexes
-        zmsg_t *msg = zmsg_new();
-        assert(msg);
-        zmsg_addstr(msg, db_name);
-        zmsg_addptr(msg, stream_info);
-        reference_stream_info(stream_info);
-        if (zmsg_send_with_retry(&msg, parser_state->indexer_socket))
-            release_stream_info(stream_info);
+        indexer_ensure_indexes(stream_info, db_name, parser_state->indexer_socket);
     }
     return p;
 }

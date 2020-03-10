@@ -67,7 +67,6 @@ extern bool debug;
 extern bool quiet;
 extern bool send_statsd_msgs;
 
-#define ISO_DATE_STR_LEN 11
 extern char iso_date_today[ISO_DATE_STR_LEN];
 extern char iso_date_tomorrow[ISO_DATE_STR_LEN];
 extern time_t time_last_tick;

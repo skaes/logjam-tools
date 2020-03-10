@@ -283,18 +283,7 @@ bool config_update_date_info()
     char old_date[ISO_DATE_STR_LEN];
     strcpy(old_date, iso_date_today);
 
-    time_last_tick = time(NULL);
-    struct tm lt;
-    assert( localtime_r(&time_last_tick, &lt) );
-    // calling mktime fills in potentially missing TZ and DST info
-    assert( mktime(&lt) != -1 );
-    sprintf(iso_date_today,  "%04d-%02d-%02d", 1900 + lt.tm_year, 1 + lt.tm_mon, lt.tm_mday);
-
-    // calculate toomorrows date
-    lt.tm_mday += 1;
-    assert( mktime(&lt) != -1 );
-
-    sprintf(iso_date_tomorrow,  "%04d-%02d-%02d", 1900 + lt.tm_year, 1 + lt.tm_mon, lt.tm_mday);
+    time_last_tick = get_iso_date_info(iso_date_today, iso_date_tomorrow);
 
     bool changed = strcmp(old_date, iso_date_today);
 

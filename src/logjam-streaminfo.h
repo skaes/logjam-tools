@@ -19,7 +19,8 @@ extern const char* get_subscription_pattern();
 extern zlist_t* get_stream_subscriptions();
 extern zlist_t* get_active_stream_names();
 
-extern void stream_config_updater(zsock_t *pipe, void *args);
+extern zactor_t* stream_config_updater_new(void *importer);
+extern void stream_config_updater_destroy(zactor_t **updater);
 
 #define MAX_RANDOM_VALUE ((1L<<31) - 1)
 #define TEN_PERCENT_OF_MAX_RANDOM 214748364
@@ -32,6 +33,7 @@ extern bool setup_stream_config(const char* logjam_url, const char* pattern);
 extern void update_known_modules(stream_info_t *stream_info, zhash_t* module_hash);
 extern void adjust_caller_info(const char* path, const char* module, json_object *request, stream_info_t *stream_info);
 extern bool throttle_request_for_stream(stream_info_t *stream_info);
+extern void indexer_ensure_indexes(stream_info_t *stream_info, const char* db_name, zsock_t* indexer_socket);
 
 typedef int sampling_reason_t;
 #define NOT_SAMPLED 0
