@@ -29,6 +29,8 @@ static const char *logjam_url = "http://localhost:3000/";
 static char *logjam_stream_url = "http://localhost:3000/admin/streams";
 static const char* subscription_pattern = NULL;
 
+const char* default_datacenter = "unknown";
+
 static void print_usage(char * const *argv)
 {
     fprintf(stderr, "usage: %s [options]\n"
@@ -44,6 +46,7 @@ static void print_usage(char * const *argv)
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "  -L, --logjam-url U         url from where to retrieve stream config\n"
             "  -A, --abort                abort after missing heartbeats for this many seconds\n"
+            "  -d, --datacenter           assume this datacenter for messages with a datacenter field\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
@@ -77,10 +80,11 @@ static void process_arguments(int argc, char * const *argv)
         { "verbose",       no_argument,       0, 'v' },
         { "logjam-url",    required_argument, 0, 'L' },
         { "abort",         required_argument, 0, 'A' },
+        { "datacenter",    required_argument, 0, 'd' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:A:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:A:d:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -93,6 +97,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'c':
             config_file_name = optarg;
+            break;
+        case 'd':
+            default_datacenter = optarg;
             break;
         case 'n':
             dryrun = true;

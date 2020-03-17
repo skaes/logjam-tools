@@ -26,6 +26,8 @@ extern zlist_t *subscriptions;
 extern int rcv_hwm;
 extern int snd_hwm;
 
+extern const char* default_datacenter;
+
 #define MAX_PARSERS 20
 extern unsigned int num_parsers;
 

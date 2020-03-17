@@ -5,6 +5,7 @@
 #include "str-builder.h"
 #include "logjam-message.h"
 #include "logjam-streaminfo.h"
+#include "graylog-forwarder-common.h"
 
 const char *LOG_LEVELS_NAMES[6] = {
     "Debug",
@@ -211,7 +212,7 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     if (json_object_object_get_ex (request, "datacenter", &obj)) {
         gelf_message_add_json_object (gelf_msg, "_datacenter", obj);
     } else {
-        gelf_message_add_string (gelf_msg, "_datacenter", "unknown");
+        gelf_message_add_string (gelf_msg, "_datacenter", default_datacenter);
     }
 
     if (json_object_object_get_ex (request, "user_id", &obj)
