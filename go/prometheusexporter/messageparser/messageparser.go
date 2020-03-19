@@ -23,6 +23,7 @@ type Options struct {
 	Debug   bool   // Extra verbose logging.
 	Parsers uint   // Number of message decoder go routines to run.
 	Devices string // Logjam devices to connect to.
+	RcvHWM  int    // zmq receive high water mark.
 }
 
 // MessageParser state
@@ -55,7 +56,7 @@ func New(options Options) *MessageParser {
 func (p *MessageParser) createSocket() *zmq.Socket {
 	socket, _ := zmq.NewSocket(zmq.SUB)
 	socket.SetLinger(100)
-	socket.SetRcvhwm(1000000)
+	socket.SetRcvhwm(p.opts.RcvHWM)
 	socket.SetSubscribe("")
 	socket.SetConnectTimeout(time.Duration(1) * time.Minute)
 	socket.SetReconnectIvl(time.Duration(500) * time.Millisecond)

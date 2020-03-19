@@ -25,6 +25,7 @@ var opts struct {
 	CleanAfter  uint   `short:"c" long:"clean-after" default:"5" description:"Minutes to wait before cleaning old time series."`
 	Port        string `short:"p" long:"port" default:"8081" description:"Port to expose metrics on."`
 	AbortAfter  uint   `short:"A" long:"abort" env:"LOGJAM_ABORT_AFTER" default:"60" description:"Abort after missing heartbeats for this many seconds."`
+	RcvHWM      int    `short:"R" long:"rcv-hwm" env:"LOGJAM_RCV_HWM" default:"1000000" description:"Zmq high water mark for receive socket."`
 }
 
 func parseArgs() {
@@ -64,6 +65,7 @@ func main() {
 		Debug:   false,
 		Parsers: opts.Parsers,
 		Devices: opts.Devices,
+		RcvHWM:  opts.RcvHWM,
 	}
 	go messageparser.New(parserOptions).Run()
 
