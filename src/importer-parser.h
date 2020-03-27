@@ -48,12 +48,11 @@ typedef struct {
     zsock_t *indexer_socket;
     json_tokener* tokener;
     zhash_t *processors;
-    zhashx_t *unknown_streams;
     zhash_t *stream_info_cache;
     uuid_tracker_t *tracker;
     statsd_client_t *statsd_client;
     zchunk_t *decompression_buffer;
-    zsock_t *prom_collector_socket;
+    zsock_t *unknown_streams_collector_socket;
 } parser_state_t;
 
 extern zactor_t* parser_new(zconfig_t *config, size_t id);

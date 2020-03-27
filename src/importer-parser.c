@@ -82,12 +82,12 @@ zsock_t* parser_indexer_socket_new()
 }
 
 static
-zsock_t* parser_prom_collector_socket_new()
+zsock_t* parser_unknown_stream_collector_socket_new()
 {
     zsock_t *socket = zsock_new(ZMQ_PUSH);
     assert(socket);
     zsock_set_sndtimeo(socket, 10);
-    int rc = zsock_connect(socket, "inproc://prom-collector");
+    int rc = zsock_connect(socket, "inproc://unknown-streams-collector");
     assert (rc == 0);
     return socket;
 }
@@ -126,7 +126,7 @@ time_t valid_database_date(const char *date)
 }
 
 static
-processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* parser_state, json_object *request, bool *known_stream)
+processor_state_t* processor_create(zmsg_t** msg, zframe_t* stream_frame, parser_state_t* parser_state, json_object *request, bool *known_stream)
 {
     // extract stream name onto the stack and add null char
     const char *stream_chars = (char*)zframe_data(stream_frame);
@@ -139,8 +139,9 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
     stream_info_t *stream_info = get_stream_info(stream_name, parser_state->stream_info_cache);
     *known_stream = stream_info != NULL;
     if (stream_info == NULL) {
-        if (!is_mobile_app(stream_name))
-            zhashx_insert(parser_state->unknown_streams, stream_name, (void*)1);
+        if (!is_mobile_app(stream_name)) {
+            zmsg_send_and_destroy(msg, parser_state->unknown_streams_collector_socket);
+        }
         return NULL;
     }
     // printf("[D] found stream info for stream %s: %s\n", stream_name, stream_info->key);
@@ -191,8 +192,9 @@ processor_state_t* processor_create(zframe_t* stream_frame, parser_state_t* pars
 }
 
 static
-void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *parser_state)
+void parse_msg_and_forward_interesting_requests(zmsg_t **msgptr, parser_state_t *parser_state)
 {
+    zmsg_t* msg = *msgptr;
     // zmsg_dump(msg);
     // slow down parser for testing
     // zclock_sleep(100);
@@ -234,7 +236,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t *msg, parser_state_t *par
         char *topic_str = (char*) zframe_data(topic_frame);
         int n = zframe_size(topic_frame);
         bool known_stream;
-        processor_state_t *processor = processor_create(stream_frame, parser_state, request, &known_stream);
+        processor_state_t *processor = processor_create(msgptr, stream_frame, parser_state, request, &known_stream);
         if (processor == NULL) {
             if (known_stream)
                 dump_json_object_limiting_log_lines(stderr, "[E] could not create processor for request: ", request, 10);
@@ -291,14 +293,12 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     snprintf(state->me, 16, "parser[%zu]", id);
     state->pull_socket = parser_pull_socket_new();
     state->push_socket = parser_push_socket_new();
-    state->prom_collector_socket = parser_prom_collector_socket_new();
+    state->unknown_streams_collector_socket = parser_unknown_stream_collector_socket_new();
     state->indexer_socket = parser_indexer_socket_new();
     state->tokener = json_tokener_new();
     assert(state->tokener);
     state->processors = processor_hash_new();
-    state->unknown_streams = zhashx_new();
     state->stream_info_cache = zhash_new();
-    assert(state->unknown_streams);
     state->tracker = tracker_new();
     state->statsd_client = statsd_client_new(config, state->me);
     state->decompression_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
@@ -313,9 +313,8 @@ void parser_state_destroy(parser_state_t **state_p)
     zsock_destroy(&state->pull_socket);
     zsock_destroy(&state->push_socket);
     zsock_destroy(&state->indexer_socket);
-    zsock_destroy(&state->prom_collector_socket);
+    zsock_destroy(&state->unknown_streams_collector_socket);
     zhash_destroy(&state->processors);
-    zhashx_destroy(&state->unknown_streams);
     zhash_destroy(&state->stream_info_cache);
     tracker_destroy(&state->tracker);
     statsd_client_destroy(&state->statsd_client);
@@ -361,13 +360,10 @@ void parser(zsock_t *pipe, void *args)
                 zmsg_addptr(answer, state->processors);
                 zmsg_addmem(answer, &state->parsed_msgs_count, sizeof(state->parsed_msgs_count));
                 zmsg_addmem(answer, &state->fe_stats, sizeof(state->fe_stats));
-                zmsg_addptr(answer, state->unknown_streams);
                 zmsg_send_with_retry(&answer, state->pipe);
                 state->parsed_msgs_count = 0;
                 memset(&state->fe_stats, 0, sizeof(state->fe_stats));
                 state->processors = processor_hash_new();
-                state->unknown_streams = zhashx_new();
-                assert(state->unknown_streams);
                 if (++ticks % 60 == 0) {
                     zhash_destroy(&state->stream_info_cache);
                     state->stream_info_cache = zhash_new();
@@ -386,7 +382,7 @@ void parser(zsock_t *pipe, void *args)
             msg = zmsg_recv(state->pull_socket);
             if (msg != NULL) {
                 state->parsed_msgs_count++;
-                parse_msg_and_forward_interesting_requests(msg, state);
+                parse_msg_and_forward_interesting_requests(&msg, state);
                 zmsg_destroy(&msg);
             } else {
                 // msg == NULL, probably interrupted by signal handler

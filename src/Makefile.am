@@ -85,7 +85,9 @@ logjam_importer_SOURCES = \
     device-tracker.c \
     device-tracker.h \
     importer-prometheus-client.cpp \
-    importer-prometheus-client.h
+    importer-prometheus-client.h \
+    unknown-streams-collector.c \
+    unknown-streams-collector.h
 
 logjam_importer_LDADD = $(PROMETHEUS_LIBS) $(LDADD)
 

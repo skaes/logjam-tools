@@ -9,6 +9,7 @@
 #include "importer-indexer.h"
 #include "importer-subscriber.h"
 #include "importer-watchdog.h"
+#include "unknown-streams-collector.h"
 #include "statsd-client.h"
 #include "importer-prometheus-client.h"
 
@@ -61,6 +62,7 @@ typedef struct {
     zactor_t *writers[MAX_WRITERS];
     zactor_t *updaters[MAX_UPDATERS];
     zactor_t *live_stream_publisher;
+    zactor_t *unknown_streams_collector;
     zsock_t *updates_socket;
     size_t updates_blocked;
     zsock_t *adder_socket;
@@ -68,7 +70,6 @@ typedef struct {
     size_t ticks;
     statsd_client_t *statsd_client;
     zlist_t *collected_processors;
-    zhashx_t *unknown_streams;
 } controller_state_t;
 
 
@@ -78,23 +79,12 @@ void extract_parser_state(controller_state_t *state, zmsg_t* msg, zhash_t **proc
     zframe_t *first = zmsg_first(msg);
     zframe_t *second = zmsg_next(msg);
     zframe_t *third = zmsg_next(msg);
-    zframe_t *fourth = zmsg_next(msg);
     assert(zframe_size(first) == sizeof(zhash_t*));
     memcpy(&*processors, zframe_data(first), sizeof(zhash_t*));
     assert(zframe_size(second) == sizeof(size_t));
     memcpy(parsed_msgs_count, zframe_data(second), sizeof(size_t));
     assert(zframe_size(third) == sizeof(frontend_stats_t));
     memcpy(fe_stats, zframe_data(third), sizeof(frontend_stats_t));
-    assert(zframe_size(fourth) == sizeof(zhashx_t*));
-    zhashx_t *unknowns;
-    memcpy(&unknowns, zframe_data(fourth), sizeof(zhashx_t*));
-    void* elem = zhashx_first(unknowns);
-    while (elem) {
-        const char *stream = zhashx_cursor(unknowns);
-        zhashx_insert(state->unknown_streams, stream, (void*)1);
-        elem = zhashx_next(unknowns);
-    }
-    zhashx_destroy(&unknowns);
 }
 
 
@@ -310,25 +300,6 @@ void forward_updates(controller_state_t *state, zhash_t *processor)
 }
 
 static
-void log_unknown_streams(controller_state_t* state) {
-    void* elem = zhashx_first(state->unknown_streams);
-    if (elem == NULL)
-        return;
-    int size = 0;
-    char streams[1024] = {'\0'};
-    while (elem) {
-        const char *stream = zhashx_cursor(state->unknown_streams);
-        if (size > 0) {
-            strcat(streams, ",");
-        }
-        size += strlen(stream);
-        strcat(streams, stream);
-        elem = zhashx_next(state->unknown_streams);
-    }
-    fprintf(stderr, "[W] controller: unknown streams: %s\n", streams);
-}
-
-static
 int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 {
     int64_t start_time_ms = zclock_mono();
@@ -461,13 +432,6 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         state->updates_blocked = 0;
     }
 
-    // log unkown streams every minute
-    if (state->ticks % 60 == 0) {
-        log_unknown_streams(state);
-        zhashx_destroy(&state->unknown_streams);
-        state->unknown_streams = zhashx_new();
-        assert(state->unknown_streams);
-    }
     // signal liveness to watchdog, unless we're dropping all frontend requests
     if (front_stats.received == 0 || front_stats.dropped < front_stats.received) {
         zstr_send(state->controller_watchdog, "tick");
@@ -501,6 +465,8 @@ bool controller_create_actors(controller_state_t *state)
     state->statsd_server = zactor_new(statsd_actor_fn, state->config);
     // start the live stream publisher
     state->live_stream_publisher = zactor_new(live_stream_actor_fn, state->config);
+    // start the unknown streams collector
+    state->unknown_streams_collector = zactor_new(unknown_streams_collector_actor_fn, NULL);
     // start the indexer
     state->indexer = zactor_new(indexer, NULL);
     // create subscribers
@@ -598,6 +564,9 @@ void controller_destroy_actors(controller_state_t *state)
     if (verbose) printf("[D] controller: destroying live stream publisher\n");
     zactor_destroy(&state->live_stream_publisher);
 
+    if (verbose) printf("[D] controller: destroying unknown streams collector\n");
+    zactor_destroy(&state->unknown_streams_collector);
+
     if (verbose) printf("[D] controller: destroying live stream socket\n");
     zsock_destroy(&state->live_stream_socket);
 
@@ -683,8 +652,6 @@ int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam
     state.statsd_client = statsd_client_new(config, "controller[0]");
     state.collected_processors = zlist_new();
     assert(state.collected_processors);
-    state.unknown_streams = zhashx_new();
-    assert(state.unknown_streams);
     bool start_up_complete = controller_create_actors(&state);
 
     if (!start_up_complete) {

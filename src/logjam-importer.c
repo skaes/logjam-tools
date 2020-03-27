@@ -14,7 +14,7 @@ int sub_port = -1;
 int metrics_port = -1;
 char metrics_address[256] = {0};
 char* live_stream_connection_spec = NULL;
-char* prom_collector_connection_spec = NULL;
+char* unknown_streams_collector_connection_spec = NULL;
 const char *metrics_ip = "0.0.0.0";
 zlist_t *hosts = NULL;
 
@@ -235,7 +235,7 @@ void process_arguments(int argc, char * const *argv)
             live_stream_connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_LIVE_STREAM_PORT);
             break;
         case 'x':
-            prom_collector_connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_PROM_COLLECTOR_PORT);
+            unknown_streams_collector_connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_UNKNOWN_STREAMS_COLLECTOR_PORT);
             break;
         case 0:
             print_usage(argv);
@@ -332,25 +332,26 @@ int main(int argc, char * const *argv)
     if (live_stream_connection_spec == NULL)
         live_stream_connection_spec = zconfig_resolve(config, "frontend/endpoints/livestream/pub", DEFAULT_LIVE_STREAM_CONNECTION);
 
-    if (prom_collector_connection_spec == NULL)
-        prom_collector_connection_spec = zconfig_resolve(config, "frontend/endpoints/promcollector/pub", DEFAULT_PROM_COLLECTOR_CONNECTION);
+    if (unknown_streams_collector_connection_spec == NULL)
+        unknown_streams_collector_connection_spec = zconfig_resolve(config, "frontend/endpoints/unknown_streams_collector/pub", DEFAULT_UNKNOWN_STREAMS_COLLECTOR_CONNECTION);
 
     setup_thread_counts(config);
 
     if (!quiet)
         printf("[I] started %s\n"
-               "[I] pull-port:     %d\n"
-               "[I] sub-port:      %d\n"
-               "[I] live-stream:   %s\n"
-               "[I] io-threads:    %zu\n"
-               "[I] rcv-hwm:       %d\n"
-               "[I] snd-hwm:       %d\n"
-               "[I] parsers:       %zu\n"
-               "[I] writers:       %zu\n"
-               "[I] updaters:      %zu\n"
-               "[I] subscription:  %s\n"
-               , argv[0], pull_port, sub_port, live_stream_connection_spec, io_threads, rcv_hwm, snd_hwm,
-               num_parsers, num_writers, num_updaters, subscription_pattern);
+               "[I] pull-port:       %d\n"
+               "[I] sub-port:        %d\n"
+               "[I] live-stream:     %s\n"
+               "[I] unknown-streams: %s\n"
+               "[I] io-threads:      %zu\n"
+               "[I] rcv-hwm:         %d\n"
+               "[I] snd-hwm:         %d\n"
+               "[I] parsers:         %zu\n"
+               "[I] writers:         %zu\n"
+               "[I] updaters:        %zu\n"
+               "[I] subscription:    %s\n"
+               , argv[0], pull_port, sub_port, live_stream_connection_spec, unknown_streams_collector_connection_spec,
+               io_threads, rcv_hwm, snd_hwm, num_parsers, num_writers, num_updaters, subscription_pattern);
 
     initialize_mongo_db_globals(config);
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
