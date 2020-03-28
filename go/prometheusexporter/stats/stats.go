@@ -13,9 +13,8 @@ import (
 	"github.com/skaes/logjam-tools/go/util"
 )
 
-// Stats collects prometheus exporter statistics. The various compoments of the
-// exporter update the stats using atomic.SwapUint64 on its members.
-var Stats struct {
+// Metrics is a collection on exporter statistics variables.
+type Metrics struct {
 	Processed            uint64 // number of ZeroMQ messages processed
 	ProcessedBytes       uint64 // msg bytes processed
 	Dropped              uint64 // number of messages dropped
@@ -27,6 +26,10 @@ var Stats struct {
 	EmptyMetricsResponse uint64 // number of erroneously empty metrics responses
 	UnknownStreams       uint64 // number of messages with unknown streams
 }
+
+// Stats collects prometheus exporter statistics. The various compoments of the
+// exporter update the stats using atomic.SwapUint64 on its members.
+var Stats Metrics
 
 var (
 	registry              *prometheus.Registry
@@ -122,10 +125,53 @@ const (
 	unknownStreamsReportInterval = 60
 )
 
+func swapAndObserveMetrics() *Metrics {
+	var m Metrics
+	m.Observed = atomic.SwapUint64(&Stats.Observed, 0)
+	m.Processed = atomic.SwapUint64(&Stats.Processed, 0)
+	m.ProcessedBytes = atomic.SwapUint64(&Stats.ProcessedBytes, 0)
+	m.Dropped = atomic.SwapUint64(&Stats.Dropped, 0)
+	m.Missed = atomic.SwapUint64(&Stats.Missed, 0)
+	m.Ignored = atomic.SwapUint64(&Stats.Ignored, 0)
+	m.EmptyMetricsResponse = atomic.SwapUint64(&Stats.EmptyMetricsResponse, 0)
+	m.UnknownStreams = atomic.SwapUint64(&Stats.UnknownStreams, 0)
+	// gauges
+	m.Raw = atomic.LoadInt64(&Stats.Raw)
+	m.Invisible = atomic.LoadInt64(&Stats.Invisible)
+
+	promStats.Observed.Add(float64(m.Observed))
+	promStats.Processed.Add(float64(m.Processed))
+	promStats.ProcessedBytes.Add(float64(m.ProcessedBytes))
+	promStats.Dropped.Add(float64(m.Dropped))
+	promStats.Missed.Add(float64(m.Missed))
+	promStats.Ignored.Add(float64(m.Ignored))
+	promStats.EmptyMetricsResponse.Add(float64(m.EmptyMetricsResponse))
+	promStats.UnknownStreams.Add(float64(m.UnknownStreams))
+	// gauges
+	promStats.Raw.Set(float64(m.Raw))
+	promStats.Invisible.Set(float64(m.Invisible))
+
+	return &m
+}
+
+func (a *Metrics) mergeMetrics(b *Metrics) {
+	a.Observed += b.Observed
+	a.Processed += b.Processed
+	a.ProcessedBytes += b.ProcessedBytes
+	a.Dropped += b.Dropped
+	a.Missed += b.Missed
+	a.Ignored += b.Ignored
+	a.EmptyMetricsResponse += b.EmptyMetricsResponse
+	a.UnknownStreams += b.UnknownStreams
+	// gauges
+	a.Raw = b.Raw
+	a.Invisible = b.Invisible
+}
+
 // ReporterAndWatchdog reports exporter stats and aborts the exporter if no message has
 // bee processed for some time. This works because logjam devices send heartbeats. The
 // exporter starts it as a go routine.
-func ReporterAndWatchdog(abortAfter uint, verbose bool) {
+func ReporterAndWatchdog(abortAfter uint, verbose bool, statsReportInterval int) {
 	initializePromStats()
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
@@ -133,6 +179,7 @@ func ReporterAndWatchdog(abortAfter uint, verbose bool) {
 	credit := initialCredit
 	ticks := 0
 	processedSinceLastHeartbeat := uint64(0)
+	stats := Metrics{}
 	for !util.Interrupted() {
 		select {
 		case stream := <-unknownStreamsChannel:
@@ -141,32 +188,17 @@ func ReporterAndWatchdog(abortAfter uint, verbose bool) {
 				log.Warn("unknown stream: %s", stream)
 			}
 		case <-ticker.C:
+			m := swapAndObserveMetrics()
+			stats.mergeMetrics(m)
+
 			ticks++
-			_observed := atomic.SwapUint64(&Stats.Observed, 0)
-			_processed := atomic.SwapUint64(&Stats.Processed, 0)
-			_processedBytes := atomic.SwapUint64(&Stats.ProcessedBytes, 0)
-			_dropped := atomic.SwapUint64(&Stats.Dropped, 0)
-			_missed := atomic.SwapUint64(&Stats.Missed, 0)
-			_ignored := atomic.SwapUint64(&Stats.Ignored, 0)
-			_raw := atomic.LoadInt64(&Stats.Raw)
-			_invisible := atomic.LoadInt64(&Stats.Invisible)
-			_emptyMetrics := atomic.SwapUint64(&Stats.EmptyMetricsResponse, 0)
-			_unknownStreams := atomic.SwapUint64(&Stats.UnknownStreams, 0)
-
-			promStats.Observed.Add(float64(_observed))
-			promStats.Processed.Add(float64(_processed))
-			promStats.ProcessedBytes.Add(float64(_processedBytes))
-			promStats.Ignored.Add(float64(_ignored))
-			promStats.Dropped.Add(float64(_dropped))
-			promStats.Missed.Add(float64(_missed))
-			promStats.Raw.Set(float64(_raw))
-			promStats.Invisible.Set(float64(_invisible))
-			promStats.UnknownStreams.Add(float64(_unknownStreams))
-
-			log.Info("processed: %d, bytes: %d, ignored: %d, observed %d, dropped: %d, missed: %d, raw: %d, invisible: %d, empty: %d, unknown streams: %d",
-				_processed, _processedBytes, _ignored, _observed, _dropped, _missed, _raw, _invisible, _emptyMetrics, _unknownStreams)
-
-			processedSinceLastHeartbeat += _processed
+			if ticks%statsReportInterval == 0 {
+				log.Info("processed: %d, bytes: %d, ignored: %d, observed %d, dropped: %d, missed: %d, raw: %d, invisible: %d, empty: %d, unknown: %d",
+					stats.Processed, stats.ProcessedBytes, stats.Ignored, stats.Observed, stats.Dropped, stats.Missed, stats.Raw, stats.Invisible, stats.EmptyMetricsResponse, stats.UnknownStreams)
+				// reset metrics
+				stats = Metrics{}
+			}
+			processedSinceLastHeartbeat += m.Processed
 			if ticks%heartbeatInterval == 0 {
 				if processedSinceLastHeartbeat > 0 {
 					credit = initialCredit

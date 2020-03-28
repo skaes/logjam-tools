@@ -15,17 +15,18 @@ import (
 )
 
 var opts struct {
-	Verbose     bool   `short:"v" long:"verbose" description:"Verbose logging."`
-	StreamURL   string `short:"l" long:"logjam-url" env:"LOGJAM_URL" default:"" description:"Logjam instance to use for retrieving stream definitions."`
-	Devices     string `short:"d" long:"devices" env:"LOGJAM_DEVICES" default:"127.0.0.1:9606,127.0.0.1:9706" description:"Comma separated device specs (host:port pairs)."`
-	Env         string `short:"e" long:"env" env:"LOGJAM_ENV" description:"Logjam environments to process."`
-	Datacenters string `short:"D" long:"datacenters" env:"LOGJAM_DATACENTERS" description:"List of known datacenters, comma separated. Will be used to determine label value if not available on incoming data."`
-	DefaultDC   string `short:"u" long:"default-dc" env:"LOGJAM_DATACENTER" default:"unknown" description:"Assume this datacenter name if none could be derived from incoming data."`
-	Parsers     uint   `short:"P" long:"parsers" default:"4" description:"Number of message parsers to run in parallel."`
-	CleanAfter  uint   `short:"c" long:"clean-after" default:"5" description:"Minutes to wait before cleaning old time series."`
-	Port        string `short:"p" long:"port" default:"8081" description:"Port to expose metrics on."`
-	AbortAfter  uint   `short:"A" long:"abort" env:"LOGJAM_ABORT_AFTER" default:"60" description:"Abort after missing heartbeats for this many seconds."`
-	RcvHWM      int    `short:"R" long:"rcv-hwm" env:"LOGJAM_RCV_HWM" default:"1000000" description:"Zmq high water mark for receive socket."`
+	Verbose       bool   `short:"v" long:"verbose" description:"Verbose logging."`
+	StatsInterval int    `short:"r" long:"stats-interval" default:"1" description:"Number of seconds between reporting statistics."`
+	StreamURL     string `short:"l" long:"logjam-url" env:"LOGJAM_URL" default:"" description:"Logjam instance to use for retrieving stream definitions."`
+	Devices       string `short:"d" long:"devices" env:"LOGJAM_DEVICES" default:"127.0.0.1:9606,127.0.0.1:9706" description:"Comma separated device specs (host:port pairs)."`
+	Env           string `short:"e" long:"env" env:"LOGJAM_ENV" description:"Logjam environments to process."`
+	Datacenters   string `short:"D" long:"datacenters" env:"LOGJAM_DATACENTERS" description:"List of known datacenters, comma separated. Will be used to determine label value if not available on incoming data."`
+	DefaultDC     string `short:"u" long:"default-dc" env:"LOGJAM_DATACENTER" default:"unknown" description:"Assume this datacenter name if none could be derived from incoming data."`
+	Parsers       uint   `short:"P" long:"parsers" default:"4" description:"Number of message parsers to run in parallel."`
+	CleanAfter    uint   `short:"c" long:"clean-after" default:"5" description:"Minutes to wait before cleaning old time series."`
+	Port          string `short:"p" long:"port" default:"8081" description:"Port to expose metrics on."`
+	AbortAfter    uint   `short:"A" long:"abort" env:"LOGJAM_ABORT_AFTER" default:"60" description:"Abort after missing heartbeats for this many seconds."`
+	RcvHWM        int    `short:"R" long:"rcv-hwm" env:"LOGJAM_RCV_HWM" default:"1000000" description:"Zmq high water mark for receive socket."`
 }
 
 func parseArgs() {
@@ -58,7 +59,7 @@ func main() {
 	}
 	collectormanager.Initialize(opts.StreamURL, opts.Env, collectorOptions)
 
-	go stats.ReporterAndWatchdog(opts.AbortAfter, opts.Verbose)
+	go stats.ReporterAndWatchdog(opts.AbortAfter, opts.Verbose, opts.StatsInterval)
 
 	parserOptions := messageparser.Options{
 		Verbose: opts.Verbose,
