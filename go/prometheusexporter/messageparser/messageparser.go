@@ -172,7 +172,7 @@ func (p *MessageParser) decodeAndUnmarshal() {
 			}
 			c := collectormanager.GetMessageProcessor(appEnv)
 			if !c.IsCollector() {
-				atomic.AddUint64(&stats.Stats.UnknownStreams, 1)
+				stats.RegisterUnknownStream(appEnv)
 				if p.opts.Verbose {
 					log.Warn("could not retrieve collector for %s", appEnv)
 				}

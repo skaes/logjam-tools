@@ -28,7 +28,23 @@ var Stats struct {
 	UnknownStreams       uint64 // number of messages with unknown streams
 }
 
-var registry *prometheus.Registry
+var (
+	registry              *prometheus.Registry
+	unknownStreamsChannel chan string
+	unknownStreamsMap     map[string]uint64
+)
+
+func init() {
+	unknownStreamsChannel = make(chan string, 10000)
+	unknownStreamsMap = make(map[string]uint64)
+}
+
+// RegisterUnknownStream register an unknown stream with the stats collector, so that it
+// will be printed only once per time interval.
+func RegisterUnknownStream(streamName string) {
+	atomic.AddUint64(&Stats.UnknownStreams, 1)
+	unknownStreamsChannel <- streamName
+}
 
 // RequestHandler handles /metrics route of promethus exporter
 var RequestHandler http.Handler
@@ -101,7 +117,10 @@ func initializePromStats() {
 	RequestHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 }
 
-const heartbeatInterval = 5
+const (
+	heartbeatInterval            = 5
+	unknownStreamsReportInterval = 60
+)
 
 // ReporterAndWatchdog reports exporter stats and aborts the exporter if no message has
 // bee processed for some time. This works because logjam devices send heartbeats. The
@@ -114,51 +133,60 @@ func ReporterAndWatchdog(abortAfter uint, verbose bool) {
 	credit := initialCredit
 	ticks := 0
 	processedSinceLastHeartbeat := uint64(0)
-	for range ticker.C {
-		ticks++
-		if util.Interrupted() {
-			break
-		}
-		_observed := atomic.SwapUint64(&Stats.Observed, 0)
-		_processed := atomic.SwapUint64(&Stats.Processed, 0)
-		_processedBytes := atomic.SwapUint64(&Stats.ProcessedBytes, 0)
-		_dropped := atomic.SwapUint64(&Stats.Dropped, 0)
-		_missed := atomic.SwapUint64(&Stats.Missed, 0)
-		_ignored := atomic.SwapUint64(&Stats.Ignored, 0)
-		_raw := atomic.LoadInt64(&Stats.Raw)
-		_invisible := atomic.LoadInt64(&Stats.Invisible)
-		_emptyMetrics := atomic.SwapUint64(&Stats.EmptyMetricsResponse, 0)
-		_unknownStreams := atomic.SwapUint64(&Stats.UnknownStreams, 0)
+	for !util.Interrupted() {
+		select {
+		case stream := <-unknownStreamsChannel:
+			unknownStreamsMap[stream]++
+			if verbose {
+				log.Warn("unknown stream: %s", stream)
+			}
+		case <-ticker.C:
+			ticks++
+			_observed := atomic.SwapUint64(&Stats.Observed, 0)
+			_processed := atomic.SwapUint64(&Stats.Processed, 0)
+			_processedBytes := atomic.SwapUint64(&Stats.ProcessedBytes, 0)
+			_dropped := atomic.SwapUint64(&Stats.Dropped, 0)
+			_missed := atomic.SwapUint64(&Stats.Missed, 0)
+			_ignored := atomic.SwapUint64(&Stats.Ignored, 0)
+			_raw := atomic.LoadInt64(&Stats.Raw)
+			_invisible := atomic.LoadInt64(&Stats.Invisible)
+			_emptyMetrics := atomic.SwapUint64(&Stats.EmptyMetricsResponse, 0)
+			_unknownStreams := atomic.SwapUint64(&Stats.UnknownStreams, 0)
 
-		promStats.Observed.Add(float64(_observed))
-		promStats.Processed.Add(float64(_processed))
-		promStats.ProcessedBytes.Add(float64(_processedBytes))
-		promStats.Ignored.Add(float64(_ignored))
-		promStats.Dropped.Add(float64(_dropped))
-		promStats.Missed.Add(float64(_missed))
-		promStats.Raw.Set(float64(_raw))
-		promStats.Invisible.Set(float64(_invisible))
-		promStats.UnknownStreams.Add(float64(_unknownStreams))
+			promStats.Observed.Add(float64(_observed))
+			promStats.Processed.Add(float64(_processed))
+			promStats.ProcessedBytes.Add(float64(_processedBytes))
+			promStats.Ignored.Add(float64(_ignored))
+			promStats.Dropped.Add(float64(_dropped))
+			promStats.Missed.Add(float64(_missed))
+			promStats.Raw.Set(float64(_raw))
+			promStats.Invisible.Set(float64(_invisible))
+			promStats.UnknownStreams.Add(float64(_unknownStreams))
 
-		if verbose {
 			log.Info("processed: %d, bytes: %d, ignored: %d, observed %d, dropped: %d, missed: %d, raw: %d, invisible: %d, empty: %d, unknown streams: %d",
 				_processed, _processedBytes, _ignored, _observed, _dropped, _missed, _raw, _invisible, _emptyMetrics, _unknownStreams)
-		}
 
-		processedSinceLastHeartbeat += _processed
-		if ticks%heartbeatInterval == 0 {
-			if processedSinceLastHeartbeat > 0 {
-				credit = initialCredit
-			} else {
-				credit--
-				if credit == 0 {
-					log.Error("no credit left. aborting process.")
-					os.Exit(1)
-				} else if credit < initialCredit-1 {
-					log.Info("credit left: %d", credit)
+			processedSinceLastHeartbeat += _processed
+			if ticks%heartbeatInterval == 0 {
+				if processedSinceLastHeartbeat > 0 {
+					credit = initialCredit
+				} else {
+					credit--
+					if credit == 0 {
+						log.Error("no credit left. aborting process.")
+						os.Exit(1)
+					} else if credit < initialCredit-1 {
+						log.Info("credit left: %d", credit)
+					}
 				}
+				processedSinceLastHeartbeat = 0
 			}
-			processedSinceLastHeartbeat = 0
+			if ticks%unknownStreamsReportInterval == 0 {
+				for k, v := range unknownStreamsMap {
+					log.Info("unknown stream: %s (%d messages)", k, v)
+				}
+				unknownStreamsMap = make(map[string]uint64)
+			}
 		}
 	}
 }
