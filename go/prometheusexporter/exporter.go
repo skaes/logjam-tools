@@ -58,7 +58,7 @@ func main() {
 	}
 	collectormanager.Initialize(opts.StreamURL, opts.Env, collectorOptions)
 
-	go stats.ReporterAndWatchdog(opts.AbortAfter)
+	go stats.ReporterAndWatchdog(opts.AbortAfter, opts.Verbose)
 
 	parserOptions := messageparser.Options{
 		Verbose: opts.Verbose,
