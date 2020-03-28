@@ -108,7 +108,7 @@ func (p *MessageParser) Run() {
 			}
 			atomic.AddUint64(&stats.Stats.ProcessedBytes, uint64(rawSize))
 			if n := len(msg); n != 4 {
-				log.Error("invalid message length %s: %s", n, string(msg[0]))
+				log.Error("invalid message length %d: %s", n, string(msg[0]))
 				atomic.AddUint64(&stats.Stats.Dropped, 1)
 				log.Error("got invalid message: %v", msg)
 				continue
