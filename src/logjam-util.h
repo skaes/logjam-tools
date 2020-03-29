@@ -16,6 +16,11 @@ extern "C" {
 #include <stdint.h>
 #include <json-c/json.h>
 
+#ifdef HAVE_MALLOC_TRIM
+#include <malloc.h>
+#endif
+extern int malloc_trim_frequency;
+
 extern bool dryrun;
 extern bool verbose;
 extern bool debug;

@@ -6,6 +6,8 @@
 #include <lz4.h>
 #include "logjam-util.h"
 
+int malloc_trim_frequency = 0;
+
 time_t get_iso_date_info(char today[ISO_DATE_STR_LEN], char tomorrow[ISO_DATE_STR_LEN])
 {
     time_t now = time(NULL);

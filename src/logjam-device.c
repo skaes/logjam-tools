@@ -11,6 +11,9 @@
 #include "message-compressor.h"
 #include "importer-watchdog.h"
 #include "device-prometheus-client.h"
+#ifdef HAVE_MALLOC_TRIM
+#include <malloc.h>
+#endif
 
 // shared globals
 bool verbose = false;
@@ -173,6 +176,12 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
         clean_old_routing_id_entries(max_age);
         device_prometheus_client_delete_old_ping_counters(max_age);
     }
+
+#ifdef HAVE_MALLOC_TRIM
+    // try to reduce memory usage. unclear whether this helps at all.
+    if (malloc_trim_frequency > 0 && ticks % malloc_trim_frequency == 0 && !zsys_interrupted)
+         malloc_trim(0);
+#endif
 
     return 0;
 }
@@ -388,6 +397,7 @@ static void print_usage(char * const *argv)
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "  -m, --metrics-port N       port to use for prometheus path /metrics\n"
             "  -M, --metrics-ip N         ip for binding metrics endpoint\n"
+            "  -T, --trim-frequency N     malloc trim freqency in seconds, 0 means no trimming\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
@@ -403,23 +413,24 @@ static void process_arguments(int argc, char * const *argv)
     opterr = 0;
 
     static struct option long_options[] = {
-        { "compress",      required_argument, 0, 'x' },
-        { "device-id",     required_argument, 0, 'd' },
-        { "router-port",   required_argument, 0, 't' },
-        { "help",          no_argument,       0,  0  },
-        { "input-port",    required_argument, 0, 'p' },
-        { "io-threads",    required_argument, 0, 'i' },
-        { "output-port",   required_argument, 0, 'P' },
-        { "quiet",         no_argument,       0, 'q' },
-        { "rcv-hwm",       required_argument, 0, 'R' },
-        { "snd-hwm",       required_argument, 0, 'S' },
-        { "verbose",       no_argument,       0, 'v' },
-        { "metrics-port",  required_argument, 0, 'm' },
-        { "metrics-ip",    required_argument, 0, 'M' },
+        { "compress",       required_argument, 0, 'x' },
+        { "device-id",      required_argument, 0, 'd' },
+        { "router-port",    required_argument, 0, 't' },
+        { "help",           no_argument,       0,  0  },
+        { "input-port",     required_argument, 0, 'p' },
+        { "io-threads",     required_argument, 0, 'i' },
+        { "output-port",    required_argument, 0, 'P' },
+        { "quiet",          no_argument,       0, 'q' },
+        { "rcv-hwm",        required_argument, 0, 'R' },
+        { "snd-hwm",        required_argument, 0, 'S' },
+        { "verbose",        no_argument,       0, 'v' },
+        { "metrics-port",   required_argument, 0, 'm' },
+        { "metrics-ip",     required_argument, 0, 'M' },
+        { "trim-frequency", required_argument, 0, 'T' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:p:c:i:x:s:P:S:R:t:m:M:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:c:i:x:s:P:S:R:t:m:M:T:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -470,6 +481,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'S':
             snd_hwm = atoi(optarg);
+            break;
+        case 'T':
+            malloc_trim_frequency = atoi(optarg);
             break;
         case 0:
             print_usage(argv);

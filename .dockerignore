@@ -1,6 +1,9 @@
-*.o
-murks
-*.dump
-*.log
+**/*.o
+**/.DS_Store
+murks/*
+**/*.dump
+**/*.log
 go/logjam-*
 .deps/*
+.git
+packages

@@ -47,6 +47,7 @@ static void print_usage(char * const *argv)
             "  -L, --logjam-url U         url from where to retrieve stream config\n"
             "  -A, --abort                abort after missing heartbeats for this many seconds\n"
             "  -d, --datacenter           assume this datacenter for messages with a datacenter field\n"
+            "  -T, --trim-frequency N     malloc trim freqency in seconds, 0 means no trimming\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
@@ -66,25 +67,26 @@ static void process_arguments(int argc, char * const *argv)
     opterr = 0;
 
     static struct option long_options[] = {
-        { "compress",      no_argument,       0, 'z' },
-        { "config",        required_argument, 0, 'c' },
-        { "dryrun",        no_argument,       0, 'n' },
-        { "help",          no_argument,       0,  0  },
-        { "hosts",         required_argument, 0, 'h' },
-        { "interface",     required_argument, 0, 'i' },
-        { "parsers",       required_argument, 0, 'p' },
-        { "quiet",         no_argument,       0, 'q' },
-        { "rcv-hwm",       required_argument, 0, 'R' },
-        { "snd-hwm",       required_argument, 0, 'S' },
-        { "subscribe",     required_argument, 0, 'e' },
-        { "verbose",       no_argument,       0, 'v' },
-        { "logjam-url",    required_argument, 0, 'L' },
-        { "abort",         required_argument, 0, 'A' },
-        { "datacenter",    required_argument, 0, 'd' },
-        { 0,               0,                 0,  0  }
+        { "compress",       no_argument,       0, 'z' },
+        { "config",         required_argument, 0, 'c' },
+        { "dryrun",         no_argument,       0, 'n' },
+        { "help",           no_argument,       0,  0  },
+        { "hosts",          required_argument, 0, 'h' },
+        { "interface",      required_argument, 0, 'i' },
+        { "parsers",        required_argument, 0, 'p' },
+        { "quiet",          no_argument,       0, 'q' },
+        { "rcv-hwm",        required_argument, 0, 'R' },
+        { "snd-hwm",        required_argument, 0, 'S' },
+        { "subscribe",      required_argument, 0, 'e' },
+        { "verbose",        no_argument,       0, 'v' },
+        { "logjam-url",     required_argument, 0, 'L' },
+        { "abort",          required_argument, 0, 'A' },
+        { "datacenter",     required_argument, 0, 'd' },
+        { "trim-frequency", required_argument, 0, 'T' },
+        { 0,                0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:A:d:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:A:d:T:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -135,6 +137,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'S':
             snd_hwm = atoi(optarg);
+            break;
+        case 'T':
+            malloc_trim_frequency = atoi(optarg);
             break;
         case 'L':
             logjam_url = optarg;

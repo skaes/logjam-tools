@@ -86,6 +86,8 @@ AS_IF([test "x$CPUPROFILE" == "x"], AC_SUBST([OPT_PROFILER_FLAGS]), AC_SUBST([OP
 
 AC_CHECK_DECLS([htonll, ntohll])
 
+AC_CHECK_FUNCS(malloc_trim)
+
 AC_CHECK_FUNC([pthread_setname_np],
               [AC_DEFINE([HAVE_PTHREAD_SETNAME_NP], [1], [Have pthread_set_name_np])],
               [AC_CHECK_LIB(pthread, pthread_setname_np,

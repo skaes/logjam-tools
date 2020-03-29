@@ -447,6 +447,12 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         assert(rc != -1);
     }
 
+#ifdef HAVE_MALLOC_TRIM
+    // try to reduce memory usage. unclear whether this helps at all.
+    if (malloc_trim_frequency > 0 && state->ticks % malloc_trim_frequency == 0 && !zsys_interrupted)
+         malloc_trim(0);
+#endif
+
     // printf("[D] controller: finished tick[%zu]\n", state->ticks);
 
     return 0;

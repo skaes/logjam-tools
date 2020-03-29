@@ -85,6 +85,13 @@ int send_tick_commands(zloop_t *loop, int timer_id, void *arg)
     int rc = zloop_timer(loop, 1000, 1, send_tick_commands, state);
     assert(rc != -1);
 
+#ifdef HAVE_MALLOC_TRIM
+    static size_t ticks = 0;
+    // try to reduce memory usage. unclear whether this helps at all.
+    if (malloc_trim_frequency > 0 && ++ticks % malloc_trim_frequency == 0 && !zsys_interrupted)
+         malloc_trim(0);
+#endif
+
     return 0;
 }
 
