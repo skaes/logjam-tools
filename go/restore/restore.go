@@ -39,7 +39,7 @@ var (
 	rename            map[string]string
 )
 
-// IsoDateFormat is used to parse/print is date parts.
+// IsoDateFormat is used to parse/print iso date parts.
 const IsoDateFormat = "2006-01-02"
 
 func initialize() {
@@ -196,7 +196,7 @@ func extractArchiveInfo(a string) *archiveInfo {
 
 func restoreFromBackups() {
 	if len(archivesToRestore) == 0 {
-		files, err := filepath.Glob(filepath.Join(opts.BackupDir, "*"))
+		files, err := filepath.Glob(filepath.Join(opts.BackupDir, opts.Match))
 		if err != nil {
 			logError("could not read backup dir: %s", err)
 			return
