@@ -19,12 +19,14 @@ var opts struct {
 	Verbose         bool   `short:"v" long:"verbose" description:"Be verbose."`
 	Quiet           bool   `short:"q" long:"quiet" description:"Only log errors and warnings."`
 	Dryrun          bool   `short:"n" long:"dryrun" description:"Don't perform the backup, list what would happen."`
-	BackupDir       string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups."`
+	BackupDir       string `short:"b" long:"backup-dir" default:"." description:"Directory where to backups are stored."`
 	DatabaseURL     string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host:port to restore to."`
 	ExcludeRequests bool   `short:"x" long:"exclude-requests" description:"Don't restore request backups."`
 	ToDate          string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
+	BeforeDate      string `short:"T" long:"before-date" description:"Day after the end date of backup period. Defaults to today."`
 	FromDate        string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
 	Match           string `short:"m" long:"match" default:"*" description:"Restrict restore to files matching the given file glob. Ignored when an explicit list of archives is given. Defaults to all files."`
+	Rename          string `short:"r" long:"rename" default:"" description:"Rename the restored databases using the given map (old:new,...). Defaults to no renaming."`
 }
 
 var (
@@ -34,9 +36,11 @@ var (
 	toDate            time.Time
 	fromDate          time.Time
 	archivesToRestore []string
+	rename            map[string]string
 )
 
-const DATEFORMAT = "2006-01-02"
+// IsoDateFormat is used to parse/print is date parts.
+const IsoDateFormat = "2006-01-02"
 
 func initialize() {
 	args, err := flags.ParseArgs(&opts, os.Args)
@@ -54,24 +58,48 @@ func initialize() {
 	}
 	verbose = opts.Verbose
 	dryrun = opts.Dryrun
+	if opts.ToDate != "" && opts.BeforeDate != "" {
+		logError("you can only specify one of --before-date or --to-date")
+		os.Exit(1)
+	}
 	if opts.ToDate != "" {
-		t, err := time.Parse(DATEFORMAT, opts.ToDate)
+		t, err := time.Parse(IsoDateFormat, opts.ToDate)
 		if err != nil {
 			logError("could not parse to-date: %s. Error: %s", opts.ToDate, err)
 			os.Exit(1)
 		}
 		toDate = t
+	} else if opts.BeforeDate != "" {
+		t, err := time.Parse(IsoDateFormat, opts.BeforeDate)
+		if err != nil {
+			logError("could not parse before-date: %s. Error: %s", opts.BeforeDate, err)
+			os.Exit(1)
+		}
+		toDate = t.AddDate(0, 0, -1)
 	} else {
 		// yesterday at the beginning of the day
 		toDate = time.Now().AddDate(0, 0, -1).Truncate(24 * time.Hour)
 	}
 	if opts.FromDate != "" {
-		t, err := time.Parse(DATEFORMAT, opts.FromDate)
+		t, err := time.Parse(IsoDateFormat, opts.FromDate)
 		if err != nil {
 			logError("could not parse from-date: %s. Error: %s", opts.FromDate, err)
 			os.Exit(1)
 		}
 		fromDate = t.Truncate(24 * time.Hour)
+	}
+	rename = make(map[string]string, 0)
+	mappings := strings.Split(opts.Rename, ",")
+	for _, pair := range mappings {
+		if pair != "" {
+			split := strings.Split(pair, ":")
+			from, to := split[0], split[1]
+			if from == "" || to == "" {
+				logError("could not parse renaming: %s", pair)
+				os.Exit(1)
+			}
+			rename[from] = to
+		}
 	}
 }
 
@@ -93,16 +121,26 @@ func logWarn(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
-func restoreArchive(archive string) {
-	_, err := os.Stat(archive)
+func restoreArchive(ai *archiveInfo) {
+	_, err := os.Stat(ai.Path)
 	if err != nil {
-		logInfo("could not access archive %s: %s", archive, err)
+		logInfo("could not access archive %s: %s", ai.Path, err)
 		return
 	}
-	cmd := exec.Command("mongorestore", "--drop", "--uri="+opts.DatabaseURL, "--archive="+archive, "--gzip")
+	args := []string{"--drop", "--uri=" + opts.DatabaseURL, "--archive=" + ai.Path, "--gzip"}
+	newName := rename[ai.App]
+	if newName != "" {
+		fromName := ai.DatabaseName("")
+		toName := ai.DatabaseName(newName)
+		args = append(args, "--nsFrom="+fromName+".*", "--nsTo="+toName+".*")
+	}
+	cmd := exec.Command("mongorestore", args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	logInfo("restoring archive %s", archive)
+	logInfo("restoring archive %s", ai.Path)
+	if opts.Verbose || dryrun {
+		logInfo("mongorestore %s", strings.Join(args, " "))
+	}
 	if dryrun {
 		return
 	}
@@ -122,28 +160,38 @@ func parseBackupFileName(path string) (string, string) {
 	return "", ""
 }
 
-func parseBackupDate(path string) (time.Time, error) {
-	r := regexp.MustCompile(`(\d\d\d\d-\d\d-\d\d)`)
+func parseArchiveInfo(path string) (string, string, time.Time, error) {
+	r := regexp.MustCompile(`^logjam-(.+)-([^-]+)-(\d\d\d\d-\d\d-\d\d)\.(archive|requests)$`)
 	matches := r.FindStringSubmatch(filepath.Base(path))
-	if len(matches) == 2 {
-		return time.Parse(DATEFORMAT, matches[1])
+	if len(matches) == 5 {
+		t, err := time.Parse(IsoDateFormat, matches[3])
+		return matches[1], matches[2], t, err
 	}
-	return time.Time{}, errors.New("missing date")
+	return "", "", time.Time{}, errors.New("could not parse archive name")
 }
 
 type archiveInfo struct {
-	Date time.Time
 	Path string
+	App  string
+	Env  string
+	Date time.Time
+}
+
+func (ai *archiveInfo) DatabaseName(name string) string {
+	if name == "" {
+		name = ai.App
+	}
+	return fmt.Sprintf("logjam-%s-%s-%s", name, ai.Env, ai.Date.Format(IsoDateFormat))
 }
 
 func extractArchiveInfo(a string) *archiveInfo {
 	file := filepath.Base(a)
-	date, err := parseBackupDate(file)
+	app, env, date, err := parseArchiveInfo(file)
 	if err != nil {
-		logError("Ignoring archive '%s' because backup date could not be extracted: %s", err)
+		logError("Ignoring archive '%s': %s", file, err)
 		return nil
 	}
-	return &archiveInfo{Date: date, Path: a}
+	return &archiveInfo{App: app, Env: env, Date: date, Path: a}
 }
 
 func restoreFromBackups() {
@@ -181,7 +229,7 @@ func restoreFromBackups() {
 			continue
 		}
 		if !opts.ExcludeRequests || suffix == ".archive" {
-			restoreArchive(name + suffix)
+			restoreArchive(a)
 		}
 	}
 }
