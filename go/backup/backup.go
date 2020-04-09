@@ -32,6 +32,7 @@ var opts struct {
 	BackupDir   string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups."`
 	DatabaseURL string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host to back up."`
 	ToDate      string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
+	BeforeDate  string `short:"T" long:"before-date" description:"Day after the end date of backup period. Defaults to today."`
 	FromDate    string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
 	Pattern     string `short:"p" long:"match" default:".*" description:"Restrict backup to database names matching the given regexp."`
 }
@@ -46,7 +47,8 @@ var (
 	pattern  *regexp.Regexp
 )
 
-const DATEFORMAT = "2006-01-02"
+// IsoDateFormat is used to parse/print iso date parts.
+const IsoDateFormat = "2006-01-02"
 
 type stream struct {
 	App                       string        `json:"app"`
@@ -78,7 +80,7 @@ func parseDatabaseName(db string) *databaseInfo {
 	matches := re.FindStringSubmatch(db)
 	info := &databaseInfo{App: matches[1], Env: matches[2], Name: db}
 	info.StreamName = info.App + "-" + info.Env
-	t, err := time.Parse(DATEFORMAT, matches[3])
+	t, err := time.Parse(IsoDateFormat, matches[3])
 	if err != nil {
 		logError("could not parse database date: %s", matches[3])
 		return nil
@@ -135,19 +137,30 @@ func initialize() {
 	}
 	verbose = opts.Verbose
 	dryrun = opts.Dryrun
+	if opts.ToDate != "" && opts.BeforeDate != "" {
+		logError("you can only specify one of --before-date or --to-date")
+		os.Exit(1)
+	}
 	if opts.ToDate != "" {
-		t, err := time.Parse(DATEFORMAT, opts.ToDate)
+		t, err := time.Parse(IsoDateFormat, opts.ToDate)
 		if err != nil {
 			logError("could not parse to-date: %s. Error: %s", opts.ToDate, err)
 			os.Exit(1)
 		}
 		toDate = t
+	} else if opts.BeforeDate != "" {
+		t, err := time.Parse(IsoDateFormat, opts.BeforeDate)
+		if err != nil {
+			logError("could not parse before-date: %s. Error: %s", opts.BeforeDate, err)
+			os.Exit(1)
+		}
+		toDate = t.AddDate(0, 0, -1)
 	} else {
 		// yesterday at the beginning of the day
 		toDate = time.Now().AddDate(0, 0, -1).Truncate(24 * time.Hour)
 	}
 	if opts.FromDate != "" {
-		t, err := time.Parse(DATEFORMAT, opts.FromDate)
+		t, err := time.Parse(IsoDateFormat, opts.FromDate)
 		if err != nil {
 			logError("could not parse from-date: %s. Error: %s", opts.FromDate, err)
 			os.Exit(1)
