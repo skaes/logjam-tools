@@ -404,7 +404,9 @@ func main() {
 	util.InstallSignalHandler()
 	dbs := getDatabases()
 	backupDatabases(dbs)
-	removeExpiredBackups()
+	if !dryrun {
+		removeExpiredBackups()
+	}
 	logInfo("%s: backup complete", os.Args[0])
 	os.Exit(rc)
 }
