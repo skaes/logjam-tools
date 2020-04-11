@@ -269,6 +269,9 @@ func renameCallersAndSenders(databases []*databaseInfo) {
 		if di.Date.Before(fromDate) || di.Date.After(toDate) {
 			continue
 		}
+		if rename[di.App] != "" {
+			continue
+		}
 		if !renameCallerAndSendersInDatabase(di) || dryrun {
 			continue
 		}
