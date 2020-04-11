@@ -295,7 +295,7 @@ void increments_fill_sender_info(increments_t *increments, json_object *request)
                 char sender_name[4*(app_len + action_len) + 2 + 8];
                 strcpy(sender_name, "senders.");
                 int real_app_len = copy_replace_dots_and_dollars(sender_name + 8, app);
-                sender_name[real_app_len + 8] = '-';
+                sender_name[real_app_len + 8] = '@';
                 copy_replace_dots_and_dollars(sender_name + 8 + real_app_len + 1, sender_action);
                 // printf("[D] SENDER: %s\n", sender_name);
                 json_object_object_add(increments->others, sender_name, NEW_INT1);
