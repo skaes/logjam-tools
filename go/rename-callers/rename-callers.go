@@ -254,9 +254,9 @@ func renameCallersAndSendersInCollection(db *mongo.Database, collectionName stri
 
 func renameCallerAndSendersInDatabase(di *databaseInfo) bool {
 	db := client.Database(di.Name)
-	renamed := renameCallersAndSendersInCollection(db, "totals")
-	if renamed {
-		renameCallersAndSendersInCollection(db, "totals")
+	renamedTotals := renameCallersAndSendersInCollection(db, "totals")
+	renamedMinutes := renameCallersAndSendersInCollection(db, "minutes")
+	if renamedTotals || renamedMinutes {
 		logInfo("renamed caller and sender references in %s", di.Name)
 		return true
 	}
