@@ -59,6 +59,7 @@ proml-queries.txt
 /go/logjam-mongodb-backup
 /go/logjam-mongodb-restore
 /go/logjam-prometheus-exporter
+/go/logjam-rename-callers
 .rvmrc
 TAGS
 src/TAGS

@@ -11,7 +11,7 @@ INSTALL_PROGRAM ?= install
 bindir ?= $(prefix)/bin
 
 GO_NOINSTALL_TARGETS = logjam-livestream-generator
-GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-fhttpd logjam-prometheus-exporter logjam-mongodb-backup logjam-mongodb-restore
+GO_INSTALL_TARGETS = logjam-livestream logjam-http-forwarder logjam-fhttpd logjam-prometheus-exporter logjam-mongodb-backup logjam-mongodb-restore logjam-rename-callers
 GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
 
 all: $(GO_TARGETS)
@@ -47,6 +47,9 @@ logjam-mongodb-backup: backup/backup.go
 	go build -i -o $@ $<
 
 logjam-mongodb-restore: restore/restore.go
+	go build -i -o $@ $<
+
+logjam-rename-callers: rename-callers/rename-callers.go
 	go build -i -o $@ $<
 
 GO_TESTS = promcollector-test livestream-test util-test frontendmetrics-test

@@ -82,6 +82,11 @@ A utility program which backs up the logjam database.
 A utility program which restores a logjam database from a backup
 produced by `logjam-mongodb-backup`.
 
+## logjam-rename-callers
+
+A utility program which updates caller and sender references after renaming an
+application.
+
 ## Default ports
 
 This is the list of ports to which various programs bind, along with
