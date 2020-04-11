@@ -266,6 +266,9 @@ func renameCallerAndSendersInDatabase(di *databaseInfo) bool {
 
 func renameCallersAndSenders(databases []*databaseInfo) {
 	for _, di := range databases {
+		if util.Interrupted() {
+			continue
+		}
 		if di.Date.Before(fromDate) || di.Date.After(toDate) {
 			continue
 		}
