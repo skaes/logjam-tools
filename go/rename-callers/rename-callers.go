@@ -269,7 +269,7 @@ func renameCallersAndSenders(databases []*databaseInfo) {
 		if di.Date.Before(fromDate) || di.Date.After(toDate) {
 			continue
 		}
-		if !renameCallerAndSendersInDatabase(di) || !dryrun {
+		if !renameCallerAndSendersInDatabase(di) || dryrun {
 			continue
 		}
 		backupName := filepath.Join(opts.BackupDir, di.Name+".archive")
