@@ -38,13 +38,17 @@ var opts struct {
 }
 
 var (
-	rc       = int(0)
-	verbose  = false
-	dryrun   = false
-	streams  map[string]stream
-	toDate   time.Time
-	fromDate time.Time
-	pattern  *regexp.Regexp
+	rc               = int(0)
+	verbose          = false
+	dryrun           = false
+	streams          map[string]stream
+	toDate           time.Time
+	fromDate         time.Time
+	pattern          *regexp.Regexp
+	client           *mongo.Client
+	ctx              context.Context
+	cancel           context.CancelFunc
+	scheduledBackups map[string]bool
 )
 
 // IsoDateFormat is used to parse/print iso date parts.
@@ -225,18 +229,6 @@ func logWarn(format string, args ...interface{}) {
 }
 
 func getDatabases() []*databaseInfo {
-	client, err := mongo.NewClient(options.Client().ApplyURI(opts.DatabaseURL))
-	if err != nil {
-		logError("could not create client: %s", err)
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
-	defer cancel()
-	err = client.Connect(ctx)
-	if err != nil {
-		logError("could not connect: %s", err)
-		return nil
-	}
 	names, err := client.ListDatabaseNames(ctx, bson.D{})
 	if err != nil {
 		logError("could not list databases: %s", err)
@@ -270,7 +262,8 @@ const (
 
 func backupWithoutRequests(db string, kind backupKind) {
 	backupName := filepath.Join(opts.BackupDir, db+".archive")
-	if kind == backupIfNotExists {
+	scheduled := scheduledBackups[db]
+	if !scheduled && kind == backupIfNotExists {
 		_, err := os.Stat(backupName)
 		if err == nil {
 			if verbose {
@@ -301,6 +294,13 @@ func backupWithoutRequests(db string, kind backupKind) {
 		err = os.Remove(backupName)
 		if err != nil {
 			logError("could not remove archive %s: %s", filepath.Base(backupName), err)
+		}
+		return
+	}
+	if scheduled {
+		err := unscheduleBackup(db)
+		if err != nil {
+			logError("could not remove scheduled backup from the schedule: %s", err)
 		}
 	}
 }
@@ -411,10 +411,55 @@ func removeExpiredBackups() {
 	}
 }
 
+func getScheduledBackups() {
+	scheduledBackups = make(map[string]bool)
+	metadata := client.Database("logjam-global").Collection("metadata")
+	var doc struct {
+		Name  string   `bson: "name"`
+		Value []string `bson: "value"`
+	}
+	err := metadata.FindOne(context.Background(), bson.D{{"name", "scheduled-backups"}}).Decode(&doc)
+	if err != nil {
+		logWarn("could not retrieve/decode scheduled backups: %s", err)
+		return
+	}
+	for _, db := range doc.Value {
+		scheduledBackups[db] = true
+	}
+}
+
+func unscheduleBackup(db string) error {
+	delete(scheduledBackups, db)
+	metadata := client.Database("logjam-global").Collection("metadata")
+	_, err := metadata.UpdateOne(
+		context.Background(),
+		bson.D{{"name", "scheduled-backups"}},
+		bson.D{{"$pull", bson.D{{"value", db}}}},
+	)
+	return err
+}
+
 func main() {
 	initialize()
 	logInfo("%s: starting backup in %s", os.Args[0], opts.BackupDir)
 	util.InstallSignalHandler()
+
+	var err error
+	client, err = mongo.NewClient(options.Client().ApplyURI(opts.DatabaseURL))
+	if err != nil {
+		logError("could not create client: %s", err)
+		os.Exit(1)
+	}
+	ctx, cancel = context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	err = client.Connect(ctx)
+	if err != nil {
+		logError("could not connect: %s", err)
+		os.Exit(1)
+	}
+	defer client.Disconnect(ctx)
+
+	getScheduledBackups()
 	dbs := getDatabases()
 	backupDatabases(dbs)
 	if !dryrun {

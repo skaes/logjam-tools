@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -21,12 +20,11 @@ var opts struct {
 	Verbose     bool   `short:"v" long:"verbose" description:"Be verbose."`
 	Quiet       bool   `short:"q" long:"quiet" description:"Only log errors and warnings."`
 	Dryrun      bool   `short:"n" long:"dryrun" description:"Don't perform any renaming, list what would happen."`
-	BackupDir   string `short:"b" long:"backup-dir" default:"." description:"Directory where to backups are stored."`
 	DatabaseURL string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host:port to restore to."`
 	ToDate      string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
 	BeforeDate  string `short:"T" long:"before-date" description:"Day after the end date of backup period. Defaults to today."`
 	FromDate    string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
-	Rename      string `short:"r" long:"rename" default:"" description:"Rename the restored databases using the given map (old:new,...). Defaults to no renaming."`
+	Rename      string `short:"r" long:"rename" default:"" description:"Rename the restored databases using the given map (old:new,...)."`
 }
 
 var (
@@ -56,10 +54,6 @@ func initialize() {
 	}
 	if len(args) > 1 {
 		logError("arguments are not supported")
-		os.Exit(1)
-	}
-	if _, err := os.Stat(opts.BackupDir); os.IsNotExist(err) {
-		logError("backup directory does not exist")
 		os.Exit(1)
 	}
 	verbose = opts.Verbose
@@ -264,7 +258,18 @@ func renameCallerAndSendersInDatabase(di *databaseInfo) bool {
 	return false
 }
 
-func renameCallersAndSenders(databases []*databaseInfo) {
+func scheduleBackup(databaseName string) error {
+	metadata := client.Database("logjam-global").Collection("metadata")
+	_, err := metadata.UpdateOne(
+		context.Background(),
+		bson.D{{"name", "scheduled-backups"}},
+		bson.D{{"$addToSet", bson.D{{"value", databaseName}}}},
+		options.Update().SetUpsert(true),
+	)
+	return err
+}
+
+func renameCallersAndSenders(databases []*databaseInfo) error {
 	for _, di := range databases {
 		if util.Interrupted() {
 			continue
@@ -278,23 +283,19 @@ func renameCallersAndSenders(databases []*databaseInfo) {
 		if !renameCallerAndSendersInDatabase(di) || dryrun {
 			continue
 		}
-		backupName := filepath.Join(opts.BackupDir, di.Name+".archive")
-		_, err := os.Stat(backupName)
-		if err == nil {
-			baseName := filepath.Base(backupName)
-			err := os.Remove(backupName)
-			if err != nil {
-				logError("could not remove archive %s: %s", baseName, err)
-			} else {
-				logInfo("removed archive: %s", baseName)
-			}
+		logInfo("scheduling backup for %s", di.Name)
+		err := scheduleBackup(di.Name)
+		if err != nil {
+			logError("failed to schedule backup: %s", err)
+			return err
 		}
 	}
+	return nil
 }
 
 func main() {
 	initialize()
-	logInfo("%s: starting renaming in %s", os.Args[0], opts.BackupDir)
+	logInfo("%s: starting renaming", os.Args[0])
 	util.InstallSignalHandler()
 	var err error
 	client, err = mongo.NewClient(options.Client().ApplyURI(opts.DatabaseURL))
@@ -311,7 +312,12 @@ func main() {
 	}
 	defer client.Disconnect(ctx)
 	databases := getDatabases()
-	renameCallersAndSenders(databases)
-	logInfo("%s: renaming complete", os.Args[0])
+	err = renameCallersAndSenders(databases)
+	if err == nil {
+		logInfo("%s: renaming complete", os.Args[0])
+	} else {
+		logInfo("%s: renaming incomplete", os.Args[0])
+		rc = 1
+	}
 	os.Exit(rc)
 }
