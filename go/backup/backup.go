@@ -307,13 +307,16 @@ func backupWithoutRequests(db string, kind backupKind) {
 
 func backupRequests(db string) {
 	backupName := filepath.Join(opts.BackupDir, db+".requests")
-	_, err := os.Stat(backupName)
-	if err == nil {
-		if verbose {
-			logInfo("request backup already exists: %s", filepath.Base(backupName))
-		}
-		if !opts.Force {
-			return
+	scheduled := scheduledBackups[db]
+	if !scheduled {
+		_, err := os.Stat(backupName)
+		if err == nil {
+			if verbose {
+				logInfo("request backup already exists: %s", filepath.Base(backupName))
+			}
+			if !opts.Force {
+				return
+			}
 		}
 	}
 	uri := strings.TrimSuffix(opts.DatabaseURL, "/") + "/" + db
@@ -333,12 +336,19 @@ func backupRequests(db string) {
 	if dryrun {
 		return
 	}
-	err = cmd.Run()
+	err := cmd.Run()
 	if err != nil {
 		logError("backing up requests failed: %s", err)
 		err = os.Remove(backupName)
 		if err != nil {
 			logError("could not remove request backup file %s: %s", filepath.Base(backupName), err)
+		}
+		return
+	}
+	if scheduled {
+		err := unscheduleBackup(db)
+		if err != nil {
+			logError("could not remove scheduled backup from the schedule: %s", err)
 		}
 	}
 }
@@ -439,6 +449,26 @@ func unscheduleBackup(db string) error {
 	return err
 }
 
+func cleanScheduledBackups() {
+	for dbName := range scheduledBackups {
+		db := parseDatabaseName(dbName)
+		if db == nil {
+			logInfo("removing invalid database name from scheduled backup: %s", dbName)
+			if err := unscheduleBackup(dbName); err != nil {
+				logError("could not remove invalid scheduled backup from the schedule: %s", err)
+			}
+			continue
+		}
+		stream, found := streams[db.StreamName]
+		if !found || stream.DatabaseHasExpired(db.Date) {
+			logInfo("removing expired scheduled backup: %s", dbName)
+			if err := unscheduleBackup(dbName); err != nil {
+				logError("could not remove expired scheduled backup from the schedule: %s", err)
+			}
+		}
+	}
+}
+
 func main() {
 	initialize()
 	logInfo("%s: starting backup in %s", os.Args[0], opts.BackupDir)
@@ -464,6 +494,7 @@ func main() {
 	backupDatabases(dbs)
 	if !dryrun {
 		removeExpiredBackups()
+		cleanScheduledBackups()
 	}
 	logInfo("%s: backup complete", os.Args[0])
 	os.Exit(rc)
