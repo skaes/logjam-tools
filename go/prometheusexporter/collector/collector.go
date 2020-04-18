@@ -19,6 +19,20 @@ import (
 	"github.com/skaes/logjam-tools/go/util"
 )
 
+var logLevelNames = []string{
+	"Debug",   // 0
+	"Info",    // 1
+	"Warn",    // 2
+	"Error",   // 3
+	"Fatal",   // 4
+	"Unknown", // 5
+}
+
+const (
+	logLevelInfo    = 1
+	logLevelUnknown = 5
+)
+
 const (
 	logMetric  = 1
 	pageMetric = 2
@@ -35,6 +49,7 @@ type metric struct {
 	props       map[string]string  // stored as labels
 	value       float64            // time value, in seconds
 	metrics     map[string]float64 // other metrics
+	maxLogLevel string             // log level
 }
 
 type Options struct {
@@ -55,8 +70,10 @@ type Collector struct {
 	mutex                           sync.RWMutex
 	httpRequestSummaryVec           *prometheus.SummaryVec
 	httpRequestMetricsSummaryVec    *prometheus.SummaryVec
+	httpRequestsTotalVec            *prometheus.CounterVec
 	jobExecutionSummaryVec          *prometheus.SummaryVec
 	jobExecutionMetricsSummaryVec   *prometheus.SummaryVec
+	jobExecutionsTotalVec           *prometheus.CounterVec
 	httpRequestHistogramVec         *prometheus.HistogramVec
 	httpRequestMetricsHistogramVec  *prometheus.HistogramVec
 	jobExecutionHistogramVec        *prometheus.HistogramVec
@@ -174,6 +191,18 @@ func (c *Collector) registerHttpRequestMetricsSummaryVec() {
 	c.registry.MustRegister(c.httpRequestMetricsSummaryVec)
 }
 
+func (c *Collector) registerHttpRequestsTotalVec() {
+	c.httpRequestsTotalVec = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "logjam:action:http_requests_total",
+			Help: "logjam http requests total by action",
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "type", "level", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.httpRequestsTotalVec)
+}
+
 func (c *Collector) registerJobExecutionSummaryVec() {
 	c.jobExecutionSummaryVec = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
@@ -198,6 +227,18 @@ func (c *Collector) registerJobExecutionMetricsSummaryVec() {
 		[]string{"app", "env", "action", "metric", "instance", "cluster", "dc"},
 	)
 	c.registry.MustRegister(c.jobExecutionMetricsSummaryVec)
+}
+
+func (c *Collector) registerJobExecutionsTotalVec() {
+	c.jobExecutionsTotalVec = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "logjam:action:job_executions_total",
+			Help: "logjam job executions total by action",
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "level", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.jobExecutionsTotalVec)
 }
 
 func (c *Collector) registerHttpRequestHistogramVec(stream *util.Stream) {
@@ -286,11 +327,17 @@ func (c *Collector) Update(stream *util.Stream) {
 	if c.httpRequestMetricsSummaryVec == nil {
 		c.registerHttpRequestMetricsSummaryVec()
 	}
+	if c.httpRequestsTotalVec == nil {
+		c.registerHttpRequestsTotalVec()
+	}
 	if c.jobExecutionSummaryVec == nil {
 		c.registerJobExecutionSummaryVec()
 	}
 	if c.jobExecutionMetricsSummaryVec == nil {
 		c.registerJobExecutionMetricsSummaryVec()
+	}
+	if c.jobExecutionsTotalVec == nil {
+		c.registerJobExecutionsTotalVec()
 	}
 	if c.httpRequestHistogramVec != nil && !c.stream.SameHttpBuckets(stream) {
 		c.mutex.Lock()
@@ -401,10 +448,14 @@ func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
 		deleted = c.httpRequestSummaryVec.Delete(labels)
 	case "logjam:action:http_response_metrics_summary_seconds":
 		deleted = c.httpRequestMetricsSummaryVec.Delete(labels)
+	case "logjam:action:http_requests_total":
+		deleted = c.httpRequestsTotalVec.Delete(labels)
 	case "logjam:action:job_execution_time_summary_seconds":
 		deleted = c.jobExecutionSummaryVec.Delete(labels)
 	case "logjam:action:job_execution_metrics_summary_seconds":
 		deleted = c.jobExecutionMetricsSummaryVec.Delete(labels)
+	case "logjam:action:job_executions_total":
+		deleted = c.jobExecutionsTotalVec.Delete(labels)
 	case "logjam:action:http_response_time_distribution_seconds":
 		deleted = c.httpRequestHistogramVec.Delete(labels)
 	case "logjam:action:http_response_metrics_distribution_seconds":
@@ -511,6 +562,9 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		c.httpRequestSummaryVec.With(p).Observe(m.value)
 		delete(p, "code")
 		delete(p, "method")
+		p["level"] = m.maxLogLevel
+		c.httpRequestsTotalVec.With(p).Add(1)
+		delete(p, "level")
 		for k, v := range m.metrics {
 			p["metric"] = k
 			c.httpRequestMetricsSummaryVec.With(p).Observe(v)
@@ -530,6 +584,9 @@ func (c *Collector) recordLogMetrics(m *metric) {
 	case "job":
 		c.jobExecutionSummaryVec.With(p).Observe(m.value)
 		delete(p, "code")
+		p["level"] = m.maxLogLevel
+		c.jobExecutionsTotalVec.With(p).Add(1)
+		delete(p, "level")
 		for k, v := range m.metrics {
 			p["metric"] = k
 			c.jobExecutionMetricsSummaryVec.With(p).Observe(v)
@@ -629,7 +686,11 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	p["cluster"] = extractString(data, "cluster", "unknown")
 	p["dc"] = extractString(data, "datacenter", c.opts.DefaultDC)
 	totalTime, metrics := c.opts.Resources.ExtractResources(data)
-	return &metric{kind: logMetric, props: p, value: totalTime, metrics: metrics}
+	level := extractMaxLogLevel(data)
+	if level > logLevelUnknown {
+		level = logLevelUnknown
+	}
+	return &metric{kind: logMetric, props: p, value: totalTime, metrics: metrics, maxLogLevel: strconv.Itoa(level)}
 }
 
 func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) *metric {
@@ -738,4 +799,53 @@ func extractMap(request map[string]interface{}, key string) map[string]interface
 		return nil
 	}
 
+}
+
+func convertInt(value interface{}, defaultValue int) int {
+	switch v := value.(type) {
+	case int:
+		return v
+	case int8:
+		return int(v)
+	case int16:
+		return int(v)
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case float32:
+		return int(v)
+	case float64:
+		return int(v)
+	default:
+		return defaultValue
+	}
+}
+
+func extractMaxLogLevel(request map[string]interface{}) int {
+	value := request["severity"]
+	if value != nil {
+		return convertInt(value, logLevelInfo)
+	}
+	lines, ok := request["lines"]
+	if !ok {
+		return logLevelInfo
+	}
+	switch lines := lines.(type) {
+	case []interface{}:
+		maxLevel := 0
+		for _, line := range lines {
+			switch line := line.(type) {
+			case []interface{}:
+				if len(line) > 0 {
+					level := convertInt(line[0], logLevelInfo)
+					if level > maxLevel {
+						maxLevel = level
+					}
+				}
+			}
+		}
+		return maxLevel
+	}
+	return logLevelInfo
 }
