@@ -37,6 +37,7 @@ func Initialize(logjamURL string, env string, options collector.Options) {
 	opts = options
 	mobileMetrics = mobile.New()
 	if logjamURL == "" {
+		log.Error("logjam url cannot be empty")
 		return
 	}
 	u, err := url.Parse(logjamURL)
@@ -44,10 +45,13 @@ func Initialize(logjamURL string, env string, options collector.Options) {
 		log.Error("could not parse stream url: %s", err)
 		os.Exit(1)
 	}
-	u.Path = path.Join(u.Path, "admin/streams")
-	url := u.String()
-	UpdateStreams(url, env)
-	go StreamsUpdater(url, env)
+	basePath := u.Path
+	u.Path = path.Join(basePath, "admin/resources")
+	UpdateResources(u.String(), env)
+	u.Path = path.Join(basePath, "admin/streams")
+	streamURL := u.String()
+	UpdateStreams(streamURL, env)
+	go StreamsUpdater(streamURL, env)
 }
 
 func AddCollector(appEnv string, stream *util.Stream) {
@@ -142,4 +146,15 @@ func UpdateStreams(url string, env string) {
 			RemoveCollector(c)
 		}
 	}
+}
+
+func UpdateResources(url string, env string) {
+	log.Info("updating resources")
+	resources := util.RetrieveResources(url, env)
+	if resources == nil {
+		log.Error("could not retrieve resources from %s", url)
+		return
+	}
+	log.Info("resources: %+v", resources)
+	opts.Resources = resources
 }
