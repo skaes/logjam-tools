@@ -61,7 +61,7 @@ func RetrieveResources(url, env string) *Resources {
 	return &resources
 }
 
-func convertValue(v interface{}) float64 {
+func convertFloat64(v interface{}) float64 {
 	switch val := v.(type) {
 	case int:
 		return float64(val)
@@ -88,7 +88,7 @@ func (rs *Resources) ExtractResources(data map[string]interface{}) (float64, map
 	res := make(map[string]float64)
 	for _, r := range rs.TimeResources {
 		if v, found := data[r]; found {
-			m := convertValue(v)
+			m := convertFloat64(v)
 			if r == "total_time" {
 				totalTime = m / 1000
 			} else if m > 0 {
@@ -98,7 +98,7 @@ func (rs *Resources) ExtractResources(data map[string]interface{}) (float64, map
 	}
 	for _, r := range rs.CallResources {
 		if v, found := data[r]; found {
-			m := convertValue(v)
+			m := convertFloat64(v)
 			if m > 0 {
 				res[r] = m
 			}
