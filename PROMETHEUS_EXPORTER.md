@@ -6,7 +6,7 @@ building all of this into logjam, it will be much less work to export logjam met
 Prometheus, which supports customized views through Grafana and alerting through both
 Grafana and it's own [alert manager].
 
-The following [metrics] are be exported:
+The following [metrics] are exported:
 
 | Metric                                                       | Metric Type | Usage Pattern                         |
 |--------------------------------------------------------------|-------------|---------------------------------------|
