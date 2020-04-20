@@ -29,6 +29,7 @@ func RetrieveResources(url, env string) *Resources {
 		log.Error("could not retrieve resources: %s", err)
 		return nil
 	}
+	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		log.Error("unexpected response: %d", res.Status)
 		ioutil.ReadAll(res.Body)
@@ -39,7 +40,6 @@ func RetrieveResources(url, env string) *Resources {
 		log.Error("could not read response body: %s", err)
 		return nil
 	}
-	defer res.Body.Close()
 	var resources Resources
 	err = json.Unmarshal(body, &resources)
 	if err != nil {
