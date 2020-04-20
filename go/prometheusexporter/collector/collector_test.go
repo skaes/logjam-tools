@@ -50,7 +50,6 @@ func TestDeletingLabels(t *testing.T) {
 			CallResources: []string{"db_calls"},
 		},
 	}
-	options.Resources.Initialize()
 	c := New(s.AppEnv(), &s, options)
 	metrics1 := &metric{
 		kind: logMetric,

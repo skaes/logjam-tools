@@ -10,22 +10,10 @@ import (
 )
 
 type Resources struct {
-	TimeResources        []string `json:"time_resources"`
-	CallResources        []string `json:"call_resources"`
-	MemoryResources      []string `json:"memory_resources"`
-	HeapResources        []string `json:"heap_resources"`
-	TimeAndCallResources []string
-}
-
-func (r *Resources) Initialize() {
-	m, n := len(r.TimeResources), len(r.CallResources)
-	r.TimeAndCallResources = make([]string, m+n, m+n)
-	for i, resource := range r.TimeResources {
-		r.TimeAndCallResources[i] = resource
-	}
-	for i, resource := range r.CallResources {
-		r.TimeAndCallResources[i+m] = resource
-	}
+	TimeResources   []string `json:"time_resources"`
+	CallResources   []string `json:"call_resources"`
+	MemoryResources []string `json:"memory_resources"`
+	HeapResources   []string `json:"heap_resources"`
 }
 
 func RetrieveResources(url, env string) *Resources {

@@ -155,7 +155,6 @@ func UpdateResources(url string, env string) {
 		log.Error("could not retrieve resources from %s", url)
 		return
 	}
-	resources.Initialize()
 	log.Info("resources: %+v", resources)
 	opts.Resources = resources
 }
