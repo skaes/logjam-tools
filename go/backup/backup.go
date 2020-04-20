@@ -193,6 +193,7 @@ func retrieveStreams(url string) map[string]stream {
 	}
 	if res.StatusCode != 200 {
 		logError("unexpected response: %d", res.Status)
+		ioutil.ReadAll(res.Body)
 		return nil
 	}
 	body, err := ioutil.ReadAll(res.Body)
