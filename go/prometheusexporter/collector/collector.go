@@ -46,11 +46,12 @@ type dcPair struct {
 }
 
 type metric struct {
-	kind        uint8              // log, page or ajax
-	props       map[string]string  // stored as labels
-	value       float64            // time value, in seconds
-	metrics     map[string]float64 // other metrics
-	maxLogLevel string             // log level
+	kind           uint8              // log, page or ajax
+	props          map[string]string  // stored as labels
+	value          float64            // time value, in seconds
+	timeMetrics    map[string]float64 // other time metrics
+	counterMetrics map[string]float64 // counter metrics
+	maxLogLevel    string             // log level
 }
 
 type Options struct {
@@ -79,6 +80,7 @@ type Collector struct {
 	ajaxHistogramVec           *prometheus.HistogramVec
 	requestMetricsSummaryMap   map[string]*prometheus.SummaryVec
 	requestMetricsHistogramMap map[string]*prometheus.HistogramVec
+	requestMetricsCounterMap   map[string]*prometheus.CounterVec
 	registry                   *prometheus.Registry
 	metricsChannel             chan *metric
 	RequestHandler             http.Handler
@@ -87,7 +89,6 @@ type Collector struct {
 	knownActionsSize           int32
 	stopped                    uint32
 	datacenters                []dcPair
-	metrics                    []string
 }
 
 var defaultBuckets = []float64{0.001, 0.0025, 0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100}
@@ -154,7 +155,7 @@ func New(appEnv string, stream *util.Stream, opts Options) *Collector {
 		datacenters:                make([]dcPair, 0),
 		requestMetricsSummaryMap:   make(map[string]*prometheus.SummaryVec),
 		requestMetricsHistogramMap: make(map[string]*prometheus.HistogramVec),
-		metrics:                    make([]string, 0),
+		requestMetricsCounterMap:   make(map[string]*prometheus.CounterVec),
 	}
 	for _, dc := range strings.Split(opts.Datacenters, ",") {
 		if dc != "" {
@@ -192,6 +193,19 @@ func (c *Collector) registerRequestMetricsSummaryVec(metric string) {
 		[]string{"app", "env", "action", "type", "instance", "cluster", "dc"},
 	)
 	c.requestMetricsSummaryMap[metric] = vec
+	c.registry.MustRegister(vec)
+}
+
+func (c *Collector) registerRequestMetricsCounterVec(metric string) {
+	vec := prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "logjam:action:" + metric + "_total",
+			Help: "logjam " + metric + " total by action",
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "type", "instance", "cluster", "dc"},
+	)
+	c.requestMetricsCounterMap[metric] = vec
 	c.registry.MustRegister(vec)
 }
 
@@ -303,7 +317,7 @@ func (c *Collector) Update(stream *util.Stream) {
 	if c.httpRequestSummaryVec == nil {
 		c.registerHttpRequestSummaryVec()
 	}
-	for _, m := range c.opts.Resources.TimeAndCallResources {
+	for _, m := range c.opts.Resources.TimeResources {
 		if m == "total_time" {
 			continue
 		}
@@ -312,6 +326,11 @@ func (c *Collector) Update(stream *util.Stream) {
 		}
 		if c.requestMetricsHistogramMap[m] == nil {
 			c.registerRequestMetricsHistogramVec(m)
+		}
+	}
+	for _, m := range c.opts.Resources.CallResources {
+		if c.requestMetricsCounterMap[m] == nil {
+			c.registerRequestMetricsCounterVec(m)
 		}
 	}
 	if c.httpRequestsTotalVec == nil {
@@ -417,14 +436,20 @@ func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
 	return labels
 }
 
-var logjamMetricsNameMatcher = regexp.MustCompile(`^logjam:action:(.*)_(distribution|summary)_seconds$`)
+var logjamMetricsNameMatcher = regexp.MustCompile(`^logjam:action:(.*)_(?:(distribution|summary)_seconds|(total))$`)
 
 func extractLogjamMetricFromName(name string) (string, string) {
 	matches := logjamMetricsNameMatcher.FindStringSubmatch(name)
-	if len(matches) != 3 {
+	log.Info("name %s matches %#v", name, matches)
+	if len(matches) != 4 {
 		return "", ""
 	}
-	return matches[1], matches[2]
+	resource, kind, total := matches[1], matches[2], matches[3]
+	if total == "" {
+		return resource, kind
+	} else {
+		return resource, total
+	}
 }
 
 func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
@@ -456,6 +481,8 @@ func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
 				deleted = c.requestMetricsSummaryMap[metric].Delete(labels)
 			case "distribution":
 				deleted = c.requestMetricsHistogramMap[metric].Delete(labels)
+			case "total":
+				deleted = c.requestMetricsCounterMap[metric].Delete(labels)
 			}
 		}
 	}
@@ -555,9 +582,14 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		p["level"] = m.maxLogLevel
 		c.httpRequestsTotalVec.With(p).Add(1)
 		delete(p, "level")
-		for k, v := range m.metrics {
+		for k, v := range m.timeMetrics {
 			if vec := c.requestMetricsSummaryMap[k]; vec != nil {
 				vec.With(p).Observe(v)
+			}
+		}
+		for k, v := range m.counterMetrics {
+			if vec := c.requestMetricsCounterMap[k]; vec != nil {
+				vec.With(p).Add(v)
 			}
 		}
 		p["method"] = method
@@ -565,7 +597,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		delete(p, "dc")
 		c.httpRequestHistogramVec.With(p).Observe(m.value)
 		delete(p, "method")
-		for k, v := range m.metrics {
+		for k, v := range m.timeMetrics {
 			if vec := c.requestMetricsHistogramMap[k]; vec != nil {
 				vec.With(p).Observe(v)
 			}
@@ -578,7 +610,12 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		c.jobExecutionsTotalVec.With(p).Add(1)
 		delete(p, "level")
 		p["type"] = "job"
-		for k, v := range m.metrics {
+		for k, v := range m.counterMetrics {
+			if vec := c.requestMetricsCounterMap[k]; vec != nil {
+				vec.With(p).Add(v)
+			}
+		}
+		for k, v := range m.timeMetrics {
 			if vec := c.requestMetricsSummaryMap[k]; vec != nil {
 				vec.With(p).Observe(v)
 			}
@@ -588,7 +625,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		delete(p, "dc")
 		c.jobExecutionHistogramVec.With(p).Observe(m.value)
 		p["type"] = "job"
-		for k, v := range m.metrics {
+		for k, v := range m.timeMetrics {
 			if vec := c.requestMetricsHistogramMap[k]; vec != nil {
 				vec.With(p).Observe(v)
 			}
@@ -679,12 +716,12 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	p["instance"] = extractString(data, "host", "unknown")
 	p["cluster"] = extractString(data, "cluster", "unknown")
 	p["dc"] = extractString(data, "datacenter", c.opts.DefaultDC)
-	totalTime, metrics := c.opts.Resources.ExtractResources(data)
+	totalTime, timeMetrics, counterMetrics := c.opts.Resources.ExtractResources(data)
 	level := extractMaxLogLevel(data)
 	if level > logLevelUnknown {
 		level = logLevelUnknown
 	}
-	return &metric{kind: logMetric, props: p, value: totalTime, metrics: metrics, maxLogLevel: strconv.Itoa(level)}
+	return &metric{kind: logMetric, props: p, value: totalTime, timeMetrics: timeMetrics, counterMetrics: counterMetrics, maxLogLevel: strconv.Itoa(level)}
 }
 
 func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) *metric {

@@ -83,26 +83,27 @@ func convertFloat64(v interface{}) float64 {
 	}
 }
 
-func (rs *Resources) ExtractResources(data map[string]interface{}) (float64, map[string]float64) {
+func (rs *Resources) ExtractResources(data map[string]interface{}) (float64, map[string]float64, map[string]float64) {
 	var totalTime float64
-	res := make(map[string]float64)
+	times := make(map[string]float64)
 	for _, r := range rs.TimeResources {
 		if v, found := data[r]; found {
 			m := convertFloat64(v)
 			if r == "total_time" {
 				totalTime = m / 1000
 			} else if m > 0 {
-				res[r] = m / 1000
+				times[r] = m / 1000
 			}
 		}
 	}
+	calls := make(map[string]float64)
 	for _, r := range rs.CallResources {
 		if v, found := data[r]; found {
 			m := convertFloat64(v)
 			if m > 0 {
-				res[r] = m
+				calls[r] = m
 			}
 		}
 	}
-	return totalTime, res
+	return totalTime, times, calls
 }

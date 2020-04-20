@@ -25,6 +25,13 @@ func TestExtractingMetricNames(t *testing.T) {
 	if metric != "" {
 		t.Errorf("should return exmpty string when extracting metric name")
 	}
+	metric, kind = extractLogjamMetricFromName("logjam:action:db_calls_total")
+	if metric != "db_calls" {
+		t.Errorf("could not extract metric name %s", "db_calls")
+	}
+	if kind != "total" {
+		t.Errorf("could not extract metric kind %s", "total")
+	}
 }
 
 func TestDeletingLabels(t *testing.T) {
@@ -57,8 +64,9 @@ func TestDeletingLabels(t *testing.T) {
 			"dc":      "d",
 			"action":  "murks",
 		},
-		value:   5.7,
-		metrics: map[string]float64{"db_time": 1.45, "db_calls": 1},
+		value:          5.7,
+		timeMetrics:    map[string]float64{"db_time": 1.45},
+		counterMetrics: map[string]float64{"db_calls": 1},
 	}
 	metrics2 := &metric{
 		kind: logMetric,
@@ -72,8 +80,9 @@ func TestDeletingLabels(t *testing.T) {
 			"dc":      "e",
 			"action":  "marks",
 		},
-		value:   7.7,
-		metrics: map[string]float64{"db_time": 2.45, "db_calls": 2},
+		value:          7.7,
+		timeMetrics:    map[string]float64{"db_time": 1.45},
+		counterMetrics: map[string]float64{"db_calls": 1},
 	}
 	metrics3 := &metric{
 		kind: logMetric,
@@ -86,8 +95,9 @@ func TestDeletingLabels(t *testing.T) {
 			"dc":      "e",
 			"action":  "marks",
 		},
-		value:   3.1,
-		metrics: map[string]float64{"db_time": 3.45, "db_calls": 3},
+		value:          3.1,
+		timeMetrics:    map[string]float64{"db_time": 1.45},
+		counterMetrics: map[string]float64{"db_calls": 1},
 	}
 	metrics4 := &metric{
 		kind: logMetric,
@@ -99,8 +109,9 @@ func TestDeletingLabels(t *testing.T) {
 			"cluster": "d",
 			"dc":      "e",
 			"action":  "marks"},
-		value:   4.4,
-		metrics: map[string]float64{"db_time": 4.45, "db_calls": 4},
+		value:          4.4,
+		timeMetrics:    map[string]float64{"db_time": 1.45},
+		counterMetrics: map[string]float64{"db_calls": 1},
 	}
 	c.recordLogMetrics(metrics1)
 	c.recordLogMetrics(metrics2)
