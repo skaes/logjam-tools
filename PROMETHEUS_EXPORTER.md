@@ -8,23 +8,21 @@ Grafana and it's own [alert manager].
 
 The following [metrics] are be exported:
 
-| Metric                                                          | Metric Type | Usage Pattern                            |
-|-----------------------------------------------------------------|-------------|------------------------------------------|
-| 1. logjam:action:http\_response\_time\_distribution\_seconds    | histogram   | used for both web and API requests       |
-| 2. logjam:action:job\_execution\_time\_distribution\_seconds    | histogram   | used for all kinds of background jobs    |
-| 3. logjam:action:page\_time\_distribution\_seconds              | histogram   | used for page load times, RUM            |
-| 4. logjam:action:ajax\_time\_distribution\_seconds              | histogram   | used for ajax requests, RUM              |
-| 5. logjam:action:http\_response\_time\_summary\_seconds         | summary     | used for both web and API requests       |
-| 6. logjam:action:job\_execution\_time\_summary\_seconds         | summary     | used for all kinds of background jobs    |
-| 7. logjam:action:http\_response\_metrics\_distribution\_seconds | histogram   | same as 1, but for all secondary metrics |
-| 8. logjam:action:job\_execution\_metrics\_distribution\_seconds | histogram   | same as 2, but for all secondary metrics |
-| 9. logjam:action:http\_response\_metrics\_summary\_seconds      | summary     | same as 5, but for all secondary metrics |
-| 10. logjam:action:job\_execution\_metrics\_summary\_seconds     | summary     | same as 5, but for all secondary metrics |
-| 11. logjam:action:http\_requests\_total                         | counter     | web and API requests with log level      |
-| 12. logjam:action:job\_executions\_total                        | counter     | job executions with log level            |
+| Metric                                                       | Metric Type | Usage Pattern                         |
+|--------------------------------------------------------------|-------------|---------------------------------------|
+| 1. logjam:action:http\_response\_time\_distribution\_seconds | histogram   | used for both web and API requests    |
+| 2. logjam:action:job\_execution\_time\_distribution\_seconds | histogram   | used for all kinds of background jobs |
+| 3. logjam:action:page\_time\_distribution\_seconds           | histogram   | used for page load times, RUM         |
+| 4. logjam:action:ajax\_time\_distribution\_seconds           | histogram   | used for ajax requests, RUM           |
+| 5. logjam:action:http\_response\_time\_summary\_seconds      | summary     | used for both web and API requests    |
+| 6. logjam:action:job\_execution\_time\_summary\_seconds      | summary     | used for all kinds of background jobs |
+| 7. logjam:action:<metric name>\_distribution\_seconds        | histogram   | all secondary logjam metric names     |
+| 8. logjam:action:<metric name>\_summary\_seconds             | summary     | all secondary logjam metric names     |
+| 9. logjam:action:http\_requests\_total                       | counter     | web and API requests with log level   |
+| 10. logjam:action:job\_executions\_total                     | counter     | job executions with log level         |
 
 
-Secondary metrics are things like `db_time`, `db_calls`, `memcache_time`,
+Secondary logjam metric names are things like `db_time`, `db_calls`, `memcache_time`,
 `memcache_misses` etc.
 
 
@@ -32,16 +30,17 @@ And the following [labels] will be used:
 
 | Label      | Value                            | Metrics it is used with |
 |------------|----------------------------------|-------------------------|
-| 1. app     | application name in logjam       | 1-12                    |
-| 2. env     | environment name in logjam       | 1-12                    |
-| 3. action  | action name in logjam            | 1-12                    |
-| 4. type    | type of http request: web or api | 1,5,7,9,11              |
+| 1. app     | application name in logjam       | 1-10                    |
+| 2. env     | environment name in logjam       | 1-10                    |
+| 3. action  | action name in logjam            | 1-10                    |
+| 4. type    | type of http request: web or api | 1,5,9                   |
+|            | type of request (web, api, job)  | 7,8                     |
 | 5. code    | response code in logjam          | 5,6                     |
-| 6. method  | http request method              | 5,6                     |
-| 7. cluster | cluster name (e.g. Kubernetes)   | 5,6,11,12               |
-| 8. dc      | datacenter name                  | 5,6,11,12               |
-| 9. metric  | the name of the metric           | 7,8,9,10                |
-| 10. level  | log level (0-5)                  | 11,12                   |
+| 6. method  | http request method              | 1,5                     |
+| 7. cluster | cluster name (e.g. Kubernetes)   | 5,6,9,10                |
+| 8. dc      | datacenter name                  | 5,6,9,10                |
+| 9. level   | log level (0-5)                  | 9,10                    |
+
 
 Log level values are:
 

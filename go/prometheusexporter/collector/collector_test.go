@@ -6,6 +6,27 @@ import (
 	"testing"
 )
 
+func TestExtractingMetricNames(t *testing.T) {
+	metric, kind := extractLogjamMetricFromName("logjam:action:db_time_summary_seconds")
+	if metric != "db_time" {
+		t.Errorf("could not extract metric name %s", "db_time")
+	}
+	if kind != "summary" {
+		t.Errorf("could not extract metric kind %s", "summary")
+	}
+	metric, kind = extractLogjamMetricFromName("logjam:action:db_time_distribution_seconds")
+	if metric != "db_time" {
+		t.Errorf("could not extract metric name %s", "db_time")
+	}
+	if kind != "distribution" {
+		t.Errorf("could not extract metric kind %s", "summary")
+	}
+	metric, kind = extractLogjamMetricFromName("logjam:action:db_time_murks_seconds")
+	if metric != "" {
+		t.Errorf("should return exmpty string when extracting metric name")
+	}
+}
+
 func TestDeletingLabels(t *testing.T) {
 	s := util.Stream{
 		App:                 "a",
@@ -17,7 +38,12 @@ func TestDeletingLabels(t *testing.T) {
 	options := Options{
 		Datacenters: "a,b",
 		CleanAfter:  60,
+		Resources: &util.Resources{
+			TimeResources: []string{"db_time"},
+			CallResources: []string{"db_calls"},
+		},
 	}
+	options.Resources.Initialize()
 	c := New(s.AppEnv(), &s, options)
 	metrics1 := &metric{
 		kind: logMetric,
@@ -31,7 +57,8 @@ func TestDeletingLabels(t *testing.T) {
 			"dc":      "d",
 			"action":  "murks",
 		},
-		value: 5.7,
+		value:   5.7,
+		metrics: map[string]float64{"db_time": 1.45, "db_calls": 1},
 	}
 	metrics2 := &metric{
 		kind: logMetric,
@@ -45,7 +72,8 @@ func TestDeletingLabels(t *testing.T) {
 			"dc":      "e",
 			"action":  "marks",
 		},
-		value: 7.7,
+		value:   7.7,
+		metrics: map[string]float64{"db_time": 2.45, "db_calls": 2},
 	}
 	metrics3 := &metric{
 		kind: logMetric,
@@ -58,7 +86,8 @@ func TestDeletingLabels(t *testing.T) {
 			"dc":      "e",
 			"action":  "marks",
 		},
-		value: 3.1,
+		value:   3.1,
+		metrics: map[string]float64{"db_time": 3.45, "db_calls": 3},
 	}
 	metrics4 := &metric{
 		kind: logMetric,
@@ -70,7 +99,8 @@ func TestDeletingLabels(t *testing.T) {
 			"cluster": "d",
 			"dc":      "e",
 			"action":  "marks"},
-		value: 4.4,
+		value:   4.4,
+		metrics: map[string]float64{"db_time": 4.45, "db_calls": 4},
 	}
 	c.recordLogMetrics(metrics1)
 	c.recordLogMetrics(metrics2)
