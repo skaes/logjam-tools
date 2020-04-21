@@ -81,13 +81,12 @@ func RetrieveStreams(url, env string) map[string]*Stream {
 		log.Error("could not retrieve stream: %s", err)
 		return nil
 	}
-	defer res.Body.Close()
+	body, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
 	if res.StatusCode != 200 {
 		log.Error("unexpected response: %d", res.Status)
-		ioutil.ReadAll(res.Body)
 		return nil
 	}
-	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		log.Error("could not read response body: %s", err)
 		return nil

@@ -286,7 +286,7 @@ func serveAlive(w http.ResponseWriter, r *http.Request) {
 func serveMobileMetrics(w http.ResponseWriter, r *http.Request) {
 	defer recordRequest(r)
 	bytes, err := ioutil.ReadAll(r.Body)
-	defer r.Body.Close()
+	r.Body.Close()
 	if err != nil {
 		writeErrorResponse(w, err.Error())
 		return

@@ -191,17 +191,16 @@ func retrieveStreams(url string) map[string]stream {
 		logError("could not retrieve streams from %s: %s", url, err)
 		return nil
 	}
+	body, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
 	if res.StatusCode != 200 {
 		logError("unexpected response: %d", res.Status)
-		ioutil.ReadAll(res.Body)
 		return nil
 	}
-	body, err := ioutil.ReadAll(res.Body)
 	if err != nil {
 		logError("could not read response body: %s", err)
 		return nil
 	}
-	defer res.Body.Close()
 	var streams map[string]stream
 	err = json.Unmarshal(body, &streams)
 	if err != nil {
