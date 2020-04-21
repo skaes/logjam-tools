@@ -16,11 +16,11 @@ The following [metrics] are exported:
 | 4. logjam:action:ajax\_time\_distribution\_seconds           | histogram   | used for ajax requests, RUM            |
 | 5. logjam:action:http\_response\_time\_summary\_seconds      | summary     | used for both web and API requests     |
 | 6. logjam:action:job\_execution\_time\_summary\_seconds      | summary     | used for all kinds of background jobs  |
-| 7. logjam:action:<metric name>\_distribution\_seconds        | histogram   | all secondary logjam time metric names |
-| 8. logjam:action:<metric name>\_summary\_seconds             | summary     | all secondary logjam time metric names |
+| 7. logjam:action:_metric\_name_\_distribution\_seconds       | histogram   | all secondary logjam time metric names |
+| 8. logjam:action:_metric\_name_\_summary\_seconds            | summary     | all secondary logjam time metric names |
 | 9. logjam:action:http\_requests\_total                       | counter     | web and API requests with log level    |
 | 10. logjam:action:job\_executions\_total                     | counter     | job executions with log level          |
-| 11. logjam:action:<metric name>\_total                       | counter     | all secondary logjam call metric names |
+| 11. logjam:action:_metric\_name_\_total                      | counter     | all secondary logjam call metric names |
 
 
 Secondary logjam metric names are things like `db_time`, `db_calls`, `memcache_time`,
