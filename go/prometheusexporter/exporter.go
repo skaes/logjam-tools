@@ -17,7 +17,7 @@ import (
 var opts struct {
 	Verbose       bool   `short:"v" long:"verbose" description:"Verbose logging."`
 	StatsInterval int    `short:"r" long:"stats-interval" default:"1" description:"Number of seconds between reporting statistics."`
-	StreamURL     string `short:"l" long:"logjam-url" env:"LOGJAM_URL" default:"" description:"Logjam instance to use for retrieving stream definitions."`
+	LogjamURL     string `short:"l" long:"logjam-url" env:"LOGJAM_URL" default:"http://localhost:3000" description:"Logjam instance to use for retrieving stream definitions."`
 	Devices       string `short:"d" long:"devices" env:"LOGJAM_DEVICES" default:"127.0.0.1:9606,127.0.0.1:9706" description:"Comma separated device specs (host:port pairs)."`
 	Env           string `short:"e" long:"env" env:"LOGJAM_ENV" description:"Logjam environments to process."`
 	Datacenters   string `short:"D" long:"datacenters" env:"LOGJAM_DATACENTERS" description:"List of known datacenters, comma separated. Will be used to determine label value if not available on incoming data."`
@@ -57,7 +57,7 @@ func main() {
 		DefaultDC:   opts.DefaultDC,
 		CleanAfter:  opts.CleanAfter,
 	}
-	collectormanager.Initialize(opts.StreamURL, opts.Env, collectorOptions)
+	collectormanager.Initialize(opts.LogjamURL, opts.Env, collectorOptions)
 
 	go stats.ReporterAndWatchdog(opts.AbortAfter, opts.Verbose, opts.StatsInterval)
 
