@@ -440,7 +440,6 @@ var logjamMetricsNameMatcher = regexp.MustCompile(`^logjam:action:(.*)_(?:(distr
 
 func extractLogjamMetricFromName(name string) (string, string) {
 	matches := logjamMetricsNameMatcher.FindStringSubmatch(name)
-	log.Info("name %s matches %#v", name, matches)
 	if len(matches) != 4 {
 		return "", ""
 	}
