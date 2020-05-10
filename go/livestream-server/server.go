@@ -1,26 +1,28 @@
 package main
 
 import (
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
+	"os/signal"
 	"runtime"
-	// "runtime/pprof"
-	"encoding/json"
-	"math"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
+	// "runtime/pprof"
 
 	"github.com/gorilla/websocket"
 	"github.com/jessevdk/go-flags"
 	zmq "github.com/pebbe/zmq4"
 	log "github.com/skaes/logjam-tools/go/logging"
 	"github.com/skaes/logjam-tools/go/util"
-	"gopkg.in/tylerb/graceful.v1"
 )
 
 var opts struct {
@@ -517,26 +519,26 @@ func serveWs(w http.ResponseWriter, r *http.Request) {
 	wsReader(ws)
 }
 
-func clientHandler() {
+func setupWebServer() *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", serveWs)
 	port := 8080
 	if runtime.GOOS == "darwin" {
 		port = 9608
 	}
-	log.Info("starting web socket server on port %d", port)
 	spec := ":" + strconv.Itoa(port)
-	srv := &graceful.Server{
-		Timeout: 10 * time.Second,
-		Server: &http.Server{
-			Addr:    spec,
-			Handler: mux,
-		},
+	return &http.Server{
+		Addr:    spec,
+		Handler: mux,
 	}
+}
+
+func runWebServer(srv *http.Server) {
+	log.Info("starting web socket server on %s", srv.Addr)
 	if opts.KeyFile != "" && opts.CertFile != "" {
 		err := srv.ListenAndServeTLS(opts.CertFile, opts.KeyFile)
-		if err != nil {
-			log.Error("Cannot list and serve TLS: %s", err)
+		if err != nil && err != http.ErrServerClosed {
+			log.Error("Cannot listen and serve TLS: %s", err)
 		}
 	} else if opts.KeyFile != "" {
 		log.Error("cert-file given but no key-file!")
@@ -544,10 +546,28 @@ func clientHandler() {
 		log.Error("key-file given but no cert-file!")
 	} else {
 		err := srv.ListenAndServe()
-		if err != nil {
-			log.Error("Cannot list and serve TLS: %s", err)
+		if err != nil && err != http.ErrServerClosed {
+			log.Error("Cannot list and serve: %s", err)
 		}
 	}
+}
+
+func shutdownWebServer(srv *http.Server, gracePeriod time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), gracePeriod)
+	defer cancel()
+	err := srv.Shutdown(ctx)
+	if err != nil {
+		log.Error("web server shutdown failed: %+v", err)
+	} else {
+		log.Info("web server shutdown successful")
+	}
+}
+
+func waitForInterrupt() {
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	<-done
+	log.Info("received interrupt")
 }
 
 //*******************************************************************************
@@ -572,12 +592,17 @@ func main() {
 	go statsReporter()
 	go zmqMsgHandler()
 	go dispatcher()
-	clientHandler()
 
-	log.Info("% shutting down", os.Args[0])
+	srv := setupWebServer()
+	go runWebServer(srv)
+	waitForInterrupt()
+	shutdownWebServer(srv, 5*time.Second)
+
+	log.Info("waiting for running web socket handlers to finish")
 	if waitForWaitGrouptWithTimeout(&wg, 3*time.Second) {
-		log.Info("shut down timed out!")
+		log.Info("web socket handlers shutdown timed out!")
 	} else {
-		log.Info("shut down cleanly")
+		log.Info("web socket handlers shutdown completed")
 	}
+	log.Info("%s stopped", os.Args[0])
 }

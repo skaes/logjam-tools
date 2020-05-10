@@ -1,24 +1,26 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
 	"net/http"
-
-	// _ "net/http/pprof"
 	"os"
+	"os/signal"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
+
+	// _ "net/http/pprof"
 
 	"github.com/jessevdk/go-flags"
 	log "github.com/skaes/logjam-tools/go/logging"
 	pub "github.com/skaes/logjam-tools/go/publisher"
 	"github.com/skaes/logjam-tools/go/util"
-	"gopkg.in/tylerb/graceful.v1"
 )
 
 var opts struct {
@@ -297,24 +299,24 @@ func serveMobileMetrics(w http.ResponseWriter, r *http.Request) {
 	writeImageResponse(w)
 }
 
-func webServer() {
+func setupWebServer() *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/logjam/ajax", serveFrontendRequest)
 	mux.HandleFunc("/logjam/page", serveFrontendRequest)
 	mux.HandleFunc("/logjam/mobile", serveMobileMetrics)
 	mux.HandleFunc("/alive.txt", serveAlive)
-	log.Info("starting http server on port %d", opts.InputPort)
 	spec := ":" + strconv.Itoa(opts.InputPort)
-	srv := &graceful.Server{
-		Timeout: 10 * time.Second,
-		Server: &http.Server{
-			Addr:    spec,
-			Handler: mux,
-		},
+	return &http.Server{
+		Addr:    spec,
+		Handler: mux,
 	}
+}
+
+func runWebServer(srv *http.Server) {
+	log.Info("starting http server on %s", srv.Addr)
 	if opts.KeyFile != "" && opts.CertFile != "" {
 		err := srv.ListenAndServeTLS(opts.CertFile, opts.KeyFile)
-		if err != nil {
+		if err != nil && err != http.ErrServerClosed {
 			log.Error("Cannot listen and serve TLS: %s", err)
 		}
 	} else if opts.KeyFile != "" {
@@ -323,15 +325,33 @@ func webServer() {
 		log.Error("key-file given but no cert-file!")
 	} else {
 		err := srv.ListenAndServe()
-		if err != nil {
-			log.Error("Cannot listen and serve TLS: %s", err)
+		if err != nil && err != http.ErrServerClosed {
+			log.Error("Cannot listen and serve: %s", err)
 		}
+	}
+}
+
+func shutdownWebServer(srv *http.Server, gracePeriod time.Duration) {
+	ctx, cancel := context.WithTimeout(context.Background(), gracePeriod)
+	defer cancel()
+	err := srv.Shutdown(ctx)
+	if err != nil {
+		log.Error("web server shutdown failed: %+v", err)
+	} else {
+		log.Info("web server shutdown successful")
 	}
 }
 
 // func runProfiler(debugSpec string) {
 // 	fmt.Println(http.ListenAndServe(debugSpec, nil))
 // }
+
+func waitForInterrupt() {
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	<-done
+	log.Info("received interrupt")
+}
 
 func main() {
 	log.Info("%s starting", os.Args[0])
@@ -350,6 +370,7 @@ func main() {
 	// }
 	// pprof.StartCPUProfile(f)
 	// defer pprof.StopCPUProfile()
+	// go runProfiler(debugSpec)
 
 	util.InstallSignalHandler()
 	go statsReporter()
@@ -360,17 +381,20 @@ func main() {
 		OutputSpec:  outputSpec,
 		SendHwm:     opts.SendHwm,
 	})
-	// go runProfiler(debugSpec)
-	// Run web server in the foreground. It has its own signal handler.
-	webServer()
+
+	srv := setupWebServer()
+	go runWebServer(srv)
+	waitForInterrupt()
+	shutdownWebServer(srv, 5*time.Second)
+
 	// Wait for publisher and stats reporter to finsh.
-	if util.WaitForWaitGroupWithTimeout(&wg, 5*time.Second) {
+	if util.WaitForWaitGroupWithTimeout(&wg, 3*time.Second) {
 		if !quiet {
-			log.Info("shut down timed out")
+			log.Info("publisher shut down timed out")
 		}
 	} else {
 		if !quiet {
-			log.Info("shut down performed cleanly")
+			log.Info("publisher shut down performed cleanly")
 		}
 	}
 }

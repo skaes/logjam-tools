@@ -53,16 +53,24 @@ func RegisterUnknownStream(streamName string) {
 var RequestHandler http.Handler
 
 var promStats struct {
-	Processed            prometheus.Counter
-	ProcessedBytes       prometheus.Counter
-	Dropped              prometheus.Counter
-	Missed               prometheus.Counter
-	Observed             prometheus.Counter
-	Ignored              prometheus.Counter
-	Raw                  prometheus.Gauge
-	Invisible            prometheus.Gauge
-	EmptyMetricsResponse prometheus.Counter
-	UnknownStreams       prometheus.Counter
+	Processed                  prometheus.Counter
+	ProcessedBytes             prometheus.Counter
+	Dropped                    prometheus.Counter
+	Missed                     prometheus.Counter
+	Observed                   prometheus.Counter
+	Ignored                    prometheus.Counter
+	Raw                        prometheus.Gauge
+	Invisible                  prometheus.Gauge
+	EmptyMetricsResponse       prometheus.Counter
+	UnknownStreams             prometheus.Counter
+	ScrapeDurationHistogramVec *prometheus.HistogramVec
+	ScrapeDurationSummaryVec   *prometheus.HistogramVec
+}
+
+// ObserveScrapeDuration is called from the collectors to record scrape times.
+func ObserveScrapeDuration(app, env string, d time.Duration) {
+	labels := map[string]string{"app": app, "env": env}
+	promStats.ScrapeDurationHistogramVec.With(labels).Observe(d.Seconds())
 }
 
 func initializePromStats() {
@@ -107,6 +115,14 @@ func initializePromStats() {
 		Name: "logjam:exporter:msgs_unknown_streams_total",
 		Help: "How many logjam messages were ignored by this exporter because their stream name was unknown",
 	})
+	promStats.ScrapeDurationHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:exporter:scrape_duration_distribution_seconds",
+			Help:    "logjam exporter scrape duration distribution by application and environment",
+			Buckets: []float64{0.001, 0.0025, 0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50},
+		},
+		[]string{"app", "env"},
+	)
 	registry.MustRegister(promStats.Processed)
 	registry.MustRegister(promStats.ProcessedBytes)
 	registry.MustRegister(promStats.Dropped)
@@ -117,6 +133,7 @@ func initializePromStats() {
 	registry.MustRegister(promStats.Invisible)
 	registry.MustRegister(promStats.EmptyMetricsResponse)
 	registry.MustRegister(promStats.UnknownStreams)
+	registry.MustRegister(promStats.ScrapeDurationHistogramVec)
 	RequestHandler = promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
 }
 

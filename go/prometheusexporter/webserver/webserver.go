@@ -43,6 +43,8 @@ func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
 	env := vars["environment"]
 	h := collectormanager.GetRequestHandler(app + "-" + env)
 	if h.IsCollector() {
+		t := time.Now()
+		defer func() { stats.ObserveScrapeDuration(app, env, time.Now().Sub(t)) }()
 		h.ServeHTTP(w, r)
 	} else {
 		http.NotFound(w, r)
