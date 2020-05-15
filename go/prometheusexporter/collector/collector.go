@@ -51,7 +51,7 @@ type metric struct {
 	value          float64            // time value, in seconds
 	timeMetrics    map[string]float64 // other time metrics
 	counterMetrics map[string]float64 // counter metrics
-	maxLogLevel    string             // log level
+	maxLogLevel    int                // log level
 }
 
 type Options struct {
@@ -578,8 +578,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		c.httpRequestSummaryVec.With(p).Observe(m.value)
 		delete(p, "code")
 		delete(p, "method")
-		p["level"] = m.maxLogLevel
-		c.httpRequestsTotalVec.With(p).Add(1)
+		incrementTotalsForLogLevels(c.httpRequestsTotalVec, p, m.maxLogLevel)
 		delete(p, "level")
 		for k, v := range m.timeMetrics {
 			if vec := c.requestMetricsSummaryMap[k]; vec != nil {
@@ -605,8 +604,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 	case "job":
 		c.jobExecutionSummaryVec.With(p).Observe(m.value)
 		delete(p, "code")
-		p["level"] = m.maxLogLevel
-		c.jobExecutionsTotalVec.With(p).Add(1)
+		incrementTotalsForLogLevels(c.jobExecutionsTotalVec, p, m.maxLogLevel)
 		delete(p, "level")
 		p["type"] = "job"
 		for k, v := range m.counterMetrics {
@@ -632,6 +630,18 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		delete(p, "type")
 		c.actionRegistry <- action
 	}
+}
+
+func incrementTotalsForLogLevels(counter *prometheus.CounterVec, labels map[string]string, maxLogLevel int) {
+	for i := 0; i <= logLevelUnknown; i++ {
+		labels["level"] = strconv.Itoa(i)
+		var incrementBy float64
+		if i == maxLogLevel {
+			incrementBy = 1
+		}
+		counter.With(labels).Add(incrementBy)
+	}
+	delete(labels, "level")
 }
 
 func (c *Collector) recordPageMetrics(m *metric) {
@@ -720,7 +730,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	if level > logLevelUnknown {
 		level = logLevelUnknown
 	}
-	return &metric{kind: logMetric, props: p, value: totalTime, timeMetrics: timeMetrics, counterMetrics: counterMetrics, maxLogLevel: strconv.Itoa(level)}
+	return &metric{kind: logMetric, props: p, value: totalTime, timeMetrics: timeMetrics, counterMetrics: counterMetrics, maxLogLevel: level}
 }
 
 func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) *metric {
