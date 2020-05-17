@@ -19,22 +19,25 @@ const (
 )
 
 type Opts struct {
-	Compression byte
-	DeviceId    uint32
-	OutputPort  uint
-	OutputSpec  string
-	SendHwm     int
+	Compression        byte
+	DeviceId           uint32
+	OutputPort         uint
+	OutputSpec         string
+	SendHwm            int
+	SuppressHeartbeats bool // only used for testing
 }
 
 type Publisher struct {
 	opts             Opts
 	publisherChannel chan *pubMsg
 	sequenceNum      uint64
+	publisherSocket  *zmq.Socket
 }
 
 func New(wg *sync.WaitGroup, opts Opts) *Publisher {
 	p := Publisher{opts: opts}
 	p.publisherChannel = make(chan *pubMsg, 10000)
+	p.publisherSocket = p.setupPublisherSocket()
 	go p.publish(wg)
 	return &p
 }
@@ -65,6 +68,9 @@ func (p *Publisher) pubSocketSpecForConnecting() string {
 }
 
 func (p *Publisher) sendHeartbeat(socket *zmq.Socket) {
+	if p.opts.SuppressHeartbeats {
+		return
+	}
 	socket.SendBytes([]byte("heartbeat"), zmq.SNDMORE)
 	socket.SendBytes([]byte(p.pubSocketSpecForConnecting()), zmq.SNDMORE)
 	socket.SendBytes([]byte("{}"), zmq.SNDMORE)
@@ -75,22 +81,21 @@ func (p *Publisher) sendHeartbeat(socket *zmq.Socket) {
 func (p *Publisher) publish(wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
-	publisherSocket := p.setupPublisherSocket()
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	var ticks uint64
 	for !util.Interrupted() {
 		select {
 		case msg := <-p.publisherChannel:
-			p.sendMessage(publisherSocket, msg)
+			p.sendMessage(p.publisherSocket, msg)
 		case <-ticker.C:
 			ticks++
 			if ticks%(HeartbeatInterval*10) == 0 {
-				p.sendHeartbeat(publisherSocket)
+				p.sendHeartbeat(p.publisherSocket)
 			}
 		}
 	}
-	err := publisherSocket.Close()
+	err := p.publisherSocket.Close()
 	if err != nil {
 		log.Error("Could not close publisher socket on shut down: %s", err)
 	}

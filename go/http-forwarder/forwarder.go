@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -156,6 +158,7 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 		recordFailure()
 		w.WriteHeader(400)
 		io.WriteString(w, "Can only POST to this resource\n")
+		io.Copy(ioutil.Discard, r.Body)
 		return
 	}
 	ct := r.Header.Get("Content-Type")
@@ -163,11 +166,35 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 		recordFailure()
 		w.WriteHeader(415)
 		io.WriteString(w, "Content-Type needs to be application/json\n")
+		io.Copy(ioutil.Discard, r.Body)
 		return
 	}
-	decoder := json.NewDecoder(r.Body)
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		recordFailure()
+		w.WriteHeader(500)
+		return
+	}
+	ce := r.Header.Get("Content-Encoding")
+	if ce != "" {
+		compressionMethod, err := util.ParseCompressionMethodName(ce)
+		if err != nil {
+			recordFailure()
+			w.WriteHeader(400)
+			io.WriteString(w, "Invalid Content-Encoding\n")
+			return
+		}
+		body, err = util.Decompress(body, compressionMethod)
+		if err != nil {
+			recordFailure()
+			w.WriteHeader(500)
+			io.WriteString(w, "Decoding failure\n")
+			return
+		}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
 	var data stringMap
-	err := decoder.Decode(&data)
+	err = decoder.Decode(&data)
 	if err != nil {
 		recordFailure()
 		w.WriteHeader(400)
@@ -202,14 +229,19 @@ func serveAlive(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, "ALIVE\n")
 }
 
-func setupWebServer() *http.Server {
+func setupHandler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/logjam/events", serveEvents)
 	mux.HandleFunc("/alive.txt", serveAlive)
+	return mux
+}
+
+func setupWebServer() *http.Server {
+	handler := setupHandler()
 	spec := ":" + strconv.Itoa(opts.InputPort)
 	return &http.Server{
 		Addr:    spec,
-		Handler: mux,
+		Handler: handler,
 	}
 }
 
