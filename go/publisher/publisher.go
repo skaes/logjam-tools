@@ -113,7 +113,11 @@ func (p *Publisher) setupPublisherSocket() *zmq.Socket {
 }
 
 // Publish sends a message to publish msg for publisher go routine, optionally compressing it
-func (p *Publisher) Publish(appEnv string, routingKey string, data []byte) {
+func (p *Publisher) Publish(appEnv string, routingKey string, data []byte, compressedWith uint8) {
+	if compressedWith > 0 {
+		p.publisherChannel <- &pubMsg{appEnv: appEnv, routingKey: routingKey, data: data, compression: compressedWith}
+		return
+	}
 	var usedCompression byte = util.NoCompression
 	switch p.opts.Compression {
 	case util.SnappyCompression:

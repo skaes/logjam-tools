@@ -16,6 +16,7 @@ import (
 	"time"
 	// _ "net/http/pprof"
 
+	"github.com/gorilla/mux"
 	"github.com/jessevdk/go-flags"
 	log "github.com/skaes/logjam-tools/go/logging"
 	pub "github.com/skaes/logjam-tools/go/publisher"
@@ -154,13 +155,6 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 	defer recordRequest(r)
 	w.Header().Set("Cache-Control", "private")
 	w.Header().Set("Content-Type", "text/plain")
-	if r.Method != "POST" {
-		recordFailure()
-		w.WriteHeader(400)
-		io.WriteString(w, "Can only POST to this resource\n")
-		io.Copy(ioutil.Discard, r.Body)
-		return
-	}
 	ct := r.Header.Get("Content-Type")
 	if ct != "application/json" {
 		recordFailure()
@@ -201,12 +195,21 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 		io.WriteString(w, "Request body is not valid JSON\n")
 		return
 	}
-	app := data.DeleteString("app")
-	env := data.DeleteString("env")
+	var app, env string
+	vars := mux.Vars(r)
+	if len(vars) > 0 {
+		app = vars["app"]
+		delete(data, "app")
+		env = vars["env"]
+		delete(data, "env")
+	} else {
+		app = data.DeleteString("app")
+		env = data.DeleteString("env")
+	}
 	if app == "" || env == "" {
 		recordFailure()
 		w.WriteHeader(400)
-		io.WriteString(w, "Request body is missing proper app and env specs\n")
+		io.WriteString(w, "Request is missing proper app and env specs\n")
 		return
 	}
 	appEnv := app + "-" + env
@@ -217,7 +220,51 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(500)
 		return
 	}
-	publisher.Publish(appEnv, routingKey, msgBody)
+	publisher.Publish(appEnv, routingKey, msgBody, util.NoCompression)
+	w.WriteHeader(202)
+}
+
+func serveLogs(w http.ResponseWriter, r *http.Request) {
+	defer recordRequest(r)
+	w.Header().Set("Cache-Control", "private")
+	w.Header().Set("Content-Type", "text/plain")
+	ct := r.Header.Get("Content-Type")
+	if ct != "application/json" {
+		recordFailure()
+		w.WriteHeader(415)
+		io.WriteString(w, "Content-Type needs to be application/json\n")
+		io.Copy(ioutil.Discard, r.Body)
+		return
+	}
+	body, err := ioutil.ReadAll(r.Body)
+	if err != nil {
+		recordFailure()
+		w.WriteHeader(500)
+		return
+	}
+	ce := r.Header.Get("Content-Encoding")
+	var compressionMethod uint8
+	if ce != "" {
+		compressionMethod, err = util.ParseCompressionMethodName(ce)
+		if err != nil {
+			recordFailure()
+			w.WriteHeader(400)
+			io.WriteString(w, "Invalid Content-Encoding\n")
+			return
+		}
+	}
+	vars := mux.Vars(r)
+	app := vars["app"]
+	env := vars["env"]
+	if app == "" || env == "" {
+		recordFailure()
+		w.WriteHeader(400)
+		io.WriteString(w, "Request is missing proper app and env specs\n")
+		return
+	}
+	appEnv := app + "-" + env
+	routingKey := "logs." + appEnv
+	publisher.Publish(appEnv, routingKey, body, compressionMethod)
 	w.WriteHeader(202)
 }
 
@@ -230,10 +277,12 @@ func serveAlive(w http.ResponseWriter, r *http.Request) {
 }
 
 func setupHandler() http.Handler {
-	mux := http.NewServeMux()
-	mux.HandleFunc("/logjam/events", serveEvents)
-	mux.HandleFunc("/alive.txt", serveAlive)
-	return mux
+	r := mux.NewRouter()
+	r.HandleFunc("/logjam/events", serveEvents).Methods("POST")
+	r.HandleFunc("/logjam/events/{app}/{env}", serveEvents).Methods("POST")
+	r.HandleFunc("/logjam/logs/{app}/{env}", serveLogs).Methods("POST")
+	r.HandleFunc("/alive.txt", serveAlive).Methods("GET")
+	return r
 }
 
 func setupWebServer() *http.Server {

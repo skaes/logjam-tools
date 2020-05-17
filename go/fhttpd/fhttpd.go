@@ -230,7 +230,7 @@ func sendFrontendData(rid *util.RequestId, msgType string, sm stringMap) error {
 	if err != nil {
 		return err
 	}
-	publisher.Publish(appEnv, routingKey, data)
+	publisher.Publish(appEnv, routingKey, data, util.NoCompression)
 	return nil
 }
 
@@ -295,7 +295,7 @@ func serveMobileMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 	appEnv := "mobile-production"
 	routingKey := "mobile"
-	publisher.Publish(appEnv, routingKey, bytes)
+	publisher.Publish(appEnv, routingKey, bytes, util.NoCompression)
 	writeImageResponse(w)
 }
 
