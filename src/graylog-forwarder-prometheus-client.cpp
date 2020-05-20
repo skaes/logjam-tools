@@ -3,6 +3,15 @@
 #include "graylog-forwarder-prometheus-client.h"
 #include <sys/resource.h>
 
+typedef struct {
+    prometheus::Counter *forwarded_msgs_total;
+    prometheus::Counter *forwarded_bytes_total;
+    prometheus::Counter *gelf_source_bytes_total;
+    int64_t last_seen;
+} stream_counters_t;
+
+static std::mutex mutex;
+
 static struct prometheus_client_t {
     prometheus::Exposer *exposer;
     std::shared_ptr<prometheus::Registry> registry;
@@ -20,6 +29,7 @@ static struct prometheus_client_t {
     prometheus::Counter *cpu_usage_total_subscriber;
     prometheus::Counter *cpu_usage_total_writer;
     std::vector<prometheus::Counter*> cpu_usage_total_parsers;
+    std::unordered_map<std::string, stream_counters_t*> counters_by_stream_total_map;
 } client;
 
 void graylog_forwarder_prometheus_client_init(const char* address, int num_parsers)
@@ -111,6 +121,57 @@ void graylog_forwarder_prometheus_client_count_bytes_forwarded(double value)
 void graylog_forwarder_prometheus_client_count_gelf_bytes(double value)
 {
     client.gelf_source_bytes_total->Increment(value);
+}
+
+stream_counters_t * get_counter(const char* app_env)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    std::string stream(app_env);
+    std::unordered_map<std::string,stream_counters_t*>::const_iterator got = client.counters_by_stream_total_map.find(stream);
+    stream_counters_t *counter;
+    if (got == client.counters_by_stream_total_map.end()) {
+        counter = new(stream_counters_t);
+        counter->forwarded_msgs_total = &client.forwarded_bytes_total_family->Add({{"stream", app_env}});
+        counter->forwarded_bytes_total = &client.forwarded_bytes_total_family->Add({{"stream", app_env}});
+        counter->gelf_source_bytes_total = &client.gelf_source_bytes_total_family->Add({{"stream", app_env}});
+        client.counters_by_stream_total_map[stream] = counter;
+    } else
+        counter = got->second;
+    return counter;
+}
+
+void graylog_forwarder_prometheus_client_count_msg_for_stream(const char* app_env)
+{
+    get_counter(app_env)->forwarded_msgs_total->Increment(1);
+}
+
+void graylog_forwarder_prometheus_client_count_forwarded_bytes_for_stream(const char* app_env, double value)
+{
+    get_counter(app_env)->forwarded_bytes_total->Increment(value);
+}
+
+void graylog_forwarder_prometheus_client_count_gelf_source_bytes_for_stream(const char* app_env, double value)
+{
+    get_counter(app_env)->gelf_source_bytes_total->Increment(value);
+}
+
+void graylog_forwarder_prometheus_client_delete_old_stream_counters(int64_t max_age)
+{
+    std::lock_guard<std::mutex> lock(mutex);
+    int64_t threshold = zclock_time() - max_age;
+    std::unordered_map<std::string,stream_counters_t*>::iterator it = client.counters_by_stream_total_map.begin();
+    while (it != client.counters_by_stream_total_map.end()) {
+        if (it->second->last_seen < threshold) {
+            stream_counters_t *counter = it->second;
+            client.forwarded_msgs_total_family->Remove(counter->forwarded_msgs_total);
+            client.forwarded_bytes_total_family->Remove(counter->forwarded_bytes_total);
+            client.gelf_source_bytes_total_family->Remove(counter->gelf_source_bytes_total);
+            delete counter;
+            it = client.counters_by_stream_total_map.erase(it);
+        } else {
+            it++;
+        }
+    }
 }
 
 static

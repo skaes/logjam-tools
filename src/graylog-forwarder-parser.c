@@ -30,13 +30,17 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
     if (logjam_msg && !zsys_interrupted) {
         gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer);
         const char *gelf_data = gelf_message_to_string (gelf_msg);
-        state->gelf_bytes += logjam_message_size(logjam_msg);
+        state->gelf_bytes += strlen(gelf_data);
+
+        graylog_forwarder_prometheus_client_count_msg_for_stream(logjam_msg->stream);
+        graylog_forwarder_prometheus_client_count_gelf_source_bytes_for_stream(logjam_msg->stream, state->gelf_bytes);
 
         if (debug)
             printf("[D] GELF message: %s\n", gelf_data);
 
         zmsg_t *msg = zmsg_new();
         assert(msg);
+        zmsg_addstr(msg, logjam_msg->stream);
 
         if (compress_gelf) {
             const Bytef *raw_data = (Bytef *)gelf_data;

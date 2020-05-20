@@ -25,11 +25,6 @@ const int SYSLOG_MAPPING[6] = {
     1 /* Alert */
 };
 
-struct _logjam_message {
-    zframe_t *frames[4];
-    size_t size;
-};
-
 static inline void str_normalize(char *str)
 {
     for (char *p = str; *p; ++p) {
@@ -37,11 +32,6 @@ static inline void str_normalize(char *str)
         if (*p == '-')
             *p = '_';
     }
-}
-
-size_t logjam_message_size(logjam_message *msg)
-{
-    return msg->size;
 }
 
 logjam_message* logjam_message_read(zsock_t *receiver)
@@ -86,6 +76,8 @@ logjam_message* logjam_message_read(zsock_t *receiver)
         }
         free (msg);
         msg = NULL;
+    } else {
+        msg->stream = zframe_strdup(msg->frames[0]);
     }
 
     return msg;
@@ -328,6 +320,7 @@ void logjam_message_destroy(logjam_message **msg)
     for (int i = 0; i < 4; i++) {
         zframe_destroy (&(*msg)->frames[i]);
     }
+    free ((*msg)->stream);
     free (*msg);
     *msg = NULL;
 }

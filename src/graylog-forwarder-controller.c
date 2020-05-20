@@ -2,6 +2,7 @@
 #include "graylog-forwarder-subscriber.h"
 #include "graylog-forwarder-parser.h"
 #include "graylog-forwarder-writer.h"
+#include "graylog-forwarder-prometheus-client.h"
 #include "logjam-streaminfo.h"
 #include "importer-watchdog.h"
 
@@ -66,6 +67,9 @@ static
 int send_tick_commands(zloop_t *loop, int timer_id, void *arg)
 {
     controller_state_t *state = arg;
+
+    // clean up old prometheus counters every 7 days
+    graylog_forwarder_prometheus_client_delete_old_stream_counters(1000/*ms*/ * 3600/*seconds*/ * 24/*hours*/ * 7/*days*/);
 
     // send tick commands to actors to let them print out their stats
     zstr_send(state->writer, "tick");

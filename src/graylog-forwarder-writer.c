@@ -16,10 +16,14 @@ static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
     zmsg_t *out_msg = zmsg_new();
     assert(out_msg);
 
+    char *stream = zmsg_popstr(msg);
+    size_t sent_bytes = 0;
+
     if (compress_gelf) {
         compressed_gelf_t *compressed_gelf = zmsg_popptr(msg);
         assert(compressed_gelf);
 
+        sent_bytes = compressed_gelf->len;
         int rc = zmsg_addmem(out_msg, compressed_gelf->data, compressed_gelf->len);
         assert(rc == 0);
         compressed_gelf_destroy(&compressed_gelf);
@@ -27,9 +31,13 @@ static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
         zframe_t *gelf_data = zmsg_pop(msg);
         assert(gelf_data);
 
+        sent_bytes = zframe_size(gelf_data);
         int rc = zmsg_append(out_msg, &gelf_data);
         assert(rc == 0);
     }
+
+    graylog_forwarder_prometheus_client_count_forwarded_bytes_for_stream(stream, sent_bytes);
+    free(stream);
 
     if (dryrun) {
         zmsg_destroy(&out_msg);
