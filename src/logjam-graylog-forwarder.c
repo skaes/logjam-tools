@@ -9,6 +9,7 @@
 #include <getopt.h>
 #include "graylog-forwarder-common.h"
 #include "graylog-forwarder-controller.h"
+#include "graylog-forwarder-prometheus-client.h"
 
 // flags
 bool dryrun = false;
@@ -31,6 +32,10 @@ static const char* subscription_pattern = NULL;
 
 const char* default_datacenter = "unknown";
 
+int metrics_port = 8083;
+char metrics_address[256] = {0};
+const char *metrics_ip = "0.0.0.0";
+
 static void print_usage(char * const *argv)
 {
     fprintf(stderr, "usage: %s [options]\n"
@@ -47,6 +52,8 @@ static void print_usage(char * const *argv)
             "  -L, --logjam-url U         url from where to retrieve stream config\n"
             "  -A, --abort                abort after missing heartbeats for this many seconds\n"
             "  -d, --datacenter           assume this datacenter for messages with a datacenter field\n"
+            "  -m, --metrics-port N       port to use for prometheus path /metrics\n"
+            "  -M, --metrics-ip N         ip for binding metrics endpoint\n"
             "  -T, --trim-frequency N     malloc trim freqency in seconds, 0 means no trimming\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
@@ -82,11 +89,13 @@ static void process_arguments(int argc, char * const *argv)
         { "logjam-url",     required_argument, 0, 'L' },
         { "abort",          required_argument, 0, 'A' },
         { "datacenter",     required_argument, 0, 'd' },
+        { "metrics-port",   required_argument, 0, 'm' },
+        { "metrics-ip",     required_argument, 0, 'M' },
         { "trim-frequency", required_argument, 0, 'T' },
         { 0,                0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:A:d:T:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:A:d:m:M:T:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -106,6 +115,13 @@ static void process_arguments(int argc, char * const *argv)
         case 'n':
             dryrun = true;
             break;
+        case 'm':
+            metrics_port = atoi(optarg);
+            break;
+        case 'M': {
+            metrics_ip = optarg;
+            break;
+        }
         case 'z':
             compress_gelf = true;
             break;
@@ -224,6 +240,10 @@ int main(int argc, char * const *argv)
         config = zconfig_load((char*)config_file_name);
     }
 
+    // initalize prometheus client
+    snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
+    graylog_forwarder_prometheus_client_init(metrics_address, num_parsers);
+
     // convert config file to list of devices if none where specified as a parameter or env variable
     if (hosts == NULL || zlist_size(hosts) == 0) {
         if (hosts == NULL)
@@ -262,5 +282,9 @@ int main(int argc, char * const *argv)
                "[I] abort:  %d\n"
                , argv[0], interface, rcv_hwm, snd_hwm, heartbeat_abort_after);
 
-    return graylog_forwarder_run_controller_loop(config, hosts, subscription_pattern, logjam_stream_url, rcv_hwm, snd_hwm, heartbeat_abort_after);
+    int rc = graylog_forwarder_run_controller_loop(config, hosts, subscription_pattern, logjam_stream_url, rcv_hwm, snd_hwm, heartbeat_abort_after);
+
+    graylog_forwarder_prometheus_client_shutdown();
+
+    return rc;
 }

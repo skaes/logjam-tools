@@ -1,4 +1,5 @@
 #include "graylog-forwarder-parser.h"
+#include "graylog-forwarder-prometheus-client.h"
 #include "gelf-message.h"
 #include "logjam-message.h"
 
@@ -13,6 +14,8 @@ typedef struct {
     zchunk_t *scratch_buffer;               // scratch buffer for string operations
     json_tokener *tokener;                  // json tokener instance
     zhash_t *stream_info_cache;             // thread local stream info cache
+    size_t gelf_bytes;                      // size of uncompressed GELF messages
+    size_t ticks;
     bool received_term_cmd;
 } parser_state_t;
 
@@ -27,6 +30,7 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
     if (logjam_msg && !zsys_interrupted) {
         gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer);
         const char *gelf_data = gelf_message_to_string (gelf_msg);
+        state->gelf_bytes += logjam_message_size(logjam_msg);
 
         if (debug)
             printf("[D] GELF message: %s\n", gelf_data);
@@ -159,8 +163,17 @@ static
 int timer_event(zloop_t *loop, int timer_id, void *args)
 {
     parser_state_t* state = (parser_state_t*)args;
-    zhash_destroy(&state->stream_info_cache);
-    state->stream_info_cache = zhash_new();
+
+    // record cpu usage and gelf bytes every second
+    graylog_forwarder_prometheus_client_record_rusage_parser(state->id);
+    graylog_forwarder_prometheus_client_count_gelf_bytes(state->gelf_bytes);
+    state->gelf_bytes = 0;
+
+    // throw away stream_info cache every minute
+    if (++state->ticks % 60 == 0) {
+        zhash_destroy(&state->stream_info_cache);
+        state->stream_info_cache = zhash_new();
+    }
     return 0;
 }
 
@@ -188,8 +201,8 @@ void parser(zsock_t *pipe, void *args)
     rc = zloop_reader(loop, state->pull_socket, process_message, state);
     assert(rc == 0);
 
-    // setup timer to throw away stream_info cache every minute
-    int timer_id = zloop_timer(loop, 60000, 0, timer_event, state);
+    // setup timer
+    int timer_id = zloop_timer(loop, 1000, 0, timer_event, state);
     assert(timer_id != -1);
 
     printf("[I] parser [%zu]: starting\n", id);

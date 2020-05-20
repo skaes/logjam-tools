@@ -1,0 +1,152 @@
+#include <prometheus/exposer.h>
+#include <prometheus/registry.h>
+#include "graylog-forwarder-prometheus-client.h"
+#include <sys/resource.h>
+
+static struct prometheus_client_t {
+    prometheus::Exposer *exposer;
+    std::shared_ptr<prometheus::Registry> registry;
+    prometheus::Family<prometheus::Counter> *received_msgs_total_family;
+    prometheus::Counter *received_msgs_total;
+    prometheus::Family<prometheus::Counter> *received_bytes_total_family;
+    prometheus::Counter *received_bytes_total;
+    prometheus::Family<prometheus::Counter> *forwarded_msgs_total_family;
+    prometheus::Counter *forwarded_msgs_total;
+    prometheus::Family<prometheus::Counter> *forwarded_bytes_total_family;
+    prometheus::Counter *forwarded_bytes_total;
+    prometheus::Family<prometheus::Counter> *gelf_source_bytes_total_family;
+    prometheus::Counter *gelf_source_bytes_total;
+    prometheus::Family<prometheus::Counter> *cpu_usage_total_family;
+    prometheus::Counter *cpu_usage_total_subscriber;
+    prometheus::Counter *cpu_usage_total_writer;
+    std::vector<prometheus::Counter*> cpu_usage_total_parsers;
+} client;
+
+void graylog_forwarder_prometheus_client_init(const char* address, int num_parsers)
+{
+    // create a http server running on the given address
+    client.exposer = new prometheus::Exposer{address};
+    // create a metrics registry
+    client.registry = std::make_shared<prometheus::Registry>();
+
+    client.received_msgs_total_family = &prometheus::BuildCounter()
+        .Name("logjam:graylog_forwarder:msgs_received_total")
+        .Help("How many logjam messages has this graylog_forwarder received")
+        .Register(*client.registry);
+
+    client.received_msgs_total = &client.received_msgs_total_family->Add({});
+
+    client.received_bytes_total_family = &prometheus::BuildCounter()
+        .Name("logjam:graylog_forwarder:msgs_received_bytes_total")
+        .Help("How many bytes of logjam messages has this graylog_forwarder received")
+        .Register(*client.registry);
+
+    client.received_bytes_total = &client.received_bytes_total_family->Add({});
+
+    client.forwarded_msgs_total_family = &prometheus::BuildCounter()
+        .Name("logjam:graylog_forwarder:msgs_forwarded_total")
+        .Help("How many graylog messages has this graylog_forwarder forwarded")
+        .Register(*client.registry);
+
+    client.forwarded_msgs_total = &client.forwarded_msgs_total_family->Add({});
+
+    client.forwarded_bytes_total_family = &prometheus::BuildCounter()
+        .Name("logjam:graylog_forwarder:msgs_forwarded_bytes_total")
+        .Help("How many bytes of graylog messages has this graylog_forwarder forwarded")
+        .Register(*client.registry);
+
+    client.forwarded_bytes_total = &client.forwarded_bytes_total_family->Add({});
+
+    client.gelf_source_bytes_total_family = &prometheus::BuildCounter()
+        .Name("logjam:graylog_forwarder:gelf_source_bytes_total")
+        .Help("How many bytes of gelf source has this graylog_forwarder produced")
+        .Register(*client.registry);
+
+    client.gelf_source_bytes_total = &client.gelf_source_bytes_total_family->Add({});
+
+    client.cpu_usage_total_family = &prometheus::BuildCounter()
+        .Name("logjam:graylog_forwarder:cpu_seconds_total")
+        .Help("Sum of user and system CPU usage per thread")
+        .Register(*client.registry);
+
+    client.cpu_usage_total_subscriber = &client.cpu_usage_total_family->Add({{"thread", "subscriber"}});
+    client.cpu_usage_total_writer = &client.cpu_usage_total_family->Add({{"thread", "writer"}});
+    client.cpu_usage_total_parsers = {};
+    for (int i=0; i<num_parsers; i++) {
+        char name[256];
+        sprintf(name, "parser%d", i);
+        client.cpu_usage_total_parsers.push_back(&client.cpu_usage_total_family->Add({{"thread", name}}));
+    }
+
+    // ask the exposer to scrape the registry on incoming scrapes
+    client.exposer->RegisterCollectable(client.registry);
+}
+
+void graylog_forwarder_prometheus_client_shutdown()
+{
+    delete client.exposer;
+    client.exposer = NULL;
+}
+
+void graylog_forwarder_prometheus_client_count_msgs_received(double value)
+{
+    client.received_msgs_total->Increment(value);
+}
+
+void graylog_forwarder_prometheus_client_count_bytes_received(double value)
+{
+    client.received_bytes_total->Increment(value);
+}
+
+void graylog_forwarder_prometheus_client_count_msgs_forwarded(double value)
+{
+    client.forwarded_msgs_total->Increment(value);
+}
+
+void graylog_forwarder_prometheus_client_count_bytes_forwarded(double value)
+{
+    client.forwarded_bytes_total->Increment(value);
+}
+
+void graylog_forwarder_prometheus_client_count_gelf_bytes(double value)
+{
+    client.gelf_source_bytes_total->Increment(value);
+}
+
+static
+double get_combined_cpu_usage()
+{
+    struct rusage usage;
+    int rc;
+#ifdef RUSAGE_THREAD
+    rc = getrusage(RUSAGE_THREAD, &usage);
+#else
+    rc = getrusage(RUSAGE_SELF, &usage);
+#endif
+    if (rc) return 0;
+
+    struct timeval total;
+    timeradd(&usage.ru_utime, &usage.ru_stime, &total);
+    return total.tv_sec + (double)total.tv_usec/1000000;
+}
+
+void graylog_forwarder_prometheus_client_record_rusage_subscriber()
+{
+    double value = get_combined_cpu_usage();
+    double oldvalue = client.cpu_usage_total_subscriber->Value();
+    client.cpu_usage_total_subscriber->Increment(value - oldvalue);
+}
+
+void graylog_forwarder_prometheus_client_record_rusage_parser(int i)
+{
+    double value = get_combined_cpu_usage();
+    double oldvalue = client.cpu_usage_total_parsers[i]->Value();
+    client.cpu_usage_total_parsers[i]->Increment(value - oldvalue);
+}
+
+void graylog_forwarder_prometheus_client_record_rusage_writer()
+{
+    double value = get_combined_cpu_usage();
+    double oldvalue = client.cpu_usage_total_writer->Value();
+    client.cpu_usage_total_writer->Increment(value - oldvalue);
+}

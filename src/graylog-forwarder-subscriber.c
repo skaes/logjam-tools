@@ -1,4 +1,5 @@
 #include "graylog-forwarder-subscriber.h"
+#include "graylog-forwarder-prometheus-client.h"
 #include "logjam-message.h"
 #include "device-tracker.h"
 #include "logjam-streaminfo.h"
@@ -12,6 +13,7 @@ typedef struct {
     zsock_t *sub_socket;        // incoming data from logjam devices
     zsock_t *push_socket;       // outgoing data for parsers
     size_t message_count;       // how many messages we have received since last tick
+    size_t message_bytes;       // how many message bytes we have received since last tick
     size_t messages_dev_zero;   // messages arrived from device 0 (since last tick)
     size_t meta_info_failures;  // messages with invalid meta info (since last tick)
     size_t message_gap_size;    // messages missed due to gaps in the stream (since last tick)
@@ -198,6 +200,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
             my_zmsg_fprint(msg, "[D] ", stderr);
 
         state->message_count++;
+        state->message_bytes += zmsg_content_size(msg);
         int n = zmsg_size(msg);
         if (n < 3 || n > 4) {
             fprintf(stderr, "[E] subscriber: dropped invalid message\n");
@@ -242,10 +245,14 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
                    "(gap_size: %zu, no_info: %zu, dev_zero: %zu, blocks: %zu, drops: %zu)\n",
                    state->message_count, state->message_gap_size, state->meta_info_failures,
                    state->messages_dev_zero, state->message_blocks, state->message_drops);
+            graylog_forwarder_prometheus_client_record_rusage_subscriber();
+            graylog_forwarder_prometheus_client_count_msgs_received(state->message_count);
+            graylog_forwarder_prometheus_client_count_bytes_received(state->message_bytes);
             zmsg_t* response = zmsg_new();
             zmsg_addmem(response, &state->message_count, sizeof(state->message_count));
             zmsg_send(&response, socket);
             state->message_count = 0;
+            state->message_bytes = 0;
             state->message_gap_size = 0;
             state->meta_info_failures = 0;
             state->messages_dev_zero = 0;

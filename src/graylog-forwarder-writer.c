@@ -1,4 +1,5 @@
 #include "graylog-forwarder-common.h"
+#include "graylog-forwarder-prometheus-client.h"
 #include "graylog-forwarder-writer.h"
 #include "gelf-message.h"
 
@@ -7,6 +8,7 @@ typedef struct {
     zsock_t *pull_socket;   // incoming messages from parsers
     zsock_t *push_socket;   // outgoing GELF messages to graylog; the GELF ZeroMQ PULL device should connect to this (not bind)
     size_t message_count;   // how many messages we have sent since last tick
+    size_t message_bytes;   // how many bytes we have sent since last tick
 } writer_state_t;
 
 static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
@@ -39,8 +41,9 @@ static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
     }
 
     if (!zsys_interrupted) {
-        zmsg_send(&out_msg, state->push_socket);
         state->message_count++;
+        state->message_bytes += zmsg_content_size(out_msg);
+        zmsg_send(&out_msg, state->push_socket);
     } else {
         zmsg_destroy(&out_msg);
     }
@@ -118,9 +121,12 @@ void graylog_forwarder_writer(zsock_t *pipe, void *args)
                 break;
             }
             else if (streq(cmd, "tick")) {
-                printf("[I] writer: sent %zu messages\n",
-                       state->message_count);
+                printf("[I] writer: sent %zu messages\n", state->message_count);
+                graylog_forwarder_prometheus_client_record_rusage_writer();
+                graylog_forwarder_prometheus_client_count_msgs_forwarded(state->message_count);
+                graylog_forwarder_prometheus_client_count_bytes_forwarded(state->message_bytes);
                 state->message_count = 0;
+                state->message_bytes = 0;
             } else {
                 fprintf(stderr, "[E] writer: received unknown command: %s\n", cmd);
                 assert(false);
