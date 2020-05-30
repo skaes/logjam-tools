@@ -20,10 +20,13 @@ static struct prometheus_client_t {
     prometheus::Family<prometheus::Counter> *received_bytes_total_family;
     prometheus::Counter *received_bytes_total;
     prometheus::Family<prometheus::Counter> *forwarded_msgs_total_family;
+    prometheus::Family<prometheus::Counter> *forwarded_msgs_by_stream_total_family;
     prometheus::Counter *forwarded_msgs_total;
     prometheus::Family<prometheus::Counter> *forwarded_bytes_total_family;
+    prometheus::Family<prometheus::Counter> *forwarded_bytes_by_stream_total_family;
     prometheus::Counter *forwarded_bytes_total;
     prometheus::Family<prometheus::Counter> *gelf_source_bytes_total_family;
+    prometheus::Family<prometheus::Counter> *gelf_source_bytes_by_stream_total_family;
     prometheus::Counter *gelf_source_bytes_total;
     prometheus::Family<prometheus::Counter> *cpu_usage_total_family;
     prometheus::Counter *cpu_usage_total_subscriber;
@@ -58,6 +61,11 @@ void graylog_forwarder_prometheus_client_init(const char* address, int num_parse
         .Help("How many graylog messages has this graylog_forwarder forwarded")
         .Register(*client.registry);
 
+    client.forwarded_msgs_by_stream_total_family = &prometheus::BuildCounter()
+        .Name("logjam:graylog_forwarder:msgs_forwarded_total")
+        .Help("How many graylog messages has this graylog_forwarder forwarded for a specific stream")
+        .Register(*client.registry);
+
     client.forwarded_msgs_total = &client.forwarded_msgs_total_family->Add({});
 
     client.forwarded_bytes_total_family = &prometheus::BuildCounter()
@@ -65,11 +73,21 @@ void graylog_forwarder_prometheus_client_init(const char* address, int num_parse
         .Help("How many bytes of graylog messages has this graylog_forwarder forwarded")
         .Register(*client.registry);
 
+    client.forwarded_bytes_by_stream_total_family = &prometheus::BuildCounter()
+        .Name("logjam:graylog_forwarder:msgs_forwarded_bytes_by_stream_total")
+        .Help("How many bytes of graylog messages has this graylog_forwarder forwarded for a specific stream")
+        .Register(*client.registry);
+
     client.forwarded_bytes_total = &client.forwarded_bytes_total_family->Add({});
 
     client.gelf_source_bytes_total_family = &prometheus::BuildCounter()
         .Name("logjam:graylog_forwarder:gelf_source_bytes_total")
         .Help("How many bytes of gelf source has this graylog_forwarder produced")
+        .Register(*client.registry);
+
+    client.gelf_source_bytes_by_stream_total_family = &prometheus::BuildCounter()
+        .Name("logjam:graylog_forwarder:gelf_source_bytes_by_stream_total")
+        .Help("How many bytes of gelf source has this graylog_forwarder produced for a specific stream")
         .Register(*client.registry);
 
     client.gelf_source_bytes_total = &client.gelf_source_bytes_total_family->Add({});
@@ -131,9 +149,9 @@ stream_counters_t * get_counter(const char* app_env)
     stream_counters_t *counter;
     if (got == client.counters_by_stream_total_map.end()) {
         counter = new(stream_counters_t);
-        counter->forwarded_msgs_total = &client.forwarded_bytes_total_family->Add({{"stream", app_env}});
-        counter->forwarded_bytes_total = &client.forwarded_bytes_total_family->Add({{"stream", app_env}});
-        counter->gelf_source_bytes_total = &client.gelf_source_bytes_total_family->Add({{"stream", app_env}});
+        counter->forwarded_msgs_total = &client.forwarded_msgs_by_stream_total_family->Add({{"stream", app_env}});
+        counter->forwarded_bytes_total = &client.forwarded_bytes_by_stream_total_family->Add({{"stream", app_env}});
+        counter->gelf_source_bytes_total = &client.gelf_source_bytes_by_stream_total_family->Add({{"stream", app_env}});
         client.counters_by_stream_total_map[stream] = counter;
     } else
         counter = got->second;
