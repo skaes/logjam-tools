@@ -62,7 +62,7 @@ void graylog_forwarder_prometheus_client_init(const char* address, int num_parse
         .Register(*client.registry);
 
     client.forwarded_msgs_by_stream_total_family = &prometheus::BuildCounter()
-        .Name("logjam:graylog_forwarder:msgs_forwarded_total")
+        .Name("logjam:graylog_forwarder:msgs_forwarded_by_stream_total")
         .Help("How many graylog messages has this graylog_forwarder forwarded for a specific stream")
         .Register(*client.registry);
 
