@@ -29,6 +29,11 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
 
     if (logjam_msg && !zsys_interrupted) {
         gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer);
+        // gelf message can be null for unknown streams or unparseable json
+        if (gelf_msg == NULL) {
+            logjam_message_destroy(&logjam_msg);
+            return 0;
+        }
         const char *gelf_data = gelf_message_to_string (gelf_msg);
         state->gelf_bytes += strlen(gelf_data);
 
