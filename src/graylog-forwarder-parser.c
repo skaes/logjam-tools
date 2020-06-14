@@ -35,10 +35,11 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
             return 0;
         }
         const char *gelf_data = gelf_message_to_string (gelf_msg);
-        state->gelf_bytes += strlen(gelf_data);
+        size_t gelf_source_bytes = strlen(gelf_data);
+        state->gelf_bytes += gelf_source_bytes;
 
         graylog_forwarder_prometheus_client_count_msg_for_stream(logjam_msg->stream);
-        graylog_forwarder_prometheus_client_count_gelf_source_bytes_for_stream(logjam_msg->stream, state->gelf_bytes);
+        graylog_forwarder_prometheus_client_count_gelf_source_bytes_for_stream(logjam_msg->stream, gelf_source_bytes);
 
         if (debug)
             printf("[D] GELF message: %s\n", gelf_data);
