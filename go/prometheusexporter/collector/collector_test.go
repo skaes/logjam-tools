@@ -7,25 +7,69 @@ import (
 )
 
 func TestExtractingMetricNames(t *testing.T) {
-	metric, kind := extractLogjamMetricFromName("logjam:action:db_time_summary_seconds")
+	metric, kind, action := extractLogjamMetricFromName("logjam:action:db_time_summary_seconds")
+	if !action {
+		t.Error("could not determine that it's an action")
+	}
 	if metric != "db_time" {
 		t.Errorf("could not extract metric name %s", "db_time")
 	}
 	if kind != "summary" {
 		t.Errorf("could not extract metric kind %s", "summary")
 	}
-	metric, kind = extractLogjamMetricFromName("logjam:action:db_time_distribution_seconds")
+	metric, kind, action = extractLogjamMetricFromName("logjam:action:db_time_distribution_seconds")
+	if !action {
+		t.Error("could not determine that it's an action")
+	}
 	if metric != "db_time" {
 		t.Errorf("could not extract metric name %s", "db_time")
 	}
 	if kind != "distribution" {
 		t.Errorf("could not extract metric kind %s", "summary")
 	}
-	metric, kind = extractLogjamMetricFromName("logjam:action:db_time_murks_seconds")
+	metric, kind, action = extractLogjamMetricFromName("logjam:action:db_time_murks_seconds")
 	if metric != "" {
 		t.Errorf("should return exmpty string when extracting metric name")
 	}
-	metric, kind = extractLogjamMetricFromName("logjam:action:db_calls_total")
+	metric, kind, action = extractLogjamMetricFromName("logjam:action:db_calls_total")
+	if !action {
+		t.Error("could not determine that it's an action")
+	}
+	if metric != "db_calls" {
+		t.Errorf("could not extract metric name %s", "db_calls")
+	}
+	if kind != "total" {
+		t.Errorf("could not extract metric kind %s", "total")
+	}
+
+	metric, kind, action = extractLogjamMetricFromName("logjam:application:db_time_summary_seconds")
+	if action {
+		t.Error("could not determine that it's an application")
+	}
+	if metric != "db_time" {
+		t.Errorf("could not extract metric name %s", "db_time")
+	}
+	if kind != "summary" {
+		t.Errorf("could not extract metric kind %s", "summary")
+	}
+	metric, kind, action = extractLogjamMetricFromName("logjam:application:db_time_distribution_seconds")
+	if action {
+		t.Error("could not determine that it's an application")
+	}
+	if metric != "db_time" {
+		t.Errorf("could not extract metric name %s", "db_time")
+	}
+	if kind != "distribution" {
+		t.Errorf("could not extract metric kind %s", "summary")
+	}
+	metric, kind, action = extractLogjamMetricFromName("logjam:application:db_time_murks_seconds")
+	if metric != "" {
+		t.Errorf("should return exmpty string when extracting metric name")
+	}
+	metric, kind, action = extractLogjamMetricFromName("logjam:application:db_calls_total")
+	if action {
+		t.Error("could not determine that it's an application")
+	}
 	if metric != "db_calls" {
 		t.Errorf("could not extract metric name %s", "db_calls")
 	}
