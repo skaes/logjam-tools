@@ -108,7 +108,7 @@ char* extract_module(const char *action)
 
 gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t *stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *buffer)
 {
-    json_object *obj = NULL, *http_request = NULL, *lines = NULL;
+    json_object *obj = NULL, *http_request = NULL, *lines = NULL, *url = NULL;
     const char *host = "Not found", *action = "";
     char *str = NULL;
 
@@ -139,11 +139,28 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     json_object *request = parse_json_data(json_data, json_data_len, tokener);
 
     if (!request) {
+        release_stream_info(stream_info);
         free(app_env);
         return NULL;
     }
 
     // dump_json_object(stdout, "[D]", request);
+
+    const char* path;
+    if (json_object_object_get_ex (request, "request_info", &http_request)) {
+        if (json_object_object_get_ex (http_request, "url", &url)) {
+            path = json_object_get_string(obj);
+            if (path != NULL) {
+                const char* cleaned_path = skip_protocol(path);
+                if (strstr (cleaned_path, stream_info->ignored_request_prefix) == cleaned_path) {
+                    release_stream_info (stream_info);
+                    free (app_env);
+                    json_object_put (request);
+                    return NULL;
+                }
+            }
+        }
+    }
 
     if (json_object_object_get_ex (request, "host", &obj)) {
         host = json_object_get_string (obj);
@@ -216,14 +233,13 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
         gelf_message_add_json_object (gelf_msg, "_total_time", obj);
     }
 
-    if (json_object_object_get_ex (request, "request_info", &http_request)) {
+    if (http_request) {
         if (json_object_object_get_ex (http_request, "method", &obj)) {
             gelf_message_add_json_object (gelf_msg, "_http_method", obj);
         }
 
-        if (json_object_object_get_ex (http_request, "url", &obj)) {
-            gelf_message_add_json_object (gelf_msg, "_http_url", obj);
-            const char *path = json_object_get_string(obj);
+        if (url != NULL) {
+            gelf_message_add_json_object (gelf_msg, "_http_url", url);
             char* module = extract_module(action);
             adjust_caller_info(path, module, request, stream_info);
             free(module);

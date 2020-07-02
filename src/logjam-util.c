@@ -916,6 +916,20 @@ void append_null_byte(zchunk_t* buffer)
     zchunk_append(buffer, "", 1);
 }
 
+const char* skip_protocol(const char* url)
+{
+    // skip over protocol and domain, if present.
+    const char *p = strstr(url, "://");
+    if (p)
+        p += 3;
+    else
+        p = url;
+    // find first slash
+    while (*p && *p != '/')
+        p++;
+    return p;
+}
+
 static void test_uint64wrap (int verbose)
 {
     uint64_t i = 0xffffffffffffffff;

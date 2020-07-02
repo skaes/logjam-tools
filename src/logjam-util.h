@@ -242,6 +242,8 @@ extern void ensure_chunk_can_take(zchunk_t* buffer, size_t data_size);
 extern void append_line(zchunk_t* buffer, const char* format, ...);
 extern void append_null_byte(zchunk_t* buffer);
 
+extern const char* skip_protocol(const char* url);
+
 #ifdef __cplusplus
 }
 #endif
