@@ -78,6 +78,7 @@ type Collector struct {
 	jobExecutionHistogramVec   *prometheus.HistogramVec
 	pageHistogramVec           *prometheus.HistogramVec
 	ajaxHistogramVec           *prometheus.HistogramVec
+	actionCallsTotalVec        *prometheus.CounterVec
 	requestMetricsSummaryMap   map[string]*prometheus.SummaryVec
 	requestMetricsHistogramMap map[string]*prometheus.HistogramVec
 	requestMetricsCounterMap   map[string]*prometheus.CounterVec
@@ -312,6 +313,18 @@ func (c *Collector) registerAjaxHistogramVec(stream *util.Stream) {
 	c.registry.MustRegister(c.ajaxHistogramVec)
 }
 
+func (c *Collector) registerActionCallsTotalVec() {
+	c.actionCallsTotalVec = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "logjam:action:action_calls_total",
+			Help: "logjam action calls total by action and action type",
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "action", "type", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.actionCallsTotalVec)
+}
+
 func (c *Collector) Update(stream *util.Stream) {
 	locked := false
 	if c.httpRequestSummaryVec == nil {
@@ -335,6 +348,9 @@ func (c *Collector) Update(stream *util.Stream) {
 	}
 	if c.httpRequestsTotalVec == nil {
 		c.registerHttpRequestsTotalVec()
+	}
+	if c.actionCallsTotalVec == nil {
+		c.registerActionCallsTotalVec()
 	}
 	if c.jobExecutionSummaryVec == nil {
 		c.registerJobExecutionSummaryVec()
@@ -472,6 +488,8 @@ func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
 		deleted = c.pageHistogramVec.Delete(labels)
 	case "logjam:action:ajax_time_distribution_seconds":
 		deleted = c.ajaxHistogramVec.Delete(labels)
+	case "logjam:action:action_calls_total":
+		deleted = c.actionCallsTotalVec.Delete(labels)
 	default:
 		metric, kind := extractLogjamMetricFromName(name)
 		if metric != "" {
@@ -581,6 +599,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		p["level"] = m.maxLogLevel
 		c.httpRequestsTotalVec.With(p).Add(1)
 		delete(p, "level")
+		c.actionCallsTotalVec.With(p).Add(1)
 		for k, v := range m.timeMetrics {
 			if vec := c.requestMetricsSummaryMap[k]; vec != nil {
 				vec.With(p).Observe(v)
@@ -609,6 +628,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		c.jobExecutionsTotalVec.With(p).Add(1)
 		delete(p, "level")
 		p["type"] = "job"
+		c.actionCallsTotalVec.With(p).Add(1)
 		for k, v := range m.counterMetrics {
 			if vec := c.requestMetricsCounterMap[k]; vec != nil {
 				vec.With(p).Add(v)
@@ -641,6 +661,10 @@ func (c *Collector) recordPageMetrics(m *metric) {
 	p["instance"] = ""
 	action := p["action"]
 	c.pageHistogramVec.With(p).Observe(m.value)
+	p["cluster"] = ""
+	p["dc"] = ""
+	p["type"] = "page"
+	c.actionCallsTotalVec.With(p).Add(1)
 	c.actionRegistry <- action
 }
 
@@ -651,6 +675,10 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 	p["instance"] = ""
 	action := p["action"]
 	c.ajaxHistogramVec.With(p).Observe(m.value)
+	p["cluster"] = ""
+	p["dc"] = ""
+	p["type"] = "ajax"
+	c.actionCallsTotalVec.With(p).Add(1)
 	c.actionRegistry <- action
 }
 

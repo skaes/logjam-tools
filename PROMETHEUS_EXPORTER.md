@@ -21,6 +21,7 @@ The following [metrics] are exported:
 | 9. logjam:action:http\_requests\_total                       | counter     | web and API requests with log level    |
 | 10. logjam:action:job\_executions\_total                     | counter     | job executions with log level          |
 | 11. logjam:action:_metric\_name_\_total                      | counter     | all secondary logjam call metric names |
+| 12. logjam:action:action\_calls\_total                       | counter     | count of all action calls              |
 
 
 Secondary logjam metric names are things like `db_time`, `db_calls`, `memcache_time`,
@@ -30,18 +31,19 @@ your logjam instance.
 
 And the following [labels] will be used:
 
-| Label      | Value                            | Metrics it is used with |
-|------------|----------------------------------|-------------------------|
-| 1. app     | application name in logjam       | 1-11                    |
-| 2. env     | environment name in logjam       | 1-11                    |
-| 3. action  | action name in logjam            | 1-11                    |
-| 4. type    | type of http request: web or api | 1,5,9                   |
-|            | type of request (web, api, job)  | 7,8,11                  |
-| 5. code    | response code in logjam          | 5,6                     |
-| 6. method  | http request method              | 1,5                     |
-| 7. cluster | cluster name (e.g. Kubernetes)   | 5,6,9,10,11             |
-| 8. dc      | datacenter name                  | 5,6,9,10,11             |
-| 9. level   | log level (0-5)                  | 9,10                    |
+| Label      | Value                                    | Metrics it is used with |
+|------------|------------------------------------------|-------------------------|
+| 1. app     | application name in logjam               | 1-12                    |
+| 2. env     | environment name in logjam               | 1-12                    |
+| 3. action  | action name in logjam                    | 1-12                    |
+| 4. type    | type of http request: web or api         | 1,5,9                   |
+|            | type of request (web, api, job)          | 7,8,11                  |
+|            | type of call (web, api, job, ajax, page) | 12                      |
+| 5. code    | response code in logjam                  | 5,6                     |
+| 6. method  | http request method                      | 1,5                     |
+| 7. cluster | cluster name (e.g. Kubernetes)           | 5,6,9,10,11,12          |
+| 8. dc      | datacenter name                          | 5,6,9,10,11,12          |
+| 9. level   | log level (0-5)                          | 9,10                    |
 
 
 Log level values are:
