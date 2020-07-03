@@ -21,7 +21,7 @@ The following [metrics] are exported:
 | 9. logjam:action:http\_requests\_total                       | counter     | web and API requests with log level    |
 | 10. logjam:action:job\_executions\_total                     | counter     | job executions with log level          |
 | 11. logjam:action:_metric\_name_\_total                      | counter     | all secondary logjam call metric names |
-| 12. logjam:action:action\_calls\_total                       | counter     | count of all action calls              |
+| 12. logjam:action:actions\_processed\_total                  | counter     | count of all actions processed         |
 
 
 Secondary logjam metric names are things like `db_time`, `db_calls`, `memcache_time`,

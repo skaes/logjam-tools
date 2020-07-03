@@ -63,13 +63,7 @@ type Options struct {
 	Resources   *util.Resources // Resources to extract from incoming messages.
 }
 
-type Collector struct {
-	Name                       string
-	opts                       Options
-	stream                     *util.Stream
-	app                        string
-	env                        string
-	mutex                      sync.RWMutex
+type CollectorMetrics struct {
 	httpRequestSummaryVec      *prometheus.SummaryVec
 	httpRequestsTotalVec       *prometheus.CounterVec
 	jobExecutionSummaryVec     *prometheus.SummaryVec
@@ -78,18 +72,29 @@ type Collector struct {
 	jobExecutionHistogramVec   *prometheus.HistogramVec
 	pageHistogramVec           *prometheus.HistogramVec
 	ajaxHistogramVec           *prometheus.HistogramVec
-	actionCallsTotalVec        *prometheus.CounterVec
+	transactionsTotalVec       *prometheus.CounterVec
 	requestMetricsSummaryMap   map[string]*prometheus.SummaryVec
 	requestMetricsHistogramMap map[string]*prometheus.HistogramVec
 	requestMetricsCounterMap   map[string]*prometheus.CounterVec
-	registry                   *prometheus.Registry
-	metricsChannel             chan *metric
-	RequestHandler             http.Handler
-	actionRegistry             chan string
-	knownActions               map[string]time.Time
-	knownActionsSize           int32
-	stopped                    uint32
-	datacenters                []dcPair
+}
+
+type Collector struct {
+	Name               string
+	opts               Options
+	stream             *util.Stream
+	app                string
+	env                string
+	mutex              sync.RWMutex
+	actionMetrics      CollectorMetrics
+	applicationMetrics CollectorMetrics
+	registry           *prometheus.Registry
+	metricsChannel     chan *metric
+	RequestHandler     http.Handler
+	actionRegistry     chan string
+	knownActions       map[string]time.Time
+	knownActionsSize   int32
+	stopped            uint32
+	datacenters        []dcPair
 }
 
 var defaultBuckets = []float64{0.001, 0.0025, 0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100}
@@ -144,19 +149,26 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func New(appEnv string, stream *util.Stream, opts Options) *Collector {
 	app, env := util.ParseStreamName(appEnv)
 	c := Collector{
-		opts:                       opts,
-		app:                        app,
-		env:                        env,
-		stream:                     stream,
-		registry:                   prometheus.NewRegistry(),
-		actionRegistry:             make(chan string, 10000),
-		knownActions:               make(map[string]time.Time),
-		knownActionsSize:           0,
-		metricsChannel:             make(chan *metric, 10000),
-		datacenters:                make([]dcPair, 0),
-		requestMetricsSummaryMap:   make(map[string]*prometheus.SummaryVec),
-		requestMetricsHistogramMap: make(map[string]*prometheus.HistogramVec),
-		requestMetricsCounterMap:   make(map[string]*prometheus.CounterVec),
+		opts:             opts,
+		app:              app,
+		env:              env,
+		stream:           stream,
+		registry:         prometheus.NewRegistry(),
+		actionRegistry:   make(chan string, 10000),
+		knownActions:     make(map[string]time.Time),
+		knownActionsSize: 0,
+		metricsChannel:   make(chan *metric, 10000),
+		datacenters:      make([]dcPair, 0),
+		actionMetrics: CollectorMetrics{
+			requestMetricsSummaryMap:   make(map[string]*prometheus.SummaryVec),
+			requestMetricsHistogramMap: make(map[string]*prometheus.HistogramVec),
+			requestMetricsCounterMap:   make(map[string]*prometheus.CounterVec),
+		},
+		applicationMetrics: CollectorMetrics{
+			requestMetricsSummaryMap:   make(map[string]*prometheus.SummaryVec),
+			requestMetricsHistogramMap: make(map[string]*prometheus.HistogramVec),
+			requestMetricsCounterMap:   make(map[string]*prometheus.CounterVec),
+		},
 	}
 	for _, dc := range strings.Split(opts.Datacenters, ",") {
 		if dc != "" {
@@ -171,7 +183,7 @@ func New(appEnv string, stream *util.Stream, opts Options) *Collector {
 }
 
 func (c *Collector) registerHttpRequestSummaryVec() {
-	c.httpRequestSummaryVec = prometheus.NewSummaryVec(
+	c.actionMetrics.httpRequestSummaryVec = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "logjam:action:http_response_time_summary_seconds",
 			Help:       "logjam http response time summary by action",
@@ -180,7 +192,17 @@ func (c *Collector) registerHttpRequestSummaryVec() {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "type", "code", "method", "instance", "cluster", "dc"},
 	)
-	c.registry.MustRegister(c.httpRequestSummaryVec)
+	c.registry.MustRegister(c.actionMetrics.httpRequestSummaryVec)
+	c.applicationMetrics.httpRequestSummaryVec = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "logjam:application:http_response_time_summary_seconds",
+			Help:       "logjam http response time summary by application",
+			Objectives: map[float64]float64{},
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "type", "code", "method", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.applicationMetrics.httpRequestSummaryVec)
 }
 
 func (c *Collector) registerRequestMetricsSummaryVec(metric string) {
@@ -193,7 +215,18 @@ func (c *Collector) registerRequestMetricsSummaryVec(metric string) {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "type", "instance", "cluster", "dc"},
 	)
-	c.requestMetricsSummaryMap[metric] = vec
+	c.actionMetrics.requestMetricsSummaryMap[metric] = vec
+	c.registry.MustRegister(vec)
+	vec = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "logjam:application:" + metric + "_summary_seconds",
+			Help:       "logjam " + metric + " summary by application",
+			Objectives: map[float64]float64{},
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "type", "instance", "cluster", "dc"},
+	)
+	c.applicationMetrics.requestMetricsSummaryMap[metric] = vec
 	c.registry.MustRegister(vec)
 }
 
@@ -206,12 +239,22 @@ func (c *Collector) registerRequestMetricsCounterVec(metric string) {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "type", "instance", "cluster", "dc"},
 	)
-	c.requestMetricsCounterMap[metric] = vec
+	c.actionMetrics.requestMetricsCounterMap[metric] = vec
+	c.registry.MustRegister(vec)
+	vec = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "logjam:application:" + metric + "_total",
+			Help: "logjam " + metric + " total by application",
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "type", "instance", "cluster", "dc"},
+	)
+	c.applicationMetrics.requestMetricsCounterMap[metric] = vec
 	c.registry.MustRegister(vec)
 }
 
 func (c *Collector) registerHttpRequestsTotalVec() {
-	c.httpRequestsTotalVec = prometheus.NewCounterVec(
+	c.actionMetrics.httpRequestsTotalVec = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "logjam:action:http_requests_total",
 			Help: "logjam http requests total by action",
@@ -219,11 +262,20 @@ func (c *Collector) registerHttpRequestsTotalVec() {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "type", "level", "instance", "cluster", "dc"},
 	)
-	c.registry.MustRegister(c.httpRequestsTotalVec)
+	c.registry.MustRegister(c.actionMetrics.httpRequestsTotalVec)
+	c.applicationMetrics.httpRequestsTotalVec = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "logjam:application:http_requests_total",
+			Help: "logjam http requests total by application",
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "type", "level", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.applicationMetrics.httpRequestsTotalVec)
 }
 
 func (c *Collector) registerJobExecutionSummaryVec() {
-	c.jobExecutionSummaryVec = prometheus.NewSummaryVec(
+	c.actionMetrics.jobExecutionSummaryVec = prometheus.NewSummaryVec(
 		prometheus.SummaryOpts{
 			Name:       "logjam:action:job_execution_time_summary_seconds",
 			Help:       "logjam job execution time summary by action",
@@ -232,11 +284,21 @@ func (c *Collector) registerJobExecutionSummaryVec() {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "code", "instance", "cluster", "dc"},
 	)
-	c.registry.MustRegister(c.jobExecutionSummaryVec)
+	c.registry.MustRegister(c.actionMetrics.jobExecutionSummaryVec)
+	c.applicationMetrics.jobExecutionSummaryVec = prometheus.NewSummaryVec(
+		prometheus.SummaryOpts{
+			Name:       "logjam:application:job_execution_time_summary_seconds",
+			Help:       "logjam job execution time summary by application",
+			Objectives: map[float64]float64{},
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "code", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.applicationMetrics.jobExecutionSummaryVec)
 }
 
 func (c *Collector) registerJobExecutionsTotalVec() {
-	c.jobExecutionsTotalVec = prometheus.NewCounterVec(
+	c.actionMetrics.jobExecutionsTotalVec = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "logjam:action:job_executions_total",
 			Help: "logjam job executions total by action",
@@ -244,11 +306,20 @@ func (c *Collector) registerJobExecutionsTotalVec() {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "level", "instance", "cluster", "dc"},
 	)
-	c.registry.MustRegister(c.jobExecutionsTotalVec)
+	c.registry.MustRegister(c.actionMetrics.jobExecutionsTotalVec)
+	c.applicationMetrics.jobExecutionsTotalVec = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "logjam:application:job_executions_total",
+			Help: "logjam job executions total by application",
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "level", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.applicationMetrics.jobExecutionsTotalVec)
 }
 
 func (c *Collector) registerHttpRequestHistogramVec(stream *util.Stream) {
-	c.httpRequestHistogramVec = prometheus.NewHistogramVec(
+	c.actionMetrics.httpRequestHistogramVec = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "logjam:action:http_response_time_distribution_seconds",
 			Help:    "logjam http response time distribution by action",
@@ -257,7 +328,17 @@ func (c *Collector) registerHttpRequestHistogramVec(stream *util.Stream) {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "type", "method", "instance"},
 	)
-	c.registry.MustRegister(c.httpRequestHistogramVec)
+	c.registry.MustRegister(c.actionMetrics.httpRequestHistogramVec)
+	c.applicationMetrics.httpRequestHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:application:http_response_time_distribution_seconds",
+			Help:    "logjam http response time distribution by application",
+			Buckets: stream.HttpBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "type", "method", "instance"},
+	)
+	c.registry.MustRegister(c.applicationMetrics.httpRequestHistogramVec)
 }
 
 func (c *Collector) registerRequestMetricsHistogramVec(metric string) {
@@ -270,12 +351,23 @@ func (c *Collector) registerRequestMetricsHistogramVec(metric string) {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "type", "instance"},
 	)
-	c.requestMetricsHistogramMap[metric] = vec
+	c.actionMetrics.requestMetricsHistogramMap[metric] = vec
+	c.registry.MustRegister(vec)
+	vec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:application:" + metric + "_distribution_seconds",
+			Help:    "logjam " + metric + " distribution by application",
+			Buckets: defaultBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "type", "instance"},
+	)
+	c.applicationMetrics.requestMetricsHistogramMap[metric] = vec
 	c.registry.MustRegister(vec)
 }
 
 func (c *Collector) registerJobExecutionHistogramVec(stream *util.Stream) {
-	c.jobExecutionHistogramVec = prometheus.NewHistogramVec(
+	c.actionMetrics.jobExecutionHistogramVec = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "logjam:action:job_execution_time_distribution_seconds",
 			Help:    "logjam background job execution time distribution by action",
@@ -284,11 +376,21 @@ func (c *Collector) registerJobExecutionHistogramVec(stream *util.Stream) {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "instance"},
 	)
-	c.registry.MustRegister(c.jobExecutionHistogramVec)
+	c.registry.MustRegister(c.actionMetrics.jobExecutionHistogramVec)
+	c.applicationMetrics.jobExecutionHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:application:job_execution_time_distribution_seconds",
+			Help:    "logjam background job execution time distribution by application",
+			Buckets: stream.JobsBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "instance"},
+	)
+	c.registry.MustRegister(c.applicationMetrics.jobExecutionHistogramVec)
 }
 
 func (c *Collector) registerPageHistogramVec(stream *util.Stream) {
-	c.pageHistogramVec = prometheus.NewHistogramVec(
+	c.actionMetrics.pageHistogramVec = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "logjam:action:page_time_distribution_seconds",
 			Help:    "logjam page loading time distribution by action",
@@ -297,11 +399,21 @@ func (c *Collector) registerPageHistogramVec(stream *util.Stream) {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "instance"},
 	)
-	c.registry.MustRegister(c.pageHistogramVec)
+	c.registry.MustRegister(c.actionMetrics.pageHistogramVec)
+	c.applicationMetrics.pageHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:application:page_time_distribution_seconds",
+			Help:    "logjam page loading time distribution by application",
+			Buckets: stream.PageBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "instance"},
+	)
+	c.registry.MustRegister(c.applicationMetrics.pageHistogramVec)
 }
 
 func (c *Collector) registerAjaxHistogramVec(stream *util.Stream) {
-	c.ajaxHistogramVec = prometheus.NewHistogramVec(
+	c.actionMetrics.ajaxHistogramVec = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "logjam:action:ajax_time_distribution_seconds",
 			Help:    "logjam ajax response time distribution by action",
@@ -310,98 +422,125 @@ func (c *Collector) registerAjaxHistogramVec(stream *util.Stream) {
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "instance"},
 	)
-	c.registry.MustRegister(c.ajaxHistogramVec)
+	c.registry.MustRegister(c.actionMetrics.ajaxHistogramVec)
+	c.applicationMetrics.ajaxHistogramVec = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:application:ajax_time_distribution_seconds",
+			Help:    "logjam ajax response time distribution by application",
+			Buckets: stream.AjaxBuckets,
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "instance"},
+	)
+	c.registry.MustRegister(c.applicationMetrics.ajaxHistogramVec)
 }
 
-func (c *Collector) registerActionCallsTotalVec() {
-	c.actionCallsTotalVec = prometheus.NewCounterVec(
+func (c *Collector) registerTransactionsTotalVec() {
+	c.actionMetrics.transactionsTotalVec = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "logjam:action:action_calls_total",
-			Help: "logjam action calls total by action and action type",
+			Name: "logjam:action:transactions_total",
+			Help: "logjam actions processed total by action and action type",
 		},
 		// instance always set to the empty string
 		[]string{"app", "env", "action", "type", "instance", "cluster", "dc"},
 	)
-	c.registry.MustRegister(c.actionCallsTotalVec)
+	c.registry.MustRegister(c.actionMetrics.transactionsTotalVec)
+	c.applicationMetrics.transactionsTotalVec = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "logjam:application:transactions_total",
+			Help: "logjam actions processed total by application and action type",
+		},
+		// instance always set to the empty string
+		[]string{"app", "env", "type", "instance", "cluster", "dc"},
+	)
+	c.registry.MustRegister(c.applicationMetrics.transactionsTotalVec)
 }
 
 func (c *Collector) Update(stream *util.Stream) {
 	locked := false
-	if c.httpRequestSummaryVec == nil {
+	if c.actionMetrics.httpRequestSummaryVec == nil {
 		c.registerHttpRequestSummaryVec()
 	}
 	for _, m := range c.opts.Resources.TimeResources {
 		if m == "total_time" {
 			continue
 		}
-		if c.requestMetricsSummaryMap[m] == nil {
+		if c.actionMetrics.requestMetricsSummaryMap[m] == nil {
 			c.registerRequestMetricsSummaryVec(m)
 		}
-		if c.requestMetricsHistogramMap[m] == nil {
+		if c.actionMetrics.requestMetricsHistogramMap[m] == nil {
 			c.registerRequestMetricsHistogramVec(m)
 		}
 	}
 	for _, m := range c.opts.Resources.CallResources {
-		if c.requestMetricsCounterMap[m] == nil {
+		if c.actionMetrics.requestMetricsCounterMap[m] == nil {
 			c.registerRequestMetricsCounterVec(m)
 		}
 	}
-	if c.httpRequestsTotalVec == nil {
+	if c.actionMetrics.httpRequestsTotalVec == nil {
 		c.registerHttpRequestsTotalVec()
 	}
-	if c.actionCallsTotalVec == nil {
-		c.registerActionCallsTotalVec()
+	if c.actionMetrics.transactionsTotalVec == nil {
+		c.registerTransactionsTotalVec()
 	}
-	if c.jobExecutionSummaryVec == nil {
+	if c.actionMetrics.jobExecutionSummaryVec == nil {
 		c.registerJobExecutionSummaryVec()
 	}
-	if c.jobExecutionsTotalVec == nil {
+	if c.actionMetrics.jobExecutionsTotalVec == nil {
 		c.registerJobExecutionsTotalVec()
 	}
-	if c.httpRequestHistogramVec != nil && !c.stream.SameHttpBuckets(stream) {
+	if c.actionMetrics.httpRequestHistogramVec != nil && !c.stream.SameHttpBuckets(stream) {
 		c.mutex.Lock()
 		defer c.mutex.Unlock()
 		locked = true
-		c.registry.Unregister(c.httpRequestHistogramVec)
-		c.httpRequestHistogramVec = nil
+		c.registry.Unregister(c.actionMetrics.httpRequestHistogramVec)
+		c.registry.Unregister(c.applicationMetrics.httpRequestHistogramVec)
+		c.actionMetrics.httpRequestHistogramVec = nil
+		c.applicationMetrics.httpRequestHistogramVec = nil
 	}
-	if c.httpRequestHistogramVec == nil {
+	if c.actionMetrics.httpRequestHistogramVec == nil {
 		c.registerHttpRequestHistogramVec(stream)
 	}
-	if c.jobExecutionHistogramVec != nil && !c.stream.SameJobsBuckets(stream) {
+	if c.actionMetrics.jobExecutionHistogramVec != nil && !c.stream.SameJobsBuckets(stream) {
 		if !locked {
 			c.mutex.Lock()
 			defer c.mutex.Unlock()
 			locked = true
 		}
-		c.registry.Unregister(c.jobExecutionHistogramVec)
-		c.jobExecutionHistogramVec = nil
+		c.registry.Unregister(c.actionMetrics.jobExecutionHistogramVec)
+		c.registry.Unregister(c.applicationMetrics.jobExecutionHistogramVec)
+		c.actionMetrics.jobExecutionHistogramVec = nil
+		c.applicationMetrics.jobExecutionHistogramVec = nil
 	}
-	if c.jobExecutionHistogramVec == nil {
+	if c.actionMetrics.jobExecutionHistogramVec == nil {
 		c.registerJobExecutionHistogramVec(stream)
 	}
-	if c.pageHistogramVec != nil && !c.stream.SamePageBuckets(stream) {
+	if c.actionMetrics.pageHistogramVec != nil && !c.stream.SamePageBuckets(stream) {
 		if !locked {
 			c.mutex.Lock()
 			defer c.mutex.Unlock()
 			locked = true
 		}
-		c.registry.Unregister(c.pageHistogramVec)
-		c.pageHistogramVec = nil
+		c.registry.Unregister(c.actionMetrics.pageHistogramVec)
+		c.registry.Unregister(c.applicationMetrics.pageHistogramVec)
+		c.actionMetrics.pageHistogramVec = nil
+		c.applicationMetrics.pageHistogramVec = nil
 	}
-	if c.pageHistogramVec == nil {
+	if c.actionMetrics.pageHistogramVec == nil {
 		c.registerPageHistogramVec(stream)
 	}
-	if c.ajaxHistogramVec != nil && !c.stream.SameAjaxBuckets(stream) {
+	if c.actionMetrics.ajaxHistogramVec != nil && !c.stream.SameAjaxBuckets(stream) {
 		if !locked {
 			c.mutex.Lock()
 			defer c.mutex.Unlock()
 			locked = true
 		}
-		c.registry.Unregister(c.ajaxHistogramVec)
-		c.ajaxHistogramVec = nil
+		c.registry.Unregister(c.actionMetrics.ajaxHistogramVec)
+		c.registry.Unregister(c.applicationMetrics.ajaxHistogramVec)
+		c.actionMetrics.ajaxHistogramVec = nil
+		c.applicationMetrics.ajaxHistogramVec = nil
 	}
-	if c.ajaxHistogramVec == nil {
+	if c.actionMetrics.ajaxHistogramVec == nil {
 		c.registerAjaxHistogramVec(stream)
 	}
 	if (!c.stream.SameAPIRequests(stream) || c.stream.IgnoredRequestURI != stream.IgnoredRequestURI) && !locked {
@@ -462,9 +601,8 @@ func extractLogjamMetricFromName(name string) (string, string) {
 	resource, kind, total := matches[1], matches[2], matches[3]
 	if total == "" {
 		return resource, kind
-	} else {
-		return resource, total
 	}
+	return resource, total
 }
 
 func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
@@ -473,33 +611,33 @@ func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
 	deleted := false
 	switch name {
 	case "logjam:action:http_response_time_summary_seconds":
-		deleted = c.httpRequestSummaryVec.Delete(labels)
+		deleted = c.actionMetrics.httpRequestSummaryVec.Delete(labels)
 	case "logjam:action:http_requests_total":
-		deleted = c.httpRequestsTotalVec.Delete(labels)
+		deleted = c.actionMetrics.httpRequestsTotalVec.Delete(labels)
 	case "logjam:action:job_execution_time_summary_seconds":
-		deleted = c.jobExecutionSummaryVec.Delete(labels)
+		deleted = c.actionMetrics.jobExecutionSummaryVec.Delete(labels)
 	case "logjam:action:job_executions_total":
-		deleted = c.jobExecutionsTotalVec.Delete(labels)
+		deleted = c.actionMetrics.jobExecutionsTotalVec.Delete(labels)
 	case "logjam:action:http_response_time_distribution_seconds":
-		deleted = c.httpRequestHistogramVec.Delete(labels)
+		deleted = c.actionMetrics.httpRequestHistogramVec.Delete(labels)
 	case "logjam:action:job_execution_time_distribution_seconds":
-		deleted = c.jobExecutionHistogramVec.Delete(labels)
+		deleted = c.actionMetrics.jobExecutionHistogramVec.Delete(labels)
 	case "logjam:action:page_time_distribution_seconds":
-		deleted = c.pageHistogramVec.Delete(labels)
+		deleted = c.actionMetrics.pageHistogramVec.Delete(labels)
 	case "logjam:action:ajax_time_distribution_seconds":
-		deleted = c.ajaxHistogramVec.Delete(labels)
-	case "logjam:action:action_calls_total":
-		deleted = c.actionCallsTotalVec.Delete(labels)
+		deleted = c.actionMetrics.ajaxHistogramVec.Delete(labels)
+	case "logjam:action:transactions_total":
+		deleted = c.actionMetrics.transactionsTotalVec.Delete(labels)
 	default:
 		metric, kind := extractLogjamMetricFromName(name)
 		if metric != "" {
 			switch kind {
 			case "summary":
-				deleted = c.requestMetricsSummaryMap[metric].Delete(labels)
+				deleted = c.actionMetrics.requestMetricsSummaryMap[metric].Delete(labels)
 			case "distribution":
-				deleted = c.requestMetricsHistogramMap[metric].Delete(labels)
+				deleted = c.actionMetrics.requestMetricsHistogramMap[metric].Delete(labels)
 			case "total":
-				deleted = c.requestMetricsCounterMap[metric].Delete(labels)
+				deleted = c.actionMetrics.requestMetricsCounterMap[metric].Delete(labels)
 			}
 		}
 	}
@@ -579,6 +717,16 @@ func (c *Collector) fixDatacenter(m map[string]string, instance string) {
 	}
 }
 
+func removeAction(p map[string]string) map[string]string {
+	q := make(map[string]string, len(p))
+	for k, v := range p {
+		if k != "action" {
+			q[k] = v
+		}
+	}
+	return q
+}
+
 func (c *Collector) recordLogMetrics(m *metric) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
@@ -593,63 +741,102 @@ func (c *Collector) recordLogMetrics(m *metric) {
 	switch metric {
 	case "http":
 		p["type"] = c.requestType(action)
-		c.httpRequestSummaryVec.With(p).Observe(m.value)
+		c.actionMetrics.httpRequestSummaryVec.With(p).Observe(m.value)
 		delete(p, "code")
 		delete(p, "method")
 		p["level"] = m.maxLogLevel
-		c.httpRequestsTotalVec.With(p).Add(1)
+		c.actionMetrics.httpRequestsTotalVec.With(p).Add(1)
 		delete(p, "level")
-		c.actionCallsTotalVec.With(p).Add(1)
+		c.actionMetrics.transactionsTotalVec.With(p).Add(1)
+		q := removeAction(p)
+		c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
 		for k, v := range m.timeMetrics {
-			if vec := c.requestMetricsSummaryMap[k]; vec != nil {
+			if vec := c.actionMetrics.requestMetricsSummaryMap[k]; vec != nil {
 				vec.With(p).Observe(v)
+			}
+			if vec := c.applicationMetrics.requestMetricsSummaryMap[k]; vec != nil {
+				vec.With(q).Observe(v)
 			}
 		}
 		for k, v := range m.counterMetrics {
-			if vec := c.requestMetricsCounterMap[k]; vec != nil {
+			if vec := c.actionMetrics.requestMetricsCounterMap[k]; vec != nil {
 				vec.With(p).Add(v)
+			}
+			if vec := c.applicationMetrics.requestMetricsCounterMap[k]; vec != nil {
+				vec.With(q).Add(v)
 			}
 		}
 		p["method"] = method
+		q["method"] = method
 		delete(p, "cluster")
 		delete(p, "dc")
-		c.httpRequestHistogramVec.With(p).Observe(m.value)
+		delete(q, "cluster")
+		delete(q, "dc")
+		c.actionMetrics.httpRequestHistogramVec.With(p).Observe(m.value)
+		c.applicationMetrics.httpRequestHistogramVec.With(q).Observe(m.value)
 		delete(p, "method")
+		delete(q, "method")
 		for k, v := range m.timeMetrics {
-			if vec := c.requestMetricsHistogramMap[k]; vec != nil {
+			if vec := c.actionMetrics.requestMetricsHistogramMap[k]; vec != nil {
 				vec.With(p).Observe(v)
+			}
+			if vec := c.applicationMetrics.requestMetricsHistogramMap[k]; vec != nil {
+				vec.With(q).Observe(v)
 			}
 		}
 		c.actionRegistry <- action
 	case "job":
-		c.jobExecutionSummaryVec.With(p).Observe(m.value)
+		q := removeAction(p)
+		c.actionMetrics.jobExecutionSummaryVec.With(p).Observe(m.value)
+		c.applicationMetrics.jobExecutionSummaryVec.With(q).Observe(m.value)
 		delete(p, "code")
+		delete(q, "code")
 		p["level"] = m.maxLogLevel
-		c.jobExecutionsTotalVec.With(p).Add(1)
+		q["level"] = m.maxLogLevel
+		c.actionMetrics.jobExecutionsTotalVec.With(p).Add(1)
+		c.applicationMetrics.jobExecutionsTotalVec.With(q).Add(1)
 		delete(p, "level")
+		delete(q, "level")
 		p["type"] = "job"
-		c.actionCallsTotalVec.With(p).Add(1)
+		q["type"] = "job"
+		c.actionMetrics.transactionsTotalVec.With(p).Add(1)
+		c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
 		for k, v := range m.counterMetrics {
-			if vec := c.requestMetricsCounterMap[k]; vec != nil {
+			if vec := c.actionMetrics.requestMetricsCounterMap[k]; vec != nil {
 				vec.With(p).Add(v)
+			}
+			if vec := c.applicationMetrics.requestMetricsCounterMap[k]; vec != nil {
+				vec.With(q).Add(v)
 			}
 		}
 		for k, v := range m.timeMetrics {
-			if vec := c.requestMetricsSummaryMap[k]; vec != nil {
+			if vec := c.actionMetrics.requestMetricsSummaryMap[k]; vec != nil {
 				vec.With(p).Observe(v)
+			}
+			if vec := c.applicationMetrics.requestMetricsSummaryMap[k]; vec != nil {
+				vec.With(q).Observe(v)
 			}
 		}
 		delete(p, "type")
 		delete(p, "cluster")
 		delete(p, "dc")
-		c.jobExecutionHistogramVec.With(p).Observe(m.value)
+		delete(q, "type")
+		delete(q, "cluster")
+		delete(q, "dc")
+		c.actionMetrics.jobExecutionHistogramVec.With(p).Observe(m.value)
+		c.applicationMetrics.jobExecutionHistogramVec.With(q).Observe(m.value)
 		p["type"] = "job"
+		q["type"] = "job"
 		for k, v := range m.timeMetrics {
-			if vec := c.requestMetricsHistogramMap[k]; vec != nil {
+			if vec := c.actionMetrics.requestMetricsHistogramMap[k]; vec != nil {
 				vec.With(p).Observe(v)
+			}
+			if vec := c.applicationMetrics.requestMetricsHistogramMap[k]; vec != nil {
+				vec.With(q).Observe(v)
 			}
 		}
 		delete(p, "type")
+		delete(q, "type")
 		c.actionRegistry <- action
 	}
 }
@@ -660,11 +847,15 @@ func (c *Collector) recordPageMetrics(m *metric) {
 	p := m.props
 	p["instance"] = ""
 	action := p["action"]
-	c.pageHistogramVec.With(p).Observe(m.value)
+	c.actionMetrics.pageHistogramVec.With(p).Observe(m.value)
+	q := removeAction(p)
+	c.applicationMetrics.pageHistogramVec.With(q).Observe(m.value)
 	p["cluster"] = ""
 	p["dc"] = ""
 	p["type"] = "page"
-	c.actionCallsTotalVec.With(p).Add(1)
+	c.actionMetrics.transactionsTotalVec.With(p).Add(1)
+	q = removeAction(p)
+	c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
 	c.actionRegistry <- action
 }
 
@@ -674,11 +865,15 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 	p := m.props
 	p["instance"] = ""
 	action := p["action"]
-	c.ajaxHistogramVec.With(p).Observe(m.value)
+	c.actionMetrics.ajaxHistogramVec.With(p).Observe(m.value)
+	q := removeAction(p)
+	c.applicationMetrics.ajaxHistogramVec.With(q).Observe(m.value)
 	p["cluster"] = ""
 	p["dc"] = ""
 	p["type"] = "ajax"
-	c.actionCallsTotalVec.With(p).Add(1)
+	c.actionMetrics.transactionsTotalVec.With(p).Add(1)
+	q = removeAction(p)
+	c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
 	c.actionRegistry <- action
 }
 
