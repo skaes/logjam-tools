@@ -380,7 +380,7 @@ func (c *Collector) registerJobExecutionHistogramVec(stream *util.Stream) {
 	c.applicationMetrics.jobExecutionHistogramVec = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "logjam:application:job_execution_time_distribution_seconds",
-			Help:    "logjam background job execution time distribution by action",
+			Help:    "logjam background job execution time distribution by application",
 			Buckets: stream.JobsBuckets,
 		},
 		// instance always set to the empty string
@@ -435,7 +435,7 @@ func (c *Collector) registerAjaxHistogramVec(stream *util.Stream) {
 	c.registry.MustRegister(c.applicationMetrics.ajaxHistogramVec)
 }
 
-func (c *Collector) registerActionsProcessedTotalVec() {
+func (c *Collector) registerTransactionsTotalVec() {
 	c.actionMetrics.transactionsTotalVec = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "logjam:action:transactions_total",
@@ -481,7 +481,7 @@ func (c *Collector) Update(stream *util.Stream) {
 		c.registerHttpRequestsTotalVec()
 	}
 	if c.actionMetrics.transactionsTotalVec == nil {
-		c.registerActionsProcessedTotalVec()
+		c.registerTransactionsTotalVec()
 	}
 	if c.actionMetrics.jobExecutionSummaryVec == nil {
 		c.registerJobExecutionSummaryVec()
