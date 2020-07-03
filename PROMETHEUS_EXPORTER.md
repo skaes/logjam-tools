@@ -6,6 +6,8 @@ building all of this into logjam, it will be much less work to export logjam met
 Prometheus, which supports customized views through Grafana and alerting through both
 Grafana and it's own [alert manager].
 
+## Action level metrics
+
 The following [metrics] are exported:
 
 | Metric                                                       | Metric Type | Usage Pattern                          |
@@ -21,7 +23,7 @@ The following [metrics] are exported:
 | 9. logjam:action:http\_requests\_total                       | counter     | web and API requests with log level    |
 | 10. logjam:action:job\_executions\_total                     | counter     | job executions with log level          |
 | 11. logjam:action:_metric\_name_\_total                      | counter     | all secondary logjam call metric names |
-| 12. logjam:action:actions\_processed\_total                  | counter     | count of all actions processed         |
+| 12. logjam:action:transactions\_total                        | counter     | count of all action metrics collected  |
 
 
 Secondary logjam metric names are things like `db_time`, `db_calls`, `memcache_time`,
@@ -61,6 +63,14 @@ The importer will need to figure out whether an action maps to which metric in P
 but this is actually simple: it already knows whether it is processing an Ajax or a page
 request, and the distinction between HTTP requests and job execution can be made by
 looking whether the request\_info sub hash contains a HTTP method specification.
+
+## Application level metrics
+
+In addition to the action level metrics, the exporter also exposes application level
+metrics. These are just the sum of all metrics over all actions of a given
+application. For each action, the corresponding metric name is derived by replacing
+`:action:` with `:application:`.
+
 
 ## TODO
 
