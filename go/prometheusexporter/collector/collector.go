@@ -591,19 +591,18 @@ func labelsFromLabelPairs(pairs []*promclient.LabelPair) prometheus.Labels {
 	return labels
 }
 
-var logjamMetricsNameMatcher = regexp.MustCompile(`^logjam:(action|application):(.*)_(?:(distribution|summary)_seconds|(total))$`)
+var logjamMetricsNameMatcher = regexp.MustCompile(`^logjam:action:(.*)_(?:(distribution|summary)_seconds|(total))$`)
 
-func extractLogjamMetricFromName(name string) (string, string, bool) {
+func extractLogjamMetricFromName(name string) (string, string) {
 	matches := logjamMetricsNameMatcher.FindStringSubmatch(name)
-	if len(matches) != 5 {
-		return "", "", true
+	if len(matches) != 4 {
+		return "", ""
 	}
-	level, resource, kind, total := matches[1], matches[2], matches[3], matches[4]
-	action := level == "action"
+	resource, kind, total := matches[1], matches[2], matches[3]
 	if total == "" {
-		return resource, kind, action
+		return resource, kind
 	}
-	return resource, total, action
+	return resource, total
 }
 
 func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
@@ -629,46 +628,16 @@ func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
 		deleted = c.actionMetrics.ajaxHistogramVec.Delete(labels)
 	case "logjam:action:transactions_total":
 		deleted = c.actionMetrics.transactionsTotalVec.Delete(labels)
-	case "logjam:application:http_response_time_summary_seconds":
-		deleted = c.applicationMetrics.httpRequestSummaryVec.Delete(labels)
-	case "logjam:application:http_requests_total":
-		deleted = c.applicationMetrics.httpRequestsTotalVec.Delete(labels)
-	case "logjam:application:job_execution_time_summary_seconds":
-		deleted = c.applicationMetrics.jobExecutionSummaryVec.Delete(labels)
-	case "logjam:application:job_executions_total":
-		deleted = c.applicationMetrics.jobExecutionsTotalVec.Delete(labels)
-	case "logjam:application:http_response_time_distribution_seconds":
-		deleted = c.applicationMetrics.httpRequestHistogramVec.Delete(labels)
-	case "logjam:application:job_execution_time_distribution_seconds":
-		deleted = c.applicationMetrics.jobExecutionHistogramVec.Delete(labels)
-	case "logjam:application:page_time_distribution_seconds":
-		deleted = c.applicationMetrics.pageHistogramVec.Delete(labels)
-	case "logjam:application:ajax_time_distribution_seconds":
-		deleted = c.applicationMetrics.ajaxHistogramVec.Delete(labels)
-	case "logjam:application:transactions_total":
-		deleted = c.applicationMetrics.transactionsTotalVec.Delete(labels)
 	default:
-		metric, kind, action := extractLogjamMetricFromName(name)
+		metric, kind := extractLogjamMetricFromName(name)
 		if metric != "" {
 			switch kind {
 			case "summary":
-				if action {
-					deleted = c.actionMetrics.requestMetricsSummaryMap[metric].Delete(labels)
-				} else {
-					deleted = c.applicationMetrics.requestMetricsSummaryMap[metric].Delete(labels)
-				}
+				deleted = c.actionMetrics.requestMetricsSummaryMap[metric].Delete(labels)
 			case "distribution":
-				if action {
-					deleted = c.actionMetrics.requestMetricsHistogramMap[metric].Delete(labels)
-				} else {
-					deleted = c.applicationMetrics.requestMetricsHistogramMap[metric].Delete(labels)
-				}
+				deleted = c.actionMetrics.requestMetricsHistogramMap[metric].Delete(labels)
 			case "total":
-				if action {
-					deleted = c.actionMetrics.requestMetricsCounterMap[metric].Delete(labels)
-				} else {
-					deleted = c.applicationMetrics.requestMetricsCounterMap[metric].Delete(labels)
-				}
+				deleted = c.actionMetrics.requestMetricsCounterMap[metric].Delete(labels)
 			}
 		}
 	}
