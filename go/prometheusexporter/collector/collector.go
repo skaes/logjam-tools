@@ -741,14 +741,20 @@ func (c *Collector) recordLogMetrics(m *metric) {
 	switch metric {
 	case "http":
 		p["type"] = c.requestType(action)
-		c.actionMetrics.httpRequestSummaryVec.With(p).Observe(m.value)
-		delete(p, "code")
-		delete(p, "method")
-		p["level"] = m.maxLogLevel
-		c.actionMetrics.httpRequestsTotalVec.With(p).Add(1)
-		delete(p, "level")
-		c.actionMetrics.transactionsTotalVec.With(p).Add(1)
 		q := removeAction(p)
+		c.actionMetrics.httpRequestSummaryVec.With(p).Observe(m.value)
+		c.applicationMetrics.httpRequestSummaryVec.With(q).Observe(m.value)
+		delete(p, "code")
+		delete(q, "code")
+		delete(p, "method")
+		delete(q, "method")
+		p["level"] = m.maxLogLevel
+		q["level"] = m.maxLogLevel
+		c.actionMetrics.httpRequestsTotalVec.With(p).Add(1)
+		c.applicationMetrics.httpRequestsTotalVec.With(q).Add(1)
+		delete(p, "level")
+		delete(q, "level")
+		c.actionMetrics.transactionsTotalVec.With(p).Add(1)
 		c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
 		for k, v := range m.timeMetrics {
 			if vec := c.actionMetrics.requestMetricsSummaryMap[k]; vec != nil {
