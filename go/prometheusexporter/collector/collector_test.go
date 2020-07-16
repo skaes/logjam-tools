@@ -1,9 +1,10 @@
 package collector
 
 import (
-	"github.com/skaes/logjam-tools/go/util"
 	"sync"
 	"testing"
+
+	"github.com/skaes/logjam-tools/go/util"
 )
 
 func TestExtractingMetricNames(t *testing.T) {
@@ -116,10 +117,10 @@ func TestDeletingLabels(t *testing.T) {
 	c.recordLogMetrics(metrics2)
 	c.recordLogMetrics(metrics3)
 	c.recordLogMetrics(metrics4)
-	if !c.removeAction("marks") {
+	if !c.copyWithoutActionLabel("marks") {
 		t.Errorf("could not remove action: %s", "marks")
 	}
-	if c.removeAction("schnippi") {
+	if c.copyWithoutActionLabel("schnippi") {
 		t.Errorf("could remove non existing action : %s", "schnippi")
 	}
 }

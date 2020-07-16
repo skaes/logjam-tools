@@ -644,7 +644,7 @@ func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
 	return deleted
 }
 
-func (c *Collector) removeAction(a string) bool {
+func (c *Collector) copyWithoutActionLabel(a string) bool {
 	if c.opts.Verbose {
 		log.Info("removing action: %s", a)
 	}
@@ -688,7 +688,7 @@ func (c *Collector) actionRegistryHandler() {
 			threshold := time.Now().Add(-1 * time.Duration(c.opts.CleanAfter) * time.Minute)
 			for a, v := range c.knownActions {
 				if v.Before(threshold) {
-					c.removeAction(a)
+					c.copyWithoutActionLabel(a)
 				}
 			}
 		}
@@ -717,7 +717,7 @@ func (c *Collector) fixDatacenter(m map[string]string, instance string) {
 	}
 }
 
-func removeAction(p map[string]string) map[string]string {
+func copyWithoutActionLabel(p map[string]string) map[string]string {
 	q := make(map[string]string, len(p))
 	for k, v := range p {
 		if k != "action" {
@@ -741,7 +741,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 	switch metric {
 	case "http":
 		p["type"] = c.requestType(action)
-		q := removeAction(p)
+		q := copyWithoutActionLabel(p)
 		c.actionMetrics.httpRequestSummaryVec.With(p).Observe(m.value)
 		c.applicationMetrics.httpRequestSummaryVec.With(q).Observe(m.value)
 		delete(p, "code")
@@ -792,7 +792,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		}
 		c.actionRegistry <- action
 	case "job":
-		q := removeAction(p)
+		q := copyWithoutActionLabel(p)
 		c.actionMetrics.jobExecutionSummaryVec.With(p).Observe(m.value)
 		c.applicationMetrics.jobExecutionSummaryVec.With(q).Observe(m.value)
 		delete(p, "code")
@@ -854,13 +854,13 @@ func (c *Collector) recordPageMetrics(m *metric) {
 	p["instance"] = ""
 	action := p["action"]
 	c.actionMetrics.pageHistogramVec.With(p).Observe(m.value)
-	q := removeAction(p)
+	q := copyWithoutActionLabel(p)
 	c.applicationMetrics.pageHistogramVec.With(q).Observe(m.value)
 	p["cluster"] = ""
 	p["dc"] = ""
 	p["type"] = "page"
 	c.actionMetrics.transactionsTotalVec.With(p).Add(1)
-	q = removeAction(p)
+	q = copyWithoutActionLabel(p)
 	c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
 	c.actionRegistry <- action
 }
@@ -872,13 +872,13 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 	p["instance"] = ""
 	action := p["action"]
 	c.actionMetrics.ajaxHistogramVec.With(p).Observe(m.value)
-	q := removeAction(p)
+	q := copyWithoutActionLabel(p)
 	c.applicationMetrics.ajaxHistogramVec.With(q).Observe(m.value)
 	p["cluster"] = ""
 	p["dc"] = ""
 	p["type"] = "ajax"
 	c.actionMetrics.transactionsTotalVec.With(p).Add(1)
-	q = removeAction(p)
+	q = copyWithoutActionLabel(p)
 	c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
 	c.actionRegistry <- action
 }
