@@ -58,7 +58,7 @@ AS_IF([test "x$prefix" != "x"],
 
 AS_IF([test "x$with_opt_dir" == "x"],
       [
-        PKG_CHECK_MODULES([DEPS],[libzmq >= 4.1.5 libczmq >= 4.2.0 json-c >= 0.11 libbson-1.0 >= 1.14.0 libmongoc-1.0 >= 1.14.0 libsnappy >= 1.1.3 liblz4 >= 1.8.3],[:],
+        PKG_CHECK_MODULES([DEPS],[libzmq >= 4.3.2 libczmq >= 4.2.1 json-c >= 0.11 libbson-1.0 >= 1.14.0 libmongoc-1.0 >= 1.14.0 libsnappy >= 1.1.3 liblz4 >= 1.9.2],[:],
                           [
                             echo "checking modules failed. using builtin default directories."
                             AC_SUBST([OPTDIR_CPPFLAGS],["-I/opt/logjam/include -I/opt/logjam/include/libbson-1.0 -I/opt/logjam/include/libmongoc-1.0 -I/opt/logjam/include/json-c -I/usr/local/include -I/usr/local/include/libbson-1.0 -I/usr/local/include/libmongoc-1.0 -I/usr/local/include/json-c -I/opt/local/include -DZMQ_BUILD_DRAFT_API=1 -DCZMQ_BUILD_DRAFT_API=1"])
