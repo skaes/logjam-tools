@@ -727,6 +727,37 @@ func copyWithoutActionLabel(p map[string]string) map[string]string {
 	return q
 }
 
+func (c *Collector) recordHTTPMetrics(m *metric, labels map[string]string, metrics *CollectorMetrics) {
+	metrics.httpRequestSummaryVec.With(labels).Observe(m.value)
+	method := labels["method"]
+	delete(labels, "code")
+	delete(labels, "method")
+	labels["level"] = m.maxLogLevel
+	metrics.httpRequestsTotalVec.With(labels).Add(1)
+	delete(labels, "level")
+	metrics.transactionsTotalVec.With(labels).Add(1)
+	for k, v := range m.timeMetrics {
+		if vec := metrics.requestMetricsSummaryMap[k]; vec != nil {
+			vec.With(labels).Observe(v)
+		}
+	}
+	for k, v := range m.counterMetrics {
+		if vec := metrics.requestMetricsCounterMap[k]; vec != nil {
+			vec.With(labels).Add(v)
+		}
+	}
+	labels["method"] = method
+	delete(labels, "cluster")
+	delete(labels, "dc")
+	metrics.httpRequestHistogramVec.With(labels).Observe(m.value)
+	delete(labels, "method")
+	for k, v := range m.timeMetrics {
+		if vec := metrics.requestMetricsHistogramMap[k]; vec != nil {
+			vec.With(labels).Observe(v)
+		}
+	}
+}
+
 func (c *Collector) recordLogMetrics(m *metric) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
@@ -735,61 +766,14 @@ func (c *Collector) recordLogMetrics(m *metric) {
 	instance := p["instance"]
 	p["instance"] = ""
 	action := p["action"]
-	method := p["method"]
 	delete(p, "metric")
 	c.fixDatacenter(p, instance)
 	switch metric {
 	case "http":
 		p["type"] = c.requestType(action)
 		q := copyWithoutActionLabel(p)
-		c.actionMetrics.httpRequestSummaryVec.With(p).Observe(m.value)
-		c.applicationMetrics.httpRequestSummaryVec.With(q).Observe(m.value)
-		delete(p, "code")
-		delete(q, "code")
-		delete(p, "method")
-		delete(q, "method")
-		p["level"] = m.maxLogLevel
-		q["level"] = m.maxLogLevel
-		c.actionMetrics.httpRequestsTotalVec.With(p).Add(1)
-		c.applicationMetrics.httpRequestsTotalVec.With(q).Add(1)
-		delete(p, "level")
-		delete(q, "level")
-		c.actionMetrics.transactionsTotalVec.With(p).Add(1)
-		c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
-		for k, v := range m.timeMetrics {
-			if vec := c.actionMetrics.requestMetricsSummaryMap[k]; vec != nil {
-				vec.With(p).Observe(v)
-			}
-			if vec := c.applicationMetrics.requestMetricsSummaryMap[k]; vec != nil {
-				vec.With(q).Observe(v)
-			}
-		}
-		for k, v := range m.counterMetrics {
-			if vec := c.actionMetrics.requestMetricsCounterMap[k]; vec != nil {
-				vec.With(p).Add(v)
-			}
-			if vec := c.applicationMetrics.requestMetricsCounterMap[k]; vec != nil {
-				vec.With(q).Add(v)
-			}
-		}
-		p["method"] = method
-		q["method"] = method
-		delete(p, "cluster")
-		delete(p, "dc")
-		delete(q, "cluster")
-		delete(q, "dc")
-		c.actionMetrics.httpRequestHistogramVec.With(p).Observe(m.value)
-		c.applicationMetrics.httpRequestHistogramVec.With(q).Observe(m.value)
-		delete(p, "method")
-		delete(q, "method")
-		for k, v := range m.timeMetrics {
-			if vec := c.actionMetrics.requestMetricsHistogramMap[k]; vec != nil {
-				vec.With(p).Observe(v)
-			}
-			if vec := c.applicationMetrics.requestMetricsHistogramMap[k]; vec != nil {
-				vec.With(q).Observe(v)
-			}
-		}
+		c.recordHTTPMetrics(m, p, &c.actionMetrics)
+		c.recordHTTPMetrics(m, q, &c.applicationMetrics)
 		c.actionRegistry <- action
 	case "job":
 		q := copyWithoutActionLabel(p)
