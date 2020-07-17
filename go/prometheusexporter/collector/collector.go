@@ -644,7 +644,7 @@ func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
 	return deleted
 }
 
-func (c *Collector) removeAction(a string) bool {
+func (c *Collector) copyWithoutActionLabel(a string) bool {
 	if c.opts.Verbose {
 		log.Info("removing action: %s", a)
 	}
@@ -688,7 +688,7 @@ func (c *Collector) actionRegistryHandler() {
 			threshold := time.Now().Add(-1 * time.Duration(c.opts.CleanAfter) * time.Minute)
 			for a, v := range c.knownActions {
 				if v.Before(threshold) {
-					c.removeAction(a)
+					c.copyWithoutActionLabel(a)
 				}
 			}
 		}
@@ -717,7 +717,7 @@ func (c *Collector) fixDatacenter(m map[string]string, instance string) {
 	}
 }
 
-func removeAction(p map[string]string) map[string]string {
+func copyWithoutActionLabel(p map[string]string) map[string]string {
 	q := make(map[string]string, len(p))
 	for k, v := range p {
 		if k != "action" {
@@ -725,6 +725,68 @@ func removeAction(p map[string]string) map[string]string {
 		}
 	}
 	return q
+}
+
+func (c *Collector) recordHTTPMetrics(m *metric, labels map[string]string, metrics *CollectorMetrics) {
+	metrics.httpRequestSummaryVec.With(labels).Observe(m.value)
+	method := labels["method"]
+	delete(labels, "code")
+	delete(labels, "method")
+	labels["level"] = m.maxLogLevel
+	metrics.httpRequestsTotalVec.With(labels).Add(1)
+	delete(labels, "level")
+	metrics.transactionsTotalVec.With(labels).Add(1)
+	for k, v := range m.timeMetrics {
+		if vec := metrics.requestMetricsSummaryMap[k]; vec != nil {
+			vec.With(labels).Observe(v)
+		}
+	}
+	for k, v := range m.counterMetrics {
+		if vec := metrics.requestMetricsCounterMap[k]; vec != nil {
+			vec.With(labels).Add(v)
+		}
+	}
+	labels["method"] = method
+	delete(labels, "cluster")
+	delete(labels, "dc")
+	metrics.httpRequestHistogramVec.With(labels).Observe(m.value)
+	delete(labels, "method")
+	for k, v := range m.timeMetrics {
+		if vec := metrics.requestMetricsHistogramMap[k]; vec != nil {
+			vec.With(labels).Observe(v)
+		}
+	}
+}
+
+func (c *Collector) recordJobMetrics(m *metric, labels map[string]string, metrics *CollectorMetrics) {
+	metrics.jobExecutionSummaryVec.With(labels).Observe(m.value)
+	delete(labels, "code")
+	labels["level"] = m.maxLogLevel
+	metrics.jobExecutionsTotalVec.With(labels).Add(1)
+	delete(labels, "level")
+	labels["type"] = "job"
+	metrics.transactionsTotalVec.With(labels).Add(1)
+	for k, v := range m.counterMetrics {
+		if vec := metrics.requestMetricsCounterMap[k]; vec != nil {
+			vec.With(labels).Add(v)
+		}
+	}
+	for k, v := range m.timeMetrics {
+		if vec := metrics.requestMetricsSummaryMap[k]; vec != nil {
+			vec.With(labels).Observe(v)
+		}
+	}
+	delete(labels, "type")
+	delete(labels, "cluster")
+	delete(labels, "dc")
+	metrics.jobExecutionHistogramVec.With(labels).Observe(m.value)
+	labels["type"] = "job"
+	for k, v := range m.timeMetrics {
+		if vec := metrics.requestMetricsHistogramMap[k]; vec != nil {
+			vec.With(labels).Observe(v)
+		}
+	}
+	delete(labels, "type")
 }
 
 func (c *Collector) recordLogMetrics(m *metric) {
@@ -735,108 +797,19 @@ func (c *Collector) recordLogMetrics(m *metric) {
 	instance := p["instance"]
 	p["instance"] = ""
 	action := p["action"]
-	method := p["method"]
 	delete(p, "metric")
 	c.fixDatacenter(p, instance)
 	switch metric {
 	case "http":
 		p["type"] = c.requestType(action)
-		c.actionMetrics.httpRequestSummaryVec.With(p).Observe(m.value)
-		delete(p, "code")
-		delete(p, "method")
-		p["level"] = m.maxLogLevel
-		c.actionMetrics.httpRequestsTotalVec.With(p).Add(1)
-		delete(p, "level")
-		c.actionMetrics.transactionsTotalVec.With(p).Add(1)
-		q := removeAction(p)
-		c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
-		for k, v := range m.timeMetrics {
-			if vec := c.actionMetrics.requestMetricsSummaryMap[k]; vec != nil {
-				vec.With(p).Observe(v)
-			}
-			if vec := c.applicationMetrics.requestMetricsSummaryMap[k]; vec != nil {
-				vec.With(q).Observe(v)
-			}
-		}
-		for k, v := range m.counterMetrics {
-			if vec := c.actionMetrics.requestMetricsCounterMap[k]; vec != nil {
-				vec.With(p).Add(v)
-			}
-			if vec := c.applicationMetrics.requestMetricsCounterMap[k]; vec != nil {
-				vec.With(q).Add(v)
-			}
-		}
-		p["method"] = method
-		q["method"] = method
-		delete(p, "cluster")
-		delete(p, "dc")
-		delete(q, "cluster")
-		delete(q, "dc")
-		c.actionMetrics.httpRequestHistogramVec.With(p).Observe(m.value)
-		c.applicationMetrics.httpRequestHistogramVec.With(q).Observe(m.value)
-		delete(p, "method")
-		delete(q, "method")
-		for k, v := range m.timeMetrics {
-			if vec := c.actionMetrics.requestMetricsHistogramMap[k]; vec != nil {
-				vec.With(p).Observe(v)
-			}
-			if vec := c.applicationMetrics.requestMetricsHistogramMap[k]; vec != nil {
-				vec.With(q).Observe(v)
-			}
-		}
+		q := copyWithoutActionLabel(p)
+		c.recordHTTPMetrics(m, p, &c.actionMetrics)
+		c.recordHTTPMetrics(m, q, &c.applicationMetrics)
 		c.actionRegistry <- action
 	case "job":
-		q := removeAction(p)
-		c.actionMetrics.jobExecutionSummaryVec.With(p).Observe(m.value)
-		c.applicationMetrics.jobExecutionSummaryVec.With(q).Observe(m.value)
-		delete(p, "code")
-		delete(q, "code")
-		p["level"] = m.maxLogLevel
-		q["level"] = m.maxLogLevel
-		c.actionMetrics.jobExecutionsTotalVec.With(p).Add(1)
-		c.applicationMetrics.jobExecutionsTotalVec.With(q).Add(1)
-		delete(p, "level")
-		delete(q, "level")
-		p["type"] = "job"
-		q["type"] = "job"
-		c.actionMetrics.transactionsTotalVec.With(p).Add(1)
-		c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
-		for k, v := range m.counterMetrics {
-			if vec := c.actionMetrics.requestMetricsCounterMap[k]; vec != nil {
-				vec.With(p).Add(v)
-			}
-			if vec := c.applicationMetrics.requestMetricsCounterMap[k]; vec != nil {
-				vec.With(q).Add(v)
-			}
-		}
-		for k, v := range m.timeMetrics {
-			if vec := c.actionMetrics.requestMetricsSummaryMap[k]; vec != nil {
-				vec.With(p).Observe(v)
-			}
-			if vec := c.applicationMetrics.requestMetricsSummaryMap[k]; vec != nil {
-				vec.With(q).Observe(v)
-			}
-		}
-		delete(p, "type")
-		delete(p, "cluster")
-		delete(p, "dc")
-		delete(q, "type")
-		delete(q, "cluster")
-		delete(q, "dc")
-		c.actionMetrics.jobExecutionHistogramVec.With(p).Observe(m.value)
-		c.applicationMetrics.jobExecutionHistogramVec.With(q).Observe(m.value)
-		p["type"] = "job"
-		q["type"] = "job"
-		for k, v := range m.timeMetrics {
-			if vec := c.actionMetrics.requestMetricsHistogramMap[k]; vec != nil {
-				vec.With(p).Observe(v)
-			}
-			if vec := c.applicationMetrics.requestMetricsHistogramMap[k]; vec != nil {
-				vec.With(q).Observe(v)
-			}
-		}
-		delete(p, "type")
-		delete(q, "type")
+		q := copyWithoutActionLabel(p)
+		c.recordJobMetrics(m, p, &c.actionMetrics)
+		c.recordJobMetrics(m, q, &c.applicationMetrics)
 		c.actionRegistry <- action
 	}
 }
@@ -848,13 +821,13 @@ func (c *Collector) recordPageMetrics(m *metric) {
 	p["instance"] = ""
 	action := p["action"]
 	c.actionMetrics.pageHistogramVec.With(p).Observe(m.value)
-	q := removeAction(p)
+	q := copyWithoutActionLabel(p)
 	c.applicationMetrics.pageHistogramVec.With(q).Observe(m.value)
 	p["cluster"] = ""
 	p["dc"] = ""
 	p["type"] = "page"
 	c.actionMetrics.transactionsTotalVec.With(p).Add(1)
-	q = removeAction(p)
+	q = copyWithoutActionLabel(p)
 	c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
 	c.actionRegistry <- action
 }
@@ -866,13 +839,13 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 	p["instance"] = ""
 	action := p["action"]
 	c.actionMetrics.ajaxHistogramVec.With(p).Observe(m.value)
-	q := removeAction(p)
+	q := copyWithoutActionLabel(p)
 	c.applicationMetrics.ajaxHistogramVec.With(q).Observe(m.value)
 	p["cluster"] = ""
 	p["dc"] = ""
 	p["type"] = "ajax"
 	c.actionMetrics.transactionsTotalVec.With(p).Add(1)
-	q = removeAction(p)
+	q = copyWithoutActionLabel(p)
 	c.applicationMetrics.transactionsTotalVec.With(q).Add(1)
 	c.actionRegistry <- action
 }
