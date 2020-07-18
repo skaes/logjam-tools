@@ -18,6 +18,7 @@ RUN apt-get update && apt-get -y upgrade && \
         libcurl4-openssl-dev \
         libicu-dev \
         libssl-dev \
+        uuid-dev \
         libtool \
         logjam-go \
         logjam-libs${suffix} \
@@ -36,5 +37,5 @@ COPY --from=builder $prefix $prefix
 LABEL maintainer "Stefan Kaes <skaes@railsexpress.de>"
 
 RUN apt-get update && \
-        apt-get install -y libc6 zlib1g openssl libcurl3 && \
+        apt-get install -y libc6 zlib1g openssl libuuid1 libcurl3 && \
         rm -rf /var/lib/apt/lists/*
