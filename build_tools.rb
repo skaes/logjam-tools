@@ -19,7 +19,7 @@ vendor "skaes@railsexpress.de"
 
 files "#{prefix}/bin/logjam-*"
 
-depends "logjam-libs#{suffix}", ">= 0.7-3"
+depends "logjam-libs#{suffix}", ">= 0.8-0"
 
 apt_setup "apt-get update -y && apt-get install apt-transport-https ca-certificates -y"
 apt_setup "echo 'deb [trusted=yes] https://railsexpress.de/packages/ubuntu/#{codename} ./' >> /etc/apt/sources.list"
