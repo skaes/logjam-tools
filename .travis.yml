@@ -15,11 +15,15 @@ before_install:
 - tar xvf secrets.tar
 jobs:
   include:
-    - script:
+    - name: bionic-opt-logjam
+      script:
         - make -f Makefile.docker container-bionic package-bionic push-bionic publish-bionic
-    - script:
+    - name: xenial-opt-logjam
+      script:
         - make -f Makefile.docker container-xenial package-xenial push-xenial publish-xenial
-    - script:
+    - name: bionic-usr-local
+      script:
         - make -f Makefile.docker container-bionic-usr-local package-bionic-usr-local push-bionic-usr-local publish-bionic-usr-local
-    - script:
+    - name: xenial-usr-local
+      script:
         - make -f Makefile.docker container-xenial-usr-local package-xenial-usr-local push-xenial-usr-local publish-xenial-usr-local
