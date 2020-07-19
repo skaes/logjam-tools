@@ -15,12 +15,18 @@ before_install:
 - tar xvf secrets.tar
 jobs:
   include:
+    - name: focal-opt-logjam
+      script:
+        - make -f Makefile.docker container-focal package-focal push-focal publish-focal
     - name: bionic-opt-logjam
       script:
         - make -f Makefile.docker container-bionic package-bionic push-bionic publish-bionic
     - name: xenial-opt-logjam
       script:
         - make -f Makefile.docker container-xenial package-xenial push-xenial publish-xenial
+    - name: focal-usr-local
+      script:
+        - make -f Makefile.docker container-focal-usr-local package-focal-usr-local push-focal-usr-local publish-focal-usr-local
     - name: bionic-usr-local
       script:
         - make -f Makefile.docker container-bionic-usr-local package-bionic-usr-local push-bionic-usr-local publish-bionic-usr-local
