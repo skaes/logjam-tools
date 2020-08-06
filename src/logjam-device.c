@@ -196,28 +196,39 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     // read the message parts, possibly including the message meta info
     while (!zsys_interrupted) {
         // printf("[D] receiving part %d\n", i+1);
+        int rc = 0;
         if (i>31) {
             zmq_msg_t dummy_msg;
             zmq_msg_init(&dummy_msg);
-            zmq_recvmsg(socket, &dummy_msg, 0);
+            rc = zmq_recvmsg(socket, &dummy_msg, 0);
             zmq_msg_close(&dummy_msg);
         } else {
             zmq_msg_init(&message_parts[i]);
-            zmq_recvmsg(socket, &message_parts[i], 0);
+            rc = zmq_recvmsg(socket, &message_parts[i], 0);
+        }
+        if (rc == -1) {
+            if (errno == EINTR) {
+                fprintf(stderr, "[D] got interrupted on part %d\n", i);
+                if (i == 0)
+                    goto cleanup;
+                else
+                    continue;
+            } else {
+                fprintf(stderr, "[E] unexpected error on recv: %d (%s)\n", errno, zmq_strerror(errno));
+                goto cleanup;
+            }
         }
         if (!zsock_rcvmore(socket))
             break;
         i++;
     }
     if (i<2) {
-        if (!zsys_interrupted) {
-            fprintf(stderr, "[E] received only %d message parts\n", i);
-        }
-        my_zmq_msg_fprint(message_parts, i, "[E] MSG", stderr);
+        fprintf(stderr, "[E] received only %d message parts\n", i+1);
+        my_zmq_msg_fprint(message_parts, i+1, "[E] MSG", stderr);
         goto cleanup;
     } else if (i>3) {
-      fprintf(stderr, "[E] received more than 4 message parts: %d\n", i);
-        my_zmq_msg_fprint(message_parts, i, "[E] MSG", stderr);
+        fprintf(stderr, "[E] received more than 4 message parts: %d\n", i+1);
+        my_zmq_msg_fprint(message_parts, i+1, "[E] MSG", stderr);
         goto cleanup;
     }
 
