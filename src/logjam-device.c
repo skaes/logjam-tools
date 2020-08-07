@@ -328,7 +328,12 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void 
 {
     publisher_state_t *state = (publisher_state_t*)callback_data;
     zmsg_t* msg = zmsg_recv(socket);
-    assert(msg);
+
+    if (!msg) {
+        // probably interrupted
+        fprintf(stderr, "[W] received NULL msg in read_router_message_and_forward\n");
+        return 0;
+    }
 
     if (debug) my_zmsg_fprint(msg, "[D] ", stdout);
 
