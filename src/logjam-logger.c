@@ -48,7 +48,7 @@ static int read_line_and_forward(zloop_t *loop, zmq_pollitem_t *item, void* arg)
 {
     zsock_t *socket = arg;
     zmsg_t *msg = zmsg_new();
-    assert(msg);
+    if (!msg) return 0;
     zmsg_addstr(msg, topic);
 
     // read input and append it ot message

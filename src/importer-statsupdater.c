@@ -525,6 +525,7 @@ static void stats_updater(zsock_t *pipe, void *args)
         zmsg_t *msg = NULL;
         if (socket == state->pipe) {
             msg = zmsg_recv(state->pipe);
+            if (!msg) continue;
             char *cmd = zmsg_popstr(msg);
             zmsg_destroy(&msg);
             if (streq(cmd, "tick")) {

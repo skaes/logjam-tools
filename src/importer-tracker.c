@@ -94,7 +94,7 @@ int tracker_add_uuid(uuid_tracker_t *tracker, const char* uuid)
 int tracker_delete_uuid(uuid_tracker_t *tracker, const char* uuid, zmsg_t* original_msg, const char* request_type)
 {
     zmsg_t *msg = zmsg_new();
-    assert(msg);
+    if (!msg) return 0;
     zmsg_addstr(msg, uuid);
     zmsg_addptr(msg, original_msg);
     zmsg_addstr(msg, request_type);

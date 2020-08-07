@@ -222,7 +222,10 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
 {
     subscriber_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
-    assert(msg);
+
+    // msg could be NULL when a signal occurs on read
+    if (!msg) return 0;
+
     bool ok = true;
     bool is_ping = false;
     state->message_count++;

@@ -189,7 +189,7 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
 static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *callback_data)
 {
     int i = 0;
-    zmq_msg_t message_parts[32];
+    zmq_msg_t message_parts[10];
     publisher_state_t *state = (publisher_state_t*)callback_data;
     void *socket = zsock_resolve(sock);
 
@@ -197,7 +197,7 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     while (!zsys_interrupted) {
         // printf("[D] receiving part %d\n", i+1);
         int rc = 0;
-        if (i>31) {
+        if (i>9) {
             zmq_msg_t dummy_msg;
             zmq_msg_init(&dummy_msg);
             rc = zmq_recvmsg(socket, &dummy_msg, 0);
@@ -208,7 +208,6 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
         }
         if (rc == -1) {
             if (errno == EINTR) {
-                fprintf(stderr, "[D] got interrupted on part %d\n", i);
                 if (i == 0)
                     goto cleanup;
                 else
@@ -223,8 +222,10 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
         i++;
     }
     if (i<2) {
-        fprintf(stderr, "[E] received only %d message parts\n", i+1);
-        my_zmq_msg_fprint(message_parts, i+1, "[E] MSG", stderr);
+        if (!zsys_interrupted) {
+          fprintf(stderr, "[E] received only %d message parts\n", i+1);
+          my_zmq_msg_fprint(message_parts, i+1, "[E] MSG", stderr);
+        }
         goto cleanup;
     } else if (i>3) {
         fprintf(stderr, "[E] received more than 4 message parts: %d\n", i+1);
