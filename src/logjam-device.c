@@ -186,67 +186,64 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     return 0;
 }
 
-static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *callback_data)
+static int read_multipart_msg(void* socket, zmq_msg_t *parts, int n, int* read)
 {
     int i = 0;
-    zmq_msg_t message_parts[10];
-    publisher_state_t *state = (publisher_state_t*)callback_data;
-    void *socket = zsock_resolve(sock);
-
+    int rc = 0;
     // read the message parts, possibly including the message meta info
-    while (!zsys_interrupted) {
+    while (1) {
         // printf("[D] receiving part %d\n", i+1);
-        int rc = 0;
-        if (i>9) {
+        if (i<n) {
+            zmq_msg_init(&parts[i]);
+            rc = zmq_recvmsg(socket, &parts[i], 0);
+        } else {
             zmq_msg_t dummy_msg;
             zmq_msg_init(&dummy_msg);
             rc = zmq_recvmsg(socket, &dummy_msg, 0);
             zmq_msg_close(&dummy_msg);
-        } else {
-            zmq_msg_init(&message_parts[i]);
-            rc = zmq_recvmsg(socket, &message_parts[i], 0);
         }
         if (rc == -1) {
+            if (i<n)
+                zmq_msg_close(&parts[i]);
             if (errno == EINTR) {
-                if (i == 0)
-                    goto cleanup;
-                else
+                if (i == 0) {
+                    *read = 0;
+                    return -1;
+                } else {
                     continue;
+                }
             } else {
-                fprintf(stderr, "[E] unexpected error on recv: %d (%s)\n", errno, zmq_strerror(errno));
-                goto cleanup;
+                *read = i+1;
+                return -1;
             }
         }
         if (!zsock_rcvmore(socket))
             break;
         i++;
     }
-    if (i<2) {
+    *read = i+1;
+    return 0;
+}
+
+static bool warn_msg_size(zmq_msg_t *parts, int n, int min, int max)
+{
+   if (n<min) {
         if (!zsys_interrupted) {
-          fprintf(stderr, "[E] received only %d message parts\n", i+1);
-          my_zmq_msg_fprint(message_parts, i+1, "[E] MSG", stderr);
+          fprintf(stderr, "[E] received only %d message parts\n", n);
+          my_zmq_msg_fprint(parts, n, "[E] MSG", stderr);
         }
-        goto cleanup;
-    } else if (i>3) {
-        fprintf(stderr, "[E] received more than 4 message parts: %d\n", i+1);
-        my_zmq_msg_fprint(message_parts, i+1, "[E] MSG", stderr);
-        goto cleanup;
+        return true;
     }
+   if (n>max) {
+        fprintf(stderr, "[E] received more than 4 message parts: %d\n", n);
+        my_zmq_msg_fprint(parts, n, "[E] MSG", stderr);
+        return true;
+    }
+   return false;
+}
 
-    zmq_msg_t *body = &message_parts[2];
-    msg_meta_t meta = META_INFO_EMPTY;
-    if (i==3)
-        zmq_msg_extract_meta_info(&message_parts[3], &meta);
-
-    // const char *prefix = socket == state->compressor_output ? "EXTERNAL MESSAGE" : "INTERNAL MESSAGE";
-    // my_zmq_msg_fprint(&message_parts[0], 3, prefix, stdout);
-    // dump_meta_info(&meta);
-
-    if (meta.created_ms)
-        msg_meta.created_ms = meta.created_ms;
-    else
-        msg_meta.created_ms = global_time;
-
+static void update_message_stats(void* socket, publisher_state_t *state, zmq_msg_t* body)
+{
     size_t msg_bytes = zmq_msg_size(body);
     if (socket == state->compressor_output) {
         compressed_messages_count++;
@@ -259,60 +256,96 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
         if (msg_bytes > received_messages_max_bytes)
             received_messages_max_bytes = msg_bytes;
     }
+}
 
-    if (compression_method && !meta.compression_method) {
-        publish_on_zmq_transport(&message_parts[0], state->compressor_input, &msg_meta, 0);
+static void compress_or_forward(zmq_msg_t* parts,  msg_meta_t *meta, publisher_state_t *state)
+{
+    if (meta->created_ms)
+        msg_meta.created_ms = meta->created_ms;
+    else
+        msg_meta.created_ms = global_time;
+
+    if (compression_method && !meta->compression_method) {
+        publish_on_zmq_transport(&parts[0], state->compressor_input, &msg_meta, 0);
     } else {
-        msg_meta.compression_method = meta.compression_method;
+        msg_meta.compression_method = meta->compression_method;
         msg_meta.sequence_number++;
-        // my_zmq_msg_fprint(&message_parts[0], 3, "OUT", stdout);
-        // dump_meta_info(&msg_meta);
-        publish_on_zmq_transport(&message_parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
+        // my_zmq_msg_fprint(&parts[0], 3, "OUT", stdout);
+        // dump_meta_info("META", &msg_meta);
+        publish_on_zmq_transport(&parts[0], state->publisher, &msg_meta, ZMQ_DONTWAIT);
     }
+}
+
+static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *callback_data)
+{
+    zmq_msg_t message_parts[10];
+    publisher_state_t *state = (publisher_state_t*)callback_data;
+    void *socket = zsock_resolve(sock);
+
+    int n;
+    int rc = read_multipart_msg(socket, message_parts, 10, &n);
+    if (rc) {
+        fprintf(stderr, "[E] unexpected error on recv: %d (%s)\n", errno, zmq_strerror(errno));
+        goto cleanup;
+    }
+
+    if (warn_msg_size(message_parts, n, 3, 4))
+        goto cleanup;
+
+    zmq_msg_t *body = &message_parts[2];
+    msg_meta_t meta = META_INFO_EMPTY;
+    if (n==4)
+        zmq_msg_extract_meta_info(&message_parts[3], &meta);
+
+    update_message_stats(socket, state, body);
+    compress_or_forward(message_parts, &meta, state);
 
  cleanup:
-    for (;i>=0;i--) {
+    for (int i=n-1; i>=0; i--)
         zmq_msg_close(&message_parts[i]);
-    }
 
     return 0;
 }
 
-static void record_routing_id_and_app_env(zframe_t *sender_id, zframe_t *stream)
+static void record_routing_id_and_app_env(zmq_msg_t *sender_id, zmq_msg_t *stream)
 {
-    int n = zframe_size(sender_id);
+    int n = zmq_msg_size(sender_id);
     char routing_id[2*n+1];
-    unsigned char* data = zframe_data(sender_id);
+    unsigned char* data = zmq_msg_data(sender_id);
     for (int i=0; i<n; i++)
         sprintf(&routing_id[2*i], "%02X", data[i]);
     if (debug) {
-        int m = zframe_size(stream);
+        int m = zmq_msg_size(stream);
         char stream_str[m+1];
-        memcpy(stream_str, zframe_data(stream), m);
+        memcpy(stream_str, zmq_msg_data(stream), m);
         stream_str[m] = '\0';
         printf("[D] routingid[%d], stream[%d]: %s,%s\n", 2*n, m, routing_id, stream_str);
     }
     if (!zhashx_lookup(routing_id_to_app_env, routing_id)) {
+        int m = zmq_msg_size(stream);
+        char stream_str[m+1];
+        memcpy(stream_str, zmq_msg_data(stream), m);
+        stream_str[m] = '\0';
         app_env_record_t *r = zmalloc(sizeof(*r));
-        r->app_env = zframe_strdup(stream);
+        r->app_env = strdup(stream_str);
         zhashx_update(routing_id_to_app_env, routing_id, r);
         zhashx_freefn(routing_id_to_app_env, routing_id, free_app_env_record);
     }
 }
 
-static void record_ping_count(zframe_t *sender_id, zframe_t *routing_key)
+static void record_ping_count(zmq_msg_t *sender_id, zmq_msg_t *routing_key)
 {
-    int routing_key_len = zframe_size(routing_key);
+    int routing_key_len = zmq_msg_size(routing_key);
     if (routing_key_len > 0) {
         // application sent app-env as the routing key
         char app_env[routing_key_len+1];
-        memcpy(app_env, zframe_data(routing_key), routing_key_len);
+        memcpy(app_env, zmq_msg_data(routing_key), routing_key_len);
         app_env[routing_key_len] = '\0';
         device_prometheus_client_count_ping(app_env);
     } else {
-        int sender_id_len = zframe_size(sender_id);
+        int sender_id_len = zmq_msg_size(sender_id);
         char routing_id[2*sender_id_len+1];
-        unsigned char* data = zframe_data(sender_id);
+        unsigned char* data = zmq_msg_data(sender_id);
         for (int i=0; i<sender_id_len; i++)
             sprintf(&routing_id[2*i], "%02X", data[i]);
         const char* app_env = "unknown-unknown";
@@ -325,75 +358,84 @@ static void record_ping_count(zframe_t *sender_id, zframe_t *routing_key)
     }
 }
 
-static int read_router_message_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
+static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *callback_data)
 {
+    zmq_msg_t message_parts[12];
     publisher_state_t *state = (publisher_state_t*)callback_data;
-    zmsg_t* msg = zmsg_recv(socket);
+    void *socket = zsock_resolve(sock);
 
-    if (!msg) {
-        // probably interrupted
-        fprintf(stderr, "[W] received NULL msg in read_router_message_and_forward\n");
-        return 0;
+    int n;
+    int rc = read_multipart_msg(socket, message_parts, 12, &n);
+    if (rc) {
+        fprintf(stderr, "[E] unexpected error on recv: %d (%s)\n", errno, zmq_strerror(errno));
+        goto cleanup;
     }
 
-    if (debug) my_zmsg_fprint(msg, "[D] ", stdout);
-
-    zframe_t *sender_id = zmsg_pop(msg);
-    zframe_t *first = zmsg_first(msg);
+    if (n < 2) {
+        // received empty message
+        warn_msg_size(message_parts, n, 5, 6);
+        goto cleanup;
+    }
 
     // if the second frame is empty, we need to send a reply
-    if (zframe_size(first) > 0) {
-        // this is not a synchronous message. this means the first frame contains the app-env string.
-        // record the routing id to app association for detailed ping counting.
-        record_routing_id_and_app_env(sender_id, first);
-        zframe_destroy(&sender_id);
+    bool send_reply = zmq_msg_size(&message_parts[1]) == 0;
+    int app_env_index = send_reply ? 2 : 1;
+    int expected_parts = 4 + app_env_index;
+
+    msg_meta_t meta = META_INFO_EMPTY;
+    bool decoded = n == expected_parts && zmq_msg_extract_meta_info(&message_parts[app_env_index+3], &meta);
+
+    if (!send_reply) {
+        record_routing_id_and_app_env(&message_parts[0], &message_parts[1]);
     } else {
-        // pop the empty frame
-        zmsg_pop(msg);
         zmsg_t *reply = zmsg_new();
-        zframe_t *routing_id = sender_id;
-        zmsg_append(reply, &sender_id);
-        zmsg_append(reply, &first);
+        zmsg_addmem(reply, zmq_msg_data(&message_parts[0]), zmq_msg_size(&message_parts[0])); // routing id
+        zmsg_addmem(reply, zmq_msg_data(&message_parts[2]), zmq_msg_size(&message_parts[2])); // app_env
 
-        // return bad request if we don't receive 4 frames and meta frame can't be decoded
-        size_t n = zmsg_size(msg);
-        msg_meta_t meta;
-        bool decodable = n==4 && msg_extract_meta_info(msg, &meta);
+        // return bad request if we didn't receive 6 frames and meta frame can't be decoded
 
-        zframe_t *app_env_or_ping = zmsg_first(msg);
-        bool is_ping = zframe_streq(app_env_or_ping, "ping");
+        zmq_msg_t *app_env_or_ping = &message_parts[2];
+        bool is_ping = !strncmp(zmq_msg_data(app_env_or_ping), "ping", 4);
         if (is_ping) {
-            if (decodable) {
+            if (decoded) {
                 zmsg_addstr(reply, "200 Pong");
                 zmsg_addstr(reply, my_fqdn());
             } else {
                 zmsg_addstr(reply, "400 Bad Request");
             }
-            zframe_t *routing_key = zmsg_next(msg);
-            record_ping_count(routing_id, routing_key);
+            record_ping_count(&message_parts[0], &message_parts[3]);
         } else {
             // a normal message, but asking for a reply
-            zmsg_addstr(reply, decodable ? "202 Accepted" : "400 Bad Request");
-            record_routing_id_and_app_env(routing_id, app_env_or_ping);
+            zmsg_addstr(reply, decoded ? "202 Accepted" : "400 Bad Request");
+            record_routing_id_and_app_env(&message_parts[0], &message_parts[2]);
         }
 
-        int rc = zmsg_send_and_destroy(&reply, socket);
+        int rc = zmsg_send_and_destroy(&reply, sock);
         if (rc)
             fprintf(stderr, "[E] could not send response (%d: %s)\n", errno, zmq_strerror(errno));
 
         // don't forward pings
         if (is_ping) {
             ping_count_total++;
-            zmsg_destroy(&msg);
-            return 0;
+            goto cleanup;
         }
     }
 
-    // put message back on to the event loop
-    // TODO: this is slow. refactor to forward directly.
-    int rc = zmsg_send_and_destroy(&msg, state->router_output);
-    if (rc)
-        fprintf(stderr, "[E] could not forward router message (%d: %s)\n", errno, zmq_strerror(errno));
+    if (warn_msg_size(message_parts, n, expected_parts, expected_parts))
+        goto cleanup;
+
+    if (!decoded && verbose) {
+        fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
+        my_zmq_msg_fprint(message_parts, n, "[W] MSG", stderr);
+    }
+
+    zmq_msg_t *body = &message_parts[app_env_index+2];
+    update_message_stats(socket, state, body);
+    compress_or_forward(message_parts+app_env_index, &meta, state);
+
+ cleanup:
+    for (int i=n-1; i>=0; i--)
+        zmq_msg_close(&message_parts[i]);
 
     return 0;
 }
