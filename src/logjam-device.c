@@ -35,6 +35,8 @@ static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
 static size_t received_messages_max_bytes = 0;
 static size_t ping_count_total = 0;
+static size_t invalid_messages_count_total = 0;
+static size_t broken_meta_count_total = 0;
 
 static size_t compressed_messages_count = 0;
 static size_t compressed_messages_bytes = 0;
@@ -112,18 +114,24 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     static size_t last_compressed_count = 0;
     static size_t last_compressed_bytes = 0;
     static size_t last_ping_count = 0;
+    static size_t last_invalid_count = 0;
+    static size_t last_broken_meta_count = 0;
 
-    size_t message_count    = received_messages_count - last_received_count;
-    size_t message_bytes    = received_messages_bytes - last_received_bytes;
-    size_t compressed_count = compressed_messages_count - last_compressed_count;
-    size_t compressed_bytes = compressed_messages_bytes - last_compressed_bytes;
-    size_t ping_count       = ping_count_total - last_ping_count;
+    size_t message_count     = received_messages_count - last_received_count;
+    size_t message_bytes     = received_messages_bytes - last_received_bytes;
+    size_t compressed_count  = compressed_messages_count - last_compressed_count;
+    size_t compressed_bytes  = compressed_messages_bytes - last_compressed_bytes;
+    size_t ping_count        = ping_count_total - last_ping_count;
+    size_t invalid_count     = invalid_messages_count_total - last_invalid_count;
+    size_t broken_meta_count = broken_meta_count_total - last_broken_meta_count;
 
     device_prometheus_client_count_msgs_received(message_count);
     device_prometheus_client_count_bytes_received(message_bytes);
     device_prometheus_client_count_msgs_compressed(compressed_count);
     device_prometheus_client_count_bytes_compressed(compressed_bytes);
     device_prometheus_client_count_pings(ping_count);
+    device_prometheus_client_count_invalid_messages(invalid_count);
+    device_prometheus_client_count_broken_metas(broken_meta_count);
     device_prometheus_client_record_rusage();
 
     double avg_msg_size        = message_count ? (message_bytes / 1024.0) / message_count : 0;
@@ -137,7 +145,11 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     printf("[I] compressd %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
            compressed_count, compressed_bytes/1024.0, avg_compressed_size, max_compressed_size);
 
-    printf("[I] processed %zu pings\n", ping_count);
+    if (ping_count)
+        printf("[I] processed %zu pings\n", ping_count);
+
+    if (invalid_count)
+        printf("[I] received %zu invalid messages and %zu broken metas\n", invalid_count, broken_meta_count);
 
     last_received_count = received_messages_count;
     last_ping_count = ping_count_total;
@@ -146,6 +158,8 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     last_compressed_count = compressed_messages_count;
     last_compressed_bytes = compressed_messages_bytes;
     compressed_messages_max_bytes = 0;
+    last_invalid_count = invalid_messages_count_total;
+    last_broken_meta_count = broken_meta_count_total;
 
     // update timestamp
     global_time = zclock_time();
@@ -169,12 +183,13 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     // tick watchdog
     zstr_send(device_watchdog, "tick");
 
-    // delete old ping counters, once per minute.
+    // delete old ping counters and broken meta counters, once per minute.
     if (ticks % 60 == 0) {
         int64_t max_age = 1000 * (debug ? 60 : 60 * 60);
         // max age is given in milliseconds.
         clean_old_routing_id_entries(max_age);
         device_prometheus_client_delete_old_ping_counters(max_age);
+        device_prometheus_client_delete_old_broken_meta_counters(max_age);
     }
 
 #ifdef HAVE_MALLOC_TRIM
@@ -190,7 +205,7 @@ static int read_multipart_msg(void* socket, zmq_msg_t *parts, int n, int* read)
 {
     int i = 0;
     int rc = 0;
-    // read the message parts, possibly including the message meta info
+    // read the message parts
     while (1) {
         // printf("[D] receiving part %d\n", i+1);
         if (i<n) {
@@ -276,6 +291,16 @@ static void compress_or_forward(zmq_msg_t* parts,  msg_meta_t *meta, publisher_s
     }
 }
 
+static void record_broken_meta(zmq_msg_t *stream_part)
+{
+    int n = zmq_msg_size(stream_part);
+    unsigned char* data = zmq_msg_data(stream_part);
+    char app_env[n+1];
+    memcpy(app_env, data, n);
+    app_env[n] = '\0';
+    device_prometheus_client_count_broken_meta(app_env);
+}
+
 static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *callback_data)
 {
     zmq_msg_t message_parts[10];
@@ -289,15 +314,22 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
         goto cleanup;
     }
 
-    if (warn_msg_size(message_parts, n, 3, 4))
+    // The old pull socket interface did not require meta information to be sent and there
+    // might be some old clients left. Otherwise we'd demand 4 parts here.
+    if (warn_msg_size(message_parts, n, 3, 4)) {
+        invalid_messages_count_total++;
         goto cleanup;
+    }
 
-    zmq_msg_t *body = &message_parts[2];
     msg_meta_t meta = META_INFO_EMPTY;
-    if (n==4)
-        zmq_msg_extract_meta_info(&message_parts[3], &meta);
+    if (n==4) {
+        if (!zmq_msg_extract_meta_info(&message_parts[3], &meta)) {
+            broken_meta_count_total++;
+            record_broken_meta(&message_parts[0]);
+        }
+    }
 
-    update_message_stats(socket, state, body);
+    update_message_stats(socket, state, &message_parts[2]);
     compress_or_forward(message_parts, &meta, state);
 
  cleanup:
@@ -333,7 +365,7 @@ static void record_routing_id_and_app_env(zmq_msg_t *sender_id, zmq_msg_t *strea
     }
 }
 
-static void record_ping_count(zmq_msg_t *sender_id, zmq_msg_t *routing_key)
+static void record_ping(zmq_msg_t *sender_id, zmq_msg_t *routing_key)
 {
     int routing_key_len = zmq_msg_size(routing_key);
     if (routing_key_len > 0) {
@@ -374,6 +406,7 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
     if (n < 2) {
         // received empty message
         warn_msg_size(message_parts, n, 5, 6);
+        invalid_messages_count_total++;
         goto cleanup;
     }
 
@@ -383,7 +416,14 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
     int expected_parts = 4 + app_env_index;
 
     msg_meta_t meta = META_INFO_EMPTY;
-    bool decoded = n == expected_parts && zmq_msg_extract_meta_info(&message_parts[app_env_index+3], &meta);
+    bool decoded = false;
+    if (n == expected_parts) {
+        decoded = zmq_msg_extract_meta_info(&message_parts[app_env_index+3], &meta);
+        if (!decoded) {
+            broken_meta_count_total++;
+            record_broken_meta(&message_parts[app_env_index]);
+        }
+    }
 
     if (!send_reply) {
         record_routing_id_and_app_env(&message_parts[0], &message_parts[1]);
@@ -397,13 +437,14 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
         zmq_msg_t *app_env_or_ping = &message_parts[2];
         bool is_ping = !strncmp(zmq_msg_data(app_env_or_ping), "ping", 4);
         if (is_ping) {
+            ping_count_total++;
             if (decoded) {
                 zmsg_addstr(reply, "200 Pong");
                 zmsg_addstr(reply, my_fqdn());
             } else {
                 zmsg_addstr(reply, "400 Bad Request");
             }
-            record_ping_count(&message_parts[0], &message_parts[3]);
+            record_ping(&message_parts[0], &message_parts[3]);
         } else {
             // a normal message, but asking for a reply
             zmsg_addstr(reply, decoded ? "202 Accepted" : "400 Bad Request");
@@ -415,14 +456,14 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
             fprintf(stderr, "[E] could not send response (%d: %s)\n", errno, zmq_strerror(errno));
 
         // don't forward pings
-        if (is_ping) {
-            ping_count_total++;
+        if (is_ping)
             goto cleanup;
-        }
     }
 
-    if (warn_msg_size(message_parts, n, expected_parts, expected_parts))
+    if (warn_msg_size(message_parts, n, expected_parts, expected_parts)) {
+        invalid_messages_count_total++;
         goto cleanup;
+    }
 
     if (!decoded && verbose) {
         fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
@@ -589,13 +630,14 @@ int main(int argc, char * const *argv)
     setvbuf(stderr, NULL, _IOLBF, 0);
 
     printf("[I] started %s\n"
-           "[I] pull-port:   %d\n"
-           "[I] pub-port:    %d\n"
-           "[I] router-port: %d\n"
-           "[I] io-threads:  %lu\n"
-           "[I] rcv-hwm:     %d\n"
-           "[I] snd-hwm:     %d\n"
-           , argv[0], pull_port, pub_port, router_port, io_threads, rcv_hwm, snd_hwm);
+           "[I] pull-port:    %d\n"
+           "[I] pub-port:     %d\n"
+           "[I] router-port:  %d\n"
+           "[I] metrics-port: %d\n"
+           "[I] io-threads:   %lu\n"
+           "[I] rcv-hwm:      %d\n"
+           "[I] snd-hwm:      %d\n"
+           , argv[0], pull_port, pub_port, router_port, metrics_port, io_threads, rcv_hwm, snd_hwm);
 
     // set global config
     zsys_init();

@@ -20,6 +20,8 @@ static struct prometheus_client_t {
     prometheus::Counter *compressed_msgs_total;
     prometheus::Family<prometheus::Counter> *compressed_bytes_total_family;
     prometheus::Counter *compressed_bytes_total;
+    prometheus::Family<prometheus::Counter> *invalid_msgs_total_family;
+    prometheus::Counter *invalid_msgs_total;
     prometheus::Family<prometheus::Counter> *cpu_usage_total_family;
     prometheus::Counter *cpu_usage_total;
     std::vector<prometheus::Counter*> cpu_usage_total_compressors;
@@ -27,6 +29,10 @@ static struct prometheus_client_t {
     prometheus::Counter *ping_count_total;
     prometheus::Family<prometheus::Counter> *ping_count_by_stream_total_family;
     std::unordered_map<std::string, stream_counter_t*> ping_count_by_stream_total_map;
+    prometheus::Family<prometheus::Counter> *broken_meta_count_total_family;
+    prometheus::Counter *broken_meta_count_total;
+    prometheus::Family<prometheus::Counter> *broken_meta_count_by_stream_total_family;
+    std::unordered_map<std::string, stream_counter_t*> broken_meta_count_by_stream_total_map;
 } client;
 
 void device_prometheus_client_init(const char* address, const char* device, int num_compressors)
@@ -43,6 +49,14 @@ void device_prometheus_client_init(const char* address, const char* device, int 
         .Register(*client.registry);
 
     client.received_msgs_total = &client.received_msgs_total_family->Add({});
+
+    client.invalid_msgs_total_family = &prometheus::BuildCounter()
+        .Name("logjam:device:msgs_invalid_total")
+        .Help("How many broken logjam messages have reached this device")
+        .Labels({{"device", device}})
+        .Register(*client.registry);
+
+    client.invalid_msgs_total = &client.invalid_msgs_total_family->Add({});
 
     client.received_bytes_total_family = &prometheus::BuildCounter()
         .Name("logjam:device:msgs_received_bytes_total")
@@ -96,6 +110,20 @@ void device_prometheus_client_init(const char* address, const char* device, int 
         .Labels({{"device", device}})
         .Register(*client.registry);
 
+    client.broken_meta_count_total_family = &prometheus::BuildCounter()
+        .Name("logjam:device:broken_meta_count_total")
+        .Help("How many requests with broken meta information this device has processed")
+        .Labels({{"device", device}})
+        .Register(*client.registry);
+
+    client.broken_meta_count_total = &client.broken_meta_count_total_family->Add({});
+
+    client.broken_meta_count_by_stream_total_family = &prometheus::BuildCounter()
+        .Name("logjam:device:broken_meta_count_by_stream_total")
+        .Help("How many requests with broken meta information this device has processed for a given stream")
+        .Labels({{"device", device}})
+        .Register(*client.registry);
+
     // ask the exposer to scrape the registry on incoming scrapes
     client.exposer->RegisterCollectable(client.registry);
 }
@@ -124,6 +152,11 @@ void device_prometheus_client_count_msgs_compressed(double value)
 void device_prometheus_client_count_bytes_compressed(double value)
 {
     client.compressed_bytes_total->Increment(value);
+}
+
+void device_prometheus_client_count_invalid_messages(double value)
+{
+    client.invalid_msgs_total->Increment(value);
 }
 
 void device_prometheus_client_count_pings(double value)
@@ -156,6 +189,42 @@ void device_prometheus_client_delete_old_ping_counters(int64_t max_age)
             client.ping_count_by_stream_total_family->Remove(counter->counter);
             delete counter;
             it = client.ping_count_by_stream_total_map.erase(it);
+        } else {
+            it++;
+        }
+    }
+}
+
+void device_prometheus_client_count_broken_metas(double value)
+{
+    client.broken_meta_count_total->Increment(value);
+}
+
+void device_prometheus_client_count_broken_meta(const char* app_env)
+{
+    std::string stream(app_env);
+    std::unordered_map<std::string,stream_counter_t*>::const_iterator got = client.broken_meta_count_by_stream_total_map.find(stream);
+    stream_counter_t *counter;
+    if (got == client.broken_meta_count_by_stream_total_map.end()) {
+        counter = new(stream_counter_t);
+        counter->counter = &client.broken_meta_count_by_stream_total_family->Add({{"stream", app_env}});
+        client.broken_meta_count_by_stream_total_map[stream] = counter;
+    } else
+        counter = got->second;
+    counter->counter->Increment(1);
+    counter->last_seen = zclock_time();
+}
+
+void device_prometheus_client_delete_old_broken_meta_counters(int64_t max_age)
+{
+    int64_t threshold = zclock_time() - max_age;
+    std::unordered_map<std::string,stream_counter_t*>::iterator it = client.broken_meta_count_by_stream_total_map.begin();
+    while (it != client.broken_meta_count_by_stream_total_map.end()) {
+        if (it->second->last_seen < threshold) {
+            stream_counter_t *counter = it->second;
+            client.broken_meta_count_by_stream_total_family->Remove(counter->counter);
+            delete counter;
+            it = client.broken_meta_count_by_stream_total_map.erase(it);
         } else {
             it++;
         }
