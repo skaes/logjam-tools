@@ -149,7 +149,7 @@ int zmq_msg_extract_meta_info(zmq_msg_t *meta_msg, msg_meta_t *meta)
     if (rc) {
         memcpy(meta, zmq_msg_data(meta_msg), sizeof(msg_meta_t));
         meta_info_decode(meta);
-        if (meta->tag != META_INFO_TAG || meta->version != META_INFO_VERSION)
+        if ((meta->tag != META_INFO_TAG && meta->tag != META_INFO_TAG_LE)|| meta->version != META_INFO_VERSION)
             rc = 0;
     }
     return rc;
@@ -161,7 +161,7 @@ int frame_extract_meta_info(zframe_t *meta_frame, msg_meta_t *meta)
     if (rc) {
         memcpy(meta, zframe_data(meta_frame), sizeof(msg_meta_t));
         meta_info_decode(meta);
-        if (meta->tag != META_INFO_TAG || meta->version != META_INFO_VERSION)
+        if ((meta->tag != META_INFO_TAG && meta->tag != META_INFO_TAG_LE) || meta->version != META_INFO_VERSION)
             rc = 0;
     }
     return rc;

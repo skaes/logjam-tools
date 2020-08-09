@@ -55,6 +55,7 @@ extern time_t get_iso_date_info(char today[ISO_DATE_STR_LEN], char tomorrow[ISO_
 
 #define META_INFO_VERSION 1
 #define META_INFO_TAG 0xcabd
+#define META_INFO_TAG_LE 0xbdca
 #define META_INFO_EMPTY {META_INFO_TAG, NO_COMPRESSION, META_INFO_VERSION, 0U, 0ULL, 0ULL}
 
 // encoding of the 4th frame added by logjam device
