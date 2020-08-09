@@ -145,11 +145,8 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     printf("[I] compressd %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
            compressed_count, compressed_bytes/1024.0, avg_compressed_size, max_compressed_size);
 
-    if (ping_count)
-        printf("[I] processed %zu pings\n", ping_count);
-
-    if (invalid_count)
-        printf("[I] received %zu invalid messages and %zu broken metas\n", invalid_count, broken_meta_count);
+    printf("[I] pings: %zu, invalid msgs: %zu, broken metas: %zu\n",
+           ping_count, invalid_count, broken_meta_count);
 
     last_received_count = received_messages_count;
     last_ping_count = ping_count_total;
