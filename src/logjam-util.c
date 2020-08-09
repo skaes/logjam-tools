@@ -674,7 +674,7 @@ int dump_message_payload (zmsg_t *self, FILE *file, zchunk_t *buffer)
     frame = zmsg_next (self);  //topic frame
     frame = zmsg_next (self);  // payload frame
 
-    msg_meta_t meta;
+    msg_meta_t meta = META_INFO_EMPTY;
     msg_extract_meta_info(self, &meta);
     int compression_method = meta.compression_method;
     if (compression_method) {
