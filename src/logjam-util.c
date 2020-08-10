@@ -860,6 +860,18 @@ bool extract_app_env(const char* app_env, int n, char* app, char* env)
     return true;
 }
 
+bool well_formed_stream_name(const char* s, int n)
+{
+    int hyphen_count = 0;
+    for (int i = 0; i < n; i++)
+        if (s[i] < 32 || s[i] > 127)
+            return false;
+        else if (s[i] == '-')
+            hyphen_count++;
+
+    return hyphen_count > 0;
+}
+
 bool extract_app_env_rid(const char* s, int n, char* app, char* env, char* rid)
 {
     int l = strlen(s) + 1;
@@ -969,6 +981,15 @@ static void test_my_fqdn (int verbose)
     }
 }
 
+static void test_well_formed_stream_name (int verbose)
+{
+    assert(well_formed_stream_name("a-b", 3));
+    assert(well_formed_stream_name("a-b-c", 5));
+    assert(!well_formed_stream_name("", 0));
+    assert(!well_formed_stream_name("abc", 3));
+    assert(!well_formed_stream_name("ö-ö", strlen("ö-ö")));
+}
+
 static void test_extract_app_env (int verbose)
 {
     bool ok;
@@ -1065,6 +1086,7 @@ void logjam_util_test (int verbose)
     test_gap_calc (verbose);
     test_negative_numbers_conversion_to_sizet (verbose);
     test_my_fqdn (verbose);
+    test_well_formed_stream_name (verbose);
     test_extract_app_env (verbose);
     test_extract_app_env_rid (verbose);
     test_compression_decompression (verbose);

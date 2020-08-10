@@ -235,6 +235,7 @@ extern size_t zchunk_ensure_size(zchunk_t *buffer, size_t desired_size);
 extern void logjam_util_test (int verbose);
 extern const char* my_fqdn();
 extern void send_heartbeat(zsock_t *socket, msg_meta_t* meta, int pub_port);
+extern bool well_formed_stream_name(const char* s, int n);
 extern bool extract_app_env(const char* app_env, int n, char* app, char* env);
 extern bool extract_app_env_rid(const char* s, int n, char* app, char* env, char* rid);
 extern bool is_mobile_app(const char* stream_name);
