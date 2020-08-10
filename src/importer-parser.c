@@ -201,7 +201,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t **msgptr, parser_state_t 
 
     if (zmsg_size(msg) < 3) {
         fprintf(stderr, "[E] parser received incomplete message\n");
-        my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+        my_zmsg_fprint(msg, "[E] MSG", stderr);
     }
     zframe_t *stream_frame  = zmsg_first(msg);
     zframe_t *topic_frame   = zmsg_next(msg);
@@ -222,7 +222,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t **msgptr, parser_state_t 
             const char *method_name = compression_method_to_string(meta.compression_method);
             fprintf(stderr, "[E] parser could not decompress payload from %.*s (%s)\n", n, app_env, method_name);
             dump_meta_info("[E]", &meta);
-            my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+            my_zmsg_fprint(msg, "[E] MSG", stderr);
             return;
         }
     } else {
@@ -267,12 +267,12 @@ void parse_msg_and_forward_interesting_requests(zmsg_t **msgptr, parser_state_t 
             // ignore message for now
         } else {
             fprintf(stderr, "[W] unknown topic key\n");
-            my_zmsg_fprint(msg, "[E] FRAME=", stderr);
+            my_zmsg_fprint(msg, "[E] MSG", stderr);
         }
         json_object_put(request);
     } else {
         fprintf(stderr, "[E] parse error\n");
-        my_zmsg_fprint(msg, "[E] MSGFRAME=", stderr);
+        my_zmsg_fprint(msg, "[E] MSG", stderr);
     }
 }
 

@@ -204,7 +204,7 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
         int n = zmsg_size(msg);
         if (n < 3 || n > 4) {
             fprintf(stderr, "[E] subscriber: dropped invalid message\n");
-            my_zmsg_fprint(msg, "[E] FRAME= ", stderr);
+            my_zmsg_fprint(msg, "[E] MSG", stderr);
             zmsg_destroy(&msg);
             return 0;
         }
