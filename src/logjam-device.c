@@ -106,10 +106,6 @@ typedef struct {
     void *compressor_output;
 } publisher_state_t;
 
-
-static size_t meta_warnings_since_last_tick = 0;
-
-
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
     zsock_t* pub_socket = arg;
@@ -121,8 +117,6 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     static size_t last_ping_count = 0;
     static size_t last_invalid_count = 0;
     static size_t last_broken_meta_count = 0;
-
-    meta_warnings_since_last_tick = 0;
 
     size_t message_count     = received_messages_count - last_received_count;
     size_t message_bytes     = received_messages_bytes - last_received_bytes;
@@ -331,7 +325,7 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
             invalid_messages_count_total++;
             broken_meta_count_total++;
             record_broken_meta(&message_parts[0]);
-            if (verbose || meta_warnings_since_last_tick++ < 5) {
+            if (verbose) {
                 fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
                 my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
             }
@@ -494,7 +488,7 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
 
     if (!decoded) {
         invalid_messages_count_total++;
-        if (verbose || meta_warnings_since_last_tick++ < 5) {
+        if (verbose) {
             fprintf(stderr, "[E] meta info could not be decoded: %d\n", n);
             my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
         }
