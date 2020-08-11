@@ -152,7 +152,7 @@ zsock_t* subscriber_push_socket_new(zconfig_t* config, size_t id)
 }
 
 static
-int process_meta_information_and_handle_heartbeat(subscriber_state_t *state, zmsg_t* msg)
+int process_meta_information_and_handle_heartbeat(subscriber_state_t *state, zmsg_t* msg, int* valid_meta)
 {
     zframe_t *first = zmsg_first(msg);
     char *pub_spec = NULL;
@@ -160,6 +160,7 @@ int process_meta_information_and_handle_heartbeat(subscriber_state_t *state, zms
 
     msg_meta_t meta;
     int rc = msg_extract_meta_info(msg, &meta);
+    *valid_meta = rc;
     if (!rc) {
         // dump_meta_info(&meta);
         if (!state->meta_info_failures++)
@@ -192,17 +193,17 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
         state->message_bytes += zmsg_content_size(msg);
         // printf("[D] received messsage size: %zu\n", zmsg_content_size(msg));
         int n = zmsg_size(msg);
-        if (n < 3 || n > 4) {
+        if (n != 4) {
             fprintf(stderr, "[E] subscriber[%zu]: (%s:%d): dropped invalid message of size %d\n", state->id, __FILE__, __LINE__, n);
             my_zmsg_fprint(msg, "[E] MSG", stderr);
             return 0;
         }
-        if (n == 4) {
-            int is_heartbeat = process_meta_information_and_handle_heartbeat(state, msg);
-            if (is_heartbeat) {
-                zmsg_destroy(&msg);
-                return 0;
-            }
+
+        int valid_meta;
+        int is_heartbeat = process_meta_information_and_handle_heartbeat(state, msg, &valid_meta);
+        if (is_heartbeat) {
+            zmsg_destroy(&msg);
+            return 0;
         }
 
         if (!output_socket_ready(state->push_socket, 0) && !state->message_blocks++)
@@ -233,37 +234,39 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
 
     // pop the sender id added by the router socket
     zframe_t *sender_id = zmsg_pop(msg);
-    zframe_t *empty = zmsg_first(msg);
+    zframe_t *first = zmsg_first(msg);
     zmsg_t *reply = NULL;
 
-    // if the second frame is not empty, we don't need to send a reply
-    if (zframe_size(empty) > 0)
-        zframe_destroy(&sender_id);
-    else {
-        // prepare reply
-        reply = zmsg_new();
-        zmsg_append(reply, &sender_id);
-        // pop the empty frame
-        empty = zmsg_pop(msg);
-        zmsg_append(reply, &empty);
+    // if the second frame exists and is not empty, we don't need to send a reply
+    if (first) {
+        if (zframe_size(first) > 0)
+            zframe_destroy(&sender_id);
+        else {
+            // prepare reply
+            reply = zmsg_new();
+            zmsg_append(reply, &sender_id);
+            // pop the empty frame
+            zmsg_pop(msg);
+            zmsg_append(reply, &first);
+        }
     }
 
     int n = zmsg_size(msg);
-    if (n < 3 || n > 4) {
+    if (n!=4) {
         fprintf(stderr, "[E] subscriber[%zu]: (%s:%d): dropped invalid message of size %d\n", state->id, __FILE__, __LINE__, n);
         my_zmsg_fprint(msg, "[E] MSG", stderr);
         ok = false;
         goto answer;
     }
-    if (n == 4) {
-        int is_heartbeat = process_meta_information_and_handle_heartbeat(state, msg);
-        if (is_heartbeat) {
-            goto answer;
-        }
-        is_ping = zframe_streq(zmsg_first(msg), "ping");
-        if (is_ping)
-            goto answer;
+
+    int valid_meta;
+    int is_heartbeat = process_meta_information_and_handle_heartbeat(state, msg, &valid_meta);
+    if (is_heartbeat) {
+        goto answer;
     }
+    is_ping = zframe_streq(zmsg_first(msg), "ping");
+    if (is_ping)
+        goto answer;
 
     if (!output_socket_ready(state->push_socket, 0) && !state->message_blocks++)
         fprintf(stderr, "[W] subscriber[%zu]: push socket not ready. blocking!\n", state->id);
@@ -277,14 +280,14 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
     zmsg_destroy(&msg);
     if (reply) {
         if (is_ping) {
-            if (ok) {
+            if (ok && valid_meta) {
                 zmsg_addstr(reply, "200 Pong");
                 zmsg_addstr(reply, my_fqdn());
             } else {
                 zmsg_addstr(reply, "400 Bad Request");
             }
         } else
-            zmsg_addstr(reply, ok ? "202 Accepted" : "400 Bad Request");
+            zmsg_addstr(reply, (ok && valid_meta) ? "202 Accepted" : "400 Bad Request");
         int rc = zmsg_send_and_destroy(&reply, socket);
         if (rc)
             fprintf(stderr, "[E] subscriber[%zu]: could not send response (%d: %s)\n", state->id, errno, zmq_strerror(errno));

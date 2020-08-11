@@ -199,7 +199,7 @@ void parse_msg_and_forward_interesting_requests(zmsg_t **msgptr, parser_state_t 
     // slow down parser for testing
     // zclock_sleep(100);
 
-    if (zmsg_size(msg) < 3) {
+    if (zmsg_size(msg) != 4) {
         fprintf(stderr, "[E] parser received incomplete message\n");
         my_zmsg_fprint(msg, "[E] MSG", stderr);
     }
@@ -208,9 +208,18 @@ void parse_msg_and_forward_interesting_requests(zmsg_t **msgptr, parser_state_t 
     zframe_t *body_frame    = zmsg_next(msg);
     zframe_t *meta_frame    = zmsg_next(msg);
 
-    msg_meta_t meta;
-    frame_extract_meta_info(meta_frame, &meta);
-    // dump_meta_info(&meta);
+    if (!well_formed_stream_name((const char*)zframe_data(stream_frame), zframe_size(stream_frame))) {
+        fprintf(stderr, "[E] parser received malformed stream name\n");
+        my_zmsg_fprint(msg, "[E] MSG", stderr);
+        return;
+    }
+
+    msg_meta_t meta = META_INFO_EMPTY;
+    if (!frame_extract_meta_info(meta_frame, &meta)) {
+        fprintf(stderr, "[E] parser could not decode meta info\n");
+        my_zmsg_fprint(msg, "[E] MSG", stderr);
+        return;
+    }
 
     char *body;
     size_t body_len;
