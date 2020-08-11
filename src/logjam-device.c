@@ -7,7 +7,6 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <getopt.h>
-#include <bson.h>
 #include "logjam-util.h"
 #include "message-compressor.h"
 #include "importer-watchdog.h"
@@ -325,11 +324,9 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
             invalid_messages_count_total++;
             broken_meta_count_total++;
             record_broken_meta(&message_parts[0]);
-            if (!bson_utf8_validate(zmq_msg_data(&message_parts[2]), zmq_msg_size(&message_parts[2]), true)) {
-                fprintf(stderr, "[E] meta info could not be decoded: %d\n", n);
-                my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
-                goto cleanup;
-            }
+            fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
+            my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+            goto cleanup;
         }
     }
 
@@ -425,13 +422,11 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
     // try to decode meta information if we have enough frames
     msg_meta_t meta = META_INFO_EMPTY;
     bool decoded = false;
-    bool is_valid_utf8 = false;
     if (n == expected_parts) {
         decoded = zmq_msg_extract_meta_info(&message_parts[app_env_index+3], &meta);
         if (!decoded) {
             broken_meta_count_total++;
             record_broken_meta(&message_parts[app_env_index]);
-            is_valid_utf8 = bson_utf8_validate(zmq_msg_data(&message_parts[app_env_index+2]), zmq_msg_size(&message_parts[app_env_index+2]), true);
         }
     }
 
@@ -489,11 +484,9 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
 
     if (!decoded) {
         invalid_messages_count_total++;
-        if (!is_valid_utf8) {
-            fprintf(stderr, "[E] meta info could not be decoded: %d\n", n);
-            my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
-            goto cleanup;
-        }
+        fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
+        my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+        goto cleanup;
     }
 
     if (!valid_stream) {
