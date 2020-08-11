@@ -239,19 +239,19 @@ static int read_multipart_msg(void* socket, zmq_msg_t *parts, int n, int* read)
 
 static bool warn_msg_size(zmq_msg_t *parts, int n, int min, int max)
 {
-   if (n<min) {
+    if (n<min) {
         if (!zsys_interrupted) {
-          fprintf(stderr, "[E] received only %d message parts\n", n);
-          my_zmq_msg_fprint(parts, n, "[E] MSG", stderr);
+            fprintf(stderr, "[E] received less than the expected %d message parts: got %d\n", min, n);
+            my_zmq_msg_fprint(parts, n, "[E] MSG", stderr);
         }
         return true;
     }
-   if (n>max) {
-        fprintf(stderr, "[E] received more than 4 message parts: %d\n", n);
+    if (n>max) {
+        fprintf(stderr, "[E] received more than the expectd %d message parts: got %d\n", max, n);
         my_zmq_msg_fprint(parts, n, "[E] MSG", stderr);
         return true;
     }
-   return false;
+    return false;
 }
 
 static void update_message_stats(void* socket, publisher_state_t *state, zmq_msg_t* body)
