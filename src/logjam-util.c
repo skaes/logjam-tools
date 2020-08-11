@@ -170,7 +170,9 @@ int frame_extract_meta_info(zframe_t *meta_frame, msg_meta_t *meta)
 int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta)
 {
     // make sure the caller is clear in his head
-    assert(zmsg_size(msg) == 4);
+    if (zmsg_size(msg)!=4)
+        return 0;
+
     zframe_t *meta_frame = zmsg_last(msg);
 
     // check frame size, tag and protocol version
