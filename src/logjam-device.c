@@ -45,6 +45,8 @@ static size_t compressed_messages_max_bytes = 0;
 static size_t io_threads = 1;
 static size_t num_compressors = 4;
 
+static bool allow_invalid_meta = false;
+
 static msg_meta_t msg_meta = META_INFO_EMPTY;
 static char device_number_s[11] = {'0', 0};
 
@@ -324,9 +326,11 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
             invalid_messages_count_total++;
             broken_meta_count_total++;
             record_broken_meta(&message_parts[0]);
-            fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
-            my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
-            goto cleanup;
+            if (!allow_invalid_meta) {
+                fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
+                my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+                goto cleanup;
+            }
         }
     }
 
@@ -484,9 +488,11 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
 
     if (!decoded) {
         invalid_messages_count_total++;
-        fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
-        my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
-        goto cleanup;
+        if (!allow_invalid_meta) {
+            fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
+            my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+            goto cleanup;
+        }
     }
 
     if (!valid_stream) {
@@ -528,6 +534,7 @@ static void print_usage(char * const *argv)
             "  -m, --metrics-port N       port to use for prometheus path /metrics\n"
             "  -M, --metrics-ip N         ip for binding metrics endpoint\n"
             "  -T, --trim-frequency N     malloc trim freqency in seconds, 0 means no trimming\n"
+            "  -A, --allow-invalid-meta   allow invalid meta data\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
@@ -543,24 +550,25 @@ static void process_arguments(int argc, char * const *argv)
     opterr = 0;
 
     static struct option long_options[] = {
-        { "compress",       required_argument, 0, 'x' },
-        { "device-id",      required_argument, 0, 'd' },
-        { "router-port",    required_argument, 0, 't' },
-        { "help",           no_argument,       0,  0  },
-        { "input-port",     required_argument, 0, 'p' },
-        { "io-threads",     required_argument, 0, 'i' },
-        { "output-port",    required_argument, 0, 'P' },
-        { "quiet",          no_argument,       0, 'q' },
-        { "rcv-hwm",        required_argument, 0, 'R' },
-        { "snd-hwm",        required_argument, 0, 'S' },
-        { "verbose",        no_argument,       0, 'v' },
-        { "metrics-port",   required_argument, 0, 'm' },
-        { "metrics-ip",     required_argument, 0, 'M' },
-        { "trim-frequency", required_argument, 0, 'T' },
-        { 0,               0,                 0,  0  }
+        { "compress",           required_argument, 0, 'x' },
+        { "device-id",          required_argument, 0, 'd' },
+        { "router-port",        required_argument, 0, 't' },
+        { "help",               no_argument,       0,  0  },
+        { "input-port",         required_argument, 0, 'p' },
+        { "io-threads",         required_argument, 0, 'i' },
+        { "output-port",        required_argument, 0, 'P' },
+        { "quiet",              no_argument,       0, 'q' },
+        { "rcv-hwm",            required_argument, 0, 'R' },
+        { "snd-hwm",            required_argument, 0, 'S' },
+        { "verbose",            no_argument,       0, 'v' },
+        { "metrics-port",       required_argument, 0, 'm' },
+        { "metrics-ip",         required_argument, 0, 'M' },
+        { "trim-frequency",     required_argument, 0, 'T' },
+        { "allow-invalid-meta", no_argument,       0, 'A' },
+        { 0,                    0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:p:c:i:x:s:P:S:R:t:m:M:T:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:c:i:x:s:P:S:R:t:m:M:T:A", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -614,6 +622,9 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'T':
             malloc_trim_frequency = atoi(optarg);
+            break;
+        case 'A':
+            allow_invalid_meta = true;
             break;
         case 0:
             print_usage(argv);
