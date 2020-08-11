@@ -465,8 +465,10 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
             } else {
                 zmsg_addstr(reply, "400 Bad Request");
             }
-            if (valid_stream)
-                record_ping(routing_id, app_env, app_env_len);
+            if (valid_stream && (app_env_index+1 < n)) {
+                zmq_msg_t *topic = &message_parts[app_env_index+1];
+                record_ping(routing_id, zmq_msg_data(topic), zmq_msg_size(topic));
+            }
         } else {
             // a normal message, but asking for a reply
             if (valid_stream) {
