@@ -321,9 +321,21 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     msg_meta_t meta = META_INFO_EMPTY;
     if (n==4) {
         if (!zmq_msg_extract_meta_info(&message_parts[3], &meta)) {
+            invalid_messages_count_total++;
             broken_meta_count_total++;
             record_broken_meta(&message_parts[0]);
+            fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
+            my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+            goto cleanup;
         }
+    }
+
+    zmq_msg_t *app_env = &message_parts[0];
+    if (!well_formed_stream_name(zmq_msg_data(app_env), zmq_msg_size(app_env))) {
+        invalid_messages_count_total++;
+        fprintf(stderr, "[E] malformed stream name\n");
+        my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+        goto cleanup;
     }
 
     update_message_stats(socket, state, &message_parts[2]);
@@ -336,7 +348,7 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
     return 0;
 }
 
-static void record_routing_id_and_app_env(zmq_msg_t *sender_id, zmq_msg_t *stream)
+static void record_routing_id_and_app_env(zmq_msg_t *sender_id, const char *stream, int m)
 {
     int n = zmq_msg_size(sender_id);
     char routing_id[2*n+1];
@@ -344,16 +356,14 @@ static void record_routing_id_and_app_env(zmq_msg_t *sender_id, zmq_msg_t *strea
     for (int i=0; i<n; i++)
         sprintf(&routing_id[2*i], "%02X", data[i]);
     if (debug) {
-        int m = zmq_msg_size(stream);
         char stream_str[m+1];
-        memcpy(stream_str, zmq_msg_data(stream), m);
+        memcpy(stream_str, stream, m);
         stream_str[m] = '\0';
         printf("[D] routingid[%d], stream[%d]: %s,%s\n", 2*n, m, routing_id, stream_str);
     }
     if (!zhashx_lookup(routing_id_to_app_env, routing_id)) {
-        int m = zmq_msg_size(stream);
         char stream_str[m+1];
-        memcpy(stream_str, zmq_msg_data(stream), m);
+        memcpy(stream_str, stream, m);
         stream_str[m] = '\0';
         app_env_record_t *r = zmalloc(sizeof(*r));
         r->app_env = strdup(stream_str);
@@ -362,13 +372,12 @@ static void record_routing_id_and_app_env(zmq_msg_t *sender_id, zmq_msg_t *strea
     }
 }
 
-static void record_ping(zmq_msg_t *sender_id, zmq_msg_t *routing_key)
+static void record_ping(zmq_msg_t *sender_id, const char *routing_key, int routing_key_len)
 {
-    int routing_key_len = zmq_msg_size(routing_key);
     if (routing_key_len > 0) {
         // application sent app-env as the routing key
         char app_env[routing_key_len+1];
-        memcpy(app_env, zmq_msg_data(routing_key), routing_key_len);
+        memcpy(app_env, routing_key, routing_key_len);
         app_env[routing_key_len] = '\0';
         device_prometheus_client_count_ping(app_env);
     } else {
@@ -400,18 +409,17 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
         goto cleanup;
     }
 
-    if (n < 2) {
-        // received empty message
-        warn_msg_size(message_parts, n, 5, 6);
-        invalid_messages_count_total++;
-        goto cleanup;
-    }
+    // my_zmq_msg_fprint(message_parts, n, "[D] MSG", stderr);
 
-    // if the second frame is empty, we need to send a reply
-    bool send_reply = zmq_msg_size(&message_parts[1]) == 0;
+    zmq_msg_t *routing_id = &message_parts[0];
+
+    // if the second frame is present and empty, we need to send a reply, no matter how
+    // broken the whole message is
+    bool send_reply = n > 1 && zmq_msg_size(&message_parts[1]) == 0;
     int app_env_index = send_reply ? 2 : 1;
     int expected_parts = 4 + app_env_index;
 
+    // try to decode meta information if we have enough frames
     msg_meta_t meta = META_INFO_EMPTY;
     bool decoded = false;
     if (n == expected_parts) {
@@ -422,39 +430,51 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
         }
     }
 
+    // determine stream, if possible
+    char *app_env;
+    int app_env_len;
+    if (app_env_index < n) {
+        app_env = zmq_msg_data(&message_parts[app_env_index]);
+        app_env_len = zmq_msg_size(&message_parts[app_env_index]);
+    } else {
+        app_env = "unknown-unknown";
+        app_env_len = 15;
+    }
+    bool is_ping = app_env_len == 4 && !strncmp(app_env, "ping", 4);
+    bool valid_stream = is_ping || (app_env_index < n && well_formed_stream_name(app_env, app_env_len));
+
     if (!send_reply) {
-        record_routing_id_and_app_env(&message_parts[0], &message_parts[1]);
+        record_routing_id_and_app_env(routing_id, app_env, app_env_len);
     } else {
         zmsg_t *reply = zmsg_new();
-        zmsg_addmem(reply, zmq_msg_data(&message_parts[0]), zmq_msg_size(&message_parts[0])); // routing id
-        zmsg_addmem(reply, zmq_msg_data(&message_parts[2]), zmq_msg_size(&message_parts[2])); // app_env
+        zmsg_addmem(reply, zmq_msg_data(routing_id), zmq_msg_size(routing_id));
+        zmsg_addmem(reply, app_env, app_env_len);
 
-        // return bad request if we didn't receive 6 frames and meta frame can't be decoded
-
-        zmq_msg_t *app_env_or_ping = &message_parts[2];
-        bool is_ping = !strncmp(zmq_msg_data(app_env_or_ping), "ping", 4);
+        // return bad request if we didn't get enough frames or the meta frame can't be
+        // decoded or stream name is not well formed
         if (is_ping) {
+            valid_stream = true;
             ping_count_total++;
             if (decoded) {
-                zmsg_addstr(reply, "200 Pong");
+                zmsg_addstr(reply, "200 OK");
                 zmsg_addstr(reply, my_fqdn());
             } else {
                 zmsg_addstr(reply, "400 Bad Request");
             }
-            record_ping(&message_parts[0], &message_parts[3]);
+            if (valid_stream)
+                record_ping(routing_id, app_env, app_env_len);
         } else {
             // a normal message, but asking for a reply
-            zmsg_addstr(reply, decoded ? "202 Accepted" : "400 Bad Request");
-            record_routing_id_and_app_env(&message_parts[0], &message_parts[2]);
+            if (valid_stream) {
+                zmsg_addstr(reply, decoded ? "202 Accepted" : "400 Bad Request");
+                record_routing_id_and_app_env(routing_id, app_env, app_env_len);
+            } else
+                zmsg_addstr(reply, "400 Bad Request");
         }
 
         int rc = zmsg_send_and_destroy(&reply, sock);
         if (rc)
             fprintf(stderr, "[E] could not send response (%d: %s)\n", errno, zmq_strerror(errno));
-
-        // don't forward pings
-        if (is_ping)
-            goto cleanup;
     }
 
     if (warn_msg_size(message_parts, n, expected_parts, expected_parts)) {
@@ -462,14 +482,25 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
         goto cleanup;
     }
 
-    if (!decoded && verbose) {
+    if (!decoded) {
+        invalid_messages_count_total++;
         fprintf(stderr, "[W] meta info could not be decoded: %d\n", n);
-        my_zmq_msg_fprint(message_parts, n, "[W] MSG", stderr);
+        my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+        goto cleanup;
     }
 
-    zmq_msg_t *body = &message_parts[app_env_index+2];
-    update_message_stats(socket, state, body);
-    compress_or_forward(message_parts+app_env_index, &meta, state);
+    if (!valid_stream) {
+        invalid_messages_count_total++;
+        fprintf(stderr, "[E] malformed stream name\n");
+        my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+        goto cleanup;
+    }
+
+    if (!is_ping) {
+        zmq_msg_t *body = &message_parts[app_env_index+2];
+        update_message_stats(socket, state, body);
+        compress_or_forward(message_parts+app_env_index, &meta, state);
+    }
 
  cleanup:
     for (int i=n-1; i>=0; i--)
