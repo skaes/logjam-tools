@@ -46,7 +46,7 @@ accepted      = %s"202 Accepted"
 bad-request   = %s"400 Bad Request"
 
 ping-msg      = empty-frame %s"ping" app-env json-body meta-info
-pong-msg      = %s"200 OK" fqdn
+pong-msg      = app-env %s"200 OK" fqdn
 fqdn          = *( ALPHA / "." )
 
 app-env      = application "-" environment
