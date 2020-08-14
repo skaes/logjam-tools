@@ -44,24 +44,24 @@ compression method used for the JSON body, when the messages was
 produced and a message sequence number.
 
 ```
-data-msg  = app-env topic json-body meta-info
+data-msg = app-env topic json-body meta-info
 
 app-env      = application "-" environment
 application  = ALPHA *(ALPHA / "_" / "-")
 environment  = ALPHA *(ALPHA / "_")
 
-topic = logs *( ALPHA / "." )            ; normal log messages
-topic /= javascript *( ALPHA / "." )     ; javascript errors
-topic /= events *( ALPHA / "." )         ; logjam event
-topic /= frontend.page                   ; frontend metric (page render)
-topic /= frontend.ajax                   ; frontend metric (ajax call)
-topic /= mobile                          ; mobile metric
+topic = logs *( "." ALPHA *ALPHA )         ; normal log messages
+topic /= javascript *( "." ALPHA *ALPHA )  ; javascript errors
+topic /= events *( "." ALPHA *ALPHA )      ; logjam event
+topic /= frontend.page                     ; frontend metric (page render)
+topic /= frontend.ajax                     ; frontend metric (ajax call)
+topic /= mobile                            ; mobile metric
 
-body = *OCTET                            ; JSON string, possibly compressed
+body = *OCTET                              ; JSON string, possibly compressed
 
 meta-info = tag compression-method version device-number created-ms sequence-number
 
-tag = %xCABD                             ; tag is used internally to detect programming errors
+tag = %xCABD                               ; tag is used internally to detect programming errors
 
 compression-method = no-compression / zlib-compression / snappy-compression / lz4-compression
 no-compression     = %x0
@@ -71,9 +71,9 @@ lz4-compression    = %x3
 
 version            = %x1
 
-device-number      = 2OCTET              ; uint16, network byte order
-created-ms         = 8OCTET              ; uint64, network byte order
-sequence-number    = 8OCTET              ; uint64, network byte order
+device-number      = 2OCTET                ; uint16, network byte order
+created-ms         = 8OCTET                ; uint64, network byte order
+sequence-number    = 8OCTET                ; uint64, network byte order
 ```
 
 Note: as of version 1, the format is identical to the format used in

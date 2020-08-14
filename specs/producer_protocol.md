@@ -83,20 +83,20 @@ compression method used for the JSON body, when the messages was
 produced and a message sequence number.
 
 ```
-data-msg  = app-env topic json-body meta-info
+data-msg = app-env topic json-body meta-info
 
-topic = logs *( ALPHA / "." )            ; normal log messages
-topic /= javascript *( ALPHA / "." )     ; javascript errors
-topic /= events *( ALPHA / "." )         ; logjam event
-topic /= frontend.page                   ; frontend metric (page render)
-topic /= frontend.ajax                   ; frontend metric (ajax call)
-topic /= mobile                          ; mobile metric
+topic = logs *( "." ALPHA *ALPHA )         ; normal log messages
+topic /= javascript *( "." ALPHA *ALPHA )  ; javascript errors
+topic /= events *( "." ALPHA *ALPHA )      ; logjam event
+topic /= frontend.page                     ; frontend metric (page render)
+topic /= frontend.ajax                     ; frontend metric (ajax call)
+topic /= mobile                            ; mobile metric
 
-json-body = *OCTET                       ; JSON string, possibly compressed
+json-body = *OCTET                         ; JSON string, possibly compressed
 
 meta-info = tag compression-method version device-number created-ms sequence-number
 
-tag = %xCABD                             ; used internally to detect programming errors
+tag = %xCABD                               ; used internally to detect programming errors
 
 compression-method = no-compression / zlib-compression / snappy-compression / lz4-compression
 no-compression     = %x0
@@ -106,9 +106,9 @@ lz4-compression    = %x3
 
 version            = %x1
 
-device-number      = 4OCTET              ; uint32, network byte order
-created-ms         = 8OCTET              ; uint64, network byte order
-sequence-number    = 8OCTET              ; uint64, network byte order
+device-number      = 4OCTET                ; uint32, network byte order
+created-ms         = 8OCTET                ; uint64, network byte order
+sequence-number    = 8OCTET                ; uint64, network byte order
 ```
 
 ## Constraints
