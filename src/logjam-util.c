@@ -862,6 +862,23 @@ bool extract_app_env(const char* app_env, int n, char* app, char* env)
     return true;
 }
 
+bool well_formed_topic(const char* s, int n)
+{
+    if (n >= 4 && !strncmp("logs", s, 4))
+        return true;
+    if (n >= 10 && !strncmp("javascript", s, 10))
+        return true;
+    if (n >= 6 && !strncmp("events", s, 6))
+        return true;
+    if (n >= 13 && !strncmp("frontend.page", s, 13))
+        return true;
+    if (n >= 13 && !strncmp("frontend.ajax", s, 13))
+        return true;
+    if (n >= 6 && !strncmp("mobile", s, 6))
+        return true;
+    return false;
+}
+
 bool well_formed_stream_name(const char* s, int n)
 {
     int hyphen_count = 0;
@@ -992,6 +1009,17 @@ static void test_well_formed_stream_name (int verbose)
     assert(!well_formed_stream_name("ö-ö", strlen("ö-ö")));
 }
 
+static void test_well_formed_topic (int verbose)
+{
+    assert(well_formed_topic("logs.1", strlen("logs.1")));
+    assert(well_formed_topic("events.1", strlen("events.1")));
+    assert(well_formed_topic("javascript.1", strlen("javascript.1")));
+    assert(well_formed_topic("frontend.page.1", strlen("frontend.page.1")));
+    assert(well_formed_topic("frontend.ajax.1", strlen("frontend.ajax.1")));
+    assert(well_formed_topic("mobile.1", strlen("mobile")));
+    assert(!well_formed_topic("abc", 3));
+}
+
 static void test_extract_app_env (int verbose)
 {
     bool ok;
@@ -1089,6 +1117,7 @@ void logjam_util_test (int verbose)
     test_negative_numbers_conversion_to_sizet (verbose);
     test_my_fqdn (verbose);
     test_well_formed_stream_name (verbose);
+    test_well_formed_topic (verbose);
     test_extract_app_env (verbose);
     test_extract_app_env_rid (verbose);
     test_compression_decompression (verbose);

@@ -342,6 +342,14 @@ static int read_zmq_message_and_forward(zloop_t *loop, zsock_t *sock, void *call
         goto cleanup;
     }
 
+    zmq_msg_t *topic = &message_parts[1];
+    if (!well_formed_topic(zmq_msg_data(topic), zmq_msg_size(topic))) {
+        invalid_messages_count_total++;
+        fprintf(stderr, "[E] malformed routing key\n");
+        my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+        goto cleanup;
+    }
+
     update_message_stats(socket, state, &message_parts[2]);
     compress_or_forward(message_parts, &meta, state);
 
@@ -446,6 +454,8 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
     }
     bool is_ping = app_env_len == 4 && !strncmp(app_env, "ping", 4);
     bool valid_stream = is_ping || (app_env_index < n && well_formed_stream_name(app_env, app_env_len));
+    zmq_msg_t *topic = &message_parts[app_env_index+1];
+    bool valid_topic = is_ping || (app_env_index+1 < n && well_formed_topic(zmq_msg_data(topic), zmq_msg_size(topic)));
 
     if (!send_reply) {
         record_routing_id_and_app_env(routing_id, app_env, app_env_len);
@@ -466,7 +476,6 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
                 zmsg_addstr(reply, "400 Bad Request");
             }
             if (valid_stream && (app_env_index+1 < n)) {
-                zmq_msg_t *topic = &message_parts[app_env_index+1];
                 record_ping(routing_id, zmq_msg_data(topic), zmq_msg_size(topic));
             }
         } else {
@@ -506,6 +515,13 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
     }
 
     if (!is_ping) {
+        if (!valid_topic) {
+            invalid_messages_count_total++;
+            fprintf(stderr, "[E] malformed routing key\n");
+            my_zmq_msg_fprint(message_parts, n, "[E] MSG", stderr);
+            goto cleanup;
+        }
+
         zmq_msg_t *body = &message_parts[app_env_index+2];
         update_message_stats(socket, state, body);
         compress_or_forward(message_parts+app_env_index, &meta, state);
