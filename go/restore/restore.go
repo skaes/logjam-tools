@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jessevdk/go-flags"
@@ -22,11 +23,12 @@ var opts struct {
 	BackupDir       string `short:"b" long:"backup-dir" default:"." description:"Directory where to backups are stored."`
 	DatabaseURL     string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host:port to restore to."`
 	ExcludeRequests bool   `short:"x" long:"exclude-requests" description:"Don't restore request backups."`
-	ToDate          string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
-	BeforeDate      string `short:"T" long:"before-date" description:"Day after the end date of backup period. Defaults to today."`
-	FromDate        string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
+	ToDate          string `short:"t" long:"to-date" description:"End date of restore period. Defaults to yesterday."`
+	BeforeDate      string `short:"T" long:"before-date" description:"Day after the end date of the restore period. Defaults to today."`
+	FromDate        string `short:"f" long:"from-date" description:"Start date of restore period. Defaults to zero time."`
 	Match           string `short:"m" long:"match" default:"*" description:"Restrict restore to files matching the given file glob. Ignored when an explicit list of archives is given. Defaults to all files."`
 	Rename          string `short:"r" long:"rename" default:"" description:"Rename the restored databases using the given map (old:new,...). Defaults to no renaming."`
+	Concurrency     uint   `short:"c" long:"concurrency" default:"1" description:"Run this many restore jobs concurrently. Defaults to 1."`
 }
 
 var (
@@ -194,6 +196,53 @@ func extractArchiveInfo(a string) *archiveInfo {
 	return &archiveInfo{App: app, Env: env, Date: date, Path: a}
 }
 
+func filterArchives(archives []*archiveInfo) []*archiveInfo {
+	res := []*archiveInfo{}
+	for _, a := range archives {
+		name, suffix := parseBackupFileName(a.Path)
+		if name == "" {
+			continue
+		}
+		if a.Date.Before(fromDate) || a.Date.After(toDate) {
+			continue
+		}
+		if !opts.ExcludeRequests || suffix == ".archive" {
+			res = append(res, a)
+		}
+	}
+	return res
+}
+
+func sortArchives(archives []*archiveInfo) {
+	sort.Slice(archives, func(i int, j int) bool {
+		younger := archives[i].Date.Before(archives[j].Date)
+		sameDate := archives[i].Date == archives[j].Date
+		return younger || (sameDate && strings.Compare(archives[i].Path, archives[j].Path) == -1)
+	})
+}
+
+func restoreArchives(archives []*archiveInfo, wg *sync.WaitGroup) {
+	defer wg.Done()
+	for _, a := range archives {
+		if util.Interrupted() {
+			return
+		}
+		restoreArchive(a)
+	}
+}
+
+func splitArchives(archives []*archiveInfo, n uint) [][]*archiveInfo {
+	res := make([][]*archiveInfo, n)
+	for i := 0; i < int(n); i++ {
+		res[i] = []*archiveInfo{}
+	}
+	for i := 0; i < len(archives); i++ {
+		j := i % int(n)
+		res[j] = append(res[j], archives[i])
+	}
+	return res
+}
+
 func restoreFromBackups() {
 	if len(archivesToRestore) == 0 {
 		files, err := filepath.Glob(filepath.Join(opts.BackupDir, opts.Match))
@@ -212,26 +261,15 @@ func restoreFromBackups() {
 			archives = append(archives, info)
 		}
 	}
-	sort.Slice(archives, func(i int, j int) bool {
-		younger := archives[i].Date.Before(archives[j].Date)
-		sameDate := archives[i].Date == archives[j].Date
-		return younger || (sameDate && strings.Compare(archives[i].Path, archives[j].Path) == -1)
-	})
-	for _, a := range archives {
-		if util.Interrupted() {
-			return
-		}
-		name, suffix := parseBackupFileName(a.Path)
-		if name == "" {
-			continue
-		}
-		if a.Date.Before(fromDate) || a.Date.After(toDate) {
-			continue
-		}
-		if !opts.ExcludeRequests || suffix == ".archive" {
-			restoreArchive(a)
-		}
+	archives = filterArchives(archives)
+	sortArchives(archives)
+	splits := splitArchives(archives, opts.Concurrency)
+	var wg sync.WaitGroup
+	wg.Add(len(splits))
+	for _, split := range splits {
+		go restoreArchives(split, &wg)
 	}
+	wg.Wait()
 }
 
 func main() {
