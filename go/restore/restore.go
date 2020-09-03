@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -17,18 +18,20 @@ import (
 )
 
 var opts struct {
-	Verbose         bool   `short:"v" long:"verbose" description:"Be verbose."`
-	Quiet           bool   `short:"q" long:"quiet" description:"Only log errors and warnings."`
-	Dryrun          bool   `short:"n" long:"dryrun" description:"Don't perform the backup, list what would happen."`
-	BackupDir       string `short:"b" long:"backup-dir" default:"." description:"Directory where to backups are stored."`
-	DatabaseURL     string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host:port to restore to."`
-	ExcludeRequests bool   `short:"x" long:"exclude-requests" description:"Don't restore request backups."`
-	ToDate          string `short:"t" long:"to-date" description:"End date of restore period. Defaults to yesterday."`
-	BeforeDate      string `short:"T" long:"before-date" description:"Day after the end date of the restore period. Defaults to today."`
-	FromDate        string `short:"f" long:"from-date" description:"Start date of restore period. Defaults to zero time."`
-	Match           string `short:"m" long:"match" default:"*" description:"Restrict restore to files matching the given file glob. Ignored when an explicit list of archives is given. Defaults to all files."`
-	Rename          string `short:"r" long:"rename" default:"" description:"Rename the restored databases using the given map (old:new,...). Defaults to no renaming."`
-	Concurrency     uint   `short:"c" long:"concurrency" default:"1" description:"Run this many restore jobs concurrently. Defaults to 1."`
+	Verbose             bool   `short:"v" long:"verbose" description:"Be verbose."`
+	Quiet               bool   `short:"q" long:"quiet" description:"Only log errors and warnings."`
+	Dryrun              bool   `short:"n" long:"dryrun" description:"Don't perform the backup, list what would happen."`
+	BackupDir           string `short:"b" long:"backup-dir" default:"." description:"Directory where to backups are stored."`
+	DatabaseURL         string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host:port to restore to."`
+	ExcludeRequests     bool   `short:"x" long:"exclude-requests" description:"Don't restore request backups."`
+	ToDate              string `short:"t" long:"to-date" description:"End date of restore period. Defaults to yesterday."`
+	BeforeDate          string `short:"T" long:"before-date" description:"Day after the end date of the restore period. Defaults to today."`
+	FromDate            string `short:"f" long:"from-date" description:"Start date of restore period. Defaults to zero time."`
+	Match               string `short:"m" long:"match" default:"*" description:"Restrict restore to files matching the given file glob. Ignored when an explicit list of archives is given. Defaults to all files."`
+	Rename              string `short:"r" long:"rename" default:"" description:"Rename the restored databases using the given map (old:new,...). Defaults to no renaming."`
+	Concurrency         uint   `short:"c" long:"concurrency" default:"1" description:"Run this many restore jobs concurrently. Defaults to 1."`
+	InsertionWorkers    uint   `short:"w" long:"workers" default:"1" description:"Number of collection insertion workers. Defaults to 1."`
+	ParallelCollections uint   `short:"p" long:"collections" default:"4" description:"Number of collections restored in parallel. Defaults to 4."`
 }
 
 var (
@@ -129,7 +132,11 @@ func restoreArchive(ai *archiveInfo) {
 		logInfo("could not access archive %s: %s", ai.Path, err)
 		return
 	}
-	args := []string{"--drop", "--uri=" + opts.DatabaseURL, "--archive=" + ai.Path, "--gzip"}
+	args := []string{
+		"--drop", "--uri=" + opts.DatabaseURL, "--archive=" + ai.Path, "--gzip",
+		"--numParallelCollections=" + strconv.Itoa(int(opts.ParallelCollections)),
+		"--numInsertionWorkersPerCollection=" + strconv.Itoa(int(opts.InsertionWorkers)),
+	}
 	newName := rename[ai.App]
 	if newName != "" {
 		fromName := ai.DatabaseName("")
