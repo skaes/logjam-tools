@@ -228,26 +228,16 @@ func sortArchives(archives []*archiveInfo) {
 	})
 }
 
-func restoreArchives(archives []*archiveInfo, wg *sync.WaitGroup) {
+func restoreArchives(c chan *archiveInfo, wg *sync.WaitGroup) {
 	defer wg.Done()
-	for _, a := range archives {
-		if util.Interrupted() {
+	for !util.Interrupted() {
+		select {
+		case a := <-c:
+			restoreArchive(a)
+		default:
 			return
 		}
-		restoreArchive(a)
 	}
-}
-
-func splitArchives(archives []*archiveInfo, n uint) [][]*archiveInfo {
-	res := make([][]*archiveInfo, n)
-	for i := 0; i < int(n); i++ {
-		res[i] = []*archiveInfo{}
-	}
-	for i := 0; i < len(archives); i++ {
-		j := i % int(n)
-		res[j] = append(res[j], archives[i])
-	}
-	return res
 }
 
 func restoreFromBackups() {
@@ -270,11 +260,14 @@ func restoreFromBackups() {
 	}
 	archives = filterArchives(archives)
 	sortArchives(archives)
-	splits := splitArchives(archives, opts.Concurrency)
+	c := make(chan *archiveInfo, len(archives))
+	for _, a := range archives {
+		c <- a
+	}
 	var wg sync.WaitGroup
-	wg.Add(len(splits))
-	for _, split := range splits {
-		go restoreArchives(split, &wg)
+	wg.Add(int(opts.Concurrency))
+	for i := 0; i < int(opts.Concurrency); i++ {
+		go restoreArchives(c, &wg)
 	}
 	wg.Wait()
 }
