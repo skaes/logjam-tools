@@ -321,7 +321,7 @@ func backupRequests(db string) {
 	}
 	uri := strings.TrimSuffix(opts.DatabaseURL, "/") + "/" + db
 	cmd := exec.Command("mongodump", "--uri="+uri, "--archive="+backupName, "--gzip")
-	for _, s := range []string{"totals", "minutes", "quants", "agents", "heatmaps", "js_exceptions"} {
+	for _, s := range []string{"totals", "minutes", "quants", "agents", "heatmaps", "js_exceptions", "events"} {
 		cmd.Args = append(cmd.Args, "--excludeCollection="+s)
 	}
 	if !verbose {
