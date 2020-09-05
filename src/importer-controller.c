@@ -467,14 +467,17 @@ bool controller_create_actors(controller_state_t *state)
 
     // start the stream config updater (pass something not null to make it send indexer messages)
     state->stream_config_updater = stream_config_updater_new((void*)1);
+    // start the indexer
+    state->indexer = zactor_new(indexer, NULL);
+    if (initialize_dbs) return !zsys_interrupted;
+
     // start the statsd updater
     state->statsd_server = zactor_new(statsd_actor_fn, state->config);
     // start the live stream publisher
     state->live_stream_publisher = zactor_new(live_stream_actor_fn, state->config);
     // start the unknown streams collector
     state->unknown_streams_collector = zactor_new(unknown_streams_collector_actor_fn, NULL);
-    // start the indexer
-    state->indexer = zactor_new(indexer, NULL);
+
     // create subscribers
     for (size_t i=0; i<num_subscribers; i++) {
         state->subscribers[i] = subscriber_new(state->config, i);
@@ -524,63 +527,95 @@ bool controller_create_actors(controller_state_t *state)
 static
 void controller_destroy_actors(controller_state_t *state)
 {
-    if (verbose) printf("[D] controller: destroying controller watchdog\n");
-    watchdog_destroy(&state->controller_watchdog);
+    if (state->controller_watchdog) {
+        if (verbose) printf("[D] controller: destroying controller watchdog\n");
+        watchdog_destroy(&state->controller_watchdog);
+    }
 
-    if (verbose) printf("[D] controller: destroying subscriber watchdog\n");
-    watchdog_destroy(&state->subscriber_watchdog);
+    if (state->subscriber_watchdog) {
+        if (verbose) printf("[D] controller: destroying subscriber watchdog\n");
+        watchdog_destroy(&state->subscriber_watchdog);
+    }
 
-    if (verbose) printf("[D] controller: destroying stream config updater\n");
-    stream_config_updater_destroy(&state->stream_config_updater);
+    if (state->stream_config_updater) {
+        if (verbose) printf("[D] controller: destroying stream config updater\n");
+        stream_config_updater_destroy(&state->stream_config_updater);
+    }
 
     for (size_t i=0; i<num_subscribers; i++) {
-        if (verbose) printf("[D] controller: destroying subscriber[%zu]\n", i);
-        subscriber_destroy(&state->subscribers[i]);
+        if (state->subscribers[i]) {
+            if (verbose) printf("[D] controller: destroying subscriber[%zu]\n", i);
+            subscriber_destroy(&state->subscribers[i]);
+        }
     }
 
     for (size_t i=0; i<num_parsers; i++) {
-        if (verbose) printf("[D] controller: destroying parser[%zu]\n", i);
-        parser_destroy(&state->parsers[i]);
+        if (state->parsers[i]) {
+            if (verbose) printf("[D] controller: destroying parser[%zu]\n", i);
+            parser_destroy(&state->parsers[i]);
+        }
     }
 
     for (size_t i=0; i<num_writers; i++) {
-        if (verbose) printf("[D] controller: destroying writer[%zu]\n", i);
-        zactor_destroy(&state->writers[i]);
+        if (state->writers[i]) {
+            if (verbose) printf("[D] controller: destroying writer[%zu]\n", i);
+            zactor_destroy(&state->writers[i]);
+        }
     }
 
     for (size_t i=0; i<num_updaters; i++) {
-        if (verbose) printf("[D] controller: destroying updater[%zu]\n", i);
-        zactor_destroy(&state->updaters[i]);
+        if (state->updaters[i]) {
+            if (verbose) printf("[D] controller: destroying updater[%zu]\n", i);
+            zactor_destroy(&state->updaters[i]);
+        }
     }
 
     for (size_t i=0; i<num_adders; i++) {
-        if (verbose) printf("[D] controller: destroying adder[%zu]\n", i);
-        zactor_destroy(&state->adders[i]);
+        if (state->adders[i]) {
+            if (verbose) printf("[D] controller: destroying adder[%zu]\n", i);
+            zactor_destroy(&state->adders[i]);
+        }
     }
 
-    if (verbose) printf("[D] controller: destroying tracker\n");
-    zactor_destroy(&state->tracker);
+    if (state->tracker) {
+        if (verbose) printf("[D] controller: destroying tracker\n");
+        zactor_destroy(&state->tracker);
+    }
 
-    if (verbose) printf("[D] controller: destroying statsd\n");
-    zactor_destroy(&state->statsd_server);
+    if (state->statsd_server) {
+        if (verbose) printf("[D] controller: destroying statsd\n");
+        zactor_destroy(&state->statsd_server);
+    }
 
-    if (verbose) printf("[D] controller: destroying indexer\n");
-    zactor_destroy(&state->indexer);
+    if (state->indexer) {
+        if (verbose) printf("[D] controller: destroying indexer\n");
+        zactor_destroy(&state->indexer);
+    }
 
-    if (verbose) printf("[D] controller: destroying live stream publisher\n");
-    zactor_destroy(&state->live_stream_publisher);
+    if (state->live_stream_publisher) {
+        if (verbose) printf("[D] controller: destroying live stream publisher\n");
+        zactor_destroy(&state->live_stream_publisher);
+    }
 
-    if (verbose) printf("[D] controller: destroying unknown streams collector\n");
-    zactor_destroy(&state->unknown_streams_collector);
+    if (state->unknown_streams_collector) {
+        if (verbose) printf("[D] controller: destroying unknown streams collector\n");
+        zactor_destroy(&state->unknown_streams_collector);
+    }
 
-    if (verbose) printf("[D] controller: destroying live stream socket\n");
-    zsock_destroy(&state->live_stream_socket);
+    if (state->live_stream_socket) {
+        if (verbose) printf("[D] controller: destroying live stream socket\n");
+        zsock_destroy(&state->live_stream_socket);
+    }
 
-    if (verbose) printf("[D] controller: destroying updates socket\n");
-    zsock_destroy(&state->updates_socket);
+    if (state->updates_socket) {
+        if (verbose) printf("[D] controller: destroying updates socket\n");
+        zsock_destroy(&state->updates_socket);
+    }
 
-    if (verbose) printf("[D] controller: destroying adder socket\n");
-    zsock_destroy(&state->adder_socket);
+    if (state->adder_socket) {
+        if (verbose) printf("[D] controller: destroying adder socket\n");
+        zsock_destroy(&state->adder_socket);
+    }
 
     // shut down mongo client
     if (!dryrun)
@@ -654,7 +689,9 @@ int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam
         rc = 1;
         goto shutdown;
     }
-    controller_state_t state = {.ticks = 0, .config = config, .updates_blocked = 0};
+    controller_state_t state;
+    memset(&state, 0, sizeof(state));
+    state.config = config,
     state.statsd_client = statsd_client_new(config, "controller[0]");
     state.collected_processors = zlist_new();
     assert(state.collected_processors);
@@ -677,7 +714,7 @@ int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam
     // run the loop
     // when running under the google profiler, zmq_poll terminates with EINTR
     // so we keep the loop running in this case
-    if (!zsys_interrupted) {
+    if (!zsys_interrupted && !initialize_dbs) {
         bool should_continue_to_run = getenv("CPUPROFILE") != NULL;
         do {
             rc = zloop_start(loop);

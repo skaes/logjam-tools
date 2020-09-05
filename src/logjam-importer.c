@@ -85,6 +85,7 @@ void print_usage(char * const *argv)
             "  -M, --metrics-ip N         ip for binding metrics endpoint\n"
             "  -L, --logjam-url U         url from where to retrieve stream config\n"
             "  -T, --trim-frequency N     malloc trim freqency in seconds, 0 means no trimming\n"
+            "  -I, --initialize-dbs       don't subscribe to streams but create databases and indexes\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
@@ -125,10 +126,11 @@ void process_arguments(int argc, char * const *argv)
         { "verbose",          no_argument,       0, 'v' },
         { "logjam-url",       required_argument, 0, 'L' },
         { "trim-frequency",   required_argument, 0, 'T' },
+        { "initialize-dbs",   no_argument,       0, 'I' },
         { 0,                  0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "a:b:c:f:nm:p:qs:u:vw:x:i:P:R:S:l:h:D:t:NM:L:T:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "a:b:c:f:nm:p:qs:u:vw:x:i:P:R:S:l:h:D:t:NM:L:T:I", long_options, &longindex)) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -220,6 +222,9 @@ void process_arguments(int argc, char * const *argv)
             break;
         case 'T':
             malloc_trim_frequency = atoi(optarg);
+            break;
+        case 'I':
+            initialize_dbs = true;
             break;
         case 'P':
             pull_port = atoi(optarg);
