@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,17 +25,18 @@ import (
 )
 
 var opts struct {
-	Verbose     bool   `short:"v" long:"verbose" description:"Be verbose."`
-	Quiet       bool   `short:"q" long:"quiet" description:"Only log errors and warnings."`
-	Force       bool   `short:"x" long:"force" description:"Perform backup even if file already exists."`
-	Dryrun      bool   `short:"n" long:"dryrun" description:"Don't perform the backup, list what would happen."`
-	StreamURL   string `short:"s" long:"stream-url" default:"http://localhost:3000" description:"Logjam endpoint for retrieving stream definitions."`
-	BackupDir   string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups."`
-	DatabaseURL string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host to back up."`
-	ToDate      string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
-	BeforeDate  string `short:"T" long:"before-date" description:"Day after the end date of backup period. Defaults to today."`
-	FromDate    string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
-	Pattern     string `short:"p" long:"match" default:".*" description:"Restrict backup to database names matching the given regexp."`
+	Verbose             bool   `short:"v" long:"verbose" description:"Be verbose."`
+	Quiet               bool   `short:"q" long:"quiet" description:"Only log errors and warnings."`
+	Force               bool   `short:"x" long:"force" description:"Perform backup even if file already exists."`
+	Dryrun              bool   `short:"n" long:"dryrun" description:"Don't perform the backup, list what would happen."`
+	StreamURL           string `short:"s" long:"stream-url" default:"http://localhost:3000" description:"Logjam endpoint for retrieving stream definitions."`
+	BackupDir           string `short:"b" long:"backup-dir" default:"." description:"Directory where to store backups."`
+	DatabaseURL         string `short:"d" long:"database" default:"mongodb://localhost:27017" description:"Mongo DB host to back up."`
+	ToDate              string `short:"t" long:"to-date" description:"End date of backup period. Defaults to yesterday."`
+	BeforeDate          string `short:"T" long:"before-date" description:"Day after the end date of backup period. Defaults to today."`
+	FromDate            string `short:"f" long:"from-date" description:"Start date of backup period. Defaults to zero time."`
+	Pattern             string `short:"m" long:"match" default:".*" description:"Restrict backup to database names matching the given regexp."`
+	ParallelCollections uint   `short:"p" long:"collections" default:"4" description:"Number of collections restored in parallel. Defaults to 4."`
 }
 
 var (
@@ -320,7 +322,7 @@ func backupRequests(db string) {
 		}
 	}
 	uri := strings.TrimSuffix(opts.DatabaseURL, "/") + "/" + db
-	cmd := exec.Command("mongodump", "--uri="+uri, "--archive="+backupName, "--gzip")
+	cmd := exec.Command("mongodump", "--uri="+uri, "--archive="+backupName, "--gzip", "--numParallelCollections="+strconv.Itoa(int(opts.ParallelCollections)))
 	for _, s := range []string{"totals", "minutes", "quants", "agents", "heatmaps", "js_exceptions", "events"} {
 		cmd.Args = append(cmd.Args, "--excludeCollection="+s)
 	}
