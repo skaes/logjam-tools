@@ -155,7 +155,7 @@ func restoreArchive(ai *archiveInfo) {
 	}
 	err = cmd.Run()
 	if err != nil {
-		logError("restoring archive failed: %s", err)
+		logError("restoring archive %s failed: %s", ai.Path, err)
 	}
 }
 
