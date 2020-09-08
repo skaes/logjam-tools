@@ -31,7 +31,7 @@ information intended to specify that the following output is produced
 by the client and "S:" is used to mark server output. ZeroMQ frame
 delimiters are left out in order to simplify the presentation.
 
-```
+```abnf
 stream = *(request-reply / ping-pong / async-data)
 
 request-reply = C: request-msg S: reply-msg
@@ -82,7 +82,7 @@ finally a frame containing meta information, such as protocol version,
 compression method used for the JSON body, when the messages was
 produced and a message sequence number.
 
-```
+```abnf
 data-msg = app-env topic json-body meta-info
 
 topic = logs *( "." ALPHA *ALPHA )         ; normal log messages

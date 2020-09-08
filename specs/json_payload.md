@@ -19,7 +19,7 @@ The JSON body MUST be a hash. The contents of the hash depends on the
 message topic, which can take on the following values (see
 [producer_protocol](producer_protocol.md)).
 
-```
+```abnf
 topic = logs *( ALPHA / "." )            ; normal log messages
 topic /= javascript *( ALPHA / "." )     ; javascript errors
 topic /= events *( ALPHA / "." )         ; logjam event

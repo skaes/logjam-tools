@@ -29,7 +29,7 @@ information intended to specify that the following output is produced
 by the producer and "C:" is used to mark consumer output. ZeroMQ frame
 delimiters are left out in order to simplify the presentation.
 
-```
+```abnf
 consumer-stream = *(S: data-msg)
 ```
 
@@ -43,7 +43,7 @@ finally a frame containing meta information, such as protocol version,
 compression method used for the JSON body, when the messages was
 produced and a message sequence number.
 
-```
+```abnf
 data-msg = app-env topic json-body meta-info
 
 app-env      = application "-" environment
