@@ -152,6 +152,9 @@ sequence-number    = 8(OCTET)              ; uint64, network byte order
   (a.k.a. Big Endian; most significant byte first). All other multi-byte
   sequences MUST be transferred in order of appearance (left to right).
 
+* The client MUST send a ping and await a pong before closing the underlying
+  connection, e.g. during shutdown.
+
 ## Additional information
 
 * Bit order requires no additional application level handling. Ethernet MAC frames
