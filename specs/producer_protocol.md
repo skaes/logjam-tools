@@ -106,9 +106,9 @@ lz4-compression    = %d3
 
 version            = %d1
 
-device-number      = 4OCTET                ; uint32, network byte order
-created-ms         = 8OCTET                ; uint64, network byte order
-sequence-number    = 8OCTET                ; uint64, network byte order
+device-number      = 4(OCTET)              ; uint32, network byte order
+created-ms         = 8(OCTET)              ; uint64, network byte order
+sequence-number    = 8(OCTET)              ; uint64, network byte order
 ```
 
 ## Constraints
