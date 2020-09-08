@@ -148,8 +148,9 @@ sequence-number    = 8(OCTET)              ; uint64, network byte order
   millisecond resolution, but it is acceptable for the client to use a
   timer with second resolution to calculate this value.
 
-* All multi-byte sequences MUST be transferred in *network byte order* (a.k.a. Big
-  Endian; most significant byte first).
+* All numeric multi-byte sequences MUST be transferred in *network byte order*
+  (a.k.a. Big Endian; most significant byte first). All other multi-byte
+  sequences MUST be transferred in order of appearance (left to right).
 
 ## Additional information
 
