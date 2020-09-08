@@ -61,7 +61,7 @@ body = *OCTET                              ; JSON string, possibly compressed
 
 meta-info = tag compression-method version device-number created-ms sequence-number
 
-tag = %xCABD                               ; tag is used internally to detect programming errors
+tag = %xCA %xBD                          ; tag is used internally to detect programming errors
 
 compression-method = no-compression / zlib-compression / snappy-compression / lz4-compression
 no-compression     = %d0

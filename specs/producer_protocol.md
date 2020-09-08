@@ -92,11 +92,11 @@ topic /= frontend.page                     ; frontend metric (page render)
 topic /= frontend.ajax                     ; frontend metric (ajax call)
 topic /= mobile                            ; mobile metric
 
-json-body = *OCTET                         ; JSON string, possibly compressed
+json-body = *OCTET                             ; JSON string, possibly compressed
 
 meta-info = tag compression-method version device-number created-ms sequence-number
 
-tag = %xCABD                               ; used internally to detect programming errors
+tag = %xCA %xBD                                ; used internally to detect programming errors
 
 compression-method = no-compression / zlib-compression / snappy-compression / lz4-compression
 no-compression     = %d0
