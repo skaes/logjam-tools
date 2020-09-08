@@ -85,12 +85,12 @@ produced and a message sequence number.
 ```abnf
 data-msg = app-env topic json-body meta-info
 
-topic = logs *( "." ALPHA *ALPHA )         ; normal log messages
-topic /= javascript *( "." ALPHA *ALPHA )  ; javascript errors
-topic /= events *( "." ALPHA *ALPHA )      ; logjam event
-topic /= frontend.page                     ; frontend metric (page render)
-topic /= frontend.ajax                     ; frontend metric (ajax call)
-topic /= mobile                            ; mobile metric
+topic = logs *( "." ALPHA *(ALPHA / "-" / "_") )         ; normal log messages
+topic /= javascript *( "." ALPHA *(ALPHA / "-" / "_") )  ; javascript errors
+topic /= events *( "." ALPHA *(ALPHA / "-" / "_") )      ; logjam event
+topic /= frontend.page                                   ; frontend metric (page render)
+topic /= frontend.ajax                                   ; frontend metric (ajax call)
+topic /= mobile                                          ; mobile metric
 
 json-body = *OCTET                             ; JSON string, possibly compressed
 
