@@ -21,7 +21,12 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
 document are to be interpreted as described in
 [RFC 2119](https://tools.ietf.org/html/rfc2119).
 
+### ABNF (Augmented Backus-Naur Form)
 
+We use ABNF for the specification of content (e.g. messages & data frames).
+You can consult [RFC5234][abnf] for information about the grammar.
+
+[abnf]: https://tools.ietf.org/html/rfc5234
 
 ## Message stream
 
