@@ -148,6 +148,22 @@ sequence-number    = 8(OCTET)              ; uint64, network byte order
   millisecond resolution, but it is acceptable for the client to use a
   timer with second resolution to calculate this value.
 
+* All multi-byte sequences MUST be transferred in *network byte order* (a.k.a. Big
+  Endian; most significant byte first).
+
+## Additional information
+
+* Bit order requires no additional application level handling. Ethernet MAC frames
+  are defined to use LSB-0 (least significant bit first) and low level network
+  components should handle possible conversions from the host bit order to LSB-0
+  if necessary.
+
+  > Each octet of the MAC frame, with the exception of the FCS, is transmitted least significant bit first.
+
+  See (Section 3.3 in IEEE Standard for Ethernet," in IEEE Std 802.3-2018
+  (Revision of IEEE Std 802.3-2015) , vol., no., pp.123, 31 Aug. 2018, doi:
+  10.1109/IEEESTD.2018.8457469.)
+
 ## JSON payload requirements
 
 See companion document [json_payload](json_payload.md)
