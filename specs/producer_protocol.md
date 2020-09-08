@@ -103,13 +103,13 @@ meta-info = tag compression-method version device-number created-ms sequence-num
 
 tag = %xCA %xBD                                ; used internally to detect programming errors
 
-compression-method = no-compression / zlib-compression / snappy-compression / lz4-compression
+compression-method = no-compression / zlib-compression / snappy-compression / lz4-compression ; uint8
 no-compression     = %d0
 zlib-compression   = %d1
 snappy-compression = %d2
 lz4-compression    = %d3
 
-version            = %d1
+version            = %d1 ; uint8
 
 device-number      = 4(OCTET)              ; uint32, network byte order
 created-ms         = 8(OCTET)              ; uint64, network byte order
