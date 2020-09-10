@@ -57,9 +57,9 @@ app-env      = application "-" environment
 application  = ALPHA *(ALPHA / "_" / "-")
 environment  = ALPHA *(ALPHA / "_")
 
-topic = logs 1*( "." ALPHA *(ALPHA / "-" / "_") )         ; normal log messages
-topic /= javascript 1*( "." ALPHA *(ALPHA / "-" / "_") )  ; javascript errors
-topic /= events 1*( "." ALPHA *(ALPHA / "-" / "_") )      ; logjam event
+topic = logs *( "." ALPHA *(ALPHA / "-" / "_") )         ; normal log messages
+topic /= javascript *( "." ALPHA *(ALPHA / "-" / "_") )  ; javascript errors
+topic /= events *( "." ALPHA *(ALPHA / "-" / "_") )      ; logjam event
 topic /= frontend.page                                   ; frontend metric (page render)
 topic /= frontend.ajax                                   ; frontend metric (ajax call)
 topic /= mobile                                          ; mobile metric
