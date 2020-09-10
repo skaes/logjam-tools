@@ -21,7 +21,12 @@ The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHALL NOT",
 document are to be interpreted as described in
 [RFC 2119](https://tools.ietf.org/html/rfc2119).
 
+### ABNF (Augmented Backus-Naur Form)
 
+We use ABNF for the specification of content (e.g. messages & data frames).
+You can consult [RFC5234][abnf] for information about the grammar.
+
+[abnf]: https://tools.ietf.org/html/rfc5234
 
 ## Message stream
 
@@ -31,7 +36,7 @@ information intended to specify that the following output is produced
 by the client and "S:" is used to mark server output. ZeroMQ frame
 delimiters are left out in order to simplify the presentation.
 
-```
+```abnf
 stream = *(request-reply / ping-pong / async-data)
 
 request-reply = C: request-msg S: reply-msg
@@ -82,33 +87,33 @@ finally a frame containing meta information, such as protocol version,
 compression method used for the JSON body, when the messages was
 produced and a message sequence number.
 
-```
+```abnf
 data-msg = app-env topic json-body meta-info
 
-topic = logs *( "." ALPHA *ALPHA )         ; normal log messages
-topic /= javascript *( "." ALPHA *ALPHA )  ; javascript errors
-topic /= events *( "." ALPHA *ALPHA )      ; logjam event
-topic /= frontend.page                     ; frontend metric (page render)
-topic /= frontend.ajax                     ; frontend metric (ajax call)
-topic /= mobile                            ; mobile metric
+topic = logs *( "." ALPHA *(ALPHA / "-" / "_") )         ; normal log messages
+topic /= javascript *( "." ALPHA *(ALPHA / "-" / "_") )  ; javascript errors
+topic /= events *( "." ALPHA *(ALPHA / "-" / "_") )      ; logjam event
+topic /= frontend.page                                   ; frontend metric (page render)
+topic /= frontend.ajax                                   ; frontend metric (ajax call)
+topic /= mobile                                          ; mobile metric
 
-json-body = *OCTET                         ; JSON string, possibly compressed
+json-body = *OCTET                             ; JSON string, possibly compressed
 
 meta-info = tag compression-method version device-number created-ms sequence-number
 
-tag = %xCABD                               ; used internally to detect programming errors
+tag = %xCA %xBD                                ; used internally to detect programming errors
 
-compression-method = no-compression / zlib-compression / snappy-compression / lz4-compression
-no-compression     = %x0
-zlib-compression   = %x1
-snappy-compression = %x2
-lz4-compression    = %x3
+compression-method = no-compression / zlib-compression / snappy-compression / lz4-compression ; uint8
+no-compression     = %d0
+zlib-compression   = %d1
+snappy-compression = %d2
+lz4-compression    = %d3
 
-version            = %x1
+version            = %d1 ; uint8
 
-device-number      = 4OCTET                ; uint32, network byte order
-created-ms         = 8OCTET                ; uint64, network byte order
-sequence-number    = 8OCTET                ; uint64, network byte order
+device-number      = 4(OCTET)              ; uint32, network byte order
+created-ms         = 8(OCTET)              ; uint64, network byte order
+sequence-number    = 8(OCTET)              ; uint64, network byte order
 ```
 
 ## Constraints
@@ -142,6 +147,26 @@ sequence-number    = 8OCTET                ; uint64, network byte order
   is milliseconds since the epoch. The client SHOULD use real
   millisecond resolution, but it is acceptable for the client to use a
   timer with second resolution to calculate this value.
+
+* All numeric multi-byte sequences MUST be transferred in *network byte order*
+  (a.k.a. Big Endian; most significant byte first). All other multi-byte
+  sequences MUST be transferred in order of appearance (left to right).
+
+* The client MUST send a ping and await a pong before closing the underlying
+  connection, e.g. during shutdown.
+
+## Additional information
+
+* Bit order requires no additional application level handling. Ethernet MAC frames
+  are defined to use LSB-0 (least significant bit first) and low level network
+  components should handle possible conversions from the host bit order to LSB-0
+  if necessary.
+
+  > Each octet of the MAC frame, with the exception of the FCS, is transmitted least significant bit first.
+
+  See (Section 3.3 in IEEE Standard for Ethernet," in IEEE Std 802.3-2018
+  (Revision of IEEE Std 802.3-2015) , vol., no., pp.123, 31 Aug. 2018, doi:
+  10.1109/IEEESTD.2018.8457469.)
 
 ## JSON payload requirements
 

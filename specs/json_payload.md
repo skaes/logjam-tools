@@ -19,10 +19,10 @@ The JSON body MUST be a hash. The contents of the hash depends on the
 message topic, which can take on the following values (see
 [producer_protocol](producer_protocol.md)).
 
-```
-topic = logs *( ALPHA / "." )            ; normal log messages
-topic /= javascript *( ALPHA / "." )     ; javascript errors
-topic /= events *( ALPHA / "." )         ; logjam event
+```abnf
+topic = logs *( ALPHA / "." / "-" / "_" )            ; normal log messages
+topic /= javascript *( ALPHA / "." / "-" / "_" )     ; javascript errors
+topic /= events *( ALPHA / "." / "-" / "_" )         ; logjam event
 topic /= frontend.page                   ; frontend metric (page render)
 topic /= frontend.ajax                   ; frontend metric (ajax call)
 ```
