@@ -903,7 +903,9 @@ char* extract_page_for_jse(json_object *request)
 
     const char *page_str = json_object_get_string(page_obj);
 
-    if (!strchr(page_str, '#'))
+    if (strlen(page_str) == 0)
+        page_str = append_to_json_string(&page_obj, page_str, "Unknown#unknown_method");
+    else if (!strchr(page_str, '#'))
         page_str = append_to_json_string(&page_obj, page_str, "#unknown_method");
     else if (page_str[strlen(page_str)-1] == '#')
         page_str = append_to_json_string(&page_obj, page_str, "unknown_method");
