@@ -1,6 +1,6 @@
 #include "importer-mongoutils.h"
 
-size_t num_databases = 0;
+int num_databases = 0;
 const char *databases[MAX_DATABASES];
 
 mongoc_write_concern_t *wc_no_wait = NULL;
@@ -72,7 +72,7 @@ void initialize_mongo_db_globals(zconfig_t* config)
             char *uri = zconfig_value(db);
             if (uri != NULL) {
                 databases[num_databases] = uri_with_server_selection_try_once_set_to_false(uri);
-                printf("[I] database[%zu]: %s\n", num_databases, databases[num_databases]);
+                printf("[I] database[%d]: %s\n", num_databases, databases[num_databases]);
                 num_databases++;
             }
             db = zconfig_next(db);
@@ -80,35 +80,79 @@ void initialize_mongo_db_globals(zconfig_t* config)
     }
     if (num_databases == 0) {
         databases[num_databases] = DEFAULT_MONGO_URI;
-        printf("[I] database[%zu]: %s\n", num_databases, DEFAULT_MONGO_URI);
+        printf("[I] database[%d]: %s\n", num_databases, DEFAULT_MONGO_URI);
         num_databases++;
     }
 }
 
-
-void ensure_known_database(mongoc_client_t *client, const char* db_name)
+bool ensure_known_database(mongoc_client_t *client, const char* db_name)
 {
     mongoc_collection_t *meta_collection = mongoc_client_get_collection(client, "logjam-global", "metadata");
     bson_t *selector = bson_new();
     assert(bson_append_utf8(selector, "name", 4, "databases", 9));
 
     bson_t *document = bson_new();
-    bson_t *sub_doc = bson_new();
-    bson_append_utf8(sub_doc, "value", 5, db_name, -1);
-    bson_append_document(document, "$addToSet", 9, sub_doc);
+    bson_t child;
+    bson_append_document_begin(document, "$addToSet", 9, &child);
+    bson_append_utf8(&child, "value", 5, db_name, -1);
+    bson_append_document_end(document, &child);
 
+    bool ok = true;
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
+            ok = false;
             fprintf(stderr, "[E] update failed on logjam-global: (%d) %s\n", error.code, error.message);
         }
     }
 
     bson_destroy(selector);
     bson_destroy(document);
-    bson_destroy(sub_doc);
 
     mongoc_collection_destroy(meta_collection);
+
+    return ok;
+}
+
+bool ensure_known_databases(mongoc_client_t *client, zlist_t *db_names)
+{
+    mongoc_collection_t *meta_collection = mongoc_client_get_collection(client, "logjam-global", "metadata");
+    bson_t *selector = bson_new();
+    assert(bson_append_utf8(selector, "name", 4, "databases", 9));
+
+    bson_t *document = bson_new();
+    bson_t child1, child2, child3;
+    bson_append_document_begin(document, "$addToSet", 9, &child1);
+    bson_append_document_begin(&child1, "value", 5, &child2);
+    bson_append_array_begin(&child2, "$each", 5, &child3);
+    const char* db_name = zlist_first(db_names);
+    int i = 0;
+    while (db_name) {
+        const char *key;
+        char buf[16];
+        int keylen = bson_uint32_to_string(i++, &key, buf, sizeof buf);
+        bson_append_utf8(&child3, key, keylen, db_name, -1);
+        db_name = zlist_next(db_names);
+    }
+    bson_append_array_end(&child2, &child3);
+    bson_append_document_end(&child1, &child2);
+    bson_append_document_end(document, &child1);
+
+    bool ok = true;
+    if (!dryrun) {
+        bson_error_t error;
+        if (!mongoc_collection_update(meta_collection, MONGOC_UPDATE_UPSERT, selector, document, wc_no_wait, &error)) {
+            ok = false;
+            fprintf(stderr, "[E] update failed on logjam-global: (%d) %s\n", error.code, error.message);
+        }
+    }
+
+    bson_destroy(selector);
+    bson_destroy(document);
+
+    mongoc_collection_destroy(meta_collection);
+
+    return ok;
 }
 
 int mongo_client_ping(mongoc_client_t *client)

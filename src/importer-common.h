@@ -86,6 +86,9 @@ extern int set_thread_name(const char* name);
 #define USE_UNACKNOWLEDGED_WRITES 0
 #define USE_BACKGROUND_INDEX_BUILDS 1
 
+#define INDEXER_DB_FAST_START 1
+#define INDEXER_DB_ON_DEMAND 2
+
 #if USE_UNACKNOWLEDGED_WRITES == 1
 #define USE_PINGS true
 #else

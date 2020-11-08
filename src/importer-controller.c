@@ -459,7 +459,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 }
 
 static
-bool controller_create_actors(controller_state_t *state)
+bool controller_create_actors(controller_state_t *state, uint64_t indexer_opts)
 {
     // initialize mongo client
     if (!dryrun)
@@ -468,7 +468,7 @@ bool controller_create_actors(controller_state_t *state)
     // start the stream config updater (pass something not null to make it send indexer messages)
     state->stream_config_updater = stream_config_updater_new((void*)1);
     // start the indexer
-    state->indexer = zactor_new(indexer, NULL);
+    state->indexer = zactor_new(indexer, (void*)indexer_opts);
     if (initialize_dbs) return !zsys_interrupted;
 
     // start the statsd updater
@@ -662,7 +662,7 @@ static int stop_shutdown_timer() {
     return setitimer(ITIMER_REAL, &its, NULL);
 }
 
-int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam_url, const char* subscription_pattern)
+int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam_url, const char* subscription_pattern, uint64_t indexer_opts)
 {
     set_thread_name("controller[0]");
     printf("[I] controller: starting\n");
@@ -695,7 +695,7 @@ int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam
     state.statsd_client = statsd_client_new(config, "controller[0]");
     state.collected_processors = zlist_new();
     assert(state.collected_processors);
-    bool start_up_complete = controller_create_actors(&state);
+    bool start_up_complete = controller_create_actors(&state, indexer_opts);
 
     if (!start_up_complete) {
         rc = 1;

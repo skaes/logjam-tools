@@ -18,6 +18,8 @@ char* unknown_streams_collector_connection_spec = NULL;
 const char *metrics_ip = "0.0.0.0";
 zlist_t *hosts = NULL;
 
+static uint64_t indexer_opts = 0;
+
 static const char *logjam_url = "http://localhost:3000/";
 static char *logjam_stream_url = "http://localhost:3000/admin/streams";
 
@@ -86,6 +88,8 @@ void print_usage(char * const *argv)
             "  -L, --logjam-url U         url from where to retrieve stream config\n"
             "  -T, --trim-frequency N     malloc trim freqency in seconds, 0 means no trimming\n"
             "  -I, --initialize-dbs       don't subscribe to streams but create databases and indexes\n"
+            "  -F, --db-fast-start        create databases and indexes for streams in a background thread\n"
+            "  -O, --db-on-demand         create databases and indexes for streams on demand\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
@@ -127,10 +131,16 @@ void process_arguments(int argc, char * const *argv)
         { "logjam-url",       required_argument, 0, 'L' },
         { "trim-frequency",   required_argument, 0, 'T' },
         { "initialize-dbs",   no_argument,       0, 'I' },
+        { "db-fast-start",    no_argument,       0, 'F' },
+        { "db-on-demand",     no_argument,       0, 'O' },
         { 0,                  0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "a:b:c:f:nm:p:qs:u:vw:x:i:P:R:S:l:h:D:t:NM:L:T:I", long_options, &longindex)) != -1) {
+    if ((v = getenv("LOGJAMDB_INDEXER_OPTS"))) {
+        indexer_opts = atoi(v);
+    }
+
+    while ((c = getopt_long(argc, argv, "a:b:c:f:nm:p:qs:u:vw:x:i:P:R:S:l:h:D:t:NM:L:T:IFO", long_options, &longindex)) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -241,6 +251,12 @@ void process_arguments(int argc, char * const *argv)
         case 'N':
             send_statsd_msgs = false;
             break;
+        case 'F':
+            indexer_opts |= INDEXER_DB_FAST_START;
+            break;
+        case 'O':
+            indexer_opts |= INDEXER_DB_FAST_START|INDEXER_DB_ON_DEMAND;
+            break;
         case 'l':
             live_stream_connection_spec = augment_zmq_connection_spec(optarg, DEFAULT_LIVE_STREAM_PORT);
             break;
@@ -302,6 +318,9 @@ void process_arguments(int argc, char * const *argv)
     int l = strlen(logjam_url);
     int n = asprintf(&logjam_stream_url, "%s%s", logjam_url, (logjam_url[l-1] == '/') ? "admin/streams" : "/admin/streams");
     assert(n>0);
+
+    if (initialize_dbs)
+        indexer_opts = 0;
 }
 
 int main(int argc, char * const *argv)
@@ -369,5 +388,5 @@ int main(int argc, char * const *argv)
     importer_prometheus_client_init(metrics_address, prometheus_params);
 
     setup_resource_maps(config);
-    return run_controller_loop(config, io_threads, logjam_stream_url, subscription_pattern);
+    return run_controller_loop(config, io_threads, logjam_stream_url, subscription_pattern, indexer_opts);
 }

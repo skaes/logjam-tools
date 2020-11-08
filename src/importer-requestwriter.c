@@ -58,7 +58,6 @@ mongoc_collection_t* request_writer_get_request_collection(request_writer_state_
         // printf("[D] creating requests collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
         collection = mongoc_client_get_collection(mongo_client, db_name, "requests");
-        // add_request_collection_indexes(db_name, collection);
         zhash_insert(self->request_collections, db_name, collection);
         zhash_freefn(self->request_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
     }
@@ -89,7 +88,6 @@ mongoc_collection_t* request_writer_get_jse_collection(request_writer_state_t* s
         // printf("[D] creating jse collection: %s\n", db_name);
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
         collection = mongoc_client_get_collection(mongo_client, db_name, "js_exceptions");
-        // add_jse_collection_indexes(db_name, collection);
         zhash_insert(self->jse_collections, db_name, collection);
         zhash_freefn(self->jse_collections, db_name, (zhash_free_fn*)mongoc_collection_destroy);
     }

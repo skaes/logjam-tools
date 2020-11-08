@@ -444,7 +444,6 @@ stats_collections_t *stats_updater_get_collections(stats_updater_state_t *self, 
     stats_collections_t *collections = zhash_lookup(self->stats_collections, db_name);
     if (collections == NULL) {
         mongoc_client_t *mongo_client = self->mongo_clients[stream_info->db];
-        // ensure_known_database(mongo_client, db_name);
         collections = stats_collections_new(mongo_client, db_name);
         assert(collections);
         zhash_insert(self->stats_collections, db_name, collections);

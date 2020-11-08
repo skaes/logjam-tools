@@ -30,12 +30,16 @@ typedef struct {
     zsock_t *controller_socket;
     zsock_t *pull_socket;
     zhash_t *databases;
+    uint64_t opts;
 } indexer_state_t;
 
 typedef struct {
     size_t id;
     char iso_date[ISO_DATE_STR_LEN];
+    bool ensure_known;
 } bg_indexer_args_t;
+
+enum future_t {tomorrow = 1, today = 0};
 
 // sleep 5 seconds in between each step when iterating over all
 // databases to create tomorrow's indexes
@@ -52,7 +56,7 @@ zsock_t *indexer_pull_socket_new()
 }
 
 static
-void create_index(indexer_state_t *self, mongoc_database_t *db, const char* collection_name, bson_t *keys)
+bool create_index(indexer_state_t *self, mongoc_database_t *db, const char* collection_name, bson_t *keys)
 {
     size_t id = self->id;
     char *index_name = mongoc_collection_keys_to_index_string(keys);
@@ -88,84 +92,97 @@ void create_index(indexer_state_t *self, mongoc_database_t *db, const char* coll
     bson_free(index_name);
     bson_destroy(&reply);
     bson_destroy(create_index_doc);
+
+    return ok;
 }
 
 static
-void add_request_field_index(indexer_state_t *state, mongoc_database_t *db, const char* field)
+bool add_request_field_index(indexer_state_t *state, mongoc_database_t *db, const char* field)
 {
+    bool ok = true;
     bson_t *keys;
 
     keys = bson_new();
     bson_append_int32(keys, "minute", 6, -1);
     bson_append_int32(keys, field, strlen(field), 1);
-    create_index(state, db, "requests", keys);
+    ok &= create_index(state, db, "requests", keys);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "page", 4, 1);
     bson_append_int32(keys, "minute", 6, -1);
     bson_append_int32(keys, field, strlen(field), 1);
-    create_index(state, db, "requests", keys);
+    ok &= create_index(state, db, "requests", keys);
     bson_destroy(keys);
+
+    return ok;
 }
 
 static
-void add_request_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
+bool add_request_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
 {
-    add_request_field_index(state, db, "response_code");
-    add_request_field_index(state, db, "severity");
-    add_request_field_index(state, db, "exceptions");
-    add_request_field_index(state, db, "soft_exceptions");
+    bool ok = true;
+    ok &= add_request_field_index(state, db, "response_code");
+    ok &= add_request_field_index(state, db, "severity");
+    ok &= add_request_field_index(state, db, "exceptions");
+    ok &= add_request_field_index(state, db, "soft_exceptions");
     // add_request_field_index(state, db, "started_ms");
+    return ok;
 }
 
 static
-void add_jse_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
+bool add_jse_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
 {
+    bool ok = true;
     bson_t *keys;
 
     keys = bson_new();
     bson_append_int32(keys, "logjam_request_id", 17, 1);
-    create_index(state, db, "js_exceptions", keys);
+    ok &= create_index(state, db, "js_exceptions", keys);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "description", 11, 1);
-    create_index(state, db, "js_exceptions", keys);
+    ok &= create_index(state, db, "js_exceptions", keys);
     bson_destroy(keys);
+
+    return ok;
 }
 
 static
-void add_metrics_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
+bool add_metrics_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
 {
+    bool ok = true;
     bson_t *keys;
 
     keys = bson_new();
     bson_append_int32(keys, "metric", 6, 1);
     bson_append_int32(keys, "value", 5, -1);
-    create_index(state, db, "metrics", keys);
+    ok &= create_index(state, db, "metrics", keys);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "page", 4, 1);
     bson_append_int32(keys, "metric", 6, 1);
     bson_append_int32(keys, "value", 5, -1);
-    create_index(state, db, "metrics", keys);
+    ok &= create_index(state, db, "metrics", keys);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "module", 6, 1);
     bson_append_int32(keys, "metric", 6, 1);
     bson_append_int32(keys, "value", 5, -1);
-    create_index(state, db, "metrics", keys);
+    ok &= create_index(state, db, "metrics", keys);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "minute", 6, 1);
     bson_append_int32(keys, "metric", 6, 1);
     bson_append_int32(keys, "value", 5, -1);
-    create_index(state, db, "metrics", keys);
+    ok &= create_index(state, db, "metrics", keys);
     bson_destroy(keys);
+
+    return ok;
 }
 
 static
@@ -246,56 +263,54 @@ void indexer_refresh_storage_sizes(indexer_state_t *self)
 }
 
 static
-void indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_info_t *stream_info)
+bool indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_info_t *stream_info)
 {
-    if (dryrun) return;
+    bool ok = true;
+    if (dryrun) return ok;
 
     mongoc_client_t *client = state->mongo_clients[stream_info->db];
     mongoc_database_t *db = mongoc_client_get_database(client, db_name);
     bson_t *keys;
     size_t id = state->id;
 
-    // if it is a db of today, then make it known
-    if (strstr(db_name, iso_date_today)) {
-        printf("[I] indexer[%zu]: ensuring known database: %s\n", id, db_name);
-        ensure_known_database(client, db_name);
-    }
     printf("[I] indexer[%zu]: creating indexes for %s\n", id, db_name);
 
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
-    create_index(state, db, "totals", keys);
+    ok &= create_index(state, db, "totals", keys);
     bson_destroy(keys);
 
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minute", 6, 1));
-    create_index(state, db, "minutes", keys);
+    ok &= create_index(state, db, "minutes", keys);
     bson_destroy(keys);
 
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "kind", 4, 1));
     assert(bson_append_int32(keys, "quant", 5, 1));
-    create_index(state, db, "quants", keys);
+    ok &= create_index(state, db, "quants", keys);
     bson_destroy(keys);
 
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minute", 6, 1));
-    create_index(state, db, "heatmaps", keys);
+    ok &= create_index(state, db, "heatmaps", keys);
     bson_destroy(keys);
 
     keys = bson_new();
     assert(bson_append_int32(keys, "agent", 5, 1));
-    create_index(state, db, "agents", keys);
+    ok &= create_index(state, db, "agents", keys);
     bson_destroy(keys);
 
-    add_metrics_collection_indexes(state, db);
-    add_request_collection_indexes(state, db);
-    add_jse_collection_indexes(state, db);
+    ok &= add_metrics_collection_indexes(state, db);
+    ok &= add_request_collection_indexes(state, db);
+    ok &= add_jse_collection_indexes(state, db);
 
     mongoc_database_destroy(db);
+
+    return ok;
 }
 
 static
@@ -323,7 +338,41 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
 }
 
 static
-void* create_indexes_for_date(void* args)
+void ensure_databases_are_known(indexer_state_t *state, const char* iso_date)
+{
+    if (dryrun) return;
+
+    zlist_t *streams = get_active_stream_names();
+    char *stream = zlist_first(streams);
+
+    zlist_t *db_names[num_databases];
+    for (int i = 0; i<num_databases; i++) {
+        db_names[i] = zlist_new();
+        zlist_autofree(db_names[i]);
+    }
+
+    while (stream && !zsys_interrupted) {
+        stream_info_t *info = get_stream_info(stream, NULL);
+        if (info) {
+            char db_name[1000];
+            sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
+            zlist_append(db_names[info->db], db_name);
+            release_stream_info(info);
+        }
+        stream = zlist_next(streams);
+    }
+
+    for (int i = 0; i<num_databases; i++) {
+        if (!zsys_interrupted)
+            ensure_known_databases(state->mongo_clients[i], db_names[i]);
+        zlist_destroy(&db_names[i]);
+    }
+
+    zlist_destroy(&streams);
+}
+
+static
+void* bg_create_indexes_for_date(void* args)
 {
     bg_indexer_args_t *indexer_args = args;
     if (dryrun) goto exit;
@@ -343,6 +392,9 @@ void* create_indexes_for_date(void* args)
     }
     state.databases = zhash_new();
 
+    if (indexer_args->ensure_known)
+        ensure_databases_are_known(&state, indexer_args->iso_date);
+
     indexer_create_all_indexes(&state, indexer_args->iso_date, INDEXER_DELAY);
 
     zhash_destroy(&state.databases);
@@ -356,38 +408,18 @@ void* create_indexes_for_date(void* args)
 }
 
 static
-void spawn_bg_indexer_for_date(size_t id, const char* iso_date)
+void spawn_bg_indexer_for_date(size_t id, const char* iso_date, enum future_t future)
 {
     bg_indexer_args_t *indexer_args = zmalloc(sizeof(bg_indexer_args_t));
     assert(indexer_args != NULL);
     indexer_args->id = id;
+    indexer_args->ensure_known = future == today;
     strcpy(indexer_args->iso_date, iso_date);
     pthread_t thread;
-    int rc = pthread_create (&thread, NULL, create_indexes_for_date, indexer_args);
+    int rc = pthread_create (&thread, NULL, bg_create_indexes_for_date, indexer_args);
     assert(rc == 0);
     rc = pthread_detach (thread);
     assert(rc == 0);
-}
-
-static
-void ensure_databases_are_known(indexer_state_t *state, const char* iso_date)
-{
-    if (dryrun) return;
-
-    zlist_t *streams = get_active_stream_names();
-    char *stream = zlist_first(streams);
-    while (stream && !zsys_interrupted) {
-        stream_info_t *info = get_stream_info(stream, NULL);
-        if (info) {
-            mongoc_client_t *client = state->mongo_clients[info->db];
-            char db_name[1000];
-            sprintf(db_name, "logjam-%s-%s-%s", info->app, info->env, iso_date);
-            ensure_known_database(client, db_name);
-            release_stream_info(info);
-        }
-        stream = zlist_next(streams);
-    }
-    zlist_destroy(&streams);
 }
 
 static
@@ -410,9 +442,12 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
 
     const char *known_db = zhash_lookup(state->databases, db_name);
     if (known_db == NULL) {
-        zhash_insert(state->databases, db_name, strdup(db_name));
-        zhash_freefn(state->databases, db_name, free);
-        indexer_create_indexes(state, db_name, stream_info);
+        if (ensure_known_database(state->mongo_clients[stream_info->db], db_name)
+            && indexer_create_indexes(state, db_name, stream_info)) {
+            // only record db as known if index creation and global db update went well
+            zhash_insert(state->databases, db_name, strdup(db_name));
+            zhash_freefn(state->databases, db_name, free);
+        }
     } else {
         // printf("[D] indexer[%zu]: indexes already created: %s\n", state->id, db_name);
     }
@@ -420,19 +455,20 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
 }
 
 static
-indexer_state_t* indexer_state_new(zsock_t *pipe, size_t id)
+indexer_state_t* indexer_state_new(zsock_t *pipe, size_t id, int opts)
 {
     indexer_state_t *state = zmalloc(sizeof(*state));
     state->id = id;
     state->controller_socket = pipe;
     state->pull_socket = indexer_pull_socket_new();
     if (!dryrun) {
-        for (int i=0; i<num_databases; i++) {
+        for (size_t i=0; i<num_databases; i++) {
             state->mongo_clients[i] = mongoc_client_new(databases[i]);
             assert(state->mongo_clients[i]);
         }
     }
     state->databases = zhash_new();
+    state->opts = opts;
     return state;
 }
 
@@ -464,17 +500,23 @@ void indexer(zsock_t *pipe, void *args)
 
     size_t ticks = 0;
     size_t bg_indexer_runs = 0;
-    indexer_state_t *state = indexer_state_new(pipe, id);
+    indexer_state_t *state = indexer_state_new(pipe, id, (uint64_t)args);
 
     // setup indexes for today (synchronously)
     config_update_date_info();
-    indexer_create_all_indexes(state, iso_date_today, 0);
+    ensure_databases_are_known(state, iso_date_today);
+    if (!(state->opts & INDEXER_DB_FAST_START))
+        indexer_create_all_indexes(state, iso_date_today, 0);
 
     // signal readyiness after index creation
     zsock_signal(pipe, 0);
 
     // setup indexes for tomorrow (asynchronously)
-    spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
+    if (!(state->opts & INDEXER_DB_ON_DEMAND)) {
+        if (state->opts & INDEXER_DB_FAST_START)
+            spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_today, today);
+        spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow, tomorrow);
+    }
 
     zpoller_t *poller = zpoller_new(state->controller_socket, state->pull_socket, NULL);
     assert(poller);
@@ -492,14 +534,17 @@ void indexer(zsock_t *pipe, void *args)
                 if (verbose)
                     printf("[D] indexer[%zu]: tick\n", id);
 
-                // if date has changed, make sure databases of today are added to the known datbases
-                // table and spawn a background thread to create databases for the next day
+                // if date has changed, make sure databases of today are added to the
+                // known datbases table and spawn a background thread to create databases
+                // for the next day, unless we're running in lazy mode
                 if (config_update_date_info()) {
                     printf("[I] indexer[%zu]: date change detected\n", id);
                     printf("[I] indexer[%zu]: making sure today's databases are known\n", id);
                     ensure_databases_are_known(state, iso_date_today);
-                    printf("[I] indexer[%zu]: creating indexes for tomorrow\n", id);
-                    spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow);
+                    if (!(state->opts & INDEXER_DB_ON_DEMAND)) {
+                        printf("[I] indexer[%zu]: creating indexes for tomorrow\n", id);
+                        spawn_bg_indexer_for_date(++bg_indexer_runs, iso_date_tomorrow, tomorrow);
+                    }
                 }
                 if (ticks++ % PING_INTERVAL == 0) {
                     // ping mongodb to reestablish connection if it got lost
@@ -511,8 +556,8 @@ void indexer(zsock_t *pipe, void *args)
                     // retrieve current database storage sizew
                     indexer_refresh_storage_sizes(state);
                 }
-                // free collection pointers every hour
                 if (ticks % COLLECTION_REFRESH_INTERVAL == COLLECTION_REFRESH_INTERVAL - id - 1) {
+                    // free known databases list
                     printf("[I] indexer[%zu]: freeing database info\n", id);
                     zhash_destroy(&state->databases);
                     state->databases = zhash_new();

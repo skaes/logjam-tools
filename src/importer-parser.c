@@ -185,7 +185,7 @@ processor_state_t* processor_create(zmsg_t** msg, zframe_t* stream_frame, parser
         int rc = zhash_insert(parser_state->processors, db_name, p);
         assert(rc ==0);
         zhash_freefn(parser_state->processors, db_name, processor_destroy);
-        // send msg to indexer to create db indexes
+        // send msg to indexer to create db indexes and record the database as known
         indexer_ensure_indexes(stream_info, db_name, parser_state->indexer_socket);
     }
     return p;
