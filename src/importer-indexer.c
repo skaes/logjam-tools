@@ -26,7 +26,6 @@
 typedef struct {
     size_t id;
     mongoc_client_t *mongo_clients[MAX_DATABASES];
-    mongoc_collection_t *global_collection;
     zsock_t *controller_socket;
     zsock_t *pull_socket;
     zhash_t *databases;
@@ -55,8 +54,11 @@ zsock_t *indexer_pull_socket_new()
     return socket;
 }
 
+#define UNIQUE true
+#define NON_UNIQUE false
+
 static
-bool create_index(indexer_state_t *self, mongoc_database_t *db, const char* collection_name, bson_t *keys)
+bool create_index(indexer_state_t *self, mongoc_database_t *db, const char* collection_name, bson_t *keys, bool unique)
 {
     size_t id = self->id;
     char *index_name = mongoc_collection_keys_to_index_string(keys);
@@ -71,6 +73,8 @@ bool create_index(indexer_state_t *self, mongoc_database_t *db, const char* coll
                                        BCON_UTF8(index_name),
                                        "background",
                                        BCON_BOOL(USE_BACKGROUND_INDEX_BUILDS),
+                                       "unique",
+                                       BCON_BOOL(unique),
                                        "}",
                                        "]");
     /* char *index_doc_str = bson_as_json(create_index_doc, NULL); */
@@ -105,14 +109,14 @@ bool add_request_field_index(indexer_state_t *state, mongoc_database_t *db, cons
     keys = bson_new();
     bson_append_int32(keys, "minute", 6, -1);
     bson_append_int32(keys, field, strlen(field), 1);
-    ok &= create_index(state, db, "requests", keys);
+    ok &= create_index(state, db, "requests", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "page", 4, 1);
     bson_append_int32(keys, "minute", 6, -1);
     bson_append_int32(keys, field, strlen(field), 1);
-    ok &= create_index(state, db, "requests", keys);
+    ok &= create_index(state, db, "requests", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     return ok;
@@ -138,12 +142,12 @@ bool add_jse_collection_indexes(indexer_state_t *state, mongoc_database_t *db)
 
     keys = bson_new();
     bson_append_int32(keys, "logjam_request_id", 17, 1);
-    ok &= create_index(state, db, "js_exceptions", keys);
+    ok &= create_index(state, db, "js_exceptions", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "description", 11, 1);
-    ok &= create_index(state, db, "js_exceptions", keys);
+    ok &= create_index(state, db, "js_exceptions", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     return ok;
@@ -158,28 +162,28 @@ bool add_metrics_collection_indexes(indexer_state_t *state, mongoc_database_t *d
     keys = bson_new();
     bson_append_int32(keys, "metric", 6, 1);
     bson_append_int32(keys, "value", 5, -1);
-    ok &= create_index(state, db, "metrics", keys);
+    ok &= create_index(state, db, "metrics", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "page", 4, 1);
     bson_append_int32(keys, "metric", 6, 1);
     bson_append_int32(keys, "value", 5, -1);
-    ok &= create_index(state, db, "metrics", keys);
+    ok &= create_index(state, db, "metrics", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "module", 6, 1);
     bson_append_int32(keys, "metric", 6, 1);
     bson_append_int32(keys, "value", 5, -1);
-    ok &= create_index(state, db, "metrics", keys);
+    ok &= create_index(state, db, "metrics", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     keys = bson_new();
     bson_append_int32(keys, "minute", 6, 1);
     bson_append_int32(keys, "metric", 6, 1);
     bson_append_int32(keys, "value", 5, -1);
-    ok &= create_index(state, db, "metrics", keys);
+    ok &= create_index(state, db, "metrics", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     return ok;
@@ -277,31 +281,31 @@ bool indexer_create_indexes(indexer_state_t *state, const char *db_name, stream_
 
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
-    ok &= create_index(state, db, "totals", keys);
+    ok &= create_index(state, db, "totals", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minute", 6, 1));
-    ok &= create_index(state, db, "minutes", keys);
+    ok &= create_index(state, db, "minutes", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "kind", 4, 1));
     assert(bson_append_int32(keys, "quant", 5, 1));
-    ok &= create_index(state, db, "quants", keys);
+    ok &= create_index(state, db, "quants", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     keys = bson_new();
     assert(bson_append_int32(keys, "page", 4, 1));
     assert(bson_append_int32(keys, "minute", 6, 1));
-    ok &= create_index(state, db, "heatmaps", keys);
+    ok &= create_index(state, db, "heatmaps", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     keys = bson_new();
     assert(bson_append_int32(keys, "agent", 5, 1));
-    ok &= create_index(state, db, "agents", keys);
+    ok &= create_index(state, db, "agents", keys, NON_UNIQUE);
     bson_destroy(keys);
 
     ok &= add_metrics_collection_indexes(state, db);
@@ -336,6 +340,41 @@ void indexer_create_all_indexes(indexer_state_t *self, const char *iso_date, int
     }
     zlist_destroy(&streams);
 }
+
+static
+bool indexer_create_global_indexes(indexer_state_t *self)
+{
+    if (dryrun) return true;
+
+    bool ok = true;
+    bson_t *keys;
+
+    for (int i = 0; i < num_databases; i++) {
+        mongoc_client_t *client = self->mongo_clients[i];
+        mongoc_database_t *db = mongoc_client_get_database(client, "logjam-global");
+
+        keys = bson_new();
+        bson_append_int32(keys, "env", 3, -1);
+        bson_append_int32(keys, "app", 3, 1);
+        bson_append_int32(keys, "date", 4, -1);
+
+        ok &= create_index(self, db, "databases", keys, UNIQUE);
+        bson_destroy(keys);
+
+        keys = bson_new();
+        bson_append_int32(keys, "env", 3, -1);
+        bson_append_int32(keys, "date", 4, -1);
+        bson_append_int32(keys, "app", 3, 1);
+
+        ok &= create_index(self, db, "databases", keys, UNIQUE);
+        bson_destroy(keys);
+
+        mongoc_database_destroy(db);
+    }
+
+    return ok;
+}
+
 
 static
 void ensure_databases_are_known(indexer_state_t *state, const char* iso_date)
@@ -462,7 +501,7 @@ indexer_state_t* indexer_state_new(zsock_t *pipe, size_t id, int opts)
     state->controller_socket = pipe;
     state->pull_socket = indexer_pull_socket_new();
     if (!dryrun) {
-        for (size_t i=0; i<num_databases; i++) {
+        for (int i=0; i<num_databases; i++) {
             state->mongo_clients[i] = mongoc_client_new(databases[i]);
             assert(state->mongo_clients[i]);
         }
@@ -501,6 +540,9 @@ void indexer(zsock_t *pipe, void *args)
     size_t ticks = 0;
     size_t bg_indexer_runs = 0;
     indexer_state_t *state = indexer_state_new(pipe, id, (uint64_t)args);
+
+    // setup indexes on global databases
+    indexer_create_global_indexes(state);
 
     // setup indexes for today (synchronously)
     config_update_date_info();
