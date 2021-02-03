@@ -479,6 +479,8 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
 
     stream_info_t *stream_info = zframe_getptr(stream_frame);
 
+    if (dryrun) goto cleanup;
+
     const char *known_db = zhash_lookup(state->databases, db_name);
     if (known_db == NULL) {
         if (ensure_known_database(state->mongo_clients[stream_info->db], db_name)
@@ -490,6 +492,8 @@ void handle_indexer_request(zmsg_t *msg, indexer_state_t *state)
     } else {
         // printf("[D] indexer[%zu]: indexes already created: %s\n", state->id, db_name);
     }
+
+ cleanup:
     release_stream_info(stream_info);
 }
 
