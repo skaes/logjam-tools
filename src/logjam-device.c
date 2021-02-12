@@ -712,6 +712,8 @@ int main(int argc, char * const *argv)
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
     device_prometheus_client_init(metrics_address, device_number_s, num_compressors);
 
+    device_prometheus_set_start_time();
+
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_PULL);
     assert_x(receiver != NULL, "zmq socket creation failed", __FILE__, __LINE__);
