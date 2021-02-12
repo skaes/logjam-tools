@@ -1,6 +1,7 @@
 #include <prometheus/counter.h>
 #include <prometheus/exposer.h>
 #include <prometheus/registry.h>
+#include "prometheus/gauge.h"
 #include "device-prometheus-client.h"
 #include <sys/resource.h>
 
@@ -33,6 +34,8 @@ static struct prometheus_client_t {
     prometheus::Counter *broken_meta_count_total;
     prometheus::Family<prometheus::Counter> *broken_meta_count_by_stream_total_family;
     std::unordered_map<std::string, stream_counter_t*> broken_meta_count_by_stream_total_map;
+    prometheus::Family<prometheus::Gauge> *app_start_time_family;
+    prometheus::Gauge *app_start_time;
 } client;
 
 void device_prometheus_client_init(const char* address, const char* device, int num_compressors)
@@ -123,6 +126,14 @@ void device_prometheus_client_init(const char* address, const char* device, int 
         .Help("How many requests with broken meta information this device has processed for a given stream")
         .Labels({{"device", device}})
         .Register(*client.registry);
+
+    client.app_start_time_family = &prometheus::BuildGauge()
+        .Name("logjam:device:app_start_time")
+        .Help("Timestamp when the device started")
+        .Labels({{"device", device}})
+        .Register(*client.registry);
+
+    client.app_start_time = &client.app_start_time_family->Add({});
 
     // ask the exposer to scrape the registry on incoming scrapes
     client.exposer->RegisterCollectable(client.registry);
@@ -260,4 +271,9 @@ void device_prometheus_client_record_rusage_compressor(int i)
     double value = get_combined_cpu_usage();
     double oldvalue = client.cpu_usage_total_compressors[i]->Value();
     client.cpu_usage_total_compressors[i]->Increment(value - oldvalue);
+}
+
+void device_prometheus_set_start_time() 
+{
+    client.app_start_time->SetToCurrentTime();
 }
