@@ -311,7 +311,8 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
     state->ticks++;
 
     // tell tracker, subscribers, live stream publisher, stats server and stream updater to tick
-    zstr_send(state->statsd_server, "tick");
+    if (state->statsd_server)
+        zstr_send(state->statsd_server, "tick");
     zstr_send(state->stream_config_updater, "tick");
 
     size_t messages_received = 0;
@@ -472,7 +473,8 @@ bool controller_create_actors(controller_state_t *state, uint64_t indexer_opts)
     if (initialize_dbs) return !zsys_interrupted;
 
     // start the statsd updater
-    state->statsd_server = zactor_new(statsd_actor_fn, state->config);
+    if (send_statsd_msgs)
+        state->statsd_server = zactor_new(statsd_actor_fn, state->config);
     // start the live stream publisher
     state->live_stream_publisher = zactor_new(live_stream_actor_fn, state->config);
     // start the unknown streams collector

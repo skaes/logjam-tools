@@ -105,14 +105,20 @@ void setup_statsd_udp_socket_and_sever_address(statsd_server_state_t* state,  zc
     if (!send_statsd_msgs)
         return;
 
+    // parse specification
+    const char* connection_spec = zconfig_resolve(config, "statsd/endpoint", "off");
+    assert(strlen(connection_spec) < 256);
+
+    if (streq(connection_spec, "off")) {
+        // this should never happen, as the importer already sets send_statsd_msgs to
+        // false in that case
+        return;
+    }
+
     if ((state->statsd_socket = socket(AF_INET, SOCK_DGRAM, 0)) < 0) {
         fprintf(stderr, "[E] statsd[0]: cannot create statsd UDP socket");
         return;
     }
-
-    // parse specification
-    const char* connection_spec = zconfig_resolve(config, "statsd/endpoint", "udp://localhost:8125");
-    assert(strlen(connection_spec) < 256);
 
     char host_name[256];
     unsigned int port;

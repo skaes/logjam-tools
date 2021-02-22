@@ -358,6 +358,11 @@ int main(int argc, char * const *argv)
     zconfig_t* config = zconfig_load((char*)config_file_name);
     // zconfig_print(config);
 
+    // send statsd messages if an endpoint has been specified and not forbidden
+    const char *statsd_endpoint = zconfig_resolve(config, "statsd/endpoint", "off");
+    if (send_statsd_msgs)
+        send_statsd_msgs = !streq(statsd_endpoint, "off");
+
     if (live_stream_connection_spec == NULL)
         live_stream_connection_spec = zconfig_resolve(config, "frontend/endpoints/livestream/pub", DEFAULT_LIVE_STREAM_CONNECTION);
 
@@ -379,8 +384,9 @@ int main(int argc, char * const *argv)
                "[I] writers:         %zu\n"
                "[I] updaters:        %zu\n"
                "[I] subscription:    %s\n"
+               "[I] statsd:          %s\n"
                , argv[0], pull_port, sub_port, live_stream_connection_spec, unknown_streams_collector_connection_spec,
-               io_threads, rcv_hwm, snd_hwm, num_parsers, num_writers, num_updaters, subscription_pattern);
+               io_threads, rcv_hwm, snd_hwm, num_parsers, num_writers, num_updaters, subscription_pattern, statsd_endpoint);
 
     initialize_mongo_db_globals(config);
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
