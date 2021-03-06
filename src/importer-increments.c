@@ -92,86 +92,70 @@ void increments_add_metrics_to_json(increments_t *increments, json_object *jobj)
 #define NEW_INT1 (json_object_new_int(1))
 
 
-const char* increments_fill_apdex(increments_t *increments, double total_time)
+void increments_fill_apdex(increments_t *increments, double total_time)
 {
     json_object *others = increments->others;
 
     if (total_time < 100) {
         json_object_object_add(others, "apdex.happy", NEW_INT1);
         json_object_object_add(others, "apdex.satisfied", NEW_INT1);
-        return "satisfied";
     } else if (total_time < 500) {
         json_object_object_add(others, "apdex.satisfied", NEW_INT1);
-        return "satisfied";
     } else if (total_time < 2000) {
         json_object_object_add(others, "apdex.tolerating", NEW_INT1);
-        return "tolerating";
     } else {
         json_object_object_add(others, "apdex.frustrated", NEW_INT1);
-        return "frustrated";
     }
 }
 
-const char* increments_fill_frontend_apdex(increments_t *increments, double total_time)
+void increments_fill_frontend_apdex(increments_t *increments, double total_time)
 {
     json_object *others = increments->others;
 
     if (total_time < 500) {
         json_object_object_add(others, "fapdex.happy", NEW_INT1);
         json_object_object_add(others, "fapdex.satisfied", NEW_INT1);
-        return "satisfied";
     }
     else if (total_time < 2000) {
         json_object_object_add(others, "fapdex.satisfied", NEW_INT1);
-        return "satisfied";
     } else if (total_time < 8000) {
         json_object_object_add(others, "fapdex.tolerating", NEW_INT1);
-        return "tolerating";
     } else {
         json_object_object_add(others, "fapdex.frustrated", NEW_INT1);
-        return "frustrated";
     }
 }
 
-const char* increments_fill_page_apdex(increments_t *increments, double total_time)
+void increments_fill_page_apdex(increments_t *increments, double total_time)
 {
     json_object *others = increments->others;
 
     if (total_time < 500) {
         json_object_object_add(others, "papdex.happy", NEW_INT1);
         json_object_object_add(others, "papdex.satisfied", NEW_INT1);
-        return "satisfied";
     }
     else if (total_time < 2000) {
         json_object_object_add(others, "papdex.satisfied", NEW_INT1);
-        return "satisfied";
     } else if (total_time < 8000) {
         json_object_object_add(others, "papdex.tolerating", NEW_INT1);
-        return "tolerating";
     } else {
         json_object_object_add(others, "papdex.frustrated", NEW_INT1);
-        return "frustrated";
     }
 }
 
-const char* increments_fill_ajax_apdex(increments_t *increments, double total_time)
+void increments_fill_ajax_apdex(increments_t *increments, double total_time)
 {
     json_object *others = increments->others;
 
     if (total_time < 500) {
         json_object_object_add(others, "xapdex.happy", NEW_INT1);
         json_object_object_add(others, "xapdex.satisfied", NEW_INT1);
-        return "satisfied";
     }
     else if (total_time < 2000) {
         json_object_object_add(others, "xapdex.satisfied", NEW_INT1);
-        return "satisfied";
     } else if (total_time < 8000) {
         json_object_object_add(others, "xapdex.tolerating", NEW_INT1);
-        return "tolerating";
     } else {
         json_object_object_add(others, "xapdex.frustrated", NEW_INT1);
-        return "frustrated";
     }
 }
 

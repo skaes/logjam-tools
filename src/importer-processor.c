@@ -1222,43 +1222,6 @@ int check_frontend_request_validity(parser_state_t *pstate, json_object *request
     }
 }
 
-static
-void send_statsd_updates_for_page(const char* envapp, statsd_client_t *client, const int64_t *mtimes, const char* satisfaction)
-{
-    char buffer[1024];
-    size_t n = sizeof(buffer);
-
-    snprintf(buffer, n, "%s.page.%s", envapp, satisfaction);
-    statsd_client_increment(client, buffer);
-
-    snprintf(buffer, n, "%s.page.sum", envapp);
-    statsd_client_increment(client, buffer);
-
-    snprintf(buffer, n, "%s.page.navigation_time", envapp);
-    statsd_client_timing(client, buffer, mtimes[0]);
-
-    snprintf(buffer, n, "%s.page.connect_time", envapp);
-    statsd_client_timing(client, buffer, mtimes[1]);
-
-    snprintf(buffer, n, "%s.page.request_time", envapp);
-    statsd_client_timing(client, buffer, mtimes[2]);
-
-    snprintf(buffer, n, "%s.page.response_time", envapp);
-    statsd_client_timing(client, buffer, mtimes[3]);
-
-    snprintf(buffer, n, "%s.page.processing_time", envapp);
-    statsd_client_timing(client, buffer, mtimes[4]);
-
-    snprintf(buffer, n, "%s.page.load_time", envapp);
-    statsd_client_timing(client, buffer, mtimes[5]);
-
-    snprintf(buffer, n, "%s.page.page_time", envapp);
-    statsd_client_timing(client, buffer, mtimes[6]);
-
-    snprintf(buffer, n, "%s.page.dom_interactive", envapp);
-    statsd_client_timing(client, buffer, mtimes[7]);
-}
-
 static const char* str_fe_reason(enum fe_msg_drop_reason reason)
 {
     switch (reason){
@@ -1332,7 +1295,7 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
     increments->page_request_count = 1;
     increments_fill_metrics(increments, request);
     increments_fill_frontend_apdex(increments, request_data.total_time);
-    const char* satisfaction = increments_fill_page_apdex(increments, timings[fe_apdex_attr_index]);
+    increments_fill_page_apdex(increments, timings[fe_apdex_attr_index]);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
@@ -1350,30 +1313,12 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
 
     // dump_increments("add_frontend_data", increments);
 
-    send_statsd_updates_for_page(self->stream_info->yek, pstate->statsd_client, mtimes, satisfaction);
-
     increments_destroy(increments);
 
     // TODO: store interesting requests
     reason = FE_MSG_ACCEPTED;
     processor_add_user_agent(self, agent, reason);
     return reason;
-}
-
-static
-void send_statsd_updates_for_ajax(const char* envapp, statsd_client_t *client, int64_t ajax_time, const char* satisfaction)
-{
-    char buffer[1024];
-    size_t n = sizeof(buffer);
-
-    snprintf(buffer, n, "%s.ajax.%s", envapp, satisfaction);
-    statsd_client_increment(client, buffer);
-
-    snprintf(buffer, n, "%s.ajax.sum", envapp);
-    statsd_client_increment(client, buffer);
-
-    snprintf(buffer, n, "%s.ajax.ajax_time", envapp);
-    statsd_client_timing(client, buffer, ajax_time);
 }
 
 enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg)
@@ -1431,7 +1376,7 @@ enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_
     increments->ajax_request_count = 1;
     increments_fill_metrics(increments, request);
     increments_fill_frontend_apdex(increments, request_data.total_time);
-    const char* satisfaction = increments_fill_ajax_apdex(increments, request_data.total_time);
+    increments_fill_ajax_apdex(increments, request_data.total_time);
 
     processor_add_totals(self, request_data.page, increments);
     processor_add_totals(self, request_data.module, increments);
@@ -1446,8 +1391,6 @@ enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_
     processor_add_histogram(self, request_data.page, request_data.minute, "ajax_time", ajax_time_index, increments, request);
     processor_add_histogram(self, request_data.module, request_data.minute, "ajax_time", ajax_time_index, increments, request);
     processor_add_histogram(self, "all_pages", request_data.minute, "ajax_time", ajax_time_index, increments, request);
-
-    send_statsd_updates_for_ajax(self->stream_info->yek, pstate->statsd_client, request_data.total_time, satisfaction);
 
     // dump_increments("add_ajax_data", increments);
 

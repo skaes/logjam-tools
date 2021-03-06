@@ -65,7 +65,6 @@ extern bool dryrun;
 extern bool verbose;
 extern bool debug;
 extern bool quiet;
-extern bool send_statsd_msgs;
 extern bool initialize_dbs;
 
 extern char iso_date_today[ISO_DATE_STR_LEN];

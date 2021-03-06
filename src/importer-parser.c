@@ -309,7 +309,6 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->processors = processor_hash_new();
     state->stream_info_cache = zhash_new();
     state->tracker = tracker_new();
-    state->statsd_client = statsd_client_new(config, state->me);
     state->decompression_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
     return state;
 }
@@ -326,7 +325,6 @@ void parser_state_destroy(parser_state_t **state_p)
     zhash_destroy(&state->processors);
     zhash_destroy(&state->stream_info_cache);
     tracker_destroy(&state->tracker);
-    statsd_client_destroy(&state->statsd_client);
     zchunk_destroy(&state->decompression_buffer);
     free(state);
     *state_p = NULL;
@@ -363,7 +361,6 @@ void parser(zsock_t *pipe, void *args)
             if (streq(cmd, "tick")) {
                 if (state->parsed_msgs_count && verbose)
                     printf("[I] parser [%zu]: tick (%zu messages, %zu frontend)\n", id, state->parsed_msgs_count, state->fe_stats.received);
-                statsd_client_count(state->statsd_client, "importer.parses.count", state->parsed_msgs_count);
                 importer_prometheus_client_count_msgs_parsed(state->parsed_msgs_count);
                 importer_prometheus_client_record_rusage_parser(state->id);
                 zmsg_t *answer = zmsg_new();

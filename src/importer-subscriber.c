@@ -2,7 +2,6 @@
 #include "logjam-streaminfo.h"
 #include "logjam-util.h"
 #include "device-tracker.h"
-#include "statsd-client.h"
 #include "importer-prometheus-client.h"
 
 /*
@@ -42,7 +41,6 @@ typedef struct {
     size_t message_drops;                     // messages dropped because push_socket wasn't ready (since last tick)
     size_t message_blocks;                    // how often the subscriber blocked on the push_socket (since last tick)
     zlist_t *subscriptions;                   // current subscriptions, NULL if socket has not been subscribed before
-    statsd_client_t *statsd_client;
 } subscriber_state_t;
 
 
@@ -315,11 +313,6 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
                    state->message_count, (double)state->message_bytes / 1048576,
                    state->message_gap_size, state->meta_info_failures,
                    state->messages_dev_zero, state->message_blocks, state->message_drops);
-            statsd_client_count(state->statsd_client, "subscriber.messsages.received.count", state->message_count);
-            statsd_client_count(state->statsd_client, "subscriber.messsages.received.bytes", state->message_bytes);
-            statsd_client_count(state->statsd_client, "subscriber.messsages.missed.count", state->message_gap_size);
-            statsd_client_count(state->statsd_client, "subscriber.messsages.dropped.count", state->message_drops);
-            statsd_client_count(state->statsd_client, "subscriber.messsages.blocked.count", state->message_blocks);
             importer_prometheus_client_count_msgs_received(state->message_count);
             importer_prometheus_client_count_bytes_received(state->message_bytes);
             importer_prometheus_client_count_msgs_missed(state->message_gap_size);
@@ -373,7 +366,6 @@ subscriber_state_t* subscriber_state_new(zconfig_t* config, size_t id, zlist_t *
         state->router_socket = subscriber_router_socket_new(config, id);
     }
     state->push_socket = subscriber_push_socket_new(config, state->id);
-    state->statsd_client = statsd_client_new(config, state->me);
     return state;
 }
 
@@ -388,7 +380,6 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
     }
     zsock_destroy(&state->push_socket);
     device_tracker_destroy(&state->tracker);
-    statsd_client_destroy(&state->statsd_client);
     *state_p = NULL;
 }
 

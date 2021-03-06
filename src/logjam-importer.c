@@ -79,7 +79,6 @@ void print_usage(char * const *argv)
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "  -w, --writers N            number of db request writer threads\n"
             "  -D, --device-port N        port for connecting to logjam devices\n"
-            "  -N, --no-statsd            don't send statsd updates\n"
             "  -P, --input-port N         pull port for receiving logjam messages\n"
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
@@ -117,7 +116,6 @@ void process_arguments(int argc, char * const *argv)
         { "io-threads",       required_argument, 0, 'i' },
         { "live-stream",      required_argument, 0, 'l' },
         { "prom-export",      required_argument, 0, 'x' },
-        { "no-statsd",        no_argument,       0, 'N' },
         { "output-port",      required_argument, 0, 'P' },
         { "quiet",            no_argument,       0, 'q' },
         { "rcv-hwm",          required_argument, 0, 'R' },
@@ -248,9 +246,6 @@ void process_arguments(int argc, char * const *argv)
         case 'm':
             metrics_port = atoi(optarg);
             break;
-        case 'N':
-            send_statsd_msgs = false;
-            break;
         case 'F':
             indexer_opts |= INDEXER_DB_FAST_START;
             break;
@@ -358,11 +353,6 @@ int main(int argc, char * const *argv)
     zconfig_t* config = zconfig_load((char*)config_file_name);
     // zconfig_print(config);
 
-    // send statsd messages if an endpoint has been specified and not forbidden
-    const char *statsd_endpoint = zconfig_resolve(config, "statsd/endpoint", "off");
-    if (send_statsd_msgs)
-        send_statsd_msgs = !streq(statsd_endpoint, "off");
-
     if (live_stream_connection_spec == NULL)
         live_stream_connection_spec = zconfig_resolve(config, "frontend/endpoints/livestream/pub", DEFAULT_LIVE_STREAM_CONNECTION);
 
@@ -384,9 +374,8 @@ int main(int argc, char * const *argv)
                "[I] writers:         %zu\n"
                "[I] updaters:        %zu\n"
                "[I] subscription:    %s\n"
-               "[I] statsd:          %s\n"
                , argv[0], pull_port, sub_port, live_stream_connection_spec, unknown_streams_collector_connection_spec,
-               io_threads, rcv_hwm, snd_hwm, num_parsers, num_writers, num_updaters, subscription_pattern, statsd_endpoint);
+               io_threads, rcv_hwm, snd_hwm, num_parsers, num_writers, num_updaters, subscription_pattern);
 
     initialize_mongo_db_globals(config);
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);

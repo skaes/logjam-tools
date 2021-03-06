@@ -3,7 +3,6 @@
 
 #include "importer-common.h"
 #include "importer-tracker.h"
-#include "statsd-client.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -50,7 +49,6 @@ typedef struct {
     zhash_t *processors;
     zhash_t *stream_info_cache;
     uuid_tracker_t *tracker;
-    statsd_client_t *statsd_client;
     zchunk_t *decompression_buffer;
     zsock_t *unknown_streams_collector_socket;
 } parser_state_t;

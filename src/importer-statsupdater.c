@@ -32,7 +32,6 @@ typedef struct {
     zsock_t *pull_socket;
     int updates_count;     // updates performend since last tick
     int update_time;       // processing time since last tick (micro seconds)
-    statsd_client_t *statsd_client;
 } stats_updater_state_t;
 
 typedef struct {
@@ -470,7 +469,6 @@ stats_updater_state_t* stats_updater_state_new(zconfig_t *config, size_t id)
         assert(state->mongo_clients[i]);
     }
     state->stats_collections = zhash_new();
-    state->statsd_client = statsd_client_new(config, state->me);
     return state;
 }
 
@@ -483,7 +481,6 @@ void stats_updater_state_destroy(stats_updater_state_t **state_p)
     for (int i = 0; i<num_databases; i++) {
         mongoc_client_destroy(state->mongo_clients[i]);
     }
-    statsd_client_destroy(&state->statsd_client);
     free(state);
     *state_p = NULL;
 }
@@ -531,8 +528,6 @@ static void stats_updater(zsock_t *pipe, void *args)
                 if (verbose && (state->updates_count || state->update_time)) {
                     printf("[I] updater[%zu]: tick (%d updates, %d ms)\n", id, state->updates_count, state->update_time/1000);
                 }
-                statsd_client_count(state->statsd_client, "importer.updates.count", state->updates_count);
-                statsd_client_timing(state->statsd_client, "importer.updates.time", ((double)state->update_time)/1000);
                 importer_prometheus_client_count_updates(state->updates_count);
                 importer_prometheus_client_time_updates(((double)state->update_time)/1000000);
                 importer_prometheus_client_record_rusage_updater(state->id);

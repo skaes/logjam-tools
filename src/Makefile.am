@@ -78,8 +78,6 @@ logjam_importer_SOURCES = \
     logjam-importer.c \
     logjam-util.c \
     logjam-util.h \
-    statsd-client.c \
-    statsd-client.h \
     zring.c \
     zring.h \
     device-tracker.c \

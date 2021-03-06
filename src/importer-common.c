@@ -4,7 +4,6 @@ bool dryrun = false;
 bool verbose = false;
 bool debug = false;
 bool quiet = false;
-bool send_statsd_msgs = true;
 bool initialize_dbs = false;
 
 int queued_updates = 0;

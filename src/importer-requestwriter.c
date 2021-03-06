@@ -3,7 +3,6 @@
 #include "importer-indexer.h"
 #include "importer-resources.h"
 #include "importer-mongoutils.h"
-#include "statsd-client.h"
 #include "importer-prometheus-client.h"
 
 /*
@@ -34,7 +33,6 @@ typedef struct {
     int updates_count;     // updates performend since last tick
     int update_time;       // processing time since last tick (micro seconds)
     int updates_failed;    // how many updates failed
-    statsd_client_t *statsd_client;
 } request_writer_state_t;
 
 
@@ -660,7 +658,6 @@ request_writer_state_t* request_writer_state_new(zconfig_t *config, size_t id)
     state->metrics_collections = zhash_new();
     state->jse_collections = zhash_new();
     state->events_collections = zhash_new();
-    state->statsd_client = statsd_client_new(config, state->me);
     return state;
 }
 
@@ -678,7 +675,6 @@ void request_writer_state_destroy(request_writer_state_t **state_p)
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state->mongo_clients[i]);
     }
-    statsd_client_destroy(&state->statsd_client);
     free(state);
     *state_p = NULL;
 }
@@ -713,9 +709,6 @@ static void request_writer(zsock_t *pipe, void *args)
             if (streq(cmd, "tick")) {
                 if (verbose && (state->updates_count || state->update_time))
                     printf("[I] writer [%zu]: tick (%d requests, %d ms)\n", id, state->updates_count, state->update_time/1000);
-                statsd_client_count(state->statsd_client, "importer.inserts.count", state->updates_count);
-                statsd_client_timing(state->statsd_client, "importer.inserts.time", state->update_time/1000);
-                statsd_client_count(state->statsd_client, "importer.failed_inserts.count", state->updates_failed);
                 importer_prometheus_client_count_inserts(state->updates_count);
                 importer_prometheus_client_time_inserts(((double)state->update_time)/1000000);
                 importer_prometheus_client_count_inserts_failed(state->updates_failed);

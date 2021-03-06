@@ -10,7 +10,6 @@
 #include "importer-subscriber.h"
 #include "importer-watchdog.h"
 #include "unknown-streams-collector.h"
-#include "statsd-client.h"
 #include "importer-prometheus-client.h"
 
 /*
@@ -51,7 +50,6 @@ unsigned long num_adders = 4;
 typedef struct {
     zconfig_t *config;
     zactor_t *stream_config_updater;
-    zactor_t *statsd_server;
     zactor_t *indexer;
     zactor_t *tracker;
     zactor_t *controller_watchdog;
@@ -68,7 +66,6 @@ typedef struct {
     zsock_t *adder_socket;
     zsock_t *live_stream_socket;
     size_t ticks;
-    statsd_client_t *statsd_client;
     zlist_t *collected_processors;
 } controller_state_t;
 
@@ -310,9 +307,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
 
     state->ticks++;
 
-    // tell tracker, subscribers, live stream publisher, stats server and stream updater to tick
-    if (state->statsd_server)
-        zstr_send(state->statsd_server, "tick");
+    // tell tracker, subscribers, live stream publisher and stream updater to tick
     zstr_send(state->stream_config_updater, "tick");
 
     size_t messages_received = 0;
@@ -419,12 +414,9 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
         printf("[E] controller: queued inserts are negative: %d\n", inserts);
         inserts = 0;
     }
-    statsd_client_gauge(state->statsd_client, "importer.queued_updates.count", updates);
-    statsd_client_gauge(state->statsd_client, "importer.queued_inserts.count", inserts);
     importer_prometheus_client_gauge_queued_updates(updates);
     importer_prometheus_client_gauge_queued_inserts(inserts);
 
-    statsd_client_count(state->statsd_client, "importer.blocked_updates.count", state->updates_blocked);
     importer_prometheus_client_count_updates_blocked(state->updates_blocked);
 
     // log a warning about the number of blocked updates
@@ -472,9 +464,6 @@ bool controller_create_actors(controller_state_t *state, uint64_t indexer_opts)
     state->indexer = zactor_new(indexer, (void*)indexer_opts);
     if (initialize_dbs) return !zsys_interrupted;
 
-    // start the statsd updater
-    if (send_statsd_msgs)
-        state->statsd_server = zactor_new(statsd_actor_fn, state->config);
     // start the live stream publisher
     state->live_stream_publisher = zactor_new(live_stream_actor_fn, state->config);
     // start the unknown streams collector
@@ -584,11 +573,6 @@ void controller_destroy_actors(controller_state_t *state)
         zactor_destroy(&state->tracker);
     }
 
-    if (state->statsd_server) {
-        if (verbose) printf("[D] controller: destroying statsd\n");
-        zactor_destroy(&state->statsd_server);
-    }
-
     if (state->indexer) {
         if (verbose) printf("[D] controller: destroying indexer\n");
         zactor_destroy(&state->indexer);
@@ -694,7 +678,6 @@ int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam
     controller_state_t state;
     memset(&state, 0, sizeof(state));
     state.config = config,
-    state.statsd_client = statsd_client_new(config, "controller[0]");
     state.collected_processors = zlist_new();
     assert(state.collected_processors);
     bool start_up_complete = controller_create_actors(&state, indexer_opts);
@@ -743,9 +726,8 @@ int run_controller_loop(zconfig_t* config, size_t io_threads, const char *logjam
     else
         printf("[I] controller: started shutdown timer\n");
 
-    // destroy actors and statsd_client
+    // destroy actors
     controller_destroy_actors(&state);
-    statsd_client_destroy(&state.statsd_client);
 
  shutdown:
     // wait for actors to finish
