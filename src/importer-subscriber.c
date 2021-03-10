@@ -268,7 +268,7 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
     }
 
     if (replay_router_msgs) {
-        if (1) {
+        if (0) {
             fprintf(stderr, "[D] subscriber[%zu]: forwarding msg to replay socket\n", state->id);
             my_zmsg_fprint(msg, "[E] MSG", stderr);
         }
