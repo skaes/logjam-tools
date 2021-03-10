@@ -50,7 +50,7 @@ extern int router_port;
 extern int pull_port;
 extern int sub_port;
 extern int replay_port;
-extern bool replay_router_msgs;
+extern int replay_router_msgs;
 extern int rcv_hwm;
 extern int snd_hwm;
 extern zlist_t* hosts;

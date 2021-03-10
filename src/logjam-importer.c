@@ -19,7 +19,7 @@ char* unknown_streams_collector_connection_spec = NULL;
 const char *metrics_ip = "0.0.0.0";
 zlist_t *hosts = NULL;
 
-bool replay_router_msgs = 0;
+int replay_router_msgs = -1;
 
 static uint64_t indexer_opts = 0;
 
@@ -161,7 +161,7 @@ void process_arguments(int argc, char * const *argv)
             quiet = true;
             break;
         case 'y':
-             replay_router_msgs = true;
+             replay_router_msgs = 1;
             break;
         case 'c':
             config_file_name = optarg;
@@ -303,10 +303,12 @@ void process_arguments(int argc, char * const *argv)
     if (replay_port == -1)
         replay_port = DEFAULT_REPLAY_PORT;
 
-    if (( v = getenv("LOGJAM_REPLAY") ))
-        snd_hwm = atoi(v);
-    else
-        snd_hwm = DEFAULT_SND_HWM;
+    if (replay_router_msgs == -1) {
+        if (( v = getenv("LOGJAM_REPLAY") ))
+            replay_router_msgs = streq(v, "1");
+        else
+            replay_router_msgs = 0;
+    }
 
     if (hosts == NULL && (v = getenv("LOGJAM_DEVICES")))
         hosts = split_delimited_string(v);
