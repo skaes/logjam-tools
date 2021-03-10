@@ -45,6 +45,11 @@ forwards GELF messages to a graylog GELF socket endpoint.
 A utility program to capture messages sent from a logjam device and
 log them to disk.
 
+## logjam-debug
+
+A utility program to capture messages sent to a logjam importer device print them to
+stdout in JSON format.
+
 ## logjam-replay
 
 A utility program to replay messages captured by logjam-dump. Useful in
@@ -129,6 +134,11 @@ A ZeroMQ PUSH socket for graylog to connect to
 ### 9610
 
 A prometheus metrics endpoint, used by logjam-importer.
+
+### 9651
+
+ZeroMQ PUB socket offered by the importer for debugging messages sent to its router port.
+
 
 ### 9705
 

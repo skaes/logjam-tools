@@ -11,12 +11,15 @@ int rcv_hwm = -1;
 int pull_port = -1;
 int router_port = -1;
 int sub_port = -1;
+int replay_port = -1;
 int metrics_port = -1;
 char metrics_address[256] = {0};
 char* live_stream_connection_spec = NULL;
 char* unknown_streams_collector_connection_spec = NULL;
 const char *metrics_ip = "0.0.0.0";
 zlist_t *hosts = NULL;
+
+bool replay_router_msgs = 0;
 
 static uint64_t indexer_opts = 0;
 
@@ -89,12 +92,15 @@ void print_usage(char * const *argv)
             "  -I, --initialize-dbs       don't subscribe to streams but create databases and indexes\n"
             "  -F, --db-fast-start        create databases and indexes for streams in a background thread\n"
             "  -O, --db-on-demand         create databases and indexes for streams on demand\n"
+            "  -Y, --replay-port N        port number of zeromq router replay socket\n"
+            "  -y, --replay               whether to duplicate msgs received on on the router port socket\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
             "  LOGJAM_STREAM_FILTER       only process streams with given substring\n"
             "  LOGJAM_RCV_HWM             high watermark for input socket\n"
             "  LOGJAM_SND_HWM             high watermark for output socket\n"
+            "  LOGJAM_REPLAY              whether to duplicate msgs received on on the router port socket\n"
             , argv[0]);
 }
 
@@ -117,6 +123,8 @@ void process_arguments(int argc, char * const *argv)
         { "live-stream",      required_argument, 0, 'l' },
         { "prom-export",      required_argument, 0, 'x' },
         { "output-port",      required_argument, 0, 'P' },
+        { "replay-port",      required_argument, 0, 'Y' },
+        { "replay",           no_argument,       0, 'y' },
         { "quiet",            no_argument,       0, 'q' },
         { "rcv-hwm",          required_argument, 0, 'R' },
         { "router-port",      required_argument, 0, 't' },
@@ -138,7 +146,7 @@ void process_arguments(int argc, char * const *argv)
         indexer_opts = atoi(v);
     }
 
-    while ((c = getopt_long(argc, argv, "a:b:c:f:nm:p:qs:u:vw:x:i:P:R:S:l:h:D:t:NM:L:T:IFO", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "a:b:c:f:nm:p:qs:u:vw:x:i:P:R:S:l:h:D:t:NM:L:T:IFOyY:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'n':
             dryrun = true;
@@ -151,6 +159,9 @@ void process_arguments(int argc, char * const *argv)
             break;
         case 'q':
             quiet = true;
+            break;
+        case 'y':
+             replay_router_msgs = true;
             break;
         case 'c':
             config_file_name = optarg;
@@ -243,6 +254,9 @@ void process_arguments(int argc, char * const *argv)
         case 'D':
             sub_port = atoi(optarg);
             break;
+        case 'Y':
+            replay_port = atoi(optarg);
+            break;
         case 'm':
             metrics_port = atoi(optarg);
             break;
@@ -285,6 +299,14 @@ void process_arguments(int argc, char * const *argv)
         router_port = DEFAULT_ROUTER_PORT;
     if (metrics_port == -1)
         metrics_port = DEFAULT_METRICS_PORT;
+
+    if (replay_port == -1)
+        replay_port = DEFAULT_REPLAY_PORT;
+
+    if (( v = getenv("LOGJAM_REPLAY") ))
+        snd_hwm = atoi(v);
+    else
+        snd_hwm = DEFAULT_SND_HWM;
 
     if (hosts == NULL && (v = getenv("LOGJAM_DEVICES")))
         hosts = split_delimited_string(v);

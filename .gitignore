@@ -33,6 +33,7 @@ proml-queries.txt
 /src/Makefile
 /src/livestream-generator
 /src/logjam-device
+/src/logjam-debug
 /src/logjam-dump
 /src/logjam-fhttpd
 /src/logjam-forwarder

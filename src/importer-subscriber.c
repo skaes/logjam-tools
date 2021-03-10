@@ -32,7 +32,7 @@ typedef struct {
     zsock_t *push_socket;                     // outgoing data for parsers
     zsock_t *pull_socket;                     // pull for direct connections (apps)
     zsock_t *router_socket;                   // ROUTER socket for direct connections (apps)
-    zsock_t *pub_socket;                      // republish all incoming messages (optional)
+    zsock_t *replay_socket;                   // republish all incoming messages received on router socket (optional)
     size_t message_count;                     // messages processed (since last tick)
     size_t message_bytes;                     // messages bytes processed (since last tick)
     size_t messages_dev_zero;                 // messages arrived from device 0 (since last tick)
@@ -131,6 +131,24 @@ zsock_t* subscriber_router_socket_new(zconfig_t* config, size_t id)
     char *full_spec = augment_zmq_connection_spec(router_spec, router_port);
     if (!quiet)
         printf("[I] subscriber[%zu]: binding ROUTER socket to %s\n", id, full_spec);
+    int rc = zsock_bind(socket, "%s", full_spec);
+    assert(rc != -1);
+    free(full_spec);
+
+    return socket;
+}
+
+zsock_t* subscriber_replay_socket_new(zconfig_t* config, size_t id)
+{
+    zsock_t *socket = zsock_new(ZMQ_PUB);
+    assert(socket);
+    zsock_set_linger(socket, 0);
+    zsock_set_sndhwm(socket, snd_hwm);
+
+    char *pub_spec = zconfig_resolve(config, "frontend/endpoints/subscriber/duplicates", "tcp://*");
+    char *full_spec = augment_zmq_connection_spec(pub_spec, replay_port);
+    if (!quiet)
+        printf("[I] subscriber[%zu]: binding PUB replay socket to %s\n", id, full_spec);
     int rc = zsock_bind(socket, "%s", full_spec);
     assert(rc != -1);
     free(full_spec);
@@ -249,6 +267,15 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
         }
     }
 
+    if (replay_router_msgs) {
+        if (1) {
+            fprintf(stderr, "[D] subscriber[%zu]: forwarding msg to replay socket\n", state->id);
+            my_zmsg_fprint(msg, "[E] MSG", stderr);
+        }
+        zmsg_t* duplicate = zmsg_dup(msg);
+        zmsg_send(&duplicate, state->replay_socket);
+    }
+
     int n = zmsg_size(msg);
     if (n!=4) {
         fprintf(stderr, "[E] subscriber[%zu]: (%s:%d): dropped invalid message of size %d\n", state->id, __FILE__, __LINE__, n);
@@ -364,6 +391,7 @@ subscriber_state_t* subscriber_state_new(zconfig_t* config, size_t id, zlist_t *
     if (state->id == 0) {
         state->pull_socket = subscriber_pull_socket_new(config, id);
         state->router_socket = subscriber_router_socket_new(config, id);
+        state->replay_socket = subscriber_replay_socket_new(config, id);
     }
     state->push_socket = subscriber_push_socket_new(config, state->id);
     return state;
@@ -377,6 +405,7 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
     if (state->id == 0) {
         zsock_destroy(&state->pull_socket);
         zsock_destroy(&state->router_socket);
+        zsock_destroy(&state->replay_socket);
     }
     zsock_destroy(&state->push_socket);
     device_tracker_destroy(&state->tracker);

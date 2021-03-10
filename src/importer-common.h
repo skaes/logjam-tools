@@ -35,18 +35,22 @@ extern int queued_inserts;
 #define DEFAULT_LIVE_STREAM_PORT 9607
 #define DEFAULT_UNKNOWN_STREAMS_COLLECTOR_PORT 9612
 #define DEFAULT_METRICS_PORT 9610
+#define DEFAULT_REPLAY_PORT 9651
 
 #define DEFAULT_REP_CONNECTION_SPEC "tcp://localhost:9604"
 #define DEFAULT_PULL_CONNECTION_SPEC "tcp://localhost:9605"
 #define DEFAULT_SUB_CONNECTION_SPEC "tcp://localhost:9606"
 #define DEFAULT_LIVE_STREAM_CONNECTION "tcp://*:9607"
 #define DEFAULT_UNKNOWN_STREAMS_COLLECTOR_CONNECTION "tcp://*:9612"
+#define DEFAULT_REPLAY_CONNECTION_SPEC "tcp://*:9651"
 
 extern char* live_stream_connection_spec;
 extern char* unknown_streams_collector_connection_spec;
 extern int router_port;
 extern int pull_port;
 extern int sub_port;
+extern int replay_port;
+extern bool replay_router_msgs;
 extern int rcv_hwm;
 extern int snd_hwm;
 extern zlist_t* hosts;

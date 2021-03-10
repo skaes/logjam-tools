@@ -116,8 +116,11 @@ static inline void zmsg_add_meta_info(zmsg_t *msg, msg_meta_t *meta)
 extern int zmq_msg_extract_meta_info(zmq_msg_t *meta_msg, msg_meta_t *meta);
 extern int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta);
 extern int frame_extract_meta_info(zframe_t *frame, msg_meta_t *meta);
+extern json_object* meta_info_to_json(msg_meta_t *meta);
+
 extern int zmsg_clear_device_and_sequence_number(zmsg_t* msg);
 extern int zmsg_set_device_and_sequence_number(zmsg_t* msg, uint32_t device_number, uint64_t sequence_number);
+extern json_object* meta_info_to_json(msg_meta_t *meta);
 
 extern int string_to_compression_method(const char *s);
 extern const char* compression_method_to_string(int compression_method);

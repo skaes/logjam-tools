@@ -13,6 +13,7 @@ logjam-device \
     logjam-importer \
     logjam-graylog-forwarder \
     logjam-dump \
+    logjam-debug \
     logjam-replay \
     logjam-pubsub-bridge \
     logjam-forwarder \
@@ -131,6 +132,12 @@ logjam_dump_SOURCES = \
     device-tracker.h \
     importer-watchdog.c \
     importer-watchdog.h
+
+logjam_debug_SOURCES = \
+    ../config.h \
+    logjam-debug.c \
+    logjam-util.c \
+    logjam-util.h
 
 logjam_replay_SOURCES = \
     ../config.h \

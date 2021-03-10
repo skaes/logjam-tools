@@ -180,6 +180,21 @@ int msg_extract_meta_info(zmsg_t *msg, msg_meta_t *meta)
     return rc;
 }
 
+json_object* meta_info_to_json(msg_meta_t *meta)
+{
+    char buf[100];
+    json_object *json = json_object_new_object();
+    sprintf(buf, "%hx", meta->tag);
+    json_object_object_add(json, "tag", json_object_new_string(buf));
+    json_object_object_add(json, "version", json_object_new_int(meta->version));
+    const char* method = compression_method_to_string(meta->compression_method);
+    json_object_object_add(json, "compression", json_object_new_string(method));
+    json_object_object_add(json, "device", json_object_new_int(meta->device_number));
+    json_object_object_add(json, "sequence", json_object_new_int64(meta->sequence_number));
+    json_object_object_add(json, "created_ms", json_object_new_int64(meta->created_ms));
+    return json;
+}
+
 int zmsg_clear_device_and_sequence_number(zmsg_t* msg)
 {
     if (zmsg_size(msg)!=4)
