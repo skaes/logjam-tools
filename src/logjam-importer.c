@@ -389,6 +389,8 @@ int main(int argc, char * const *argv)
         printf("[I] started %s\n"
                "[I] pull-port:       %d\n"
                "[I] sub-port:        %d\n"
+               "[I] replay-port:     %d\n"
+               "[I] router-replay:   %d\n"
                "[I] live-stream:     %s\n"
                "[I] unknown-streams: %s\n"
                "[I] io-threads:      %zu\n"
@@ -398,7 +400,7 @@ int main(int argc, char * const *argv)
                "[I] writers:         %zu\n"
                "[I] updaters:        %zu\n"
                "[I] subscription:    %s\n"
-               , argv[0], pull_port, sub_port, live_stream_connection_spec, unknown_streams_collector_connection_spec,
+               , argv[0], pull_port, sub_port, replay_port, replay_router_msgs, live_stream_connection_spec, unknown_streams_collector_connection_spec,
                io_threads, rcv_hwm, snd_hwm, num_parsers, num_writers, num_updaters, subscription_pattern);
 
     initialize_mongo_db_globals(config);
