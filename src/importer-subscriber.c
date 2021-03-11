@@ -391,7 +391,8 @@ subscriber_state_t* subscriber_state_new(zconfig_t* config, size_t id, zlist_t *
     if (state->id == 0) {
         state->pull_socket = subscriber_pull_socket_new(config, id);
         state->router_socket = subscriber_router_socket_new(config, id);
-        state->replay_socket = subscriber_replay_socket_new(config, id);
+        if (replay_router_msgs)
+            state->replay_socket = subscriber_replay_socket_new(config, id);
     }
     state->push_socket = subscriber_push_socket_new(config, state->id);
     return state;
@@ -405,7 +406,8 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
     if (state->id == 0) {
         zsock_destroy(&state->pull_socket);
         zsock_destroy(&state->router_socket);
-        zsock_destroy(&state->replay_socket);
+        if (replay_router_msgs)
+            zsock_destroy(&state->replay_socket);
     }
     zsock_destroy(&state->push_socket);
     device_tracker_destroy(&state->tracker);
