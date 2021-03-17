@@ -34,6 +34,8 @@ static struct prometheus_client_t {
     prometheus::Counter *cpu_usage_total_writer;
     std::vector<prometheus::Counter*> cpu_usage_total_parsers;
     std::unordered_map<std::string, stream_counters_t*> counters_by_stream_total_map;
+    prometheus::Family<prometheus::Gauge> *sequence_number_family;
+    std::unordered_map<uint32_t, prometheus::Gauge*> sequence_numbers;
 } client;
 
 void graylog_forwarder_prometheus_client_init(const char* address, int num_parsers)
@@ -106,6 +108,11 @@ void graylog_forwarder_prometheus_client_init(const char* address, int num_parse
         sprintf(name, "parser%d", i);
         client.cpu_usage_total_parsers.push_back(&client.cpu_usage_total_family->Add({{"thread", name}}));
     }
+
+    client.sequence_number_family = &prometheus::BuildGauge()
+        .Name("logjam:msgbus:sequence")
+        .Help("Current sequence number for the given logjam device")
+        .Register(*client.registry);
 
     // ask the exposer to scrape the registry on incoming scrapes
     client.exposer->RegisterCollectable(client.registry);
@@ -229,4 +236,21 @@ void graylog_forwarder_prometheus_client_record_rusage_writer()
     double value = get_combined_cpu_usage();
     double oldvalue = client.cpu_usage_total_writer->Value();
     client.cpu_usage_total_writer->Increment(value - oldvalue);
+}
+
+void graylog_forwarder_prometheus_client_record_device_sequence_number(uint32_t id, const char* device, uint64_t n)
+{
+    if (id) {
+        std::lock_guard<std::mutex> lock(mutex);
+        std::unordered_map<uint32_t,prometheus::Gauge*>::const_iterator got = client.sequence_numbers.find(id);
+        prometheus::Gauge* sequence_number;
+        if (got == client.sequence_numbers.end()) {
+            sequence_number = &client.sequence_number_family->Add({{"app", "logjam-graylog-forwarder"}, {"device", device}});
+            client.sequence_numbers[id] = sequence_number;
+        } else {
+            sequence_number = got->second;
+        }
+        sequence_number->Set(n);
+    }
+
 }

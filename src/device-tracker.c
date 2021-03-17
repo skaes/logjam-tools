@@ -11,6 +11,7 @@ typedef struct {
     uint64_t lost;
     int credit;
     const char* pub_spec;
+    char device_num_str[11]; // at most 4294967295
 } device_info_t;
 
 struct _device_tracker_t {
@@ -88,6 +89,7 @@ size_t device_tracker_calculate_gap(device_tracker_t* tracker, msg_meta_t* meta,
         info->credit = INITIAL_HEARTBEAT_CREDIT;
         info->lost = 0;
         info->pub_spec = pub_spec;
+        sprintf(info->device_num_str, "%" PRIu32, (uint32_t)device_number);
         int rc = zhashx_insert(tracker->seen_devices, (const void*) device_number, info);
         assert(rc == 0);
         return 0;
@@ -159,4 +161,13 @@ void device_tracker_reconnect_stale_devices(device_tracker_t* tracker)
         info = zlist_next(stale_devices);
     }
     zlist_destroy(&stale_devices);
+}
+
+void device_tracker_record_sequence_numbers(device_tracker_t* tracker, device_number_recorder_fn f)
+{
+    device_info_t *info = zhashx_first(tracker->seen_devices);
+    while (info) {
+        f(info->device_number, info->device_num_str, info->sequence_number);
+        info = zhashx_next(tracker->seen_devices);
+    }
 }

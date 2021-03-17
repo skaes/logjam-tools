@@ -3,6 +3,7 @@
 #include <prometheus/registry.h>
 #include "importer-prometheus-client.h"
 #include <sys/resource.h>
+#include <stdlib.h>
 
 static struct prometheus_client_t {
     prometheus::Exposer *exposer;
@@ -44,7 +45,11 @@ static struct prometheus_client_t {
     std::vector<prometheus::Counter*> cpu_seconds_total_writers;
     std::vector<prometheus::Counter*> cpu_seconds_total_updaters;
     prometheus::Family<prometheus::Counter> *cpu_seconds_total_family;
+    prometheus::Family<prometheus::Gauge> *sequence_number_family;
+    std::unordered_map<uint32_t, prometheus::Gauge*> sequence_numbers;
 } client;
+
+static std::mutex mutex;
 
 void importer_prometheus_client_init(const char* address, importer_prometheus_client_params_t params)
 {
@@ -194,6 +199,11 @@ void importer_prometheus_client_init(const char* address, importer_prometheus_cl
         sprintf(name, "updater%d", i);
         client.cpu_seconds_total_updaters.push_back(&client.cpu_seconds_total_family->Add({{"thread", name}}));
     }
+
+    client.sequence_number_family = &prometheus::BuildGauge()
+        .Name("logjam:msgbus:sequence")
+        .Help("Current sequence number for the given logjam device")
+        .Register(*client.registry);
 
     // ask the exposer to scrape the registry on incoming scrapes
     client.exposer->RegisterCollectable(client.registry);
@@ -349,4 +359,20 @@ void importer_prometheus_client_count_throttled_inserts_for_stream(stream_info_t
 {
     client.inserts_throttled_total->Increment(value);
     ((prometheus::Counter*)stream->inserts_throttled_total)->Increment(value);
+}
+
+void importer_prometheus_client_record_device_sequence_number(uint32_t id, const char* device, uint64_t n)
+{
+    if (id) {
+        std::lock_guard<std::mutex> lock(mutex);
+        std::unordered_map<uint32_t,prometheus::Gauge*>::const_iterator got = client.sequence_numbers.find(id);
+        prometheus::Gauge* sequence_number;
+        if (got == client.sequence_numbers.end()) {
+            sequence_number = &client.sequence_number_family->Add({{"app", "logjam-importer"}, {"device", device}});
+            client.sequence_numbers[id] = sequence_number;
+        } else {
+            sequence_number = got->second;
+        }
+        sequence_number->Set(n);
+    }
 }

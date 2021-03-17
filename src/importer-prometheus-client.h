@@ -41,6 +41,7 @@ extern void importer_prometheus_client_create_stream_counters(stream_info_t *str
 extern void importer_prometheus_client_destroy_stream_counters(stream_info_t *stream);
 extern void importer_prometheus_client_count_inserts_for_stream(stream_info_t *stream, double value);
 extern void importer_prometheus_client_count_throttled_inserts_for_stream(stream_info_t *stream, double value);
+extern void importer_prometheus_client_record_device_sequence_number(uint32_t id, const char *device, uint64_t n);
 
 #ifdef __cplusplus
 }

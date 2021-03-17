@@ -23,6 +23,7 @@ extern void graylog_forwarder_prometheus_client_count_msg_for_stream(const char*
 extern void graylog_forwarder_prometheus_client_count_forwarded_bytes_for_stream(const char* app_env, double value);
 extern void graylog_forwarder_prometheus_client_count_gelf_source_bytes_for_stream(const char* app_env, double value);
 extern void graylog_forwarder_prometheus_client_delete_old_stream_counters(int64_t max_age);
+extern void graylog_forwarder_prometheus_client_record_device_sequence_number(uint32_t, const char* device, uint64_t n);
 
 #ifdef __cplusplus
 }

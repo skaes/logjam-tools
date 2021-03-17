@@ -134,6 +134,7 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     device_prometheus_client_count_invalid_messages(invalid_count);
     device_prometheus_client_count_broken_metas(broken_meta_count);
     device_prometheus_client_record_rusage();
+    device_prometheus_client_set_sequence_number(msg_meta.sequence_number);
 
     double avg_msg_size        = message_count ? (message_bytes / 1024.0) / message_count : 0;
     double max_msg_size        = received_messages_max_bytes / 1024.0;
@@ -712,7 +713,7 @@ int main(int argc, char * const *argv)
     snprintf(metrics_address, sizeof(metrics_address), "%s:%d", metrics_ip, metrics_port);
     device_prometheus_client_init(metrics_address, device_number_s, num_compressors);
 
-    device_prometheus_set_start_time();
+    device_prometheus_client_set_start_time();
 
     // create socket to receive messages on
     zsock_t *receiver = zsock_new(ZMQ_PULL);

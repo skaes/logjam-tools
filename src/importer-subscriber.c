@@ -356,6 +356,8 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             state->messages_dev_zero = 0;
             state->message_drops = 0;
             state->message_blocks = 0;
+            device_number_recorder_fn *f = (device_number_recorder_fn*)importer_prometheus_client_record_device_sequence_number;
+            device_tracker_record_sequence_numbers(state->tracker, f);
             if (++ticks % HEART_BEAT_INTERVAL == 0)
                 device_tracker_reconnect_stale_devices(state->tracker);
         } else {

@@ -36,6 +36,8 @@ static struct prometheus_client_t {
     std::unordered_map<std::string, stream_counter_t*> broken_meta_count_by_stream_total_map;
     prometheus::Family<prometheus::Gauge> *app_start_time_family;
     prometheus::Gauge *app_start_time;
+    prometheus::Family<prometheus::Gauge> *sequence_number_family;
+    prometheus::Gauge *sequence_number;
 } client;
 
 void device_prometheus_client_init(const char* address, const char* device, int num_compressors)
@@ -134,6 +136,14 @@ void device_prometheus_client_init(const char* address, const char* device, int 
         .Register(*client.registry);
 
     client.app_start_time = &client.app_start_time_family->Add({});
+
+    client.sequence_number_family = &prometheus::BuildGauge()
+        .Name("logjam:msgbus:sequence")
+        .Help("Current sequence number for the given logjam device")
+        .Labels({{"device", device}})
+        .Register(*client.registry);
+
+    client.sequence_number = &client.sequence_number_family->Add({{"app", "logjam-device"}});
 
     // ask the exposer to scrape the registry on incoming scrapes
     client.exposer->RegisterCollectable(client.registry);
@@ -273,7 +283,13 @@ void device_prometheus_client_record_rusage_compressor(int i)
     client.cpu_usage_total_compressors[i]->Increment(value - oldvalue);
 }
 
-void device_prometheus_set_start_time() 
+void device_prometheus_client_set_start_time()
 {
     client.app_start_time->SetToCurrentTime();
+}
+
+void device_prometheus_client_set_sequence_number(uint64_t n)
+{
+    if (n)
+        client.sequence_number->Set(n);
 }

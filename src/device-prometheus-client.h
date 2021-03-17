@@ -23,7 +23,8 @@ extern void device_prometheus_client_delete_old_ping_counters(int64_t max_age);
 extern void device_prometheus_client_delete_old_broken_meta_counters(int64_t max_age);
 extern void device_prometheus_client_record_rusage();
 extern void device_prometheus_client_record_rusage_compressor(int i);
-extern void device_prometheus_set_start_time();
+extern void device_prometheus_client_set_start_time();
+extern void device_prometheus_client_set_sequence_number(uint64_t n);
 
 #ifdef __cplusplus
 }
