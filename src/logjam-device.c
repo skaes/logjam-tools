@@ -23,6 +23,9 @@ bool quiet = false;
 #define DEFAULT_RCV_HWM  100000
 #define DEFAULT_SND_HWM 1000000
 
+// send stats every second
+#define STATS_MSG_INTERVAL 1
+
 int rcv_hwm = -1;
 int snd_hwm = -1;
 
@@ -30,6 +33,7 @@ int snd_hwm = -1;
 static int router_port = 9604;
 static int pull_port = 9605;
 static int pub_port = 9606;
+static int stats_port = 9621;
 
 static size_t received_messages_count = 0;
 static size_t received_messages_bytes = 0;
@@ -102,13 +106,14 @@ typedef struct {
     void *router_receiver;
     void *router_output;
     void *publisher;
+    void *stats_socket;
     void *compressor_input;
     void *compressor_output;
 } publisher_state_t;
 
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
-    zsock_t* pub_socket = arg;
+    publisher_state_t* state = arg;
 
     static size_t last_received_count   = 0;
     static size_t last_received_bytes   = 0;
@@ -173,7 +178,16 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
         msg_meta.created_ms = global_time;
         if (verbose)
             printf("[I] sending heartbeat\n");
-        send_heartbeat(pub_socket, &msg_meta, pub_port);
+        send_heartbeat(state->publisher, &msg_meta, pub_port);
+    }
+
+    // publish last message sequence number for this device
+    if  (ticks % STATS_MSG_INTERVAL == 0) {
+        zmsg_t *msg = zmsg_new();
+        zmsg_addstr(msg, "stats");
+        zmsg_addstr(msg, device_number_s);
+        zmsg_addstrf(msg, "%" PRIu64,  msg_meta.sequence_number);
+        zmsg_send_with_retry(&msg, state->stats_socket);
     }
 
     // tick compressors
@@ -545,7 +559,7 @@ static void print_usage(char * const *argv)
             "  -i, --io-threads N         zeromq io threads\n"
             "  -p, --input-port N         port number of zeromq input socket\n"
             "  -q, --quiet                supress most output\n"
-            "  -s, --compressors N        number of compressor threads\n"
+            "  -C, --compressors N        number of compressor threads\n"
             "  -t, --router-port N        port number of zeromq router socket\n"
             "  -v, --verbose              log more (use -vv for debug output)\n"
             "  -x, --compress M           compress logjam traffic using (snappy|zlib)\n"
@@ -578,9 +592,11 @@ static void process_arguments(int argc, char * const *argv)
         { "input-port",         required_argument, 0, 'p' },
         { "io-threads",         required_argument, 0, 'i' },
         { "output-port",        required_argument, 0, 'P' },
+        { "stats-port",         required_argument, 0, 's' },
         { "quiet",              no_argument,       0, 'q' },
         { "rcv-hwm",            required_argument, 0, 'R' },
         { "snd-hwm",            required_argument, 0, 'S' },
+        { "compressors",        required_argument, 0, 'C' },
         { "verbose",            no_argument,       0, 'v' },
         { "metrics-port",       required_argument, 0, 'm' },
         { "metrics-ip",         required_argument, 0, 'M' },
@@ -589,7 +605,7 @@ static void process_arguments(int argc, char * const *argv)
         { 0,                    0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqd:p:c:i:x:s:P:S:R:t:m:M:T:A", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqd:p:c:i:x:C:P:S:s:R:t:m:M:T:A", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -607,6 +623,9 @@ static void process_arguments(int argc, char * const *argv)
         case 'p':
             pull_port = atoi(optarg);
             break;
+        case 's':
+            stats_port = atoi(optarg);
+            break;
         case 'P':
             pub_port = atoi(optarg);
             break;
@@ -620,7 +639,7 @@ static void process_arguments(int argc, char * const *argv)
         case 'i':
             io_threads = atoi(optarg);
             break;
-        case 's':
+        case 'C':
             num_compressors = atoi(optarg);
             if (num_compressors > MAX_COMPRESSORS) {
                 num_compressors = MAX_COMPRESSORS;
@@ -694,10 +713,11 @@ int main(int argc, char * const *argv)
            "[I] pub-port:     %d\n"
            "[I] router-port:  %d\n"
            "[I] metrics-port: %d\n"
+           "[I] stats-port: %d\n"
            "[I] io-threads:   %lu\n"
            "[I] rcv-hwm:      %d\n"
            "[I] snd-hwm:      %d\n"
-           , argv[0], pull_port, pub_port, router_port, metrics_port, io_threads, rcv_hwm, snd_hwm);
+           , argv[0], pull_port, pub_port, router_port, metrics_port, stats_port, io_threads, rcv_hwm, snd_hwm);
 
     // set global config
     zsys_init();
@@ -751,6 +771,14 @@ int main(int argc, char * const *argv)
     rc = zsock_bind(publisher, "tcp://%s:%d", "*", pub_port);
     assert_x(rc == pub_port, "publisher socket bind failed", __FILE__, __LINE__);
 
+    // create socket for stats publishing
+    zsock_t *stats_socket = zsock_new(ZMQ_PUB);
+    assert_x(stats_socket != NULL, "stats socket creation failed", __FILE__, __LINE__);
+    zsock_set_sndhwm(stats_socket, 1000);
+
+    rc = zsock_bind(stats_socket, "tcp://%s:%d", "*", stats_port);
+    assert_x(rc == stats_port, "stats socket bind failed", __FILE__, __LINE__);
+
     // create compressor sockets
     zsock_t *compressor_input = zsock_new(ZMQ_PUSH);
     assert_x(compressor_input != NULL, "compressor input socket creation failed", __FILE__, __LINE__);
@@ -780,12 +808,13 @@ int main(int argc, char * const *argv)
         .router_receiver = zsock_resolve(router_receiver),
         .router_output = zsock_resolve(router_output),
         .publisher = zsock_resolve(publisher),
+        .stats_socket = stats_socket,
         .compressor_input = zsock_resolve(compressor_input),
         .compressor_output = zsock_resolve(compressor_output),
     };
 
     // calculate statistics every 1000 ms
-    int timer_id = zloop_timer(loop, 1000, 0, timer_event, publisher);
+    int timer_id = zloop_timer(loop, 1000, 0, timer_event, &publisher_state);
     assert(timer_id != -1);
 
     // setup handler for compression results
@@ -832,6 +861,7 @@ int main(int argc, char * const *argv)
     zsock_destroy(&router_receiver);
     zsock_destroy(&router_output);
     zsock_destroy(&publisher);
+    zsock_destroy(&stats_socket);
     zsock_destroy(&compressor_input);
     zsock_destroy(&compressor_output);
     for (size_t i = 0; i < num_compressors; i++)
