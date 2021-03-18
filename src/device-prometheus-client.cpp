@@ -38,6 +38,8 @@ static struct prometheus_client_t {
     prometheus::Gauge *app_start_time;
     prometheus::Family<prometheus::Gauge> *sequence_number_family;
     prometheus::Gauge *sequence_number;
+    prometheus::Family<prometheus::Gauge> *received_messages_max_bytes_family;
+    prometheus::Gauge *received_messages_max_bytes;
 } client;
 
 void device_prometheus_client_init(const char* address, const char* device, int num_compressors)
@@ -144,6 +146,14 @@ void device_prometheus_client_init(const char* address, const char* device, int 
         .Register(*client.registry);
 
     client.sequence_number = &client.sequence_number_family->Add({{"app", "logjam-device"}});
+
+    client.received_messages_max_bytes_family = &prometheus::BuildGauge()
+        .Name("logjam:device:msgs_received_max_bytes")
+        .Help("Size of the largest messge recived by this device")
+        .Labels({{"device", device}})
+        .Register(*client.registry);
+
+    client.received_messages_max_bytes = &client.received_messages_max_bytes_family->Add({});
 
     // ask the exposer to scrape the registry on incoming scrapes
     client.exposer->RegisterCollectable(client.registry);
@@ -292,4 +302,9 @@ void device_prometheus_client_set_sequence_number(uint64_t n)
 {
     if (n)
         client.sequence_number->Set(n);
+}
+
+void device_prometheus_client_set_msg_max_bytes(uint64_t received_messages_max_bytes)
+{
+    client.received_messages_max_bytes->Set(received_messages_max_bytes);
 }

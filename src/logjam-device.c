@@ -135,6 +135,7 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     device_prometheus_client_count_broken_metas(broken_meta_count);
     device_prometheus_client_record_rusage();
     device_prometheus_client_set_sequence_number(msg_meta.sequence_number);
+    device_prometheus_client_set_msg_max_bytes(received_messages_max_bytes);
 
     double avg_msg_size        = message_count ? (message_bytes / 1024.0) / message_count : 0;
     double max_msg_size        = received_messages_max_bytes / 1024.0;

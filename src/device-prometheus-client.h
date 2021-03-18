@@ -25,6 +25,7 @@ extern void device_prometheus_client_record_rusage();
 extern void device_prometheus_client_record_rusage_compressor(int i);
 extern void device_prometheus_client_set_start_time();
 extern void device_prometheus_client_set_sequence_number(uint64_t n);
+extern void device_prometheus_client_set_msg_max_bytes(uint64_t received_messages_max_bytes);
 
 #ifdef __cplusplus
 }
