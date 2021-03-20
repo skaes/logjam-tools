@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"os"
 	"os/signal"
@@ -213,4 +214,28 @@ func ParseCompressionMethodName(name string) (method uint8, err error) {
 		err = fmt.Errorf("unknown compression method: %d", method)
 	}
 	return
+}
+
+// LoadMsg loads a message from a logjam stream dump
+func LoadMsg(r io.Reader) ([][]byte, error) {
+	var frameCount int64
+	err := binary.Read(r, binary.LittleEndian, &frameCount)
+	if err != nil {
+		return nil, err
+	}
+	res := make([][]byte, frameCount, frameCount)
+	for i := int64(0); i < frameCount; i++ {
+		var frameSize int64
+		err := binary.Read(r, binary.LittleEndian, &frameSize)
+		if err != nil {
+			return nil, err
+		}
+		frameData := make([]byte, frameSize, frameSize)
+		_, err = io.ReadFull(r, frameData)
+		if err != nil {
+			return nil, err
+		}
+		res[i] = frameData
+	}
+	return res, nil
 }
