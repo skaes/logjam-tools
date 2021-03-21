@@ -216,8 +216,8 @@ func ParseCompressionMethodName(name string) (method uint8, err error) {
 	return
 }
 
-// LoadMsg loads a message from a logjam stream dump
-func LoadMsg(r io.Reader) ([][]byte, error) {
+// ReadMsg loads a message from a stream written by WriteMsg
+func ReadMsg(r io.Reader) ([][]byte, error) {
 	var frameCount int64
 	err := binary.Read(r, binary.LittleEndian, &frameCount)
 	if err != nil {
@@ -238,4 +238,25 @@ func LoadMsg(r io.Reader) ([][]byte, error) {
 		res[i] = frameData
 	}
 	return res, nil
+}
+
+// WriteMsg writes a message to a stream
+func WriteMsg(w io.Writer, msg [][]byte) error {
+	frameCount := int64(len(msg))
+	err := binary.Write(w, binary.LittleEndian, frameCount)
+	if err != nil {
+		return err
+	}
+	for i := int64(0); i < frameCount; i++ {
+		frameSize := int64(len(msg[i]))
+		err := binary.Write(w, binary.LittleEndian, frameSize)
+		if err != nil {
+			return err
+		}
+		_, err = w.Write(msg[i])
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }

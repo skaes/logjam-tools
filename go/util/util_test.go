@@ -2,6 +2,7 @@ package util
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
 )
 
@@ -30,5 +31,26 @@ func TestCompressionDecompression(t *testing.T) {
 		if !bytes.Equal(data, decompressed) {
 			t.Errorf("Compress(Decompress(data)) using method '%s' is not idempotent", name)
 		}
+	}
+}
+
+func TestWriteRead(t *testing.T) {
+	msg := [][]byte{
+		[]byte("1111"),
+		[]byte("2222222"),
+		[]byte("33"),
+		[]byte("4"),
+	}
+	var buf bytes.Buffer
+	err := WriteMsg(&buf, msg)
+	if err != nil {
+		t.Errorf("could not write msg: %s", err)
+	}
+	l, err := ReadMsg(bytes.NewReader(buf.Bytes()))
+	if err != nil {
+		t.Errorf("could not read msg: %s", err)
+	}
+	if !reflect.DeepEqual(msg, l) {
+		t.Errorf("msgs not properly decoded %v != %v", msg, l)
 	}
 }
