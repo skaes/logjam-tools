@@ -52,6 +52,7 @@ type metric struct {
 	timeMetrics    map[string]float64 // other time metrics
 	counterMetrics map[string]float64 // counter metrics
 	maxLogLevel    string             // log level
+	exceptions     []string           // exceptions that are part of the log message
 }
 
 type Options struct {
@@ -76,25 +77,28 @@ type CollectorMetrics struct {
 	requestMetricsSummaryMap   map[string]*prometheus.SummaryVec
 	requestMetricsHistogramMap map[string]*prometheus.HistogramVec
 	requestMetricsCounterMap   map[string]*prometheus.CounterVec
+	exceptionsTotalVec         *prometheus.CounterVec
 }
 
 type Collector struct {
-	Name               string
-	opts               Options
-	stream             *util.Stream
-	app                string
-	env                string
-	mutex              sync.RWMutex
-	actionMetrics      CollectorMetrics
-	applicationMetrics CollectorMetrics
-	registry           *prometheus.Registry
-	metricsChannel     chan *metric
-	RequestHandler     http.Handler
-	actionRegistry     chan string
-	knownActions       map[string]time.Time
-	knownActionsSize   int32
-	stopped            uint32
-	datacenters        []dcPair
+	Name                 string
+	opts                 Options
+	stream               *util.Stream
+	app                  string
+	env                  string
+	mutex                sync.RWMutex
+	actionMetrics        CollectorMetrics
+	applicationMetrics   CollectorMetrics
+	registry             *prometheus.Registry
+	exceptionsRegistry   *prometheus.Registry
+	metricsChannel       chan *metric
+	RequestHandler       http.Handler
+	ExceptionsReqHandler http.Handler
+	actionRegistry       chan string
+	knownActions         map[string]time.Time
+	knownActionsSize     int32
+	stopped              uint32
+	datacenters          []dcPair
 }
 
 var defaultBuckets = []float64{0.001, 0.0025, 0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100}
@@ -146,19 +150,24 @@ func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (c *Collector) ServeExceptionsMetrics(w http.ResponseWriter, r *http.Request) {
+	c.ExceptionsReqHandler.ServeHTTP(w, r)
+}
+
 func New(appEnv string, stream *util.Stream, opts Options) *Collector {
 	app, env := util.ParseStreamName(appEnv)
 	c := Collector{
-		opts:             opts,
-		app:              app,
-		env:              env,
-		stream:           stream,
-		registry:         prometheus.NewRegistry(),
-		actionRegistry:   make(chan string, 10000),
-		knownActions:     make(map[string]time.Time),
-		knownActionsSize: 0,
-		metricsChannel:   make(chan *metric, 10000),
-		datacenters:      make([]dcPair, 0),
+		opts:               opts,
+		app:                app,
+		env:                env,
+		stream:             stream,
+		registry:           prometheus.NewRegistry(),
+		exceptionsRegistry: prometheus.NewRegistry(),
+		actionRegistry:     make(chan string, 10000),
+		knownActions:       make(map[string]time.Time),
+		knownActionsSize:   0,
+		metricsChannel:     make(chan *metric, 10000),
+		datacenters:        make([]dcPair, 0),
 		actionMetrics: CollectorMetrics{
 			requestMetricsSummaryMap:   make(map[string]*prometheus.SummaryVec),
 			requestMetricsHistogramMap: make(map[string]*prometheus.HistogramVec),
@@ -177,6 +186,7 @@ func New(appEnv string, stream *util.Stream, opts Options) *Collector {
 	}
 	c.Update(stream)
 	c.RequestHandler = promhttp.HandlerFor(c.registry, promhttp.HandlerOpts{})
+	c.ExceptionsReqHandler = promhttp.HandlerFor(c.exceptionsRegistry, promhttp.HandlerOpts{})
 	go c.actionRegistryHandler()
 	go c.observer()
 	return &c
@@ -456,6 +466,17 @@ func (c *Collector) registerTransactionsTotalVec() {
 	c.registry.MustRegister(c.applicationMetrics.transactionsTotalVec)
 }
 
+func (c *Collector) registerExceptionsTotalVec() {
+	c.applicationMetrics.exceptionsTotalVec = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "logjam:application:exceptions_total",
+			Help: "exceptions total by application, action and exception type",
+		},
+		[]string{"app", "env", "exception", "action", "type", "instance", "cluster", "dc"},
+	)
+	c.exceptionsRegistry.MustRegister(c.applicationMetrics.exceptionsTotalVec)
+}
+
 func (c *Collector) Update(stream *util.Stream) {
 	locked := false
 	if c.actionMetrics.httpRequestSummaryVec == nil {
@@ -488,6 +509,9 @@ func (c *Collector) Update(stream *util.Stream) {
 	}
 	if c.actionMetrics.jobExecutionsTotalVec == nil {
 		c.registerJobExecutionsTotalVec()
+	}
+	if c.applicationMetrics.exceptionsTotalVec == nil {
+		c.registerExceptionsTotalVec()
 	}
 	if c.actionMetrics.httpRequestHistogramVec != nil && !c.stream.SameHttpBuckets(stream) {
 		c.mutex.Lock()
@@ -789,6 +813,22 @@ func (c *Collector) recordJobMetrics(m *metric, labels map[string]string, metric
 	delete(labels, "type")
 }
 
+func (c *Collector) recordExceptionMetrics(m *metric, labels map[string]string, metrics *CollectorMetrics) {
+	for _, ex := range m.exceptions {
+		exLabels := make(map[string]string)
+		exLabels["exception"] = ex
+		exLabels["app"] = labels["app"]
+		exLabels["env"] = labels["env"]
+		exLabels["action"] = labels["action"]
+		exLabels["type"] = labels["type"]
+		exLabels["instance"] = labels["instance"]
+		exLabels["cluster"] = labels["cluster"]
+		exLabels["dc"] = labels["dc"]
+
+		metrics.exceptionsTotalVec.With(exLabels).Inc()
+	}
+}
+
 func (c *Collector) recordLogMetrics(m *metric) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
@@ -811,6 +851,9 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		c.recordJobMetrics(m, p, &c.actionMetrics)
 		c.recordJobMetrics(m, q, &c.applicationMetrics)
 		c.actionRegistry <- action
+	}
+	if len(m.exceptions) > 0 {
+		c.recordExceptionMetrics(m, p, &c.applicationMetrics)
 	}
 }
 
@@ -916,7 +959,9 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	if level > logLevelUnknown {
 		level = logLevelUnknown
 	}
-	return &metric{kind: logMetric, props: p, value: totalTime, timeMetrics: timeMetrics, counterMetrics: counterMetrics, maxLogLevel: strconv.Itoa(level)}
+	exceptions := extractExceptions(data)
+
+	return &metric{kind: logMetric, props: p, value: totalTime, timeMetrics: timeMetrics, counterMetrics: counterMetrics, maxLogLevel: strconv.Itoa(level), exceptions: exceptions}
 }
 
 func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) *metric {
@@ -1074,4 +1119,22 @@ func extractMaxLogLevel(request map[string]interface{}) int {
 		return maxLevel
 	}
 	return logLevelInfo
+}
+
+func extractExceptions(request map[string]interface{}) []string {
+	exceptions, ok := request["exceptions"]
+	if !ok {
+		return []string{}
+	}
+
+	switch el := exceptions.(type) {
+	case []interface{}:
+		exList := make([]string, len(el))
+		for i, ex := range el {
+			exList[i] = ex.(string)
+		}
+		return exList
+	}
+
+	return []string{}
 }
