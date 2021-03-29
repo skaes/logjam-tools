@@ -20,9 +20,10 @@ type MessageProcessor interface {
 	IsCollector() bool
 }
 
-// RequestHandler defines a type that can serve http requests
-type RequestHandler interface {
-	ServeHTTP(w http.ResponseWriter, r *http.Request)
+// MetricsRequestHandler defines a type that can serve http requests
+type MetricsRequestHandler interface {
+	ServeAppMetrics(w http.ResponseWriter, r *http.Request)
+	ServeExceptionsMetrics(w http.ResponseWriter, r *http.Request)
 	IsCollector() bool
 }
 
@@ -78,7 +79,7 @@ func GetMessageProcessor(appEnv string) MessageProcessor {
 	return GetCollector(appEnv)
 }
 
-func GetRequestHandler(appEnv string) RequestHandler {
+func GetRequestHandler(appEnv string) MetricsRequestHandler {
 	if isMobileApp(appEnv) {
 		return mobileMetrics
 	}

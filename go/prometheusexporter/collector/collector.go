@@ -141,7 +141,7 @@ func (c *Collector) hasKnownActions() bool {
 	return atomic.LoadInt32(&c.knownActionsSize) > 0
 }
 
-func (c *Collector) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (c *Collector) ServeAppMetrics(w http.ResponseWriter, r *http.Request) {
 	c.RequestHandler.ServeHTTP(w, r)
 	contentLength := w.Header()["Content-Length"][0]
 	if contentLength == "0" && c.hasKnownActions() {

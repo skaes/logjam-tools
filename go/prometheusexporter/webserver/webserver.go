@@ -41,27 +41,24 @@ func serveAliveness(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
-	app, env := getAppEnv(r)
-	h := collectormanager.GetRequestHandler(app + "-" + env)
-	serve(w, r, h.ServeHTTP)
+	h := getReqHandler(r)
+	serve(w, r, h, h.ServeAppMetrics)
 }
 
 func serveExceptionsMetrics(w http.ResponseWriter, r *http.Request) {
-	app, env := getAppEnv(r)
-	h := collectormanager.GetCollector(app + "-" + env)
-	serve(w, r, h.ServeExceptionsMetrics)
+	h := getReqHandler(r)
+	serve(w, r, h, h.ServeExceptionsMetrics)
 }
 
-func serve(w http.ResponseWriter, r *http.Request, serveFn serveMetrics) {
-	app, env := getAppEnv(r)
-	h := collectormanager.GetRequestHandler(app + "-" + env)
-	if h.IsCollector() {
-		t := time.Now()
-		defer func() { stats.ObserveScrapeDuration(app, env, time.Now().Sub(t)) }()
-		serveFn(w, r)
-	} else {
+func serve(w http.ResponseWriter, r *http.Request, h collectormanager.MetricsRequestHandler, servefn serveMetrics) {
+	if !h.IsCollector() {
 		http.NotFound(w, r)
+		return
 	}
+	t := time.Now()
+	app, env := getAppEnv(r)
+	defer func() { stats.ObserveScrapeDuration(app, env, time.Now().Sub(t)) }()
+	servefn(w, r)
 }
 
 func getAppEnv(r *http.Request) (app string, env string) {
@@ -69,6 +66,11 @@ func getAppEnv(r *http.Request) (app string, env string) {
 	app = vars["application"]
 	env = vars["environment"]
 	return
+}
+
+func getReqHandler(r *http.Request) collectormanager.MetricsRequestHandler {
+	app, env := getAppEnv(r)
+	return collectormanager.GetRequestHandler(app + "-" + env)
 }
 
 func serveExporterMetrics(w http.ResponseWriter, r *http.Request) {
