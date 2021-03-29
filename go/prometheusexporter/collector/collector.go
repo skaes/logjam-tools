@@ -1130,8 +1130,11 @@ func extractExceptions(request map[string]interface{}) []string {
 	switch el := exceptions.(type) {
 	case []interface{}:
 		exList := make([]string, len(el))
-		for i, ex := range el {
-			exList[i] = ex.(string)
+		for _, ex := range el {
+			switch exVal := ex.(type) {
+			case string:
+				exList = append(exList, exVal)
+			}
 		}
 		return exList
 	}
