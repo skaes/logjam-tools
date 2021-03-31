@@ -469,7 +469,7 @@ func (c *Collector) registerTransactionsTotalVec() {
 func (c *Collector) registerExceptionsTotalVec() {
 	c.applicationMetrics.exceptionsTotalVec = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
-			Name: "logjam:application:exceptions_total",
+			Name: "logjam:action:exceptions_total",
 			Help: "exceptions total by application, action and exception type",
 		},
 		[]string{"app", "env", "exception", "action", "type", "instance", "cluster", "dc"},
@@ -510,7 +510,7 @@ func (c *Collector) Update(stream *util.Stream) {
 	if c.actionMetrics.jobExecutionsTotalVec == nil {
 		c.registerJobExecutionsTotalVec()
 	}
-	if c.applicationMetrics.exceptionsTotalVec == nil {
+	if c.actionMetrics.exceptionsTotalVec == nil {
 		c.registerExceptionsTotalVec()
 	}
 	if c.actionMetrics.httpRequestHistogramVec != nil && !c.stream.SameHttpBuckets(stream) {
@@ -821,7 +821,7 @@ func (c *Collector) recordExceptionMetrics(m *metric, labels map[string]string, 
 		exLabels["env"] = labels["env"]
 		exLabels["action"] = labels["action"]
 		exLabels["type"] = labels["type"]
-		exLabels["instance"] = labels["instance"]
+		exLabels["instance"] = ""
 		exLabels["cluster"] = labels["cluster"]
 		exLabels["dc"] = labels["dc"]
 
@@ -853,7 +853,7 @@ func (c *Collector) recordLogMetrics(m *metric) {
 		c.actionRegistry <- action
 	}
 	if len(m.exceptions) > 0 {
-		c.recordExceptionMetrics(m, p, &c.applicationMetrics)
+		c.recordExceptionMetrics(m, p, &c.actionMetrics)
 	}
 }
 
