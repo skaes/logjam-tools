@@ -467,7 +467,7 @@ func (c *Collector) registerTransactionsTotalVec() {
 }
 
 func (c *Collector) registerExceptionsTotalVec() {
-	c.applicationMetrics.exceptionsTotalVec = prometheus.NewCounterVec(
+	c.actionMetrics.exceptionsTotalVec = prometheus.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "logjam:action:exceptions_total",
 			Help: "exceptions total by application, action and exception type",
