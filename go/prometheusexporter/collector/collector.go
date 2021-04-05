@@ -1043,6 +1043,11 @@ func convertInt(value interface{}, defaultValue int) int {
 		return int(v)
 	case float64:
 		return int(v)
+	case string:
+		if i, err := strconv.Atoi(v); err != nil {
+			return i
+		}
+		return defaultValue
 	default:
 		return defaultValue
 	}
