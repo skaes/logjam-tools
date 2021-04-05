@@ -22,10 +22,16 @@ static int socket_type = ZMQ_PUB;
 #define DEFAULT_CONNECTION_PORT_PUSH 9605
 #define DEFAULT_CONNECTION_SPEC_PUSH "tcp://localhost:9605"
 
+static int stats_port = 9621;
+
 static bool endless_loop = false;
 static int messages_per_second = 100000;
 static int message_credit = 1000000;
-static int device_number = 4711;
+static char* *device_number_s = NULL;
+static uint64_t *sequence_number = NULL;
+static int device_count = 1;
+
+static zsock_t *stats_socket = NULL;
 
 static size_t replayed_messages_count = 0;
 static size_t replayed_messages_bytes = 0;
@@ -45,6 +51,16 @@ static int timer_event( zloop_t *loop, int timer_id, void *arg)
     last_replayed_bytes = replayed_messages_bytes;
     replayed_messages_max_bytes = 0;
     message_credit = messages_per_second;
+
+    if (stats_socket) {
+        for (int i = 0; i < device_count; i++) {
+            zmsg_t *msg = zmsg_new();
+            zmsg_addstr(msg, "stats");
+            zmsg_addstr(msg, device_number_s[i]);
+            zmsg_addstrf(msg, "%" PRIu64, sequence_number[i]);
+            zmsg_send_with_retry(&msg, stats_socket);
+        }
+    }
 
     return 0;
 }
@@ -76,12 +92,18 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
         return 0;
     }
 
+    static int next_device_minus_1 = 0;
+
     zmsg_t *msg = zmsg_loadx(NULL, dump_file);
     if (!msg) return 1;
 
     // update device and sequence number
-    static uint64_t sequence_number = 0;
-    zmsg_set_device_and_sequence_number(msg, device_number, ++sequence_number);
+    int d = 1;
+    if (socket_type == ZMQ_PUB) {
+        d = 1 + (++next_device_minus_1 % device_count);
+    }
+    uint64_t n = ++sequence_number[d-1];
+    zmsg_set_device_and_sequence_number(msg, d, n);
 
     // calculate stats
     size_t msg_bytes = zmsg_content_size(msg);
@@ -105,7 +127,7 @@ static int file_consume_message_and_forward(zloop_t *loop, zmq_pollitem_t *item,
     zmsg_send(&msg, socket);
 
     // send a ping once in a while if socket is a dealer
-    if (socket_type == ZMQ_DEALER && (sequence_number % 20 == 0))
+    if (socket_type == ZMQ_DEALER && (n % 20 == 0))
         send_ping(socket, &meta, app_env);
 
     free(app_env);
@@ -133,7 +155,7 @@ void print_usage(char * const *argv)
             "  -d, --dealer               use zqm DEALER socket for publishing\n"
             "  -P, --push                 use zmq PUSH socket for sending messages (overrides --dealer option)\n"
             "  -p, --pub S                zmq specification for publishing socket\n"
-            "  -s, --device N             simulate given device number\n"
+            "  -s, --devices N            simulate N devices\n"
             "      --help                 display this message\n"
             , argv[0]);
 }
@@ -150,7 +172,7 @@ void process_arguments(int argc, char * const *argv)
         { "msg-rate",      required_argument, 0, 'r' },
         { "io-threads",    required_argument, 0, 'i' },
         { "pub",           required_argument, 0, 'p' },
-        { "device",        required_argument, 0, 's' },
+        { "devices",       required_argument, 0, 's' },
         { "verbose",       no_argument,       0, 'v' },
         { "dealer",        no_argument,       0, 'd' },
         { "push",          no_argument,       0, 'P' },
@@ -184,7 +206,7 @@ void process_arguments(int argc, char * const *argv)
             connection_spec = optarg;
             break;
         case 's':
-            device_number = atoi(optarg);
+            device_count = atoi(optarg);
             break;
         case 0:
             print_usage(argv);
@@ -213,12 +235,19 @@ void process_arguments(int argc, char * const *argv)
         dump_file_name = argv[argc-1];
     }
 
+    sequence_number = zmalloc(device_count*sizeof(uint64_t));
+    device_number_s = zmalloc(device_count*sizeof(char*));
+    for (int i = 0; i < device_count; i++) {
+        int rc = asprintf(&device_number_s[i], "%d", i+1);
+        assert(rc != -1);
+    }
+
     if (socket_type == ZMQ_PUB) {
         if (connection_spec == NULL)
             connection_spec = DEFAULT_CONNECTION_SPEC_PUB;
         else
             connection_spec = augment_zmq_connection_spec(connection_spec, DEFAULT_CONNECTION_PORT_PUB);
-    } else if (socket_type == ZMQ_PUSH) { 
+    } else if (socket_type == ZMQ_PUSH) {
         if (connection_spec == NULL)
             connection_spec = DEFAULT_CONNECTION_SPEC_PUSH;
         else
@@ -251,7 +280,7 @@ int main(int argc, char * const *argv)
     // set global config
     zsys_init();
     zsys_set_rcvhwm(10000);
-    zsys_set_sndhwm(10000);
+    zsys_set_sndhwm(100000);
     zsys_set_pipehwm(1000);
     zsys_set_linger(100);
     zsys_set_io_threads(io_threads);
@@ -267,8 +296,14 @@ int main(int argc, char * const *argv)
         // bind pub socket
         printf("[I] binding PUB socket to %s\n", connection_spec);
         int rc = zsock_bind(publisher, "%s", connection_spec);
-        log_zmq_error(rc, __FILE__, __LINE__);
-        assert(rc != -1);
+        assert_x(rc > 0, "pub socket bind failed", __FILE__, __LINE__);
+
+        stats_socket = zsock_new(ZMQ_PUB);
+        assert_x(stats_socket != NULL, "stats socket creation failed", __FILE__, __LINE__);
+        zsock_set_sndhwm(stats_socket, 1000);
+
+        rc = zsock_bind(stats_socket, "tcp://%s:%d", "*", stats_port);
+        assert_x(rc == stats_port, "stats socket bind failed", __FILE__, __LINE__);
     } else if (socket_type == ZMQ_PUSH) {
         // bind push socket
         printf("[I] binding PUSH socket to %s\n", connection_spec);
@@ -324,6 +359,8 @@ int main(int argc, char * const *argv)
     zloop_destroy(&loop);
     assert(loop == NULL);
     zsock_destroy(&publisher);
+    if (stats_socket)
+        zsock_destroy(&stats_socket);
     zsys_shutdown();
 
     if (verbose) printf("[I] terminated\n");
