@@ -474,7 +474,7 @@ func (c *Collector) registerExceptionsTotalVec() {
 		},
 		[]string{"app", "env", "exception", "action", "type", "instance", "cluster", "dc"},
 	)
-	c.exceptionsRegistry.MustRegister(c.applicationMetrics.exceptionsTotalVec)
+	c.exceptionsRegistry.MustRegister(c.actionMetrics.exceptionsTotalVec)
 }
 
 func (c *Collector) Update(stream *util.Stream) {
