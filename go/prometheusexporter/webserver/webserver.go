@@ -17,7 +17,7 @@ type serveMetrics func(w http.ResponseWriter, r *http.Request)
 func HandleHTTPRequests(port string) {
 	r := mux.NewRouter()
 	r.HandleFunc("/metrics/{application}/{environment}", serveAppMetrics)
-	r.HandleFunc("/metrics/{application}/{environment}/exceptions", serveExceptionsMetrics)
+	r.HandleFunc("/metrics/exceptions/{application}/{environment}", serveExceptionsMetrics)
 	r.HandleFunc("/metrics", serveExporterMetrics)
 	r.HandleFunc("/_system/alive", serveAliveness)
 	log.Info("starting http server on port %s", port)
