@@ -113,8 +113,12 @@ func (m Metrics) ProcessMessage(routingKey string, data map[string]interface{}) 
 	m.payloadsChannel <- payload
 }
 
-func (m Metrics) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (m Metrics) ServeAppMetrics(w http.ResponseWriter, r *http.Request) {
 	m.RequestHandler.ServeHTTP(w, r)
+}
+
+func (m Metrics) ServeExceptionsMetrics(w http.ResponseWriter, r *http.Request) {
+	http.NotFound(w, r)
 }
 
 func (m Metrics) parseData(data map[string]interface{}) (Payload, error) {

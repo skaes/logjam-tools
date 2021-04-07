@@ -11,10 +11,13 @@ import (
 	"gopkg.in/tylerb/graceful.v1"
 )
 
+type serveMetrics func(w http.ResponseWriter, r *http.Request)
+
 // HandleHTTPRequests starts a webserver for exposing prometheus metrics.
 func HandleHTTPRequests(port string) {
 	r := mux.NewRouter()
 	r.HandleFunc("/metrics/{application}/{environment}", serveAppMetrics)
+	r.HandleFunc("/metrics/exceptions/{application}/{environment}", serveExceptionsMetrics)
 	r.HandleFunc("/metrics", serveExporterMetrics)
 	r.HandleFunc("/_system/alive", serveAliveness)
 	log.Info("starting http server on port %s", port)
@@ -38,17 +41,36 @@ func serveAliveness(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveAppMetrics(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	app := vars["application"]
-	env := vars["environment"]
-	h := collectormanager.GetRequestHandler(app + "-" + env)
-	if h.IsCollector() {
-		t := time.Now()
-		defer func() { stats.ObserveScrapeDuration(app, env, time.Now().Sub(t)) }()
-		h.ServeHTTP(w, r)
-	} else {
+	h := getReqHandler(r)
+	serve(w, r, h, h.ServeAppMetrics)
+}
+
+func serveExceptionsMetrics(w http.ResponseWriter, r *http.Request) {
+	h := getReqHandler(r)
+	serve(w, r, h, h.ServeExceptionsMetrics)
+}
+
+func serve(w http.ResponseWriter, r *http.Request, h collectormanager.MetricsRequestHandler, servefn serveMetrics) {
+	if !h.IsCollector() {
 		http.NotFound(w, r)
+		return
 	}
+	t := time.Now()
+	app, env := getAppEnv(r)
+	defer func() { stats.ObserveScrapeDuration(app, env, time.Now().Sub(t)) }()
+	servefn(w, r)
+}
+
+func getAppEnv(r *http.Request) (app string, env string) {
+	vars := mux.Vars(r)
+	app = vars["application"]
+	env = vars["environment"]
+	return
+}
+
+func getReqHandler(r *http.Request) collectormanager.MetricsRequestHandler {
+	app, env := getAppEnv(r)
+	return collectormanager.GetRequestHandler(app + "-" + env)
 }
 
 func serveExporterMetrics(w http.ResponseWriter, r *http.Request) {
