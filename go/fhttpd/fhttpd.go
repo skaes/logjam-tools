@@ -36,7 +36,7 @@ var (
 	outputSpec  string
 	compression byte
 
-	publisher *pub.Publisher
+	publisher pub.Publisher
 
 	// Zeromq PUB sockets are not thread safe, so we run the publisher in a
 	// separate go routine.

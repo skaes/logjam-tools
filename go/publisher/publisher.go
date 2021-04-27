@@ -27,15 +27,19 @@ type Opts struct {
 	SuppressHeartbeats bool // only used for testing
 }
 
-type Publisher struct {
+type Publisher interface {
+	Publish(appEnv string, routingKey string, data []byte, compressedWith uint8)
+}
+
+type publisherImpl struct {
 	opts             Opts
 	publisherChannel chan *pubMsg
 	sequenceNum      uint64
 	publisherSocket  *zmq.Socket
 }
 
-func New(wg *sync.WaitGroup, opts Opts) *Publisher {
-	p := Publisher{opts: opts}
+func New(wg *sync.WaitGroup, opts Opts) *publisherImpl {
+	p := publisherImpl{opts: opts}
 	p.publisherChannel = make(chan *pubMsg, 10000)
 	p.publisherSocket = p.setupPublisherSocket()
 	go p.publish(wg)
@@ -49,12 +53,12 @@ type pubMsg struct {
 	compression byte
 }
 
-func (p *Publisher) nextSequenceNumber() uint64 {
+func (p *publisherImpl) nextSequenceNumber() uint64 {
 	p.sequenceNum++
 	return p.sequenceNum
 }
 
-func (p *Publisher) sendMessage(socket *zmq.Socket, msg *pubMsg) {
+func (p *publisherImpl) sendMessage(socket *zmq.Socket, msg *pubMsg) {
 	// log.Info("Sending logjam message: %+v", data)
 	socket.SendBytes([]byte(msg.appEnv), zmq.SNDMORE)
 	socket.SendBytes([]byte(msg.routingKey), zmq.SNDMORE)
@@ -63,11 +67,11 @@ func (p *Publisher) sendMessage(socket *zmq.Socket, msg *pubMsg) {
 	socket.SendBytes(meta, 0)
 }
 
-func (p *Publisher) pubSocketSpecForConnecting() string {
+func (p *publisherImpl) pubSocketSpecForConnecting() string {
 	return fmt.Sprintf("tcp://%s:%d", fqdn.Get(), p.opts.OutputPort)
 }
 
-func (p *Publisher) sendHeartbeat(socket *zmq.Socket) {
+func (p *publisherImpl) sendHeartbeat(socket *zmq.Socket) {
 	if p.opts.SuppressHeartbeats {
 		return
 	}
@@ -78,7 +82,7 @@ func (p *Publisher) sendHeartbeat(socket *zmq.Socket) {
 	socket.SendBytes(meta, 0)
 }
 
-func (p *Publisher) publish(wg *sync.WaitGroup) {
+func (p *publisherImpl) publish(wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 	ticker := time.NewTicker(100 * time.Millisecond)
@@ -101,7 +105,7 @@ func (p *Publisher) publish(wg *sync.WaitGroup) {
 	}
 }
 
-func (p *Publisher) setupPublisherSocket() *zmq.Socket {
+func (p *publisherImpl) setupPublisherSocket() *zmq.Socket {
 	publisher, err := zmq.NewSocket(zmq.PUB)
 	if err != nil {
 		log.Fatal("Could not create publisher socket: %s", err)
@@ -113,7 +117,7 @@ func (p *Publisher) setupPublisherSocket() *zmq.Socket {
 }
 
 // Publish sends a message to publish msg for publisher go routine, optionally compressing it
-func (p *Publisher) Publish(appEnv string, routingKey string, data []byte, compressedWith uint8) {
+func (p *publisherImpl) Publish(appEnv string, routingKey string, data []byte, compressedWith uint8) {
 	if compressedWith > 0 {
 		p.publisherChannel <- &pubMsg{appEnv: appEnv, routingKey: routingKey, data: data, compression: compressedWith}
 		return
