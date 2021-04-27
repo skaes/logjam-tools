@@ -45,13 +45,6 @@ var (
 
 	publisher *pub.Publisher
 
-	// Statistics variables protected by a mutex.
-	statsMutex        = &sync.Mutex{}
-	processedCount    uint64
-	processedBytes    uint64
-	processedMaxBytes uint64
-	httpFailures      uint64
-
 	// Zeromq PUB sockets are not thread safe, so we run the publisher in a
 	// separate go routine.
 )
@@ -75,36 +68,6 @@ func initialize() {
 	if err != nil {
 		log.Error("%s: unsupported compression method: %s.", args[0], opts.Compression)
 		os.Exit(1)
-	}
-}
-
-// report number of processed requests every second
-func statsReporter() {
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-	for !util.Interrupted() {
-		<-ticker.C
-		// obtain values and reset counters
-		statsMutex.Lock()
-		count := processedCount
-		bytes := processedBytes
-		maxBytes := processedMaxBytes
-		failures := httpFailures
-		processedCount = 0
-		processedBytes = 0
-		processedMaxBytes = 0
-		httpFailures = 0
-		statsMutex.Unlock()
-		// report
-		kb := float64(bytes) / 1024.0
-		maxkb := float64(maxBytes) / 1024.0
-		var avgkb float64
-		if count > 0 {
-			avgkb = kb / float64(count)
-		}
-		if !quiet {
-			log.Info("processed %d, invalid %d, size: %.2f KB, avg: %.2f KB, max: %.2f", count, failures, kb, avgkb, maxkb)
-		}
 	}
 }
 
@@ -158,33 +121,6 @@ func parseQuery(r *http.Request) (stringMap, error) {
 		}
 	}
 	return sm, nil
-}
-
-// No thanks to https://github.com/golang/go/issues/19644, this is only an
-// approximation of the actual number of bytes transferred.
-func requestSize(r *http.Request) uint64 {
-	size := uint64(len(r.URL.String()))
-	for k, values := range r.Header {
-		l := len(k)
-		for _, v := range values {
-			size += uint64(l + len(v) + 4) // k: v\r\n
-		}
-	}
-	if r.ContentLength > 0 {
-		size += uint64(r.ContentLength)
-	}
-	return size
-}
-
-func recordRequest(r *http.Request) {
-	size := requestSize(r)
-	statsMutex.Lock()
-	processedCount++
-	processedBytes += size
-	if processedMaxBytes < size {
-		processedMaxBytes = size
-	}
-	statsMutex.Unlock()
 }
 
 func extractFrontendData(r *http.Request) (stringMap, *util.RequestId, error) {
@@ -252,7 +188,7 @@ func writeImageResponse(w http.ResponseWriter) {
 }
 
 func serveFrontendRequest(w http.ResponseWriter, r *http.Request) {
-	defer recordRequest(r)
+	defer recordRequestStats(r)
 	sm, rid, err := extractFrontendData(r)
 	if err != nil {
 		writeErrorResponse(w, err.Error())
@@ -278,7 +214,7 @@ func extractFrontendMsgType(r *http.Request) string {
 }
 
 func serveAlive(w http.ResponseWriter, r *http.Request) {
-	defer recordRequest(r)
+	defer recordRequestStats(r)
 	w.WriteHeader(200)
 	w.Header().Set("Cache-Control", "private")
 	w.Header().Set("Content-Type", "text/plain")
@@ -286,7 +222,7 @@ func serveAlive(w http.ResponseWriter, r *http.Request) {
 }
 
 func serveMobileMetrics(w http.ResponseWriter, r *http.Request) {
-	defer recordRequest(r)
+	defer recordRequestStats(r)
 	bytes, err := ioutil.ReadAll(r.Body)
 	r.Body.Close()
 	if err != nil {
