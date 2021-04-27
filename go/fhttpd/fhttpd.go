@@ -49,7 +49,7 @@ var (
 	// separate go routine.
 )
 
-func initialize() {
+func parseArgs() {
 	args, err := flags.ParseArgs(&opts, os.Args)
 	if err != nil {
 		e := err.(*flags.Error)
@@ -291,7 +291,7 @@ func waitForInterrupt() {
 
 func main() {
 	log.Info("%s starting", os.Args[0])
-	initialize()
+	parseArgs()
 	outputSpec = fmt.Sprintf("tcp://*:%d", opts.OutputPort)
 	verbose = opts.Verbose
 	quiet = opts.Quiet
