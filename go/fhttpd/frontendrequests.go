@@ -26,13 +26,15 @@ func serveFrontendRequest(w http.ResponseWriter, r *http.Request) {
 	writeImageResponse(w)
 }
 
+var nowFunc = time.Now
+
 func extractFrontendData(r *http.Request) (stringMap, *util.RequestId, error) {
 	sm, err := parseQuery(r)
 	if err != nil {
 		return sm, nil, err
 	}
 	// add timestamps
-	now := time.Now()
+	now := nowFunc()
 	sm["started_ms"] = now.UnixNano() / int64(time.Millisecond)
 	sm["started_at"] = now.Format(time.RFC3339)
 
