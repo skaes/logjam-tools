@@ -199,6 +199,13 @@ func Interrupted() bool {
 	return atomic.LoadUint32(&interrupted) == 1
 }
 
+// Installs its own signal handler and waits for interrupts and TERM signal
+func WaitForInterrupt() {
+	done := make(chan os.Signal, 1)
+	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
+	<-done
+}
+
 // ParseCompressionMethodName converts string to compression method
 func ParseCompressionMethodName(name string) (method uint8, err error) {
 	switch name {

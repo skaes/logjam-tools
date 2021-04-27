@@ -9,10 +9,8 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/signal"
 	"strconv"
 	"sync"
-	"syscall"
 	"time"
 
 	// _ "net/http/pprof"
@@ -282,13 +280,6 @@ func shutdownWebServer(srv *http.Server, gracePeriod time.Duration) {
 // 	fmt.Println(http.ListenAndServe(debugSpec, nil))
 // }
 
-func waitForInterrupt() {
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
-	<-done
-	log.Info("received interrupt")
-}
-
 func main() {
 	log.Info("%s starting", os.Args[0])
 	parseArgs()
@@ -320,7 +311,10 @@ func main() {
 
 	srv := setupWebServer()
 	go runWebServer(srv)
-	waitForInterrupt()
+
+	util.WaitForInterrupt()
+	log.Info("received interrupt")
+
 	shutdownWebServer(srv, 5*time.Second)
 
 	// Wait for publisher and stats reporter to finsh.
