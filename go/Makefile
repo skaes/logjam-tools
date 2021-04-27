@@ -34,8 +34,8 @@ logjam-livestream-generator: livestream-generator/generator.go
 logjam-http-forwarder: http-forwarder/forwarder.go util/util.go
 	go build -i -o $@ $<
 
-logjam-fhttpd: fhttpd/fhttpd.go util/util.go
-	go build -i -o $@ $<
+logjam-fhttpd: fhttpd/* util/util.go
+	go build -o $@ github.com/skaes/logjam-tools/go/fhttpd
 
 EXPORTER_PKGS = prometheusexporter/messageparser/messageparser.go prometheusexporter/collector/collector.go prometheusexporter/collectormanager/collectormanager.go prometheusexporter/webserver/webserver.go prometheusexporter/stats/stats.go
 EXPORTER_DEPS = util/util.go util/streams.go util/resources.go logging/logging.go frontendmetrics/frontendmetrics.go
