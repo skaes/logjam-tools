@@ -11,6 +11,7 @@ import (
 	// _ "net/http/pprof"
 
 	"github.com/jessevdk/go-flags"
+	"github.com/skaes/logjam-tools/go/fhttpd/stats"
 	log "github.com/skaes/logjam-tools/go/logging"
 	pub "github.com/skaes/logjam-tools/go/publisher"
 	"github.com/skaes/logjam-tools/go/util"
@@ -71,6 +72,7 @@ func setupWebServer() *http.Server {
 	mux.HandleFunc("/logjam/ajax", serveFrontendRequest)
 	mux.HandleFunc("/logjam/page", serveFrontendRequest)
 	mux.HandleFunc("/logjam/mobile", serveMobileMetrics)
+	// mux.HandleFunc("/logjam/webvitals", serveWebVitalsMetricsCollection)
 	mux.HandleFunc("/alive.txt", serveAlive)
 	spec := ":" + strconv.Itoa(opts.InputPort)
 	return &http.Server{
@@ -103,7 +105,7 @@ func main() {
 	// go runProfiler(debugSpec)
 
 	util.InstallSignalHandler()
-	go statsReporter()
+	go stats.StatsReporter(quiet)
 	publisher = pub.New(&wg, pub.Opts{
 		Compression: compression,
 		DeviceId:    opts.DeviceId,
