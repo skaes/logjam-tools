@@ -166,6 +166,12 @@ func (rid *RequestId) RoutingKey(prefix string, msgType string) string {
 	return fmt.Sprintf("%s.%s.%s.%s", prefix, msgType, rid.App, rid.Env)
 }
 
+// String returns the string representation of the RequestId as it would be expected
+// headers or payload
+func (rid *RequestId) String() string {
+	return fmt.Sprintf("%s-%s-%s", rid.App, rid.Env, rid.Id)
+}
+
 // WaitForWaitGroupWithTimeout waits for a wait group wg but times out.
 func WaitForWaitGroupWithTimeout(wg *sync.WaitGroup, timeout time.Duration) bool {
 	c := make(chan struct{})
