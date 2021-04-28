@@ -52,7 +52,7 @@ logjam-mongodb-restore: restore/restore.go
 logjam-rename-callers: rename-callers/rename-callers.go
 	go build -i -o $@ $<
 
-GO_TESTS = promcollector-test livestream-test util-test frontendmetrics-test fhttpd-test
+GO_TESTS = promcollector-test livestream-test util-test frontendmetrics-test fhttpd-test formats-test
 .PHONY: $(GO_TESTS)
 check: $(GO_TESTS)
 
@@ -73,3 +73,6 @@ frontendmetrics-test: frontendmetrics/*.go
 
 fhttpd-test: fhttpd/*
 	go test ./fhttpd
+
+formats-test: formats/*
+	go test ./formats/*
