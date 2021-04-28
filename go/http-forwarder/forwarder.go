@@ -14,6 +14,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
 	// _ "net/http/pprof"
 
 	"github.com/gorilla/mux"
@@ -44,7 +45,7 @@ var (
 	outputSpec  string
 	compression byte
 
-	publisher *pub.Publisher
+	publisher pub.Publisher
 
 	// Statistics variables protected by a mutex.
 	statsMutex        = &sync.Mutex{}

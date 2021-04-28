@@ -21,6 +21,7 @@ require (
 	github.com/prometheus/common v0.0.0-20181015124227-bcb74de08d37 // indirect
 	github.com/prometheus/procfs v0.0.0-20181005140218-185b4288413d // indirect
 	github.com/smartystreets/goconvey v1.6.4
+	github.com/stretchr/testify v1.3.0 // indirect
 	github.com/xdg/stringprep v1.0.0 // indirect
 	go.mongodb.org/mongo-driver v1.3.2
 	golang.org/x/net v0.0.0-20190620200207-3b0461eec859 // indirect
