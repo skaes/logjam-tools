@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io/ioutil"
 	"net/http"
+	"time"
 
 	"github.com/skaes/logjam-tools/go/fhttpd/stats"
 	format "github.com/skaes/logjam-tools/go/formats/webvitals"
@@ -40,20 +41,37 @@ func writeSuccessResponse(w http.ResponseWriter) {
 	w.Write([]byte("OK"))
 }
 
+type RequestPayload struct {
+	LogjamRequestId string          `json:"logjam_request_id"`
+	LogjamAction    string          `json:"logjam_action"`
+	Metrics         []format.Metric `json:"metrics"`
+}
+
+var nowFunc = time.Now
+
 func extractWebVitals(r *http.Request) (*format.WebVitals, *util.RequestId, error) {
 	bytes, err := ioutil.ReadAll(r.Body)
 	if err != nil {
 		return nil, nil, err
 	}
-	webVitals := &format.WebVitals{}
-	err = json.Unmarshal(bytes, webVitals)
+	payload := &RequestPayload{}
+	err = json.Unmarshal(bytes, payload)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	requestId, err := util.ParseRequestId(webVitals.LogjamRequestId)
+	requestId, err := util.ParseRequestId(payload.LogjamRequestId)
 	if err != nil {
 		return nil, nil, err
+	}
+
+	now := nowFunc()
+	webVitals := &format.WebVitals{
+		StartedMs:       now.UnixNano() / int64(time.Millisecond),
+		StartedAt:       now.Format(time.RFC3339),
+		LogjamRequestId: payload.LogjamRequestId,
+		LogjamAction:    payload.LogjamAction,
+		Metrics:         payload.Metrics,
 	}
 
 	return webVitals, requestId, nil

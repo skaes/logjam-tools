@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+	"time"
 
 	format "github.com/skaes/logjam-tools/go/formats/webvitals"
 	dummypub "github.com/skaes/logjam-tools/go/publisher/testhelper"
@@ -46,13 +47,18 @@ func TestPublishWebVitals(t *testing.T) {
 }
 
 func TestExtractWebVitals(t *testing.T) {
+	now := time.Now()
+	nowFunc = func() time.Time { return now }
+
 	action := "myActions#call"
 	rid := "some-app-preview-55ff333eee"
 
 	uri, _ := url.Parse("https://logjam.example.com/logjam/webvitals")
 
 	fid := 0.24
-	payload := format.WebVitals{
+	expectedWebVitals := &format.WebVitals{
+		StartedMs:       now.UnixNano() / int64(time.Millisecond),
+		StartedAt:       now.Format(time.RFC3339),
 		LogjamRequestId: rid,
 		LogjamAction:    action,
 		Metrics: []format.Metric{
@@ -61,6 +67,11 @@ func TestExtractWebVitals(t *testing.T) {
 				FID: &fid,
 			},
 		},
+	}
+	payload := &RequestPayload{
+		LogjamRequestId: rid,
+		LogjamAction:    action,
+		Metrics:         expectedWebVitals.Metrics,
 	}
 
 	marshaled, err := json.Marshal(payload)
@@ -72,5 +83,5 @@ func TestExtractWebVitals(t *testing.T) {
 	webVitals, requestId, err := extractWebVitals(req)
 	assert.NoError(t, err)
 	assert.Equal(t, rid, requestId.String())
-	assert.Equal(t, payload, webVitals)
+	assert.Equal(t, expectedWebVitals, webVitals)
 }
