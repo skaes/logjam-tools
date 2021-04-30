@@ -113,3 +113,93 @@ func TestExtractWebVitals(t *testing.T) {
 		assert.Equal(t, expectedWebVitals, webVitals)
 	})
 }
+
+func TestServe(t *testing.T) {
+	now := time.Now()
+	nowFunc = func() time.Time { return now }
+
+	t.Run("With query string", func(t *testing.T) {
+		action := "myActions#call"
+		rid := "some-app-preview-55ff333eee"
+
+		fid := 0.24
+		expectedWebVitals := &format.WebVitals{
+			StartedMs:       now.UnixNano() / int64(time.Millisecond),
+			StartedAt:       now.Format(time.RFC3339),
+			LogjamRequestId: rid,
+			LogjamAction:    action,
+			Metrics: []format.Metric{
+				{
+					Id:  "1",
+					FID: &fid,
+				},
+			},
+		}
+		jsonMarshaled, err := json.Marshal(expectedWebVitals)
+		assert.NoError(t, err)
+
+		encoder := form.NewEncoder()
+		marshaled, err := encoder.Encode(expectedWebVitals)
+		assert.NoError(t, err)
+
+		uri, _ := url.Parse("https://logjam.example.com/logjam/webvitals")
+		uri.RawQuery = marshaled.Encode()
+
+		recorder := httptest.NewRecorder()
+		publisher := dummypub.NewDummyPublisher()
+
+		handler := Serve(publisher)
+		req := httptest.NewRequest("POST", uri.String(), nil)
+		handler(recorder, req)
+
+		assert.Equal(t, 200, recorder.Code)
+		assert.Equal(t, "OK", recorder.Body.String())
+
+		assert.Equal(t, []dummypub.DummyMessage{
+			{
+				AppEnv:         "some-app-preview",
+				RoutingKey:     "frontend.webvitals.some-app.preview",
+				Data:           jsonMarshaled,
+				CompressedWith: 0,
+			},
+		}, publisher.PublishedMessages)
+	})
+
+	t.Run("With invalid request id", func(t *testing.T) {
+		action := "myActions#call"
+		rid := "some-eee"
+
+		fid := 0.24
+		expectedWebVitals := &format.WebVitals{
+			StartedMs:       now.UnixNano() / int64(time.Millisecond),
+			StartedAt:       now.Format(time.RFC3339),
+			LogjamRequestId: rid,
+			LogjamAction:    action,
+			Metrics: []format.Metric{
+				{
+					Id:  "1",
+					FID: &fid,
+				},
+			},
+		}
+
+		encoder := form.NewEncoder()
+		marshaled, err := encoder.Encode(expectedWebVitals)
+		assert.NoError(t, err)
+
+		uri, _ := url.Parse("https://logjam.example.com/logjam/webvitals")
+		uri.RawQuery = marshaled.Encode()
+
+		recorder := httptest.NewRecorder()
+		publisher := dummypub.NewDummyPublisher()
+
+		handler := Serve(publisher)
+		req := httptest.NewRequest("POST", uri.String(), nil)
+		handler(recorder, req)
+
+		assert.Equal(t, 400, recorder.Code)
+		assert.Equal(t, "Read the docs", recorder.Body.String())
+
+		assert.Equal(t, []dummypub.DummyMessage{}, publisher.PublishedMessages)
+	})
+}
