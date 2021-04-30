@@ -1,13 +1,14 @@
 package webvitals
 
 import (
-	"bytes"
 	"encoding/json"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/go-playground/form"
 	format "github.com/skaes/logjam-tools/go/formats/webvitals"
 	dummypub "github.com/skaes/logjam-tools/go/publisher/testhelper"
 	"github.com/skaes/logjam-tools/go/util"
@@ -53,8 +54,6 @@ func TestExtractWebVitals(t *testing.T) {
 	action := "myActions#call"
 	rid := "some-app-preview-55ff333eee"
 
-	uri, _ := url.Parse("https://logjam.example.com/logjam/webvitals")
-
 	fid := 0.24
 	expectedWebVitals := &format.WebVitals{
 		StartedMs:       now.UnixNano() / int64(time.Millisecond),
@@ -73,15 +72,44 @@ func TestExtractWebVitals(t *testing.T) {
 		LogjamAction:    action,
 		Metrics:         expectedWebVitals.Metrics,
 	}
-
-	marshaled, err := json.Marshal(payload)
+	encoder := form.NewEncoder()
+	marshaled, err := encoder.Encode(payload)
 	assert.NoError(t, err)
 
-	body := bytes.NewReader(marshaled)
-	req := httptest.NewRequest("POST", uri.String(), body)
+	t.Run("With query string", func(t *testing.T) {
+		uri, _ := url.Parse("https://logjam.example.com/logjam/webvitals")
+		uri.RawQuery = marshaled.Encode()
 
-	webVitals, requestId, err := extractWebVitals(req)
-	assert.NoError(t, err)
-	assert.Equal(t, rid, requestId.String())
-	assert.Equal(t, expectedWebVitals, webVitals)
+		req := httptest.NewRequest("POST", uri.String(), nil)
+
+		webVitals, requestId, err := extractWebVitals(req)
+		assert.NoError(t, err)
+		assert.Equal(t, rid, requestId.String())
+		assert.Equal(t, expectedWebVitals, webVitals)
+	})
+
+	t.Run("With query string on a GET request", func(t *testing.T) {
+		uri, _ := url.Parse("https://logjam.example.com/logjam/webvitals")
+		uri.RawQuery = marshaled.Encode()
+
+		req := httptest.NewRequest("GET", uri.String(), nil)
+
+		webVitals, requestId, err := extractWebVitals(req)
+		assert.NoError(t, err)
+		assert.Equal(t, rid, requestId.String())
+		assert.Equal(t, expectedWebVitals, webVitals)
+	})
+
+	t.Run("With url form encoded", func(t *testing.T) {
+		uri, _ := url.Parse("https://logjam.example.com/logjam/webvitals")
+		body := strings.NewReader(marshaled.Encode())
+
+		req := httptest.NewRequest("POST", uri.String(), body)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+		webVitals, requestId, err := extractWebVitals(req)
+		assert.NoError(t, err)
+		assert.Equal(t, rid, requestId.String())
+		assert.Equal(t, expectedWebVitals, webVitals)
+	})
 }

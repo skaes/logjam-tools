@@ -2,15 +2,21 @@ package webvitals
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"net/http"
 	"time"
 
+	"github.com/go-playground/form"
 	"github.com/skaes/logjam-tools/go/fhttpd/stats"
 	format "github.com/skaes/logjam-tools/go/formats/webvitals"
 	pub "github.com/skaes/logjam-tools/go/publisher"
 	"github.com/skaes/logjam-tools/go/util"
 )
+
+var decoder *form.Decoder
+
+func init() {
+	decoder = form.NewDecoder()
+}
 
 func Serve(publisher pub.Publisher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -42,20 +48,20 @@ func writeSuccessResponse(w http.ResponseWriter) {
 }
 
 type RequestPayload struct {
-	LogjamRequestId string          `json:"logjam_request_id"`
-	LogjamAction    string          `json:"logjam_action"`
-	Metrics         []format.Metric `json:"metrics"`
+	LogjamRequestId string          `json:"logjam_request_id" form:"logjam_request_id"`
+	LogjamAction    string          `json:"logjam_action" form:"logjam_action"`
+	Metrics         []format.Metric `json:"metrics" form:"metrics"`
 }
 
 var nowFunc = time.Now
 
 func extractWebVitals(r *http.Request) (*format.WebVitals, *util.RequestId, error) {
-	bytes, err := ioutil.ReadAll(r.Body)
+	err := r.ParseForm()
 	if err != nil {
 		return nil, nil, err
 	}
 	payload := &RequestPayload{}
-	err = json.Unmarshal(bytes, payload)
+	err = decoder.Decode(payload, r.Form)
 	if err != nil {
 		return nil, nil, err
 	}
