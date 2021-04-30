@@ -67,7 +67,7 @@ func TestExtractWebVitals(t *testing.T) {
 			},
 		},
 	}
-	payload := &RequestPayload{
+	payload := &format.WebVitals{
 		LogjamRequestId: rid,
 		LogjamAction:    action,
 		Metrics:         expectedWebVitals.Metrics,

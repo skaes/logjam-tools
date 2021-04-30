@@ -6,11 +6,16 @@ const RoutingKeyMsgType = "webvitals"
 // WebVitals is the representation of WebVitals metrics
 // in the Payload of a Logjam Message.
 type WebVitals struct {
-	StartedMs       int64    `json:"started_ms"`
-	StartedAt       string   `json:"started_at"`
-	LogjamRequestId string   `json:"logjam_request_id"`
-	LogjamAction    string   `json:"logjam_action"`
-	Metrics         []Metric `json:"metrics"`
+	// StartedMs is filled in server side by us and not a field that should be
+	// supplied via the WebVitals endpoint.
+	StartedMs int64 `json:"started_ms" form:"-"`
+	// StartedAt is filled in server side by us (As an RFC3339 timestamp) and not
+	// a field that should be supplied via the WebVitals endpoint.
+	StartedAt string `json:"started_at" form:"-"`
+
+	LogjamRequestId string   `json:"logjam_request_id" form:"logjam_request_id"`
+	LogjamAction    string   `json:"logjam_action" form:"logjam_action"`
+	Metrics         []Metric `json:"metrics" form:"metrics"`
 }
 
 // Metric represents a single measurement of a single metric

@@ -47,12 +47,6 @@ func writeSuccessResponse(w http.ResponseWriter) {
 	w.Write([]byte("OK"))
 }
 
-type RequestPayload struct {
-	LogjamRequestId string          `json:"logjam_request_id" form:"logjam_request_id"`
-	LogjamAction    string          `json:"logjam_action" form:"logjam_action"`
-	Metrics         []format.Metric `json:"metrics" form:"metrics"`
-}
-
 var nowFunc = time.Now
 
 func extractWebVitals(r *http.Request) (*format.WebVitals, *util.RequestId, error) {
@@ -60,25 +54,20 @@ func extractWebVitals(r *http.Request) (*format.WebVitals, *util.RequestId, erro
 	if err != nil {
 		return nil, nil, err
 	}
-	payload := &RequestPayload{}
-	err = decoder.Decode(payload, r.Form)
+	webVitals := &format.WebVitals{}
+	err = decoder.Decode(webVitals, r.Form)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	requestId, err := util.ParseRequestId(payload.LogjamRequestId)
+	requestId, err := util.ParseRequestId(webVitals.LogjamRequestId)
 	if err != nil {
 		return nil, nil, err
 	}
 
 	now := nowFunc()
-	webVitals := &format.WebVitals{
-		StartedMs:       now.UnixNano() / int64(time.Millisecond),
-		StartedAt:       now.Format(time.RFC3339),
-		LogjamRequestId: payload.LogjamRequestId,
-		LogjamAction:    payload.LogjamAction,
-		Metrics:         payload.Metrics,
-	}
+	webVitals.StartedMs = now.UnixNano() / int64(time.Millisecond)
+	webVitals.StartedAt = now.Format(time.RFC3339)
 
 	return webVitals, requestId, nil
 }
