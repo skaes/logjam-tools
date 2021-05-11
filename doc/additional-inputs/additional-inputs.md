@@ -14,6 +14,60 @@ Most of these are part of the (optional) *logjam-fhttpd* component.
   obtain additional information that should be displayed after some interaction
   on the page)
 
+### HTTP Payload
+
+As this endpoint is intended to receive metrics from within a browser it is likely
+subject to [CORS] (Cross-Origin Resource Sharing).
+Generally browsers limit the connection to other domains to certain types of request
+based on whether the target server allows the connection.
+This requires the server to maintain a list of *allowed origins*.
+To keep the configuration footprint small the endpoint is providing
+a safe *simple request* format.
+
+For a request to be considered *simple* it needs to be limited to a small
+selection of supported HTTP Verbs, HTTP request headers as well as a limited
+selection of allowed content types.
+
+Either a `GET` or `POST` request with a *query string* containing form data.
+
+Format of the payload:
+
+| Field              | type/unit | mandatory/optional     |
+|--------------------|-----------|------------------------|
+| &v                 | int       | mandatory, must be `1` |
+| &logjam_request_id | string    | mandatory              |
+| &logjam_action     | string    | mandatory              |
+| &viewport_height   | int       | optional               |
+| &viewport_width    | int       | optional               |
+| &html_nodes        | int       | optional               |
+| &script_nodes      | int       | optional               |
+| &style_nodes       | int       | optional               |
+
+### Published Logjam message
+
+| Routing field            | value                |
+|--------------------------|----------------------|
+| Routing key prefix       | `"frontend"`         |
+| Routing key message type | `"ajax"` or `"page"` |
+
+The data section of the message is JSON in the following format:
+
+```json
+{
+  "v": 1,
+  "logjam_request_id": "",
+  "logjam_action": "",
+  "viewport_height": 0,
+  "viewport_width": 0,
+  "html_nodes": 0,
+  "script_nodes": 0,
+  "style_nodes": 0,
+  "user_agent": ""
+}
+```
+
+The payload can contain additional fields as other form parameters in the query string
+get automatically added to the payload as well.
 
 ## Mobile/native metrics
 
