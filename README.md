@@ -28,6 +28,8 @@ intensive than the ruby code and a _lot_ faster.
 
 A daemon which accepts frontend performance data via HTTP GET requests
 and publishes it on a ZeroMQ PUB socket for the importer to pick up.
+Additional information about the available endpoints
+can be found in [Additional Logjam inputs](doc/additional-inputs/additional-inputs.md).
 
 ## logjam-http-forwarder
 
