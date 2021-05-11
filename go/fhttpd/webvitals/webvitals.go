@@ -8,6 +8,7 @@ import (
 	"github.com/go-playground/form"
 	"github.com/skaes/logjam-tools/go/fhttpd/stats"
 	format "github.com/skaes/logjam-tools/go/formats/webvitals"
+	log "github.com/skaes/logjam-tools/go/logging"
 	pub "github.com/skaes/logjam-tools/go/publisher"
 	"github.com/skaes/logjam-tools/go/util"
 )
@@ -23,13 +24,15 @@ func Serve(publisher pub.Publisher) http.HandlerFunc {
 		defer stats.RecordRequestStats(r)
 		webVitals, rid, err := extractWebVitals(r)
 		if err != nil {
-			writeErrorResponse(w, err)
+			log.Error("failed to extract webvitals: %v", err)
+			writeErrorResponse(w)
 			return
 		}
 
 		err = publishWebVitals(publisher, rid, webVitals)
 		if err != nil {
-			writeErrorResponse(w, err)
+			log.Error("failed to publish webvitals: %v", err)
+			writeErrorResponse(w)
 			return
 		}
 
@@ -37,8 +40,7 @@ func Serve(publisher pub.Publisher) http.HandlerFunc {
 	}
 }
 
-func writeErrorResponse(w http.ResponseWriter, err error) {
-	// TODO: do something with the error
+func writeErrorResponse(w http.ResponseWriter) {
 	w.WriteHeader(400)
 	w.Write([]byte("Read the docs"))
 }
