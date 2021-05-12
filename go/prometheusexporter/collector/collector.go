@@ -47,7 +47,7 @@ const (
 	logsRoutingKey      = "logs"
 	pageRoutingKey      = "frontend.page"
 	ajaxRoutingKey      = "frontend.ajax"
-	webvitalsRoutingKey = "webvitals"
+	webvitalsRoutingKey = "frontend.webvitals"
 )
 
 type dcPair struct {
@@ -493,7 +493,7 @@ func (c *Collector) registerExceptionsTotalVec() {
 func (c *Collector) registerWebVitalsMetrics() {
 	c.actionMetrics.webvitalsCls = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "logjam:action:webvitals_cls_score",
+			Name:    "logjam:action:webvitals_cls_distribution_score",
 			Help:    "measured Cumulative Layout Shift",
 			Buckets: []float64{0.01, 0.025, 0.050, 0.1, 0.25, 0.5, 1},
 		},
@@ -503,7 +503,7 @@ func (c *Collector) registerWebVitalsMetrics() {
 
 	c.actionMetrics.webvitalsFid = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "logjam:action:webvitals_fid_seconds",
+			Name:    "logjam:action:webvitals_fid_distribution_seconds",
 			Help:    "First Input Delay in seconds",
 			Buckets: []float64{0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
 		},
@@ -513,7 +513,7 @@ func (c *Collector) registerWebVitalsMetrics() {
 
 	c.actionMetrics.webvitalsLcp = prometheus.NewHistogramVec(
 		prometheus.HistogramOpts{
-			Name:    "logjam:action:webvitals_lcp_seconds",
+			Name:    "logjam:action:webvitals_lcp_distribution_seconds",
 			Help:    "Largest Contentful Paint in seconds",
 			Buckets: []float64{0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
 		},
