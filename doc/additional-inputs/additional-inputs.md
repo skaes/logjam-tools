@@ -128,6 +128,21 @@ Currently defined fields:
 
 The data section of the message is the body of the HTTP request as documented above.
 
+#### Known processors
+
+Currently *logjam-prometheus-exporter* is processing these Logjam messages to provide
+Prometheus metrics.
+
+It supports the following incoming metrics and translates them into Prometheus metrics:
+
+| metric name in logjam message   | metric type | prometheus metric name                        |
+|---------------------------------|-------------|-----------------------------------------------|
+| `application_time_firstdraw_ms` | histogram   | `logjam:mobile:application_time_firstdraw_ms` |
+| `application_resume_time_ms`    | histogram   | `logjam:mobile:application_resume_time_ms`    |
+| `application_hang_time_ms`      | histogram   | `logjam:mobile:application_hang_time_ms`      |
+
+
+The prometheus metrics have the `version` and `internalBuild` labels.
 
 ## WebVitals
 
