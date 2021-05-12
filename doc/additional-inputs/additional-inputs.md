@@ -45,11 +45,51 @@ Format of the payload:
 | &html_nodes        | int       | optional               |
 | &script_nodes      | int       | optional               |
 | &style_nodes       | int       | optional               |
+| &rts               | int       | optional               |
 
 If the HTTP request was successfully processed it returns a valid HTTP response
 (`200` status code) for a `image/gif` 1x1 pixel size image. In the case of an
 issue with processing it returns a "Bad Request" HTTP response (`400` status
 code) with a description of the error in the response body.
+
+#### rts field
+
+The `rts` field is an important field used by both known processors.
+
+##### For `page` messages
+
+It is a *comma-separated* string of **16** integer values representing UNIX timestamps
+(time since epoch).
+Each timestamp corresponds to a specific browserevent:
+
+| index in rts | event                      |
+|--------------|----------------------------|
+|            0 | navigationStart            |
+|            1 | fetchStart                 |
+|            2 | domainLookupStart          |
+|            3 | domainLookupEnd            |
+|            4 | connectStart               |
+|            5 | connectEnd                 |
+|            6 | requestStart               |
+|            7 | responseStart              |
+|            8 | responseEnd                |
+|            9 | domLoading                 |
+|           10 | domInteractive             |
+|           11 | domContentLoadedEventStart |
+|           12 | domContentLoadedEventEnd   |
+|           13 | domComplete                |
+|           14 | loadEventStart             |
+|           15 | loadEventEnd               |
+
+##### For `ajax` messages
+
+It is a *comma-separated* string of **2** integer values representing UNIX
+timestamps (time since epoch).
+
+| index in rts | event      |
+|--------------|------------|
+|            0 | ajax start |
+|            1 | ajax end   |
 
 
 ### Published Logjam message
@@ -71,9 +111,10 @@ The data section of the message is JSON in the following format:
   "html_nodes": 0,
   "script_nodes": 0,
   "style_nodes": 0,
-  "user_agent": ""
+  "user_agent": "",
   "started_ms": 0,
   "started_at": "0000-00-00T00:00:00+00:00",
+  "rts": ""
 }
 ```
 
@@ -84,10 +125,23 @@ get automatically added to the payload as well.
 
 ##### logjam-prometheus-exporter
 
-Currently *logjam-prometheus-exporter* is processing these Logjam messages to provide
-Prometheus metrics.
+Currently *logjam-prometheus-exporter* is processing these Logjam messages to
+provide Prometheus metrics for both `page` and `ajax` performance data. It
+parses the `rts` field to extract the *page time* for `page` requests and *ajax
+time* for `ajax` requests.
 
-It supports the following incoming metrics and translates them into Prometheus metrics:
+* *page time* is defined as `loadEventEnd - navigationStart`, or if
+  `navigationStart` is 0 as `loadEventEnd - fetchStart`.
+* *ajax time* is defined as `ajax end - ajax start`
+
+Both are then used to create the following metrics:
+
+| message type    | metric name                                       |
+|-----------------|---------------------------------------------------|
+| `ajax` messages | logjam:action:ajax_time_distribution_seconds      |
+| `ajax` messages | logjam:application:ajax_time_distribution_seconds |
+| `page` messages | logjam:action:page_time_distribution_seconds      |
+| `page` messages | logjam:application:page_time_distribution_seconds |
 
 #### logjam-importer
 
