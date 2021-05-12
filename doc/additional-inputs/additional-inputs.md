@@ -106,8 +106,6 @@ The data section of the message is JSON in the following format:
   "v": 1,
   "logjam_request_id": "",
   "logjam_action": "",
-  "viewport_height": 0,
-  "viewport_width": 0,
   "html_nodes": 0,
   "script_nodes": 0,
   "style_nodes": 0,
@@ -144,6 +142,14 @@ Both are then used to create the following metrics:
 | `page` messages | logjam:application:page_time_distribution_seconds |
 
 #### logjam-importer
+
+The *logjam-importer* stores request data in a MongoDB instance, which is then
+used as the backing datastore for *logjam_app* itself. The data from frontend
+messages is extracted to both provide timings information for page loads as well
+as individual components (`rts` (all *16* segments are used for page timings)).
+
+Other fields are also stored in the database to be used within *logjam_app*,
+such as `html_nodes`, `script_nodes`, `style_nodes` and `user_agent`.
 
 ## Mobile/native metrics
 
