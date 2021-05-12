@@ -28,7 +28,10 @@ For a request to be considered *simple* it needs to be limited to a small
 selection of supported HTTP Verbs, HTTP request headers as well as a limited
 selection of allowed content types.
 
-Either a `GET` or `POST` request with a *query string* containing form data.
+This endpoint is intended to be used by adding the URL as an *image* into the
+DOM of the HTML page. This will subsequently cause the browser to perform an
+HTTP `GET` request. The payload is appended to the URL in the form of a *query
+string* that contains form data.
 
 Format of the payload:
 
@@ -42,6 +45,12 @@ Format of the payload:
 | &html_nodes        | int       | optional               |
 | &script_nodes      | int       | optional               |
 | &style_nodes       | int       | optional               |
+
+If the HTTP request was successfully processed it returns a valid HTTP response
+(`200` status code) for a `image/gif` 1x1 pixel size image. In the case of an
+issue with processing it returns a "Bad Request" HTTP response (`400` status
+code) with a description of the error in the response body.
+
 
 ### Published Logjam message
 
@@ -63,11 +72,24 @@ The data section of the message is JSON in the following format:
   "script_nodes": 0,
   "style_nodes": 0,
   "user_agent": ""
+  "started_ms": 0,
+  "started_at": "0000-00-00T00:00:00+00:00",
 }
 ```
 
 The payload can contain additional fields as other form parameters in the query string
 get automatically added to the payload as well.
+
+#### Known processors
+
+##### logjam-prometheus-exporter
+
+Currently *logjam-prometheus-exporter* is processing these Logjam messages to provide
+Prometheus metrics.
+
+It supports the following incoming metrics and translates them into Prometheus metrics:
+
+#### logjam-importer
 
 ## Mobile/native metrics
 
