@@ -15,6 +15,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	promclient "github.com/prometheus/client_model/go"
+	"github.com/skaes/logjam-tools/go/formats/webvitals"
 	format "github.com/skaes/logjam-tools/go/formats/webvitals"
 	"github.com/skaes/logjam-tools/go/frontendmetrics"
 	log "github.com/skaes/logjam-tools/go/logging"
@@ -63,6 +64,7 @@ type metric struct {
 	counterMetrics map[string]float64 // counter metrics
 	maxLogLevel    string             // log level
 	exceptions     []string           // exceptions that are part of the log message
+	webvitals      []webvitals.Metric // metrics received as part of webvitals type
 }
 
 type Options struct {
@@ -954,15 +956,15 @@ func (c *Collector) recordWebVitals(m *metric) {
 	labels["env"] = p["env"]
 	labels["action"] = action
 
-	for k, v := range m.timeMetrics {
-		if k == "fid" {
-			c.actionMetrics.webvitalsFid.With(labels).Observe(v)
+	for _, vital := range m.webvitals {
+		if vital.FID != nil {
+			c.actionMetrics.webvitalsFid.With(labels).Observe(*vital.FID)
 		}
-		if k == "cls" {
-			c.actionMetrics.webvitalsCls.With(labels).Observe(v)
+		if vital.CLS != nil {
+			c.actionMetrics.webvitalsCls.With(labels).Observe(*vital.CLS)
 		}
-		if k == "lcp" {
-			c.actionMetrics.webvitalsLcp.With(labels).Observe(v)
+		if vital.LCP != nil {
+			c.actionMetrics.webvitalsLcp.With(labels).Observe(*vital.LCP)
 		}
 	}
 	c.actionRegistry <- action
@@ -1075,17 +1077,7 @@ func (c *Collector) processWebVitalsMessage(routingKey string, data map[string]i
 		log.Error("Error parsing web vitals, data: %v", data)
 		return nil
 	}
-	vitals := make(map[string]float64)
-	for _, vital := range webvitals.Metrics {
-		if vital.FID != nil {
-			vitals["fid"] = *vital.FID
-		} else if vital.LCP != nil {
-			vitals["lcp"] = *vital.LCP
-		} else if vital.CLS != nil {
-			vitals["cls"] = *vital.CLS
-		}
-	}
-	return &metric{kind: webvitalsMetric, props: p, timeMetrics: vitals}
+	return &metric{kind: webvitalsMetric, props: p, webvitals: webvitals.Metrics}
 }
 
 func (c *Collector) processAjaxMessage(routingKey string, data map[string]interface{}) *metric {
