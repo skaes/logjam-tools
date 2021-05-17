@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/skaes/logjam-tools/go/formats/webvitals"
 	"github.com/skaes/logjam-tools/go/util"
 )
 
@@ -152,9 +153,10 @@ func TestExtractingSingleWebVital(t *testing.T) {
 	data["metrics"] = []map[string]float64{{"lcp": 1.3}}
 
 	got := c.processWebVitalsMessage(rk, data)
+	wantedlcp := 1.3
 	want := &metric{
 		kind: 4, props: map[string]string{"app": "some-app", "env": "preview", "action": "someAction#call"},
-		timeMetrics: map[string]float64{"lcp": 1.3},
+		webvitals: []webvitals.Metric{{LCP: &wantedlcp}},
 	}
 
 	if !reflect.DeepEqual(*got, *want) {
@@ -187,9 +189,12 @@ func TestExtractingMultiWebVitals(t *testing.T) {
 	data["metrics"] = []map[string]float64{{"fid": 0.24}, {"lcp": 1.3}, {"cls": 0.42}}
 
 	got := c.processWebVitalsMessage(rk, data)
+	wantedfid := 0.24
+	wantedlcp := 1.3
+	wantedcls := 0.42
 	want := &metric{
 		kind: 4, props: map[string]string{"app": "some-app", "env": "preview", "action": "someAction#call"},
-		timeMetrics: map[string]float64{"fid": 0.24, "lcp": 1.3, "cls": 0.42},
+		webvitals: []webvitals.Metric{{FID: &wantedfid}, {LCP: &wantedlcp}, {CLS: &wantedcls}},
 	}
 
 	if !reflect.DeepEqual(*got, *want) {
