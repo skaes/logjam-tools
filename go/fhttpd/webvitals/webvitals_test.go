@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/go-playground/form"
+	form "github.com/go-playground/form/v4"
 	format "github.com/skaes/logjam-tools/go/formats/webvitals"
 	dummypub "github.com/skaes/logjam-tools/go/publisher/testhelper"
 	"github.com/skaes/logjam-tools/go/util"

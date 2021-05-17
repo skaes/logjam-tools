@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/go-playground/form"
+	form "github.com/go-playground/form/v4"
 	"github.com/skaes/logjam-tools/go/fhttpd/stats"
 	format "github.com/skaes/logjam-tools/go/formats/webvitals"
 	log "github.com/skaes/logjam-tools/go/logging"
