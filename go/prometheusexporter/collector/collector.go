@@ -11,9 +11,12 @@ import (
 	"time"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/mitchellh/mapstructure"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	promclient "github.com/prometheus/client_model/go"
+	"github.com/skaes/logjam-tools/go/formats/webvitals"
+	format "github.com/skaes/logjam-tools/go/formats/webvitals"
 	"github.com/skaes/logjam-tools/go/frontendmetrics"
 	log "github.com/skaes/logjam-tools/go/logging"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/stats"
@@ -35,9 +38,17 @@ const (
 )
 
 const (
-	logMetric  = 1
-	pageMetric = 2
-	ajaxMetric = 3
+	logMetric       = 1
+	pageMetric      = 2
+	ajaxMetric      = 3
+	webvitalsMetric = 4
+)
+
+const (
+	logsRoutingKey      = "logs"
+	pageRoutingKey      = "frontend.page"
+	ajaxRoutingKey      = "frontend.ajax"
+	webvitalsRoutingKey = "frontend.webvitals"
 )
 
 type dcPair struct {
@@ -46,13 +57,14 @@ type dcPair struct {
 }
 
 type metric struct {
-	kind           uint8              // log, page or ajax
+	kind           uint8              // log, page, ajax or webvitals
 	props          map[string]string  // stored as labels
 	value          float64            // time value, in seconds
 	timeMetrics    map[string]float64 // other time metrics
 	counterMetrics map[string]float64 // counter metrics
 	maxLogLevel    string             // log level
 	exceptions     []string           // exceptions that are part of the log message
+	webvitals      []webvitals.Metric // metrics received as part of webvitals type
 }
 
 type Options struct {
@@ -78,6 +90,9 @@ type CollectorMetrics struct {
 	requestMetricsHistogramMap map[string]*prometheus.HistogramVec
 	requestMetricsCounterMap   map[string]*prometheus.CounterVec
 	exceptionsTotalVec         *prometheus.CounterVec
+	webvitalsCls               *prometheus.HistogramVec
+	webvitalsLcp               *prometheus.HistogramVec
+	webvitalsFid               *prometheus.HistogramVec
 }
 
 type Collector struct {
@@ -477,6 +492,38 @@ func (c *Collector) registerExceptionsTotalVec() {
 	c.exceptionsRegistry.MustRegister(c.actionMetrics.exceptionsTotalVec)
 }
 
+func (c *Collector) registerWebVitalsMetrics() {
+	c.actionMetrics.webvitalsCls = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:webvitals_cls_distribution_score",
+			Help:    "measured Cumulative Layout Shift",
+			Buckets: []float64{0.01, 0.025, 0.050, 0.1, 0.25, 0.5, 1},
+		},
+		[]string{"app", "env", "action"},
+	)
+	c.registry.MustRegister(c.actionMetrics.webvitalsCls)
+
+	c.actionMetrics.webvitalsFid = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:webvitals_fid_distribution_seconds",
+			Help:    "First Input Delay in seconds",
+			Buckets: []float64{0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
+		},
+		[]string{"app", "env", "action"},
+	)
+	c.registry.MustRegister(c.actionMetrics.webvitalsFid)
+
+	c.actionMetrics.webvitalsLcp = prometheus.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "logjam:action:webvitals_lcp_distribution_seconds",
+			Help:    "Largest Contentful Paint in seconds",
+			Buckets: []float64{0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
+		},
+		[]string{"app", "env", "action"},
+	)
+	c.registry.MustRegister(c.actionMetrics.webvitalsLcp)
+}
+
 func (c *Collector) Update(stream *util.Stream) {
 	locked := false
 	if c.actionMetrics.httpRequestSummaryVec == nil {
@@ -567,6 +614,9 @@ func (c *Collector) Update(stream *util.Stream) {
 	if c.actionMetrics.ajaxHistogramVec == nil {
 		c.registerAjaxHistogramVec(stream)
 	}
+	if c.actionMetrics.webvitalsLcp == nil || c.actionMetrics.webvitalsFid == nil || c.actionMetrics.webvitalsCls == nil {
+		c.registerWebVitalsMetrics()
+	}
 	if (!c.stream.SameAPIRequests(stream) || c.stream.IgnoredRequestURI != stream.IgnoredRequestURI) && !locked {
 		c.mutex.Lock()
 		defer c.mutex.Unlock()
@@ -592,6 +642,8 @@ func (c *Collector) observer() {
 			c.recordPageMetrics(m)
 		case ajaxMetric:
 			c.recordAjaxMetrics(m)
+		case webvitalsMetric:
+			c.recordWebVitals(m)
 		}
 		atomic.AddInt64(&stats.Stats.Invisible, -1)
 		atomic.AddUint64(&stats.Stats.Observed, 1)
@@ -893,6 +945,31 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 	c.actionRegistry <- action
 }
 
+func (c *Collector) recordWebVitals(m *metric) {
+	c.mutex.RLock()
+	defer c.mutex.RUnlock()
+	p := m.props
+	action := p["action"]
+
+	labels := make(map[string]string)
+	labels["app"] = p["app"]
+	labels["env"] = p["env"]
+	labels["action"] = action
+
+	for _, vital := range m.webvitals {
+		if vital.FID != nil {
+			c.actionMetrics.webvitalsFid.With(labels).Observe(*vital.FID / 1000.0)
+		}
+		if vital.CLS != nil {
+			c.actionMetrics.webvitalsCls.With(labels).Observe(*vital.CLS)
+		}
+		if vital.LCP != nil {
+			c.actionMetrics.webvitalsLcp.With(labels).Observe(*vital.LCP / 1000.0)
+		}
+	}
+	c.actionRegistry <- action
+}
+
 func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{}) {
 	if c.opts.Debug {
 		s := spew.Sdump(routingKey, data)
@@ -900,12 +977,14 @@ func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{
 	}
 	var m *metric
 	switch {
-	case strings.HasPrefix(routingKey, "logs"):
+	case strings.HasPrefix(routingKey, logsRoutingKey):
 		m = c.processLogMessage(routingKey, data)
-	case strings.HasPrefix(routingKey, "frontend.page"):
+	case strings.HasPrefix(routingKey, pageRoutingKey):
 		m = c.processPageMessage(routingKey, data)
-	case strings.HasPrefix(routingKey, "frontend.ajax"):
+	case strings.HasPrefix(routingKey, ajaxRoutingKey):
 		m = c.processAjaxMessage(routingKey, data)
+	case strings.HasPrefix(routingKey, webvitalsRoutingKey):
+		m = c.processWebVitalsMessage(routingKey, data)
 	}
 	if c.opts.Debug {
 		s := spew.Sdump(m)
@@ -985,6 +1064,20 @@ func (c *Collector) processPageMessage(routingKey string, data map[string]interf
 	}
 	// page_time is measured in milliseconds, but prometheus wants seconds
 	return &metric{kind: pageMetric, props: p, value: float64(timings.PageTime) / 1000}
+}
+
+func (c *Collector) processWebVitalsMessage(routingKey string, data map[string]interface{}) *metric {
+	p := make(map[string]string)
+	p["app"] = c.app
+	p["env"] = c.env
+	p["action"] = extractAction(data)
+	var webvitals format.WebVitals
+	err := mapstructure.Decode(data, &webvitals)
+	if err != nil {
+		log.Error("Error parsing web vitals, data: %v", data)
+		return nil
+	}
+	return &metric{kind: webvitalsMetric, props: p, webvitals: webvitals.Metrics}
 }
 
 func (c *Collector) processAjaxMessage(routingKey string, data map[string]interface{}) *metric {

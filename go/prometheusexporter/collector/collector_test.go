@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"reflect"
 	"sync"
 	"testing"
 
@@ -122,6 +123,77 @@ func TestDeletingLabels(t *testing.T) {
 	}
 	if c.copyWithoutActionLabel("schnippi") {
 		t.Errorf("could remove non existing action : %s", "schnippi")
+	}
+}
+
+func TestExtractingSingleWebVital(t *testing.T) {
+
+	s := util.Stream{
+		App:                 "some-app",
+		Env:                 "preview",
+		IgnoredRequestURI:   "/_",
+		BackendOnlyRequests: "",
+		APIRequests:         []string{},
+	}
+	options := Options{
+		Datacenters: "a,b",
+		CleanAfter:  60,
+		Resources: &util.Resources{
+			TimeResources: []string{"db_time"},
+			CallResources: []string{"db_calls"},
+		},
+	}
+	c := New(s.AppEnv(), &s, options)
+
+	rk := "webvitals"
+	data := make(map[string]interface{})
+	data["logjam_request_id"] = "some-app-preview-55fffeee333"
+	data["logjam_action"] = "someAction#call"
+	data["metrics"] = []map[string]float64{{"lcp": 1.3}}
+
+	got := c.processWebVitalsMessage(rk, data)
+	want := &metric{
+		kind: 4, props: map[string]string{"app": "some-app", "env": "preview", "action": "someAction#call"},
+		timeMetrics: map[string]float64{"lcp": 1.3},
+	}
+
+	if !reflect.DeepEqual(*got, *want) {
+		t.Errorf("Collector.processWebVitalsMessage() got= %v, want %v", *got, *want)
+	}
+}
+func TestExtractingMultiWebVitals(t *testing.T) {
+
+	s := util.Stream{
+		App:                 "some-app",
+		Env:                 "preview",
+		IgnoredRequestURI:   "/_",
+		BackendOnlyRequests: "",
+		APIRequests:         []string{},
+	}
+	options := Options{
+		Datacenters: "a,b",
+		CleanAfter:  60,
+		Resources: &util.Resources{
+			TimeResources: []string{"db_time"},
+			CallResources: []string{"db_calls"},
+		},
+	}
+	c := New(s.AppEnv(), &s, options)
+
+	rk := "webvitals"
+	data := make(map[string]interface{})
+	data["logjam_request_id"] = "some-app-preview-55fffeee333"
+	data["logjam_action"] = "someAction#call"
+	data["metrics"] = []map[string]float64{{"fid": 0.24}, {"lcp": 1.3}, {"cls": 0.42}}
+
+	got := c.processWebVitalsMessage(rk, data)
+	want := &metric{
+		kind: 4, props: map[string]string{"app": "some-app", "env": "preview", "action": "someAction#call"},
+		timeMetrics: map[string]float64{"fid": 0.24, "lcp": 1.3, "cls": 0.42},
+	}
+
+	if !reflect.DeepEqual(*got, *want) {
+		t.Errorf("Collector.processWebVitalsMessage() got= %v, want %v", *got, *want)
 	}
 }
 
