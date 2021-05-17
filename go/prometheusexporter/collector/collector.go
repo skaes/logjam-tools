@@ -958,13 +958,13 @@ func (c *Collector) recordWebVitals(m *metric) {
 
 	for _, vital := range m.webvitals {
 		if vital.FID != nil {
-			c.actionMetrics.webvitalsFid.With(labels).Observe(*vital.FID)
+			c.actionMetrics.webvitalsFid.With(labels).Observe(*vital.FID / 1000.0)
 		}
 		if vital.CLS != nil {
 			c.actionMetrics.webvitalsCls.With(labels).Observe(*vital.CLS)
 		}
 		if vital.LCP != nil {
-			c.actionMetrics.webvitalsLcp.With(labels).Observe(*vital.LCP)
+			c.actionMetrics.webvitalsLcp.With(labels).Observe(*vital.LCP / 1000.0)
 		}
 	}
 	c.actionRegistry <- action
