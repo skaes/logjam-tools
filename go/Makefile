@@ -72,7 +72,7 @@ frontendmetrics-test: frontendmetrics/*.go
 	go test ./frontendmetrics
 
 fhttpd-test: fhttpd/*
-	go test ./fhttpd
+	go test ./fhttpd/.../.
 
 formats-test: formats/*
 	go test ./formats/*

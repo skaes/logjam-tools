@@ -4,11 +4,12 @@ import (
 	"io/ioutil"
 	"net/http"
 
+	"github.com/skaes/logjam-tools/go/fhttpd/stats"
 	"github.com/skaes/logjam-tools/go/util"
 )
 
 func serveMobileMetrics(w http.ResponseWriter, r *http.Request) {
-	defer recordRequestStats(r)
+	defer stats.RecordRequestStats(r)
 	bytes, err := ioutil.ReadAll(r.Body)
 	r.Body.Close()
 	if err != nil {

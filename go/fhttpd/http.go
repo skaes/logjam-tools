@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/skaes/logjam-tools/go/fhttpd/stats"
 	log "github.com/skaes/logjam-tools/go/logging"
 )
 
@@ -92,9 +93,7 @@ func parseQuery(r *http.Request) (stringMap, error) {
 }
 
 func writeErrorResponse(w http.ResponseWriter, txt string) {
-	statsMutex.Lock()
-	httpFailures++
-	statsMutex.Unlock()
+	stats.IncrementFailures()
 	http.Error(w, "400 RTFM", 400)
 	fmt.Fprintln(w, txt)
 }
@@ -109,7 +108,7 @@ func writeImageResponse(w http.ResponseWriter) {
 }
 
 func serveAlive(w http.ResponseWriter, r *http.Request) {
-	defer recordRequestStats(r)
+	defer stats.RecordRequestStats(r)
 	w.WriteHeader(200)
 	w.Header().Set("Cache-Control", "private")
 	w.Header().Set("Content-Type", "text/plain")

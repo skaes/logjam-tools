@@ -7,11 +7,12 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/skaes/logjam-tools/go/fhttpd/stats"
 	"github.com/skaes/logjam-tools/go/util"
 )
 
 func serveFrontendRequest(w http.ResponseWriter, r *http.Request) {
-	defer recordRequestStats(r)
+	defer stats.RecordRequestStats(r)
 	sm, rid, err := extractFrontendData(r)
 	if err != nil {
 		writeErrorResponse(w, err.Error())

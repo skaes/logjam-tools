@@ -1,4 +1,4 @@
-package main
+package stats
 
 import (
 	"net/http"
@@ -19,7 +19,7 @@ var (
 )
 
 // report number of processed requests every second
-func statsReporter() {
+func StatsReporter(quiet bool) {
 	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
 	for !util.Interrupted() {
@@ -64,7 +64,13 @@ func requestSize(r *http.Request) uint64 {
 	return size
 }
 
-func recordRequestStats(r *http.Request) {
+func IncrementFailures() {
+	statsMutex.Lock()
+	defer statsMutex.Unlock()
+	httpFailures++
+}
+
+func RecordRequestStats(r *http.Request) {
 	size := requestSize(r)
 	statsMutex.Lock()
 	processedCount++
