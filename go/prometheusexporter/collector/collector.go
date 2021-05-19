@@ -68,12 +68,14 @@ type metric struct {
 }
 
 type Options struct {
-	Verbose     bool            // Verbose logging.
-	Debug       bool            // Extra verbose logging.
-	Datacenters string          // Konown datacenters, comma separated.
-	DefaultDC   string          // Use this DC name if none can be derived.
-	CleanAfter  uint            // Remove actions with stale data after this many minutes.
-	Resources   *util.Resources // Resources to extract from incoming messages.
+	Verbose          bool            // Verbose logging.
+	Debug            bool            // Extra verbose logging.
+	Datacenters      string          // Konown datacenters, comma separated.
+	DefaultDC        string          // Use this DC name if none can be derived.
+	CleanAfter       uint            // Remove actions with stale data after this many minutes.
+	Resources        *util.Resources // Resources to extract from incoming messages.
+	ProcessWebvitals bool            // Process webvital messages and export them as metrics
+	ProcessAjax      bool            // Process Ajax messages and export them as metrics
 }
 
 type CollectorMetrics struct {
@@ -981,9 +983,9 @@ func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{
 		m = c.processLogMessage(routingKey, data)
 	case strings.HasPrefix(routingKey, pageRoutingKey):
 		m = c.processPageMessage(routingKey, data)
-	case strings.HasPrefix(routingKey, ajaxRoutingKey):
+	case strings.HasPrefix(routingKey, ajaxRoutingKey) && c.opts.ProcessAjax:
 		m = c.processAjaxMessage(routingKey, data)
-	case strings.HasPrefix(routingKey, webvitalsRoutingKey):
+	case strings.HasPrefix(routingKey, webvitalsRoutingKey) && c.opts.ProcessWebvitals:
 		m = c.processWebVitalsMessage(routingKey, data)
 	}
 	if c.opts.Debug {
