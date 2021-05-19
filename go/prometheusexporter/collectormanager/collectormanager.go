@@ -36,7 +36,7 @@ var (
 
 func Initialize(logjamURL string, env string, options collector.Options) {
 	opts = options
-	mobileMetrics = mobile.New()
+	mobileMetrics = mobile.New(options.ProcessFHTTPDMetrics)
 	if logjamURL == "" {
 		log.Error("logjam url cannot be empty")
 		return
