@@ -13,8 +13,9 @@ import (
 
 // Metrics holds different metrics from mobile requests
 type Metrics struct {
-	RequestHandler http.Handler
-	Registry       *prometheus.Registry
+	RequestHandler  http.Handler
+	Registry        *prometheus.Registry
+	ProcessMessages bool
 
 	payloadsChannel chan Payload
 
@@ -66,12 +67,13 @@ func (m Metrics) IsCollector() bool {
 }
 
 // New Returns a new instance of mobile Metrics
-func New() Metrics {
+func New(processMessages bool) Metrics {
 	r := prometheus.NewRegistry()
 	m := Metrics{
 		Registry:        r,
 		RequestHandler:  promhttp.HandlerFor(r, promhttp.HandlerOpts{}),
 		payloadsChannel: make(chan Payload, 10000),
+		ProcessMessages: processMessages,
 		AppFirstDraw: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
 				Name:    "logjam:mobile:application_time_firstdraw_ms",
@@ -105,6 +107,9 @@ func New() Metrics {
 
 // ProcessMessage extracts mobile metrics from logjam payload and exposes it to Prometheus
 func (m Metrics) ProcessMessage(routingKey string, data map[string]interface{}) {
+	if !m.ProcessMessages {
+		return
+	}
 	payload, err := m.parseData(data)
 	if err != nil {
 		log.Error("Error parsing mobile payload: %s", err)
