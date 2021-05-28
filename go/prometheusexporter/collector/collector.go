@@ -16,11 +16,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	promclient "github.com/prometheus/client_model/go"
 	"github.com/skaes/logjam-tools/go/formats/webvitals"
-	format "github.com/skaes/logjam-tools/go/formats/webvitals"
 	"github.com/skaes/logjam-tools/go/frontendmetrics"
 	log "github.com/skaes/logjam-tools/go/logging"
 	"github.com/skaes/logjam-tools/go/prometheusexporter/stats"
 	"github.com/skaes/logjam-tools/go/util"
+	"github.com/xojoc/useragent"
 )
 
 var logLevelNames = []string{
@@ -500,7 +500,7 @@ func (c *Collector) registerWebVitalsMetrics() {
 			Help:    "measured Cumulative Layout Shift",
 			Buckets: []float64{0.01, 0.025, 0.050, 0.1, 0.25, 0.5, 1},
 		},
-		[]string{"app", "env", "action"},
+		[]string{"app", "env", "action", "browser", "device_type"},
 	)
 	c.registry.MustRegister(c.actionMetrics.webvitalsCls)
 
@@ -510,7 +510,7 @@ func (c *Collector) registerWebVitalsMetrics() {
 			Help:    "First Input Delay in seconds",
 			Buckets: []float64{0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
 		},
-		[]string{"app", "env", "action"},
+		[]string{"app", "env", "action", "browser", "device_type"},
 	)
 	c.registry.MustRegister(c.actionMetrics.webvitalsFid)
 
@@ -520,7 +520,7 @@ func (c *Collector) registerWebVitalsMetrics() {
 			Help:    "Largest Contentful Paint in seconds",
 			Buckets: []float64{0.005, 0.010, 0.025, 0.050, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 25, 50, 100, 250},
 		},
-		[]string{"app", "env", "action"},
+		[]string{"app", "env", "action", "browser", "device_type"},
 	)
 	c.registry.MustRegister(c.actionMetrics.webvitalsLcp)
 }
@@ -949,13 +949,8 @@ func (c *Collector) recordAjaxMetrics(m *metric) {
 func (c *Collector) recordWebVitals(m *metric) {
 	c.mutex.RLock()
 	defer c.mutex.RUnlock()
-	p := m.props
-	action := p["action"]
-
-	labels := make(map[string]string)
-	labels["app"] = p["app"]
-	labels["env"] = p["env"]
-	labels["action"] = action
+	labels := m.props
+	action := labels["action"]
 
 	for _, vital := range m.webvitals {
 		if vital.FID != nil {
@@ -1072,13 +1067,30 @@ func (c *Collector) processWebVitalsMessage(routingKey string, data map[string]i
 	p["app"] = c.app
 	p["env"] = c.env
 	p["action"] = extractAction(data)
-	var webvitals format.WebVitals
-	err := mapstructure.Decode(data, &webvitals)
+	webVitals := &webvitals.WebVitals{}
+	err := mapstructure.Decode(data, webVitals)
 	if err != nil {
 		log.Error("Error parsing web vitals, data: %v", data)
 		return nil
 	}
-	return &metric{kind: webvitalsMetric, props: p, webvitals: webvitals.Metrics}
+
+	p["browser"] = "unknown"
+	p["device_type"] = "unknown"
+
+	userAgent := useragent.Parse(webVitals.UserAgent)
+	if userAgent != nil {
+		p["browser"] = userAgent.Name
+		switch {
+		case userAgent.Mobile:
+			p["device_type"] = "mobile"
+		case userAgent.Tablet:
+			p["device_type"] = "tablet"
+		default:
+			p["device_type"] = "desktop"
+		}
+	}
+
+	return &metric{kind: webvitalsMetric, props: p, webvitals: webVitals.Metrics}
 }
 
 func (c *Collector) processAjaxMessage(routingKey string, data map[string]interface{}) *metric {
