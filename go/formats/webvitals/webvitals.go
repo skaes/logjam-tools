@@ -13,6 +13,8 @@ type WebVitals struct {
 	// a field that should be supplied via the WebVitals endpoint.
 	StartedAt string `json:"started_at" form:"-"`
 
+	UserAgent string `json:"user_agent" form:"-"`
+
 	LogjamRequestId string   `json:"logjam_request_id" form:"logjam_request_id"`
 	LogjamAction    string   `json:"logjam_action" form:"logjam_action"`
 	Metrics         []Metric `json:"metrics" form:"metrics"`
