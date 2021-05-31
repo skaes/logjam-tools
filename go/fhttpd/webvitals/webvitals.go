@@ -70,6 +70,7 @@ func extractWebVitals(r *http.Request) (*format.WebVitals, *util.RequestId, erro
 	now := nowFunc()
 	webVitals.StartedMs = now.UnixNano() / int64(time.Millisecond)
 	webVitals.StartedAt = now.Format(time.RFC3339)
+	webVitals.UserAgent = r.UserAgent()
 
 	return webVitals, requestId, nil
 }
