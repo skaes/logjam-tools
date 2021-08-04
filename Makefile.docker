@@ -116,7 +116,7 @@ LOGJAM_PACKAGE_USER:=uploader
 .PHONY: publish publish-focal publish-bionic publish-xenial publish-focal-usr-local publish-bionic-usr-local publish-xenial-usr-local
 publish: publish-focal publish-bionic publish-xenial publish-focal-usr-local publish-bionic-usr-local publish-xenial-usr-local
 
-VERSION:=$(shell cat VERSION)
+VERSION:=$(shell cat VERSION.txt)
 PACKAGE_NAME:=logjam-tools_$(VERSION)_amd64.deb
 PACKAGE_NAME_USR_LOCAL:=logjam-tools-usr-local_$(VERSION)_amd64.deb
 
