@@ -270,6 +270,14 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
             gelf_message_add_json_object (gelf_msg, "_caller_action", obj);
     }
 
+    // forward trace_id field
+    if (json_object_object_get_ex (request, "trace_id", &obj) && json_object_get_type(obj) == json_type_string) {
+        const char *trace_id = json_object_get_string(obj);
+        if (trace_id && *trace_id) {
+            gelf_message_add_json_object (gelf_msg, "_trace_id", obj);
+        }
+    }
+
     int level = 0; // Debug
     if (json_object_object_get_ex (request, "severity", &obj)) {
         level = json_object_get_int (obj);
