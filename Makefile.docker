@@ -27,7 +27,7 @@ container-xenial-usr-local:
 	docker build -t "stkaes/logjam-tools:xenial-usr-local-latest" -f Dockerfile.xenial --build-arg prefix=/usr/local --build-arg suffix="-usr-local" .
 
 TAG ?= latest
-VERSION ?= $(cat VERSION)
+VERSION ?= $(cat VERSION.txt)
 
 RELEASE:=release-focal release-bionic release-xenial release-focal-usr-local release-bionic-usr-local release-xenial-usr-local
 .PHONY: release $(RELEASE)

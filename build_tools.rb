@@ -3,7 +3,7 @@ suffix = prefix == "/opt/logjam" ? "" : prefix.gsub('/', '-')
 
 name "logjam-tools#{suffix}"
 
-full_version = File.read("#{File.expand_path(__dir__)}/VERSION").chomp
+full_version = File.read("#{File.expand_path(__dir__)}/VERSION.txt").chomp
 f_v, f_i = full_version.split('-', 2)
 
 version f_v
