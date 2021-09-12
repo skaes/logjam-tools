@@ -715,6 +715,50 @@ int dump_message_payload (zmsg_t *self, FILE *file, zchunk_t *buffer)
     return 0;
 }
 
+// dump the whole message as json
+int dump_message_as_json(zmsg_t *self, FILE *file, zchunk_t *buffer)
+{
+    assert (self);
+    assert (zmsg_is (self));
+    assert (file);
+
+    zframe_t *stream_frame = zmsg_first (self); //stream frame
+    zframe_t *topic_frame = zmsg_next (self);  //topic frame
+    zframe_t *body_frame = zmsg_next (self);  // payload frame
+
+
+    fprintf(file, "[\n\"%.*s\",\n", (int)zframe_size(stream_frame), zframe_data(stream_frame));
+    fprintf(file, "\"%.*s\",\n", (int)zframe_size(topic_frame), zframe_data(topic_frame));
+
+    msg_meta_t meta = META_INFO_EMPTY;
+    msg_extract_meta_info(self, &meta);
+    int compression_method = meta.compression_method;
+    if (compression_method) {
+        char *body;
+        size_t body_len;
+        int rc = decompress_frame(body_frame, compression_method, buffer, &body, &body_len);
+        if (rc == 0) {
+            fprintf(stderr, "[E] decompressor: could not decompress payload from\n");
+            fprintf(file, "\"*** undecodable ***\"\n]\n");
+            return -1;
+        }
+        if (fwrite (body, body_len, 1, file) != 1) {
+            fwrite ("\n]\n", 3, 1, file);
+            return -1;
+        }
+        fwrite ("\n]\n", 3, 1, file);
+    } else {
+        size_t frame_size = zframe_size (body_frame);
+        if (fwrite (zframe_data (body_frame), frame_size, 1, file) != 1) {
+            fwrite ("\n]\n", 3, 1, file);
+            return -1;
+        }
+        fwrite ("\n]\n", 3, 1, file);
+    }
+
+    return 0;
+}
+
 //  --------------------------------------------------------------------------
 //  Load/append an open file into message, create new message if
 //  null message provided. Returns NULL if the message could not be

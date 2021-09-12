@@ -16,7 +16,9 @@ bool debug = false;
 bool quiet = false;
 bool append_to_dump_file = false;
 bool payload_only = false;
+bool stream_only = false;
 bool filter_on_topic = false;
+bool use_text_output = false;
 static char *filter_topic = NULL;
 
 static int sub_port = -1;
@@ -81,13 +83,15 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
     message_gaps += device_tracker_calculate_gap(tracker, &meta, pub_spec);
 
     // calculate stats
-    size_t msg_bytes = zmsg_content_size(msg);
-    received_messages_count++;
-    received_messages_bytes += msg_bytes;
-    if (msg_bytes > received_messages_max_bytes)
-        received_messages_max_bytes = msg_bytes;
+    if (!is_heartbeat) {
+        size_t msg_bytes = zmsg_content_size(msg);
+        received_messages_count++;
+        received_messages_bytes += msg_bytes;
+        if (msg_bytes > received_messages_max_bytes)
+            received_messages_max_bytes = msg_bytes;
+    }
 
-    zmsg_first(msg);  // iterate to topic frame
+    zframe_t *stream_frame = zmsg_first(msg);  // iterate to topic frame
     zframe_t *topic_frame = zmsg_next(msg);
     char *topic_str = (char*) zframe_data(topic_frame);
     // dump message to file annd free memory
@@ -95,8 +99,12 @@ static int read_zmq_message_and_dump(zloop_t *loop, zsock_t *socket, void *callb
         if (filter_on_topic && strncmp(filter_topic, topic_str, strlen(filter_topic))) {
             // do nothing, frame topic does not match filter topic
         }
-        else if (payload_only) {
+        else if (stream_only) {
+            printf("%.*s\n", (int)zframe_size(stream_frame), zframe_data(stream_frame));
+        } else if (payload_only) {
             dump_message_payload(msg, dump_file, dump_decompress_buffer);
+        } else if (use_text_output) {
+            dump_message_as_json(msg, stdout, dump_decompress_buffer);
         } else {
             zmsg_savex(msg, dump_file);
         }
@@ -117,6 +125,8 @@ static void print_usage(char * const *argv)
             "  -i, --io-threads N         zeromq io threads\n"
             "  -p, --input-port N         port number of zeromq input socket\n"
             "  -l, --payload-only         only write the message payload\n"
+            "  -S, --stream-only          only write the stream name\n"
+            "  -T, --text                 write messages in text format\n"
             "  -t, --topic                only write the messages from given app-env\n"
             "  -A, --abort                abort after missing heartbeats for this many seconds\n"
             "  -q, --quiet                don't log anything\n"
@@ -143,12 +153,14 @@ static void process_arguments(int argc, char * const *argv)
         { "quiet",         no_argument,       0, 'q' },
         { "verbose",       no_argument,       0, 'v' },
         { "payload-only",  no_argument,       0, 'l' },
+        { "stream-only",   no_argument,       0, 'S' },
         { "topic",         required_argument, 0, 't' },
+        { "text",          no_argument,       0, 'T' },
         { "abort",         required_argument, 0, 'A' },
         { 0,               0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqi:h:p:s:lt:aA:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqi:h:p:s:lt:aA:TS", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -185,6 +197,12 @@ static void process_arguments(int argc, char * const *argv)
             break;
         case 'A':
             heartbeat_abort_after = atoi(optarg);
+            break;
+        case 'T':
+            use_text_output = true;
+            break;
+        case 'S':
+            stream_only = true;
             break;
         case 0:
             print_usage(argv);
