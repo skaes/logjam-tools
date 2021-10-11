@@ -203,3 +203,26 @@ func TestServe(t *testing.T) {
 		assert.Equal(t, []dummypub.DummyMessage{}, publisher.PublishedMessages)
 	})
 }
+
+func TestActionNameCorrection(t *testing.T) {
+	type test struct {
+		input string
+		want  string
+	}
+	testCases := []test{
+		{input: ``, want: UnknownAction},
+		{input: `#`, want: UnknownAction},
+		{input: `!!!`, want: UnknownAction},
+		{input: `Abc`, want: UnknownAction},
+		{input: `Abc#def#geh`, want: UnknownAction},
+		{input: `Abc#x`, want: `Abc#x`},
+		{input: `abc::def#x`, want: `abc::def#x`},
+		{input: `a'b#x`, want: UnknownAction},
+		{input: `ab#'x`, want: UnknownAction},
+		{input: `a"b#x`, want: UnknownAction},
+		{input: `ab#"x`, want: UnknownAction},
+	}
+	for _, testCase := range testCases {
+		assert.Equal(t, testCase.want, correctInvalidActionName(testCase.input))
+	}
+}
