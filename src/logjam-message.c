@@ -278,6 +278,21 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
         }
     }
 
+    // forward sender_id field
+    if (json_object_object_get_ex (request, "sender_id", &obj) && json_object_get_type(obj) == json_type_string) {
+        const char *sender_id = json_object_get_string(obj);
+        if (sender_id && *sender_id) {
+            gelf_message_add_json_object (gelf_msg, "_sender_id", obj);
+        }
+    }
+
+    // forward sender_action field
+    if (json_object_object_get_ex (request, "sender_action", &obj) && json_object_get_type(obj) == json_type_string) {
+        const char *sender_action = json_object_get_string(obj);
+        if (sender_action && *sender_action)
+            gelf_message_add_json_object (gelf_msg, "_sender_action", obj);
+    }
+
     int level = 0; // Debug
     if (json_object_object_get_ex (request, "severity", &obj)) {
         level = json_object_get_int (obj);
