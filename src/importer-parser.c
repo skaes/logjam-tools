@@ -272,6 +272,8 @@ void parse_msg_and_forward_interesting_requests(zmsg_t **msgptr, parser_state_t 
             if (reason)
                 parser_state->fe_stats.dropped++;
             parser_state->fe_stats.drop_reasons[reason]++;
+        } else if (n >= 18 && !strncmp("frontend.webvitals", topic_str, 18)) {
+            // ignore message for now
         } else if (n >= 6 && !strncmp("mobile", topic_str, 6)) {
             // ignore message for now
         } else {
