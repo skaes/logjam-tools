@@ -40,7 +40,7 @@ for the importer to pick up.
 ## logjam-graylog-forwarder
 
 A daemon which subscribes to PUB sockets of logjam-devices and
-forwards GELF messages to a graylog GELF socket endpoint.
+forwards GELF messages to a Graylog GELF socket endpoint.
 
 ## logjam-dump
 
@@ -62,7 +62,7 @@ agent.
 
 A utility program which subscribes to a logjam-device PUB socket,
 decompresses and forwards messages to a PUSH socket. Only to be used
-when writing the decompression logic is to cmplex for a consumer.
+when writing the decompression logic is to complex for a consumer.
 
 ## logjam-forwarder
 
@@ -135,7 +135,7 @@ A ZeroMQ PUSH socket for graylog to connect to
 
 ### 9610
 
-A prometheus metrics endpoint, used by logjam-importer.
+A Prometheus metrics endpoint, used by logjam-importer.
 
 ### 9651
 
@@ -168,8 +168,8 @@ ZMQ pub port for logjam-http-forwarder
 
 logjam-tools depends on a number of libraries, some of which are patched versions of
 official packages. These dependencies are managed in a separate project:
-https://github.com/skaes/logjam-libs. Please follow the instructions of this projects'
-README.
+[github.com/skaes/logjam-libs](https://github.com/skaes/logjam-libs). Please follow the
+instructions of this projects' README.
 
 
 # Installation
@@ -177,30 +177,29 @@ README.
 ## Ubuntu packages
 
 Ubuntu packages are available from
-<a href="https://packagecloud.io/stkaes/logjam">
-<img src="doc/packagecloud-logo-med-dark.png" height="16">
-</a>.
+[railsexpress.de](https://railsexpress.de/packages/ubuntu). The Travis pipeline will build
+packages for all supported OS versions and upload them to this server, if the version
+specified in [VERSION.txt](./VERSION.txt) is not on the server. Consequently, this version
+needs to be incremented in order to release a new version.
 
 The are two types of packages available: `logjam-tools` will install
 in `/opt/logjam/`, `logjam-tools-usr-local` in `/usr/local`. The tools
 package uses very recent and sometimes patched libraries. Installing
 in `/usr/local` might cause problems with other applications. In this
 case, use `-opt-logjam` packages. However, you will need to set some
-enviroment variables to make use of the libararies provided by logjam:
+environment variables to make use of the libraries provided by logjam:
 Set `ZMQ_LIB_PATH` to `/opt/logjam/lib` in order to use `libzmq`from
 `ffi-rzmq`, add `/opt/logjam/lib/pkgconfig` to `PKG_CONFIG_PATH` and
 `/opt/logjam/bin` to `PATH`.
 
-Installation instructions how to add the package cloud apt repository
-can be found [here](https://packagecloud.io/stkaes/logjam/install).
-
 The final step is then `apt-get install logjam-tools`.
 
-Currently, 18.04 LTS and 16.04 LTS are supported.
+Currently, 20.04 LTS, 18.04 LTS and 16.04 LTS are supported.
+
 
 ## From source
 
-Install dependencies as described here: https://github.com/skaes/logjam-libs. Remember
+Install dependencies as described [here](https://github.com/skaes/logjam-libs). Remember
 your choice for the `--prefix` argument. Let's assume you stuck to the default
 `/usr/local`.
 
