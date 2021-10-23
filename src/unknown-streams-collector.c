@@ -84,7 +84,10 @@ void log_unknown_streams(unknown_streams_collector_state_t* state) {
         strcat(streams, stream);
         elem = zhashx_next(state->unknown_streams);
     }
-    fprintf(stderr, "[W] unknown_streams_collector:: unknown streams: %s\n", streams);
+    fprintf(stderr,
+            "[W] unknown_streams_collector: unknown streams: %s\n"
+            "[W] unknown_streams_collector: %5zu messages\n",
+            streams, state->message_count);
 }
 
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
@@ -94,6 +97,8 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     zhashx_destroy(&state->unknown_streams);
     state->unknown_streams = zhashx_new();
     assert(state->unknown_streams);
+    state->message_count = 0;
+    state->message_drops = 0;
     return 0;
 }
 
@@ -101,7 +106,6 @@ static
 int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
 {
     int rc = 0;
-    unknown_streams_collector_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
     if (msg) {
         char *cmd = zmsg_popstr(msg);
@@ -110,9 +114,7 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
             rc = -1;
         }
         else if (streq(cmd, "tick")) {
-            printf("[I] unknown_streams_collector: %5zu messages\n", state->message_count);
-            state->message_count = 0;
-            state->message_drops = 0;
+            // do nothing
         } else {
             fprintf(stderr, "[E] subscriber: received unknown actor command: %s\n", cmd);
         }
