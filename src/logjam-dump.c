@@ -119,7 +119,7 @@ static void print_usage(char * const *argv)
     fprintf(stderr,
             "usage: %s [options] [dump-file-name]\n"
             "\nOptions:\n"
-            "  -a, --append               append dump file instead of overwriting it"
+            "  -a, --append               append dump file instead of overwriting it\n"
             "  -s, --subscribe A,B        subscription patterns\n"
             "  -h, --hosts H,I            specs of devices to connect to\n"
             "  -i, --io-threads N         zeromq io threads\n"
