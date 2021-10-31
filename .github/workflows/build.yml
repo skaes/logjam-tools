@@ -1,0 +1,59 @@
+name: build
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        os: [xenial, bionic, focal]
+        location: ["", "-usr-local"]
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - name: Set up Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "2.6.8"
+
+      - name: Install gems
+        run: bundle install
+
+      - name: Build package
+        run: make -f Makefile.docker container-${{ matrix.os }}${{ matrix.location }} package-${{ matrix.os }}${{ matrix.location }}
+
+      - name: Setup docker credentials
+        run: echo ${{ secrets.DOCKER_TOKEN }} | docker login -u stkaes --password-stdin
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+      - name: Push container to docker registry
+        run: make -f Makefile.docker push-${{ matrix.os }}${{ matrix.location }}
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+      - name: Setup SSH credentials
+        run: |
+          mkdir -p ~/.ssh/
+          echo "$SSH_KEY" > ~/.ssh/railsexpress.key
+          chmod 600 ~/.ssh/railsexpress.key
+          cat >>~/.ssh/config <<END
+          Host railsexpress.de
+            HostName railsexpress.de
+            User uploader
+            IdentityFile ~/.ssh/railsexpress.key
+            StrictHostKeyChecking no
+          END
+        env:
+          SSH_KEY: ${{ secrets.RAILSEXPRESS_SSH_KEY }}
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+
+      - name: Upload the package
+        run: make -f Makefile.docker publish-${{ matrix.os }}${{ matrix.location }}
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
