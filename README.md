@@ -180,10 +180,10 @@ instructions of this projects' README.
 ## Ubuntu packages
 
 Ubuntu packages are available from
-[railsexpress.de](https://railsexpress.de/packages/ubuntu). The Travis pipeline will build
-packages for all supported OS versions and upload them to this server, if the version
-specified in [VERSION.txt](./VERSION.txt) is not on the server. Consequently, this version
-needs to be incremented in order to release a new version.
+[railsexpress.de](https://railsexpress.de/packages/ubuntu). The Github Actions pipeline
+will build packages for all supported OS versions and upload them to this server, if the
+version specified in [VERSION.txt](./VERSION.txt) is not on the server. Consequently, this
+version needs to be incremented in order to release a new version.
 
 The are two types of packages available: `logjam-tools` will install
 in `/opt/logjam/`, `logjam-tools-usr-local` in `/usr/local`. The tools
