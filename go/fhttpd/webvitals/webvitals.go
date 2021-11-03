@@ -92,7 +92,7 @@ func publishWebVitals(publisher pub.Publisher, rid *util.RequestId, payload *for
 const UnknownAction = "Unknown#unknown_method"
 
 // ValidActionRegex is used to check for invalid action names
-var ValidActionRegex = regexp.MustCompile(`\A([^:'"#]+::)*[^:'"#]+#[^:'"#]+\z`)
+var ValidActionRegex = regexp.MustCompile(`\A([^:#\s]+::)*[^:#\s]+#get+\z`)
 
 func correctInvalidActionName(action string) string {
 	if !ValidActionRegex.Match([]byte(action)) {

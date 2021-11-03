@@ -51,7 +51,7 @@ func TestExtractWebVitals(t *testing.T) {
 	now := time.Now()
 	nowFunc = func() time.Time { return now }
 
-	action := "myActions#call"
+	action := "myActions#get"
 	rid := "some-app-preview-55ff333eee"
 
 	fid := 0.24
@@ -119,7 +119,7 @@ func TestServe(t *testing.T) {
 	nowFunc = func() time.Time { return now }
 
 	t.Run("With query string", func(t *testing.T) {
-		action := "myActions#call"
+		action := "myActions#get"
 		rid := "some-app-preview-55ff333eee"
 
 		fid := 0.24
@@ -166,8 +166,8 @@ func TestServe(t *testing.T) {
 	})
 
 	t.Run("With invalid request id", func(t *testing.T) {
-		action := "myActions#call"
-		rid := "some-eee"
+		action := "myActions#get"
+		rid := "some-invalidrid"
 
 		fid := 0.24
 		expectedWebVitals := &format.WebVitals{
@@ -215,12 +215,13 @@ func TestActionNameCorrection(t *testing.T) {
 		{input: `!!!`, want: UnknownAction},
 		{input: `Abc`, want: UnknownAction},
 		{input: `Abc#def#geh`, want: UnknownAction},
-		{input: `Abc#x`, want: `Abc#x`},
-		{input: `abc::def#x`, want: `abc::def#x`},
-		{input: `a'b#x`, want: UnknownAction},
-		{input: `ab#'x`, want: UnknownAction},
-		{input: `a"b#x`, want: UnknownAction},
-		{input: `ab#"x`, want: UnknownAction},
+		{input: `Abc#get`, want: `Abc#get`},
+		{input: `abc::def#get`, want: `abc::def#get`},
+		{input: `a:b#x`, want: UnknownAction},
+		{input: `ab#:x`, want: UnknownAction},
+		{input: `a:b#x`, want: UnknownAction},
+		{input: `ab##x`, want: UnknownAction},
+		{input: `a b#get`, want: UnknownAction},
 	}
 	for _, testCase := range testCases {
 		assert.Equal(t, testCase.want, correctInvalidActionName(testCase.input))
