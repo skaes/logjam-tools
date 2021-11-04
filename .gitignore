@@ -68,3 +68,4 @@ packages
 docker-token
 railsexpress-key
 secrets.tar
+Gemfile.lock
