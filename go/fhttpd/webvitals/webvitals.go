@@ -3,6 +3,8 @@ package webvitals
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
+	"strings"
 	"time"
 
 	form "github.com/go-playground/form/v4"
@@ -71,6 +73,7 @@ func extractWebVitals(r *http.Request) (*format.WebVitals, *util.RequestId, erro
 	webVitals.StartedMs = now.UnixNano() / int64(time.Millisecond)
 	webVitals.StartedAt = now.Format(time.RFC3339)
 	webVitals.UserAgent = r.UserAgent()
+	webVitals.LogjamAction = correctInvalidActionName(webVitals.LogjamAction)
 
 	return webVitals, requestId, nil
 }
@@ -84,4 +87,18 @@ func publishWebVitals(publisher pub.Publisher, rid *util.RequestId, payload *for
 	}
 	publisher.Publish(appEnv, routingKey, data, util.NoCompression)
 	return nil
+}
+
+// UnknownAction is used an action name when the original action was invalid
+const UnknownAction = "Unknown#unknown_method"
+
+// ValidActionRegex is used to check for invalid action names
+var ValidActionRegex = regexp.MustCompile(`\A([^:#\s]+::)*[^:#\s]+#get+\z`)
+
+func correctInvalidActionName(action string) string {
+	s := strings.TrimLeft(action, ":")
+	if !ValidActionRegex.Match([]byte(s)) {
+		return UnknownAction
+	}
+	return s
 }
