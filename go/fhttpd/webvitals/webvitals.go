@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	form "github.com/go-playground/form/v4"
@@ -95,8 +96,9 @@ const UnknownAction = "Unknown#unknown_method"
 var ValidActionRegex = regexp.MustCompile(`\A([^:#\s]+::)*[^:#\s]+#get+\z`)
 
 func correctInvalidActionName(action string) string {
-	if !ValidActionRegex.Match([]byte(action)) {
+	s := strings.TrimLeft(action, ":")
+	if !ValidActionRegex.Match([]byte(s)) {
 		return UnknownAction
 	}
-	return action
+	return s
 }

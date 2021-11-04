@@ -222,6 +222,7 @@ func TestActionNameCorrection(t *testing.T) {
 		{input: `a:b#x`, want: UnknownAction},
 		{input: `ab##x`, want: UnknownAction},
 		{input: `a b#get`, want: UnknownAction},
+		{input: `::murks#get`, want: `murks#get`},
 	}
 	for _, testCase := range testCases {
 		assert.Equal(t, testCase.want, correctInvalidActionName(testCase.input))
