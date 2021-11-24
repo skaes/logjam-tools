@@ -145,11 +145,14 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     json_object *request = parse_json_data(json_data, json_data_len, tokener);
 
     if (!request) {
+        if (verbose)
+            printf("[D] could not parse JSON data: %*.s\n", (int)json_data_len, json_data);
         free(app_env);
         return NULL;
     }
 
-    // dump_json_object(stdout, "[D]", request);
+    if (debug)
+        dump_json_object(stdout, "[D]", request);
 
     if (json_object_object_get_ex (request, "host", &obj)) {
         host = json_object_get_string (obj);

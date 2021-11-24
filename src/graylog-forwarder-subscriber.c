@@ -196,8 +196,8 @@ int read_request_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data
     zmsg_t *msg = zmsg_recv(socket);
 
     if (msg) {
-        if (debug)
-            my_zmsg_fprint(msg, "[D] ", stderr);
+        // if (debug)
+        //     my_zmsg_fprint(msg, "[D] ", stderr);
 
         state->message_count++;
         state->message_bytes += zmsg_content_size(msg);
