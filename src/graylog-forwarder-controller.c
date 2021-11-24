@@ -54,12 +54,15 @@ bool controller_create_actors(controller_state_t *state, zlist_t* devices, int r
 static
 void controller_destroy_actors(controller_state_t *state)
 {
-    stream_config_updater_destroy(&state->stream_config_updater);
     zactor_destroy(&state->subscriber);
     zactor_destroy(&state->writer);
     for (size_t i=0; i<num_parsers; i++) {
         graylog_forwarder_parser_destroy(&state->parsers[i]);
     }
+    // The stream config updater must be shut after the parsers, otherwise the parsers
+    // block forever, since they need the config updater to process messages in order to
+    // get streamm info.
+    stream_config_updater_destroy(&state->stream_config_updater);
     watchdog_destroy(&state->watchdog);
 }
 
