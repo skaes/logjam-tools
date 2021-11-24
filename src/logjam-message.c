@@ -25,12 +25,18 @@ const int SYSLOG_MAPPING[6] = {
     1 /* Alert */
 };
 
-static inline void str_normalize(char *str)
+static inline void str_underscore(char *str)
+{
+    for (char *p = str; *p; ++p) {
+        if (*p == '-')
+            *p = '_';
+    }
+}
+
+static inline void str_lower(char *str)
 {
     for (char *p = str; *p; ++p) {
         *p = tolower(*p);
-        if (*p == '-')
-            *p = '_';
     }
 }
 
@@ -241,28 +247,30 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
             } else {
                 char header[1024] = "_http_header_";
                 // clear buffer data
-                zchunk_resize(buffer, zchunk_size(buffer));
+                zchunk_t *extra_headers = zchunk_new(0, 0);
                 json_object_object_foreach (obj, key, value) {
                     char *lowkey = strdup(key);
-                    str_normalize(lowkey);
+                    str_lower(lowkey);
                     if (zhash_lookup(header_fields, lowkey)) {
                         snprintf (header, 1024, "_http_header_%s", lowkey);
+                        str_underscore(header + 13);
                         gelf_message_add_json_object (gelf_msg, header, value);
                     } else {
-                        if (zchunk_size(buffer) > 0)
-                            zchunk_extend(buffer, "\n", 1);
-                        zchunk_extend(buffer, key, strlen(key));
-                        zchunk_extend(buffer, ": ", 2);
+                        if (zchunk_size(extra_headers) > 0)
+                            zchunk_extend(extra_headers, "\n", 1);
+                        zchunk_extend(extra_headers, lowkey, strlen(lowkey));
+                        zchunk_extend(extra_headers, ": ", 2);
                         const char *val = json_object_get_string(value);
-                        zchunk_extend(buffer, val, strlen(val));
+                        zchunk_extend(extra_headers, val, strlen(val));
                     }
                     free(lowkey);
                 }
-                if (zchunk_size(buffer) > 0) {
-                    zchunk_extend(buffer, "", 1);
-                    const char *data = (const char*) zchunk_data(buffer);
+                if (zchunk_size(extra_headers) > 0) {
+                    zchunk_extend(extra_headers, "", 1);
+                    const char *data = (const char*) zchunk_data(extra_headers);
                     gelf_message_add_string(gelf_msg, "_http_headers_not_extracted", data);
                 }
+                zchunk_destroy(&extra_headers);
             }
         }
     }
