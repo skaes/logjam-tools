@@ -53,7 +53,6 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
     gelf_message *gelf_msg = NULL;
 
     if (logjam_msg && !zsys_interrupted) {
-        goto cleanup;
         gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer, state->header_fields);
         // gelf message can be null for unknown streams or unparseable json
         if (gelf_msg == NULL) {
