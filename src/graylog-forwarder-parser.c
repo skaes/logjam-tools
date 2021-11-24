@@ -28,8 +28,10 @@ static void load_fields(parser_state_t *state) {
     FILE* file = fopen(header_fields_file_name, "r");
     if (!file)
         return;
+
     zhash_destroy(&state->header_fields);
     state->header_fields = zhash_new();
+
     char line[256] = {0};
     while (fgets(line, 256, file)) {
         int n = strlen(line);
@@ -153,7 +155,7 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->scratch_buffer = zchunk_new(NULL, 4096);
     state->tokener = json_tokener_new();
     state->stream_info_cache = zhash_new();
-    state->header_fields = NULL;
+    state->header_fields = zhash_new();
     load_fields(state);
     return state;
 }
