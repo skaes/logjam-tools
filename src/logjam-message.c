@@ -106,7 +106,7 @@ char* extract_module(const char *action)
    return strdup(module_str);
 }
 
-gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t *stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *buffer)
+gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t *stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *buffer, zhash_t *header_fields)
 {
     json_object *obj = NULL, *http_request = NULL, *lines = NULL;
     const char *host = "Not found", *action = "";
@@ -240,10 +240,28 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
                 // dump_json_object(stderr, "[W]", request);
             } else {
                 char header[1024] = "_http_header_";
+                // clear buffer data
+                zchunk_resize(buffer, zchunk_size(buffer));
                 json_object_object_foreach (obj, key, value) {
-                    snprintf (header, 1024, "_http_header_%s", key);
-                    str_normalize (header + 13);
-                    gelf_message_add_json_object (gelf_msg, header, value);
+                    char *lowkey = strdup(key);
+                    str_normalize(lowkey);
+                    if (zhash_lookup(header_fields, lowkey)) {
+                        snprintf (header, 1024, "_http_header_%s", lowkey);
+                        gelf_message_add_json_object (gelf_msg, header, value);
+                    } else {
+                        if (zchunk_size(buffer) > 0)
+                            zchunk_extend(buffer, "\n", 1);
+                        zchunk_extend(buffer, key, strlen(key));
+                        zchunk_extend(buffer, ": ", 2);
+                        const char *val = json_object_get_string(value);
+                        zchunk_extend(buffer, val, strlen(val));
+                    }
+                    free(lowkey);
+                }
+                if (zchunk_size(buffer) > 0) {
+                    zchunk_extend(buffer, "", 1);
+                    const char *data = (const char*) zchunk_data(buffer);
+                    gelf_message_add_string(gelf_msg, "_http_headers_not_extracted", data);
                 }
             }
         }

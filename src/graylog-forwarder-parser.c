@@ -14,11 +14,35 @@ typedef struct {
     zchunk_t *scratch_buffer;               // scratch buffer for string operations
     json_tokener *tokener;                  // json tokener instance
     zhash_t *stream_info_cache;             // thread local stream info cache
+    zhash_t *header_fields;                 // whitelisted header fields
     size_t gelf_bytes;                      // size of uncompressed GELF messages
     size_t ticks;
     bool received_term_cmd;
 } parser_state_t;
 
+
+static void load_fields(parser_state_t *state) {
+    if (header_fields_file_name == NULL)
+        return;
+
+    FILE* file = fopen(header_fields_file_name, "r");
+    if (!file)
+        return;
+    zhash_destroy(&state->header_fields);
+    state->header_fields = zhash_new();
+    char line[256] = {0};
+    while (fgets(line, 256, file)) {
+        int n = strlen(line);
+        if (line[n - 1] == '\n') {
+            line[--n] = 0;
+        }
+        if (n > 0) {
+            // printf("[D] adding whitelisted header: %s\n", line);
+            zhash_insert(state->header_fields, line, (void*)1);
+        }
+    }
+    fclose(file);
+}
 
 static
 int process_message(zloop_t *loop, zsock_t *socket, void *arg)
@@ -26,9 +50,10 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
     // printf("[I] graylog-forwarder-parser [%zu]: process_logjam_message\n", state->id);
     parser_state_t *state = arg;
     logjam_message *logjam_msg = logjam_message_read(socket);
+    gelf_message *gelf_msg = NULL;
 
     if (logjam_msg && !zsys_interrupted) {
-        gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer);
+        gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer, state->header_fields);
         // gelf message can be null for unknown streams or unparseable json
         if (gelf_msg == NULL) {
             logjam_message_destroy(&logjam_msg);
@@ -129,6 +154,8 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->scratch_buffer = zchunk_new(NULL, 4096);
     state->tokener = json_tokener_new();
     state->stream_info_cache = zhash_new();
+    state->header_fields = NULL;
+    load_fields(state);
     return state;
 }
 
@@ -141,6 +168,7 @@ void parser_state_destroy(parser_state_t **state_p)
     zsock_destroy(&state->push_socket);
     zchunk_destroy(&state->decompression_buffer);
     zchunk_destroy(&state->scratch_buffer);
+    zhash_destroy(&state->header_fields);
     json_tokener_free(state->tokener);
     zhash_destroy(&state->stream_info_cache);
     free(state);
@@ -184,6 +212,12 @@ int timer_event(zloop_t *loop, int timer_id, void *args)
         zhash_destroy(&state->stream_info_cache);
         state->stream_info_cache = zhash_new();
     }
+
+    // reload white listed fields file every 5 minutes
+    if (state->ticks % 300 == 0) {
+        load_fields(state);
+    }
+
     return 0;
 }
 

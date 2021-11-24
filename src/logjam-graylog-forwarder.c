@@ -31,6 +31,7 @@ static char *logjam_stream_url = "http://localhost:3000/admin/streams";
 static const char* subscription_pattern = NULL;
 
 const char* default_datacenter = "unknown";
+char *header_fields_file_name = NULL;
 
 int metrics_port = 8083;
 char metrics_address[256] = {0};
@@ -55,6 +56,7 @@ static void print_usage(char * const *argv)
             "  -m, --metrics-port N       port to use for prometheus path /metrics\n"
             "  -M, --metrics-ip N         ip for binding metrics endpoint\n"
             "  -T, --trim-frequency N     malloc trim freqency in seconds, 0 means no trimming\n"
+            "  -H, --header-fields F      name of the whitelisted header fields file\n"
             "      --help                 display this message\n"
             "\nEnvironment: (parameters take precedence)\n"
             "  LOGJAM_DEVICES             specs of devices to connect to\n"
@@ -92,10 +94,11 @@ static void process_arguments(int argc, char * const *argv)
         { "metrics-port",   required_argument, 0, 'm' },
         { "metrics-ip",     required_argument, 0, 'M' },
         { "trim-frequency", required_argument, 0, 'T' },
+        { "header-fields",  required_argument, 0, 'H' },
         { 0,                0,                 0,  0  }
     };
 
-    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:A:d:m:M:T:", long_options, &longindex)) != -1) {
+    while ((c = getopt_long(argc, argv, "vqc:np:zh:S:R:e:L:A:d:m:M:T:H:", long_options, &longindex)) != -1) {
         switch (c) {
         case 'v':
             if (verbose)
@@ -163,6 +166,10 @@ static void process_arguments(int argc, char * const *argv)
         case 'A':
             heartbeat_abort_after = atoi(optarg);
             break;
+        case 'H': {
+            header_fields_file_name = optarg;
+            break;
+        }
         case 0:
             print_usage(argv);
             exit(0);
