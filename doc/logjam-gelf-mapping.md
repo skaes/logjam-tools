@@ -25,20 +25,21 @@ level                 highest log level used in "lines" array, mapped to syslog 
 
 Additional fields:
 
-_app                  app-env -- first frame in logjam-device ZeroMQ message
-_total_time           total_time
-_code                 code
-_caller_id            caller_id
-_caller_action        caller_action
-_request_id           request_id
-_user_id              user_id
-_ip                   ip
-_process_id           process_id
-_datacenter           datacenter
-_http_method          request_info["method"]
-_http_url             request_info["url"]
-_http_header_*        all entries from request_info["headers"] as separate fields (normalize header name/key using lowercase letters and underscores)
-_logjam_message_size  the bytesize of the original logjam request message
+_app                         app-env -- first frame in logjam-device ZeroMQ message
+_total_time                  total_time
+_code                        code
+_caller_id                   caller_id
+_caller_action               caller_action
+_request_id                  request_id
+_user_id                     user_id
+_ip                          ip
+_process_id                  process_id
+_datacenter                  datacenter
+_http_method                 request_info["method"]
+_http_url                    request_info["url"]
+_http_header_*               whitelisted entries from request_info["headers"] as separate fields (normalize header name/key using lowercase letters and underscores)
+_http_headers_not_extracted  http headers not whitelisted in the form (header ": "" value)(header ": " value\n)*
+_logjam_message_size         the bytesize of the original logjam request message
 ```
 
 Example
