@@ -358,6 +358,9 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
 
 void logjam_message_destroy(logjam_message **msg)
 {
+    if (*msg == NULL)
+        return;
+
     for (int i = 0; i < 4; i++) {
         zframe_destroy (&(*msg)->frames[i]);
     }
