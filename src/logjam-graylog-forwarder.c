@@ -48,6 +48,7 @@ static void print_usage(char * const *argv)
             "  -n, --dryrun               don't send data to graylog\n"
             "  -p, --parsers N            use N threads for parsing log messages\n"
             "  -z, --compress             compress data sent to graylog\n"
+            "  -v, --verbose              verbose output (specify twice for debug mode)\n"
             "  -R, --rcv-hwm N            high watermark for input socket\n"
             "  -S, --snd-hwm N            high watermark for output socket\n"
             "  -L, --logjam-url U         url from where to retrieve stream config\n"
@@ -102,7 +103,7 @@ static void process_arguments(int argc, char * const *argv)
         switch (c) {
         case 'v':
             if (verbose)
-                debug= true;
+                debug = true;
             else
                 verbose = true;
             break;
