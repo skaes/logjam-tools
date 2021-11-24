@@ -252,21 +252,19 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
                 // clear buffer data
                 zchunk_t *extra_headers = zchunk_new(0, 0);
                 json_object_object_foreach (obj, key, value) {
-                    char *lowkey = strdup(key);
-                    str_lower(lowkey);
-                    if (zhash_lookup(header_fields, lowkey)) {
-                        snprintf (header, 1024, "_http_header_%s", lowkey);
+                    str_lower(key);
+                    if (zhash_lookup(header_fields, key)) {
+                        snprintf (header, 1024, "_http_header_%s", key);
                         str_underscore(header + 13);
                         gelf_message_add_json_object (gelf_msg, header, value);
                     } else {
                         if (zchunk_size(extra_headers) > 0)
                             zchunk_extend(extra_headers, "\n", 1);
-                        zchunk_extend(extra_headers, lowkey, strlen(lowkey));
+                        zchunk_extend(extra_headers, key, strlen(key));
                         zchunk_extend(extra_headers, ": ", 2);
                         const char *val = json_object_get_string(value);
                         zchunk_extend(extra_headers, val, strlen(val));
                     }
-                    free(lowkey);
                 }
                 if (zchunk_size(extra_headers) > 0) {
                     zchunk_extend(extra_headers, "", 1);
