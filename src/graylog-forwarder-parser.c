@@ -53,11 +53,11 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
     gelf_message *gelf_msg = NULL;
 
     if (logjam_msg && !zsys_interrupted) {
+        goto cleanup;
         gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer, state->header_fields);
         // gelf message can be null for unknown streams or unparseable json
         if (gelf_msg == NULL) {
-            logjam_message_destroy(&logjam_msg);
-            return 0;
+            goto cleanup;
         }
         const char *gelf_data = gelf_message_to_string (gelf_msg);
         size_t gelf_source_bytes = strlen(gelf_data);
@@ -98,12 +98,12 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
         } else {
             zmsg_destroy(&msg);
         }
-
-        gelf_message_destroy(&gelf_msg);
-        logjam_message_destroy (&logjam_msg);
         // we don't free gelf_data because it's owned by the json library
     }
 
+ cleanup:
+    gelf_message_destroy(&gelf_msg);
+    logjam_message_destroy(&logjam_msg);
     return 0;
 }
 
@@ -184,15 +184,18 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
     if (msg) {
         char *cmd = zmsg_popstr(msg);
         zmsg_destroy(&msg);
-        if (streq(cmd, "$TERM")) {
+        if (streq(cmd, "tick")) {
+            if (verbose) {
+                fprintf(stderr, "[D] parser [%zu]: received tick command\n", state->id);
+            }
+        } else if (streq(cmd, "$TERM")) {
             fprintf(stderr, "[D] parser [%zu]: received $TERM command\n", state->id);
-            free(cmd);
             state->received_term_cmd = true;
             rc = -1;
         } else {
             fprintf(stderr, "[E] parser [%zu]: received unknown command: %s\n", state->id, cmd);
-            free(cmd);
         }
+        free(cmd);
     }
     return rc;
 }
@@ -201,6 +204,9 @@ static
 int timer_event(zloop_t *loop, int timer_id, void *args)
 {
     parser_state_t* state = (parser_state_t*)args;
+
+    if (verbose)
+        fprintf(stderr, "[D] parser [%zu]: timer event\n", state->id);
 
     // record cpu usage and gelf bytes every second
     graylog_forwarder_prometheus_client_record_rusage_parser(state->id);
@@ -236,6 +242,8 @@ void parser(zsock_t *pipe, void *args)
     zloop_t *loop = zloop_new();
     assert(loop);
     zloop_set_verbose(loop, 0);
+    // we rely on the controller shutting us down
+    zloop_ignore_interrupts(loop);
 
     // setup handler for actor messages
     int rc = zloop_reader(loop, pipe, actor_command, state);

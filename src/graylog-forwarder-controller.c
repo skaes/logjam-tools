@@ -77,6 +77,9 @@ int send_tick_commands(zloop_t *loop, int timer_id, void *arg)
     // send tick commands to actors to let them print out their stats
     zstr_send(state->writer, "tick");
     zstr_send(state->subscriber, "tick");
+    for (size_t i=0; i<num_parsers; i++) {
+        zstr_send(state->parsers[i], "tick");
+    }
 
     // get number of messages received by subscriber
     size_t messages_received = 0;
