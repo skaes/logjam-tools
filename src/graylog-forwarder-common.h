@@ -19,7 +19,7 @@ extern bool compress_gelf;
 #define DEFAULT_INTERFACE_PORT 9609
 #define DEFAULT_INTERFACE "tcp://0.0.0.0:9609"
 
-extern char* header_fields_file_name;
+extern char* headers_file_name;
 
 extern zlist_t *hosts;
 extern char *interface;
