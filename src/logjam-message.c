@@ -112,6 +112,44 @@ char* extract_module(const char *action)
    return strdup(module_str);
 }
 
+static int stringcmp(const void *a, const void *b)
+{
+    const char **ia = (const char **)a;
+    const char **ib = (const char **)b;
+    return strcmp(*ia, *ib);
+}
+
+zchunk_t* sort_headers(zhash_t *headers) {
+    size_t n = zhash_size(headers);
+    const char **keys = malloc(n * sizeof(char*));
+    char* value = zhash_first(headers);
+    int i = 0;
+    size_t bufsize = 1; // terminating null byte
+    while (value) {
+        if (i>0) bufsize++; // newline if not first header
+        const char *key = zhash_cursor(headers);
+        keys[i++] = key;
+        bufsize += strlen(key) + 2 + strlen(value); // 2 = strlen(": ")
+        value = zhash_next(headers);
+    }
+    qsort(keys, n, sizeof(char*), stringcmp);
+    zchunk_t *extra_headers_chunk = zchunk_new(NULL, bufsize*2);
+    for (i = 0; i < n; i++) {
+        if (i > 0) {
+            zchunk_append(extra_headers_chunk, "\n", 1);
+        }
+        const char *key = keys[i];
+        char *val = zhash_lookup(headers, key);
+        zchunk_append(extra_headers_chunk, key, strlen(key));
+        zchunk_append(extra_headers_chunk, ": ", 2);
+        zchunk_append(extra_headers_chunk, val, strlen(val));
+    }
+    free(keys);
+    zchunk_append(extra_headers_chunk, "", 1);
+    return extra_headers_chunk;
+}
+
+
 gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t *stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *buffer, zhash_t *header_fields)
 {
     json_object *obj = NULL, *http_request = NULL, *lines = NULL;
@@ -250,7 +288,7 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
             } else {
                 char header[1024] = "_http_header_";
                 // clear buffer data
-                zchunk_t *extra_headers = zchunk_new(0, 0);
+                zhash_t *headers = zhash_new();
                 json_object_object_foreach (obj, key, value) {
                     str_lower(key);
                     if (zhash_lookup(header_fields, key)) {
@@ -258,20 +296,18 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
                         str_underscore(header + 13);
                         gelf_message_add_json_object (gelf_msg, header, value);
                     } else {
-                        if (zchunk_size(extra_headers) > 0)
-                            zchunk_extend(extra_headers, "\n", 1);
-                        zchunk_extend(extra_headers, key, strlen(key));
-                        zchunk_extend(extra_headers, ": ", 2);
                         const char *val = json_object_get_string(value);
-                        zchunk_extend(extra_headers, val, strlen(val));
+                        zhash_insert(headers, key, strdup(val));
+                        zhash_freefn(headers, key, free);
                     }
                 }
-                if (zchunk_size(extra_headers) > 0) {
-                    zchunk_extend(extra_headers, "", 1);
-                    const char *data = (const char*) zchunk_data(extra_headers);
+                if (zhash_size(headers) > 0) {
+                    zchunk_t *extra_headers_chunk = sort_headers(headers);
+                    const char *data = (const char*) zchunk_data(extra_headers_chunk);
                     gelf_message_add_string(gelf_msg, "_http_headers_not_extracted", data);
+                    zchunk_destroy(&extra_headers_chunk);
                 }
-                zchunk_destroy(&extra_headers);
+                zhash_destroy(&headers);
             }
         }
     }

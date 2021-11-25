@@ -51,7 +51,7 @@ static void send_graylog_message(zmsg_t* msg, writer_state_t* state)
     if (!zsys_interrupted) {
         state->message_count++;
         state->message_bytes += zmsg_content_size(out_msg);
-        zmsg_send(&out_msg, state->push_socket);
+        zmsg_send_and_destroy(&out_msg, state->push_socket);
     } else {
         zmsg_destroy(&out_msg);
     }
@@ -140,6 +140,7 @@ void graylog_forwarder_writer(zsock_t *pipe, void *args)
                 fprintf(stderr, "[E] writer: received unknown command: %s\n", cmd);
                 assert(false);
             }
+            free(cmd);
         } else if (socket == state->pull_socket) {
             msg = zmsg_recv(state->pull_socket);
             if (msg != NULL) {
