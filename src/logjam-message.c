@@ -25,12 +25,18 @@ const int SYSLOG_MAPPING[6] = {
     1 /* Alert */
 };
 
-static inline void str_normalize(char *str)
+static inline void str_underscore(char *str)
+{
+    for (char *p = str; *p; ++p) {
+        if (*p == '-')
+            *p = '_';
+    }
+}
+
+static inline void str_lower(char *str)
 {
     for (char *p = str; *p; ++p) {
         *p = tolower(*p);
-        if (*p == '-')
-            *p = '_';
     }
 }
 
@@ -106,7 +112,7 @@ char* extract_module(const char *action)
    return strdup(module_str);
 }
 
-gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t *stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *buffer)
+gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t *stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *buffer, zhash_t *header_fields)
 {
     json_object *obj = NULL, *http_request = NULL, *lines = NULL;
     const char *host = "Not found", *action = "";
@@ -139,11 +145,14 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     json_object *request = parse_json_data(json_data, json_data_len, tokener);
 
     if (!request) {
+        if (verbose)
+            printf("[D] could not parse JSON data: %*.s\n", (int)json_data_len, json_data);
         free(app_env);
         return NULL;
     }
 
-    // dump_json_object(stdout, "[D]", request);
+    if (debug)
+        dump_json_object(stdout, "[D]", request);
 
     if (json_object_object_get_ex (request, "host", &obj)) {
         host = json_object_get_string (obj);
@@ -240,11 +249,29 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
                 // dump_json_object(stderr, "[W]", request);
             } else {
                 char header[1024] = "_http_header_";
+                // clear buffer data
+                zchunk_t *extra_headers = zchunk_new(0, 0);
                 json_object_object_foreach (obj, key, value) {
-                    snprintf (header, 1024, "_http_header_%s", key);
-                    str_normalize (header + 13);
-                    gelf_message_add_json_object (gelf_msg, header, value);
+                    str_lower(key);
+                    if (zhash_lookup(header_fields, key)) {
+                        snprintf (header, 1024, "_http_header_%s", key);
+                        str_underscore(header + 13);
+                        gelf_message_add_json_object (gelf_msg, header, value);
+                    } else {
+                        if (zchunk_size(extra_headers) > 0)
+                            zchunk_extend(extra_headers, "\n", 1);
+                        zchunk_extend(extra_headers, key, strlen(key));
+                        zchunk_extend(extra_headers, ": ", 2);
+                        const char *val = json_object_get_string(value);
+                        zchunk_extend(extra_headers, val, strlen(val));
+                    }
                 }
+                if (zchunk_size(extra_headers) > 0) {
+                    zchunk_extend(extra_headers, "", 1);
+                    const char *data = (const char*) zchunk_data(extra_headers);
+                    gelf_message_add_string(gelf_msg, "_http_headers_not_extracted", data);
+                }
+                zchunk_destroy(&extra_headers);
             }
         }
     }
@@ -340,6 +367,9 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
 
 void logjam_message_destroy(logjam_message **msg)
 {
+    if (*msg == NULL)
+        return;
+
     for (int i = 0; i < 4; i++) {
         zframe_destroy (&(*msg)->frames[i]);
     }

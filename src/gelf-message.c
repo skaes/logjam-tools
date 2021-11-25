@@ -44,6 +44,7 @@ const char* gelf_message_to_string(const gelf_message *msg)
 
 void gelf_message_destroy(gelf_message **msg)
 {
+    if (*msg == NULL) return;
     json_object *json = (json_object *) *msg;
     json_object_put(json);
     *msg = NULL;

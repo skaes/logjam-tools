@@ -14,11 +14,62 @@ typedef struct {
     zchunk_t *scratch_buffer;               // scratch buffer for string operations
     json_tokener *tokener;                  // json tokener instance
     zhash_t *stream_info_cache;             // thread local stream info cache
+    zhash_t *headers;                       // whitelisted HTTP headers
     size_t gelf_bytes;                      // size of uncompressed GELF messages
     size_t ticks;
     bool received_term_cmd;
 } parser_state_t;
 
+
+static char *default_headers[] = {
+    "content-type",
+    "cookie",
+    "forwarded-user-agent",
+    "origin",
+    "referer",
+    "true-client-ip",
+    "user-agent",
+    "x-forwarded-for",
+    "x-original-forwarded-for",
+    "x-real-ip",
+    NULL
+};
+
+static zhash_t* default_headers_hash() {
+    zhash_t *headers = zhash_new();
+
+    for (char **p = &default_headers[0]; *p; p++) {
+        printf("[D] adding default header: %s\n", *p);
+        zhash_insert(headers, *p, (void*)1);
+    }
+
+    return headers;
+}
+
+static void load_headers(parser_state_t *state) {
+    if (headers_file_name == NULL)
+        return;
+
+    FILE* file = fopen(headers_file_name, "r");
+    if (!file)
+        return;
+
+    zhash_destroy(&state->headers);
+    state->headers = default_headers_hash();
+
+    char line[256] = {0};
+    while (fgets(line, 256, file)) {
+        int n = strlen(line);
+        if (line[n - 1] == '\n') {
+            line[--n] = 0;
+        }
+        if (n > 0) {
+            // printf("[D] adding whitelisted header: %s\n", line);
+            zhash_insert(state->headers, line, (void*)1);
+        }
+    }
+    fclose(file);
+}
 
 static
 int process_message(zloop_t *loop, zsock_t *socket, void *arg)
@@ -26,13 +77,13 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
     // printf("[I] graylog-forwarder-parser [%zu]: process_logjam_message\n", state->id);
     parser_state_t *state = arg;
     logjam_message *logjam_msg = logjam_message_read(socket);
+    gelf_message *gelf_msg = NULL;
 
     if (logjam_msg && !zsys_interrupted) {
-        gelf_message *gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer);
+        gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer, state->headers);
         // gelf message can be null for unknown streams or unparseable json
         if (gelf_msg == NULL) {
-            logjam_message_destroy(&logjam_msg);
-            return 0;
+            goto cleanup;
         }
         const char *gelf_data = gelf_message_to_string (gelf_msg);
         size_t gelf_source_bytes = strlen(gelf_data);
@@ -73,12 +124,12 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
         } else {
             zmsg_destroy(&msg);
         }
-
-        gelf_message_destroy(&gelf_msg);
-        logjam_message_destroy (&logjam_msg);
         // we don't free gelf_data because it's owned by the json library
     }
 
+ cleanup:
+    gelf_message_destroy(&gelf_msg);
+    logjam_message_destroy(&logjam_msg);
     return 0;
 }
 
@@ -129,6 +180,8 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->scratch_buffer = zchunk_new(NULL, 4096);
     state->tokener = json_tokener_new();
     state->stream_info_cache = zhash_new();
+    state->headers = default_headers_hash();
+    load_headers(state);
     return state;
 }
 
@@ -141,6 +194,7 @@ void parser_state_destroy(parser_state_t **state_p)
     zsock_destroy(&state->push_socket);
     zchunk_destroy(&state->decompression_buffer);
     zchunk_destroy(&state->scratch_buffer);
+    zhash_destroy(&state->headers);
     json_tokener_free(state->tokener);
     zhash_destroy(&state->stream_info_cache);
     free(state);
@@ -156,15 +210,18 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *arg)
     if (msg) {
         char *cmd = zmsg_popstr(msg);
         zmsg_destroy(&msg);
-        if (streq(cmd, "$TERM")) {
+        if (streq(cmd, "tick")) {
+            if (verbose) {
+                fprintf(stderr, "[D] parser [%zu]: received tick command\n", state->id);
+            }
+        } else if (streq(cmd, "$TERM")) {
             fprintf(stderr, "[D] parser [%zu]: received $TERM command\n", state->id);
-            free(cmd);
             state->received_term_cmd = true;
             rc = -1;
         } else {
             fprintf(stderr, "[E] parser [%zu]: received unknown command: %s\n", state->id, cmd);
-            free(cmd);
         }
+        free(cmd);
     }
     return rc;
 }
@@ -173,6 +230,9 @@ static
 int timer_event(zloop_t *loop, int timer_id, void *args)
 {
     parser_state_t* state = (parser_state_t*)args;
+
+    if (verbose)
+        fprintf(stderr, "[D] parser [%zu]: timer event\n", state->id);
 
     // record cpu usage and gelf bytes every second
     graylog_forwarder_prometheus_client_record_rusage_parser(state->id);
@@ -184,6 +244,12 @@ int timer_event(zloop_t *loop, int timer_id, void *args)
         zhash_destroy(&state->stream_info_cache);
         state->stream_info_cache = zhash_new();
     }
+
+    // reload white listed headers file every 5 minutes
+    if (state->ticks % 300 == 0) {
+        load_headers(state);
+    }
+
     return 0;
 }
 
@@ -202,6 +268,8 @@ void parser(zsock_t *pipe, void *args)
     zloop_t *loop = zloop_new();
     assert(loop);
     zloop_set_verbose(loop, 0);
+    // we rely on the controller shutting us down
+    zloop_ignore_interrupts(loop);
 
     // setup handler for actor messages
     int rc = zloop_reader(loop, pipe, actor_command, state);

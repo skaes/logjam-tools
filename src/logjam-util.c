@@ -466,12 +466,12 @@ int decompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body,
 
 size_t zchunk_ensure_size(zchunk_t *buffer, size_t desired_size)
 {
-    size_t current_size = zchunk_max_size(buffer);
+    size_t current_max_size = zchunk_max_size(buffer);
 
-    if (desired_size <= current_size)
-        return current_size;
+    if (desired_size <= current_max_size)
+        return current_max_size;
 
-    size_t next_size = 2 * current_size;
+    size_t next_size = current_max_size == 0 ? 1024 : 2 * current_max_size;
 
     while (next_size < max_buffer_size)
         next_size *= 2;
