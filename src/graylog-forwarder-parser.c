@@ -21,6 +21,31 @@ typedef struct {
 } parser_state_t;
 
 
+static char *default_headers[] = {
+    "content-type",
+    "cookie",
+    "forwarded-user-agent",
+    "origin",
+    "referer",
+    "true-client-ip",
+    "user-agent",
+    "x-forwarded-for",
+    "x-original-forwarded-for",
+    "x-real-ip",
+    NULL
+};
+
+static zhash_t* default_headers_hash() {
+    zhash_t *headers = zhash_new();
+
+    for (char **p = &default_headers[0]; *p; p++) {
+        printf("[D] adding default header: %s\n", *p);
+        zhash_insert(headers, *p, (void*)1);
+    }
+
+    return headers;
+}
+
 static void load_headers(parser_state_t *state) {
     if (headers_file_name == NULL)
         return;
@@ -30,7 +55,7 @@ static void load_headers(parser_state_t *state) {
         return;
 
     zhash_destroy(&state->headers);
-    state->headers = zhash_new();
+    state->headers = default_headers_hash();
 
     char line[256] = {0};
     while (fgets(line, 256, file)) {
@@ -155,7 +180,7 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->scratch_buffer = zchunk_new(NULL, 4096);
     state->tokener = json_tokener_new();
     state->stream_info_cache = zhash_new();
-    state->headers = zhash_new();
+    state->headers = default_headers_hash();
     load_headers(state);
     return state;
 }
