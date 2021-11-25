@@ -61,8 +61,8 @@ end
 
 desc "upload packages to aptly servers"
 task :upload do
-  APTLY_HOSTS.each do |host|
-    UBUNTU_VERSIONS.each do |name|
+  UBUNTU_VERSIONS.each do |name|
+    APTLY_HOSTS.each do |host|
       PREFIXES.each do |location, prefix|
         suffix = SUFFIXES[location]
         deb = "logjam-tools#{suffix}_#{VERSION}_amd64.deb"
