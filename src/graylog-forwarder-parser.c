@@ -25,6 +25,7 @@ static char *default_headers[] = {
     "content-type",
     "cookie",
     "forwarded-user-agent",
+    "host",
     "origin",
     "referer",
     "true-client-ip",
