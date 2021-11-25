@@ -39,7 +39,7 @@ static zhash_t* default_headers_hash() {
     zhash_t *headers = zhash_new();
 
     for (char **p = &default_headers[0]; *p; p++) {
-        printf("[D] adding default header: %s\n", *p);
+        // printf("[D] adding default header: %s\n", *p);
         zhash_insert(headers, *p, (void*)1);
     }
 
