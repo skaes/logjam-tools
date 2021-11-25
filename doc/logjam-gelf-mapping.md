@@ -65,7 +65,7 @@ Example
   "_http_method": "GET",
   "_http_url": "/rest/jobs/postings/2196851",
   "_http_header_user_agent": "RestCake/0.10.6",
-  "_http_headers_not_extracted": "accept_encoding: deflate, gzip\naccept: application/json",
+  "_http_headers_not_extracted": "accept-encoding: deflate, gzip\naccept: application/json",
   "_logjam_message_size": 1192
 }
 ```
