@@ -292,7 +292,7 @@ func backupWithoutRequests(db string, kind backupKind) {
 	}
 	err := cmd.Run()
 	if err != nil {
-		logError("creating archive failed: %s", err)
+		logError("failed to create archive %s: %s", backupName, err)
 		err = os.Remove(backupName)
 		if err != nil {
 			logError("could not remove archive %s: %s", filepath.Base(backupName), err)
@@ -340,7 +340,7 @@ func backupRequests(db string) {
 	}
 	err := cmd.Run()
 	if err != nil {
-		logError("backing up requests failed: %s", err)
+		logError("failed tp backup requests %s: %s", backupName, err)
 		err = os.Remove(backupName)
 		if err != nil {
 			logError("could not remove request backup file %s: %s", filepath.Base(backupName), err)
