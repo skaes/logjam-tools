@@ -30,6 +30,7 @@ _total_time                  total_time
 _code                        code
 _caller_id                   caller_id
 _caller_action               caller_action
+_caller_app                  the calling application name (computed from caller_id)
 _request_id                  request_id
 _user_id                     user_id
 _ip                          ip
