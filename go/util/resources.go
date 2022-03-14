@@ -3,6 +3,7 @@ package util
 import (
 	"encoding/json"
 	"io/ioutil"
+	"math"
 	"net/http"
 
 	// "github.com/davecgh/go-spew/spew"
@@ -71,7 +72,7 @@ func convertFloat64(v interface{}) float64 {
 }
 
 func (rs *Resources) ExtractResources(data map[string]interface{}) (float64, map[string]float64, map[string]float64) {
-	var totalTime float64
+	var totalTime, accumulatedTime float64
 	times := make(map[string]float64)
 	for _, r := range rs.TimeResources {
 		if v, found := data[r]; found {
@@ -79,10 +80,15 @@ func (rs *Resources) ExtractResources(data map[string]interface{}) (float64, map
 			if r == "total_time" {
 				totalTime = m / 1000
 			} else if m > 0 {
-				times[r] = m / 1000
+				t := m / 1000
+				times[r] = t
+				if r != "gc_time" {
+					accumulatedTime += t
+				}
 			}
 		}
 	}
+	times["other_time"] = math.Max(totalTime-accumulatedTime, 0.0)
 	calls := make(map[string]float64)
 	for _, r := range rs.CallResources {
 		if v, found := data[r]; found {
