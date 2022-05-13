@@ -890,12 +890,13 @@ const char* my_fqdn()
     }
     freeaddrinfo(info);
 
-    if (fqdn) return fqdn;
+    if (!fqdn) {
+        fprintf(stderr, "[E] could not determine FQDN: no addrinfo had a usable string");
+        fprintf(stderr, "[W] using hostname: %s\n", hostname);
+        fqdn = hostname;
+    }
 
-    fprintf(stderr, "[E] could not determine FQDN: no addrinfo had a usable string");
-    fprintf(stderr, "[W] using hostname: %s\n", hostname);
-
-    return hostname;
+    return fqdn;
 }
 
 void send_heartbeat(zsock_t *socket, msg_meta_t *meta, int pub_port)
