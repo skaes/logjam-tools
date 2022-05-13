@@ -882,13 +882,20 @@ const char* my_fqdn()
 
     struct addrinfo *p;
     for (p = info; p != NULL; p = p->ai_next) {
-        if (fqdn) free(fqdn);
-        fqdn = strdup(p->ai_canonname);
-        // printf("hostname: %s\n", p->ai_canonname);
+        if (p->ai_canonname) {
+            if (fqdn) free(fqdn);
+            fqdn = strdup(p->ai_canonname);
+            // printf("hostname: %s\n", fqdn);
+        }
     }
     freeaddrinfo(info);
 
-    return fqdn;
+    if (fqdn) return fqdn;
+
+    fprintf(stderr, "[E] could not determine FQDN: no addrinfo had a usable string");
+    fprintf(stderr, "[W] using hostname: %s\n", hostname);
+
+    return hostname;
 }
 
 void send_heartbeat(zsock_t *socket, msg_meta_t *meta, int pub_port)
