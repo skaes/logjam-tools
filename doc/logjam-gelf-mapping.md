@@ -36,6 +36,7 @@ _user_id                     user_id
 _ip                          ip
 _process_id                  process_id
 _datacenter                  datacenter
+_namespace                   namespace
 _http_method                 request_info["method"]
 _http_url                    request_info["url"]
 _http_header_*               whitelisted entries from request_info["headers"] as separate fields (normalize header name/key using lowercase letters and underscores)
