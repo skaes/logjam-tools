@@ -24,3 +24,9 @@ uninstall-local:
 
 check-local:
 	$(MAKE) -C go $(MFLAGS) check
+
+tag:
+	git tag -f $(shell cat VERSION.txt)
+
+release: tag
+	git push && git push --tags
