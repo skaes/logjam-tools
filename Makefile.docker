@@ -90,6 +90,8 @@ PACKAGES:=package-focal package-focal-usr-local package-bionic package-bionic-us
 
 packages: $(PACKAGES)
 
+export FPM_ALLOW_MODIFIED_FILES=1
+
 package-focal:
 	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook --update=always stkaes/logjam-tools:focal-latest build_tools.rb
 	mkdir -p packages/ubuntu/focal && mv *.deb packages/ubuntu/focal
