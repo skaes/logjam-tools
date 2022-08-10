@@ -147,14 +147,16 @@ static int timer_event(zloop_t *loop, int timer_id, void *arg)
     double avg_compressed_size = compressed_count ? (compressed_bytes / 1024.0) / compressed_count : 0;
     double max_compressed_size = compressed_messages_max_bytes / 1024.0;
 
-    printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
-           message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
+    if (!quiet) {
+        printf("[I] processed %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
+               message_count, message_bytes/1024.0, avg_msg_size, max_msg_size);
 
-    printf("[I] compressd %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
-           compressed_count, compressed_bytes/1024.0, avg_compressed_size, max_compressed_size);
+        printf("[I] compressd %zu messages (%.2f KB), avg: %.2f KB, max: %.2f KB\n",
+               compressed_count, compressed_bytes/1024.0, avg_compressed_size, max_compressed_size);
 
-    printf("[I] pings: %zu, invalid msgs: %zu, broken metas: %zu\n",
-           ping_count, invalid_count, broken_meta_count);
+        printf("[I] pings: %zu, invalid msgs: %zu, broken metas: %zu\n",
+               ping_count, invalid_count, broken_meta_count);
+    }
 
     last_received_count = received_messages_count;
     last_ping_count = ping_count_total;
@@ -708,16 +710,18 @@ int main(int argc, char * const *argv)
     setvbuf(stdout, NULL, _IOLBF, 0);
     setvbuf(stderr, NULL, _IOLBF, 0);
 
-    printf("[I] started %s\n"
-           "[I] pull-port:    %d\n"
-           "[I] pub-port:     %d\n"
-           "[I] router-port:  %d\n"
-           "[I] metrics-port: %d\n"
-           "[I] stats-port: %d\n"
-           "[I] io-threads:   %lu\n"
-           "[I] rcv-hwm:      %d\n"
-           "[I] snd-hwm:      %d\n"
-           , argv[0], pull_port, pub_port, router_port, metrics_port, stats_port, io_threads, rcv_hwm, snd_hwm);
+    if (!quiet) {
+        printf("[I] started %s\n"
+               "[I] pull-port:    %d\n"
+               "[I] pub-port:     %d\n"
+               "[I] router-port:  %d\n"
+               "[I] metrics-port: %d\n"
+               "[I] stats-port: %d\n"
+               "[I] io-threads:   %lu\n"
+               "[I] rcv-hwm:      %d\n"
+               "[I] snd-hwm:      %d\n"
+               , argv[0], pull_port, pub_port, router_port, metrics_port, stats_port, io_threads, rcv_hwm, snd_hwm);
+    }
 
     // set global config
     zsys_init();
@@ -852,9 +856,10 @@ int main(int argc, char * const *argv)
     zloop_destroy(&loop);
     assert(loop == NULL);
 
-    printf("[I] received %zu messages\n", received_messages_count);
-
-    printf("[I] shutting down\n");
+    if (!quiet) {
+        printf("[I] received %zu messages\n", received_messages_count);
+        printf("[I] shutting down\n");
+    }
 
     watchdog_destroy(&device_watchdog);
     zsock_destroy(&receiver);
@@ -870,7 +875,9 @@ int main(int argc, char * const *argv)
 
     device_prometheus_client_shutdown();
 
-    printf("[I] %s terminated\n", argv[0]);
+    if (!quiet) {
+        printf("[I] %s terminated\n", argv[0]);
+    }
 
     return rc;
 }
