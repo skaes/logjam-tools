@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ShowMax/go-fqdn"
+	"github.com/Showmax/go-fqdn"
 	"github.com/golang/snappy"
 	zmq "github.com/pebbe/zmq4"
 	log "github.com/skaes/logjam-tools/go/logging"
