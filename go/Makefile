@@ -26,13 +26,13 @@ uninstall:
 	cd $(bindir) && rm -f $(GO_INSTALL_TARGETS)
 
 logjam-livestream: livestream-server/server.go
-	go build -i -o $@ $<
+	go build -o $@ $<
 
 logjam-livestream-generator: livestream-generator/generator.go
-	go build -i -o $@ $<
+	go build -o $@ $<
 
 logjam-http-forwarder: http-forwarder/forwarder.go util/util.go
-	go build -i -o $@ $<
+	go build -o $@ $<
 
 logjam-fhttpd: fhttpd/* util/util.go
 	go build -o $@ github.com/skaes/logjam-tools/go/fhttpd
@@ -41,16 +41,16 @@ EXPORTER_PKGS = prometheusexporter/messageparser/messageparser.go prometheusexpo
 EXPORTER_DEPS = util/util.go util/streams.go util/resources.go logging/logging.go frontendmetrics/frontendmetrics.go
 
 logjam-prometheus-exporter: prometheusexporter/exporter.go $(EXPORTER_DEPS) $(EXPORTER_PKGS)
-	go build -i -o $@ $<
+	go build -o $@ $<
 
 logjam-mongodb-backup: backup/backup.go
-	go build -i -o $@ $<
+	go build -o $@ $<
 
 logjam-mongodb-restore: restore/restore.go
-	go build -i -o $@ $<
+	go build -o $@ $<
 
 logjam-rename-callers: rename-callers/rename-callers.go
-	go build -i -o $@ $<
+	go build -o $@ $<
 
 GO_TESTS = promcollector-test livestream-test util-test frontendmetrics-test fhttpd-test formats-test
 .PHONY: $(GO_TESTS)
