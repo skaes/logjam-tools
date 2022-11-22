@@ -102,6 +102,12 @@ const char* processor_setup_page(processor_state_t *self, json_object *request)
         page_obj = json_object_new_string("Unknown#unknown_method");
     }
 
+    if (page_obj == NULL) {
+        fprintf(stderr, "[E] missing action for request\n");
+        dump_json_object(stderr, "[E] REQUEST", request);
+        page_obj = json_object_new_string("Unknown#unknown_method");
+    }
+
     const char *page_str = json_object_get_string(page_obj);
 
     if (strlen(page_str) == 0)
