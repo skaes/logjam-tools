@@ -103,8 +103,8 @@ const char* processor_setup_page(processor_state_t *self, json_object *request)
     }
 
     if (page_obj == NULL) {
-        fprintf(stderr, "[E] missing action for request\n");
-        dump_json_object(stderr, "[E] REQUEST", request);
+        fprintf(stderr, "[E] missing action for request in stream: %s\n", self->stream_info->key);
+        // dump_json_object(stderr, "[D] REQUEST", request);
         page_obj = json_object_new_string("Unknown#unknown_method");
     }
 
