@@ -181,22 +181,22 @@ void importer_prometheus_client_init(const char* address, importer_prometheus_cl
 
     for (uint i=0; i<params.num_subscribers; i++) {
         char name[256];
-        sprintf(name, "subscriber%d", i);
+        snprintf(name, sizeof(name), "subscriber%d", i);
         client.cpu_seconds_total_subscribers.push_back(&client.cpu_seconds_total_family->Add({{"thread", name}}));
     }
     for (uint i=0; i<params.num_parsers; i++) {
         char name[256];
-        sprintf(name, "parser%d", i);
+        snprintf(name, sizeof(name), "parser%d", i);
         client.cpu_seconds_total_parsers.push_back(&client.cpu_seconds_total_family->Add({{"thread", name}}));
     }
     for (uint i=0; i<params.num_writers; i++) {
         char name[256];
-        sprintf(name, "writer%d", i);
+        snprintf(name, sizeof(name), "writer%d", i);
         client.cpu_seconds_total_writers.push_back(&client.cpu_seconds_total_family->Add({{"thread", name}}));
     }
     for (uint i=0; i<params.num_updaters; i++) {
         char name[256];
-        sprintf(name, "updater%d", i);
+        snprintf(name, sizeof(name), "updater%d", i);
         client.cpu_seconds_total_updaters.push_back(&client.cpu_seconds_total_family->Add({{"thread", name}}));
     }
 

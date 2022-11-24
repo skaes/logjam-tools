@@ -105,7 +105,7 @@ void graylog_forwarder_prometheus_client_init(const char* address, int num_parse
     client.cpu_usage_total_parsers = {};
     for (int i=0; i<num_parsers; i++) {
         char name[256];
-        sprintf(name, "parser%d", i);
+        snprintf(name, sizeof(name), "parser%d", i);
         client.cpu_usage_total_parsers.push_back(&client.cpu_usage_total_family->Add({{"thread", name}}));
     }
 

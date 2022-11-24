@@ -99,7 +99,7 @@ void device_prometheus_client_init(const char* address, const char* device, int 
     client.cpu_usage_total_compressors = {};
     for (int i=0; i<num_compressors; i++) {
         char name[256];
-        sprintf(name, "compressor%d", i);
+        snprintf(name, sizeof(name), "compressor%d", i);
         client.cpu_usage_total_compressors.push_back(&client.cpu_usage_total_family->Add({{"thread", name}}));
     }
 
