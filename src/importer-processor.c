@@ -89,7 +89,7 @@ const char* append_to_json_string(json_object **jobj, const char* old_str, const
 }
 
 static
-const char* processor_setup_page(processor_state_t *self, json_object *request)
+const char* processor_setup_page(processor_state_t *self, json_object *request, parser_state_t *pstate, zmsg_t *msg)
 {
     json_object *page_obj = NULL;
     if (json_object_object_get_ex(request, "action", &page_obj)) {
@@ -103,7 +103,10 @@ const char* processor_setup_page(processor_state_t *self, json_object *request)
     }
 
     if (page_obj == NULL) {
-        fprintf(stderr, "[E] missing action for request in stream: %s\n", self->stream_info->key);
+        zmsg_t *msg_copy = zmsg_dup(msg);
+        zmsg_pushstr(msg_copy, "action");
+        zmsg_send_and_destroy(&msg_copy, pstate->unknown_streams_collector_socket);
+        // fprintf(stderr, "[E] missing action for request in stream: %s\n", self->stream_info->key);
         // dump_json_object(stderr, "[D] REQUEST", request);
         page_obj = json_object_new_string("Unknown#unknown_method");
     }
@@ -795,14 +798,14 @@ backend_only_request(const char *action, stream_info_t *stream)
     return 0;
 }
 
-void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request)
+void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg)
 {
     // dump_json_object(stdout, "[D] REQUEST", request);
     request_data_t request_data;
     extract_request_path(&request_data, request, self->stream_info);
     if (ignore_request(&request_data, request, self->stream_info)) return;
 
-    request_data.page = processor_setup_page(self, request);
+    request_data.page = processor_setup_page(self, request, pstate, msg);
     request_data.module = processor_setup_module(self, request_data.page);
     request_data.response_code = processor_setup_response_code(self, request);
     request_data.severity = processor_setup_severity(self, request);
@@ -878,18 +881,18 @@ void processor_add_request(processor_state_t *self, parser_state_t *pstate, json
         return;
     }
     json_object_get(request);
-    zmsg_t *msg = zmsg_new();
-    zmsg_addstr(msg, self->db_name);
-    zmsg_addstr(msg, "r");
-    zmsg_addstr(msg, request_data.module);
-    zmsg_addptr(msg, request);
-    zmsg_addptr(msg, self->stream_info);
+    zmsg_t *updater_msg = zmsg_new();
+    zmsg_addstr(updater_msg, self->db_name);
+    zmsg_addstr(updater_msg, "r");
+    zmsg_addstr(updater_msg, request_data.module);
+    zmsg_addptr(updater_msg, request);
+    zmsg_addptr(updater_msg, self->stream_info);
     reference_stream_info(self->stream_info);
-    zmsg_addmem(msg, &sampling_reason, sizeof(sampling_reason_t));
+    zmsg_addmem(updater_msg, &sampling_reason, sizeof(sampling_reason_t));
     if (!output_socket_ready(pstate->push_socket, 0)) {
         fprintf(stderr, "[W] parser [%zu]: push socket not ready\n", pstate->id);
     }
-    if (zmsg_send_with_retry(&msg, pstate->push_socket))
+    if (zmsg_send_with_retry(&updater_msg, pstate->push_socket))
         release_stream_info(self->stream_info);
     else {
         __atomic_add_fetch(&queued_inserts, 1, __ATOMIC_SEQ_CST);
@@ -935,7 +938,7 @@ char* exctract_key_from_jse_description(json_object *request)
     return result;
 }
 
-void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request)
+void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg)
 {
     char *page = extract_page_for_jse(request);
     char *js_exception = exctract_key_from_jse_description(request);
@@ -973,14 +976,14 @@ void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate,
     free(js_exception);
 
     json_object_get(request);
-    zmsg_t *msg = zmsg_new();
-    zmsg_addstr(msg, self->db_name);
-    zmsg_addstr(msg, "j");
-    zmsg_addstr(msg, module);
-    zmsg_addptr(msg, request);
-    zmsg_addptr(msg, self->stream_info);
+    zmsg_t *updater_msg = zmsg_new();
+    zmsg_addstr(updater_msg, self->db_name);
+    zmsg_addstr(updater_msg, "j");
+    zmsg_addstr(updater_msg, module);
+    zmsg_addptr(updater_msg, request);
+    zmsg_addptr(updater_msg, self->stream_info);
     reference_stream_info(self->stream_info);
-    zmsg_send_with_retry(&msg, pstate->push_socket);
+    zmsg_send_with_retry(&updater_msg, pstate->push_socket);
     __atomic_add_fetch(&queued_inserts, 1, __ATOMIC_SEQ_CST);
 }
 
@@ -1283,7 +1286,7 @@ enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, par
     }
 
     request_data_t request_data;
-    request_data.page = processor_setup_page(self, request);
+    request_data.page = processor_setup_page(self, request, pstate, msg);
     request_data.module = processor_setup_module(self, request_data.page);
     request_data.minute = processor_setup_minute(self, request);
     request_data.total_time = processor_setup_time(self, request, "page_time", "frontend_time");
@@ -1364,7 +1367,7 @@ enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_
     json_object_object_add(request, "ajax_time", json_object_new_int64(ajax_time));
 
     request_data_t request_data;
-    request_data.page = processor_setup_page(self, request);
+    request_data.page = processor_setup_page(self, request, pstate, msg);
     request_data.module = processor_setup_module(self, request_data.page);
     request_data.minute = processor_setup_minute(self, request);
     request_data.total_time = processor_setup_time(self, request, "ajax_time", "frontend_time");

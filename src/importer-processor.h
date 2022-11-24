@@ -22,8 +22,8 @@ typedef struct {
 
 extern processor_state_t* processor_new(stream_info_t *stream_info, char *db_name);
 extern void processor_destroy(void* processor);
-extern void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request);
-extern void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request);
+extern void processor_add_request(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
+extern void processor_add_js_exception(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
 extern void processor_add_event(processor_state_t *self, parser_state_t *pstate, json_object *request);
 extern enum fe_msg_drop_reason processor_add_frontend_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);
 extern enum fe_msg_drop_reason processor_add_ajax_data(processor_state_t *self, parser_state_t *pstate, json_object *request, zmsg_t *msg);

@@ -140,7 +140,9 @@ processor_state_t* processor_create(zmsg_t** msg, zframe_t* stream_frame, parser
     *known_stream = stream_info != NULL;
     if (stream_info == NULL) {
         if (!is_mobile_app(stream_name)) {
-            zmsg_send_and_destroy(msg, parser_state->unknown_streams_collector_socket);
+            zmsg_t *msg_copy = zmsg_dup(*msg);
+            zmsg_pushstr(msg_copy, "stream");
+            zmsg_send_and_destroy(&msg_copy, parser_state->unknown_streams_collector_socket);
         }
         return NULL;
     }
@@ -255,9 +257,9 @@ void parse_msg_and_forward_interesting_requests(zmsg_t **msgptr, parser_state_t 
         processor->request_count++;
 
         if (n >= 4 && !strncmp("logs", topic_str, 4))
-            processor_add_request(processor, parser_state, request);
+            processor_add_request(processor, parser_state, request, msg);
         else if (n >= 10 && !strncmp("javascript", topic_str, 10))
-            processor_add_js_exception(processor, parser_state, request);
+            processor_add_js_exception(processor, parser_state, request, msg);
         else if (n >= 6 && !strncmp("events", topic_str, 6))
             processor_add_event(processor, parser_state, request);
         else if (n >= 13 && !strncmp("frontend.page", topic_str, 13)) {

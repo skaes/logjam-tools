@@ -6,6 +6,7 @@ typedef struct {
     zsock_t* pull_socket;
     zsock_t* pub_socket;
     zhashx_t *unknown_streams;
+    zhashx_t *missing_actions;
     size_t message_count;
     size_t message_drops;
     zchunk_t *decompression_buffer;
@@ -43,6 +44,7 @@ unknown_streams_collector_state_t* unknown_streams_collector_state_new(zsock_t *
     state->pub_socket = unknown_streams_collector_pub_socket_new(config);
     state->pull_socket = unknown_streams_collector_pull_socket_new(config);
     state->unknown_streams = zhashx_new();
+    state->missing_actions = zhashx_new();
     state->decompression_buffer = zchunk_new(NULL, INITIAL_DECOMPRESSION_BUFFER_SIZE);
     return state;
 }
@@ -54,6 +56,7 @@ void unknown_streams_collector_state_destroy(unknown_streams_collector_state_t**
     zsock_destroy(&state->pub_socket);
     zsock_destroy(&state->pull_socket);
     zhashx_destroy(&state->unknown_streams);
+    zhashx_destroy(&state->missing_actions);
     zchunk_destroy(&state->decompression_buffer);
     free(state);
     *state_p = NULL;
@@ -90,13 +93,36 @@ void log_unknown_streams(unknown_streams_collector_state_t* state) {
             streams, state->message_count);
 }
 
+static
+void log_streams_with_missing_actions(unknown_streams_collector_state_t* state) {
+    void* elem = zhashx_first(state->missing_actions);
+    if (elem == NULL)
+        return;
+    int size = 0;
+    char streams[1024] = {'\0'};
+    while (elem) {
+        const char *stream = zhashx_cursor(state->missing_actions);
+        if (size > 0) {
+            strcat(streams, ",");
+        }
+        size += strlen(stream);
+        strcat(streams, stream);
+        elem = zhashx_next(state->missing_actions);
+    }
+    fprintf(stderr, "[W] unknown_streams_collector: streams with missing actions: %s\n", streams);
+}
+
 static int timer_event(zloop_t *loop, int timer_id, void *arg)
 {
     unknown_streams_collector_state_t *state = arg;
     log_unknown_streams(state);
+    log_streams_with_missing_actions(state);
     zhashx_destroy(&state->unknown_streams);
+    zhashx_destroy(&state->missing_actions);
     state->unknown_streams = zhashx_new();
+    state->missing_actions = zhashx_new();
     assert(state->unknown_streams);
+    assert(state->missing_actions);
     state->message_count = 0;
     state->message_drops = 0;
     return 0;
@@ -130,22 +156,37 @@ int read_msg_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
     unknown_streams_collector_state_t *state = callback_data;
     zmsg_t *msg = zmsg_recv(socket);
     if (msg) {
+        char *reason = zmsg_popstr(msg);
+
         zframe_t *stream_frame = zmsg_first(msg);
         char* stream_name = zframe_strdup(stream_frame);
-        zhashx_insert(state->unknown_streams, stream_name, (void*)1);
 
-        // fprintf(stderr, "[E] unknown_streams_collector: received message for unknown stream: %s\n", stream_name);
-        // dump_message_payload(msg, stderr, state->decompression_buffer);
+        switch (*reason) {
+        case 'a':
+            zhashx_insert(state->missing_actions, stream_name, (void*)1);
+            break;
+        case 's':
+            zhashx_insert(state->unknown_streams, stream_name, (void*)1);
 
-        free(stream_name);
-        state->message_count++;
-        zmsg_set_device_and_sequence_number(msg, 0, 0);
+            // fprintf(stderr, "[E] unknown_streams_collector: received message for unknown stream: %s\n", stream_name);
+            // dump_message_payload(msg, stderr, state->decompression_buffer);
 
-        int rc = zmsg_send_and_destroy(&msg, state->pub_socket);
-        if (rc) {
-            if (!state->message_drops++)
-                fprintf(stderr, "[E] unknown_streams_collector: dropped message on pub socket (%d: %s)\n", errno, zmq_strerror(errno));
+            state->message_count++;
+            zmsg_set_device_and_sequence_number(msg, 0, 0);
+
+            int rc = zmsg_send_and_destroy(&msg, state->pub_socket);
+            if (rc) {
+                if (!state->message_drops++)
+                    fprintf(stderr, "[E] unknown_streams_collector: dropped message on pub socket (%d: %s)\n", errno, zmq_strerror(errno));
+            }
+            break;
+        default:
+            fprintf(stderr,
+                    "[E] unknown_streams_collector: unknown collection reason: '%s' for stream %s\n",
+                    reason, stream_name);
+            break;
         }
+        free(stream_name);
     }
     return 0;
 }
