@@ -480,7 +480,7 @@ static int read_router_message_and_forward(zloop_t *loop, zsock_t *sock, void *c
     } else {
         zmsg_t *reply = zmsg_new();
         zmsg_addmem(reply, zmq_msg_data(routing_id), zmq_msg_size(routing_id));
-        zmsg_addmem(reply, app_env, app_env_len);
+        zmsg_addmem(reply, app_env, app_env_len); // this is the string "ping" in case of a ping message
 
         // return bad request if we didn't get enough frames or the meta frame can't be
         // decoded or stream name is not well formed

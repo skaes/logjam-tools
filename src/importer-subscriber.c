@@ -263,7 +263,9 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
             zmsg_append(reply, &sender_id);
             // pop the empty frame
             zmsg_pop(msg);
-            zmsg_append(reply, &first);
+            // append app_env or "ping" to reply
+            zframe_t *ping_or_appenv = zframe_dup(zmsg_first(msg));
+            zmsg_append(reply, &ping_or_appenv);
         }
     }
 
@@ -306,7 +308,7 @@ int read_router_request_forward(zloop_t *loop, zsock_t *socket, void *callback_d
     if (reply) {
         if (is_ping) {
             if (ok && valid_meta) {
-                zmsg_addstr(reply, "200 Pong");
+                zmsg_addstr(reply, "200 OK");
                 zmsg_addstr(reply, my_fqdn());
             } else {
                 zmsg_addstr(reply, "400 Bad Request");
