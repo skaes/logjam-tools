@@ -90,25 +90,29 @@ PACKAGES:=package-focal package-focal-usr-local package-bionic package-bionic-us
 
 packages: $(PACKAGES)
 
-export FPM_ALLOW_MODIFIED_FILES=1
+ifeq ($(V),1)
+override V:=--verbose
+else
+override V:=
+endif
 
 package-focal:
-	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook --update=always stkaes/logjam-tools:focal-latest build_tools.rb
+	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:focal-latest build_tools.rb
 	mkdir -p packages/ubuntu/focal && mv *.deb packages/ubuntu/focal
 package-bionic:
-	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook --update=always stkaes/logjam-tools:bionic-latest build_tools.rb
+	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:bionic-latest build_tools.rb
 	mkdir -p packages/ubuntu/bionic && mv *.deb packages/ubuntu/bionic
 package-xenial:
-	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook --update=always stkaes/logjam-tools:xenial-latest build_tools.rb
+	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:xenial-latest build_tools.rb
 	mkdir -p packages/ubuntu/xenial && mv *.deb packages/ubuntu/xenial
 package-focal-usr-local:
-	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook --update=always stkaes/logjam-tools:focal-usr-local-latest build_tools.rb
+	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:focal-usr-local-latest build_tools.rb
 	mkdir -p packages/ubuntu/focal && mv *.deb packages/ubuntu/focal
 package-bionic-usr-local:
-	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook --update=always stkaes/logjam-tools:bionic-usr-local-latest build_tools.rb
+	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:bionic-usr-local-latest build_tools.rb
 	mkdir -p packages/ubuntu/bionic && mv *.deb packages/ubuntu/bionic
 package-xenial-usr-local:
-	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook --update=always stkaes/logjam-tools:xenial-usr-local-latest build_tools.rb
+	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:xenial-usr-local-latest build_tools.rb
 	mkdir -p packages/ubuntu/xenial && mv *.deb packages/ubuntu/xenial
 
 
