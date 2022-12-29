@@ -1,7 +1,10 @@
-FROM buildpack-deps:xenial-scm as builder
+FROM buildpack-deps:jammy-scm as builder
 
 RUN apt-get update -y && apt-get install apt-transport-https ca-certificates -y
+RUN echo 'deb [trusted=yes] https://railsexpress.de/packages/ubuntu/jammy ./' >> /etc/apt/sources.list
 
+ARG suffix
+ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get -y upgrade && \
     apt-get install -y locales && \
     locale-gen en_US.UTF-8 && \
@@ -18,19 +21,10 @@ RUN apt-get update && apt-get -y upgrade && \
         libssl-dev \
         uuid-dev \
         libtool \
+        logjam-go \
+        logjam-libs${suffix} \
         pkg-config \
         zlib1g-dev
-
-RUN apt-get install --reinstall ca-certificates -y
-
-RUN echo 'deb [trusted=yes] https://railsexpress.de/packages/ubuntu/xenial ./' >> /etc/apt/sources.list
-RUN apt-get -y update
-
-ARG suffix
-
-RUN apt-get install -y \
-        logjam-go \
-        logjam-libs${suffix}
 
 # build context is the bin dir
 ADD . /logjam-tools
@@ -38,11 +32,11 @@ WORKDIR /logjam-tools
 ARG prefix
 RUN sh autogen.sh --prefix=$prefix && make clean && make && make check && make install
 
-FROM ubuntu:xenial
+FROM ubuntu:jammy
 ARG prefix
 COPY --from=builder $prefix $prefix
 LABEL maintainer "Stefan Kaes <skaes@railsexpress.de>"
 
 RUN apt-get update && \
-        apt-get install -y libc6 zlib1g openssl libuuid1 libcurl3 && \
+        apt-get install -y libc6 zlib1g openssl libuuid1 libcurl4 && \
         rm -rf /var/lib/apt/lists/*

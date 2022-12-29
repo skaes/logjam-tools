@@ -8,7 +8,7 @@ clean:
 	docker ps -a | awk '/Exited/ {print $$1;}' | xargs docker rm
 	docker images | awk '/none|fpm-(fry|dockery)/ {print $$3;}' | xargs docker rmi
 
-CONTAINERS:=container-focal container-bionic container-xenial container-focal-usr-local container-bionic-usr-local container-xenial-usr-local
+CONTAINERS:=container-focal container-bionic container-jammy container-focal-usr-local container-bionic-usr-local container-jammy-usr-local
 .PHONY: containers $(CONTAINERS)
 
 containers: $(CONTAINERS)
@@ -17,19 +17,19 @@ container-focal:
 	docker build -t "stkaes/logjam-tools:focal-latest" -f Dockerfile.focal --build-arg prefix=/opt/logjam --build-arg suffix="" .
 container-bionic:
 	docker build -t "stkaes/logjam-tools:bionic-latest" -f Dockerfile.bionic --build-arg prefix=/opt/logjam --build-arg suffix="" .
-container-xenial:
-	docker build -t "stkaes/logjam-tools:xenial-latest" -f Dockerfile.xenial --build-arg prefix=/opt/logjam --build-arg suffix="" .
+container-jammy:
+	docker build -t "stkaes/logjam-tools:jammy-latest" -f Dockerfile.jammy --build-arg prefix=/opt/logjam --build-arg suffix="" .
 container-focal-usr-local:
 	docker build -t "stkaes/logjam-tools:focal-usr-local-latest" -f Dockerfile.focal --build-arg prefix=/usr/local --build-arg suffix="-usr-local" .
 container-bionic-usr-local:
 	docker build -t "stkaes/logjam-tools:bionic-usr-local-latest" -f Dockerfile.bionic --build-arg prefix=/usr/local --build-arg suffix="-usr-local" .
-container-xenial-usr-local:
-	docker build -t "stkaes/logjam-tools:xenial-usr-local-latest" -f Dockerfile.xenial --build-arg prefix=/usr/local --build-arg suffix="-usr-local" .
+container-jammy-usr-local:
+	docker build -t "stkaes/logjam-tools:jammy-usr-local-latest" -f Dockerfile.jammy --build-arg prefix=/usr/local --build-arg suffix="-usr-local" .
 
 TAG ?= latest
 VERSION ?= $(cat VERSION.txt)
 
-RELEASE:=release-focal release-bionic release-xenial release-focal-usr-local release-bionic-usr-local release-xenial-usr-local
+RELEASE:=release-focal release-bionic release-jammy release-focal-usr-local release-bionic-usr-local release-jammy-usr-local
 .PHONY: release $(RELEASE)
 
 release: $(RELEASE)
@@ -38,16 +38,16 @@ release-focal:
 	$(MAKE) $(MFLAGS) tag-focal push-focal TAG=$(VERSION)
 release-bionic:
 	$(MAKE) $(MFLAGS) tag-bionic push-bionic TAG=$(VERSION)
-release-xenial:
-	$(MAKE) $(MFLAGS) tag-xenial push-xenial TAG=$(VERSION)
+release-jammy:
+	$(MAKE) $(MFLAGS) tag-jammy push-jammy TAG=$(VERSION)
 release-focal-usr-local:
 	$(MAKE) $(MFLAGS) tag-focal-usr-local push-focal-usr-local TAG=$(VERSION)
 release-bionic-usr-local:
 	$(MAKE) $(MFLAGS) tag-bionic-usr-local push-bionic-usr-local TAG=$(VERSION)
-release-xenial-usr-local:
-	$(MAKE) $(MFLAGS) tag-xenial-usr-local push-xenial-usr-local TAG=$(VERSION)
+release-jammy-usr-local:
+	$(MAKE) $(MFLAGS) tag-jammy-usr-local push-jammy-usr-local TAG=$(VERSION)
 
-TAGS:=tag-focal tag-bionic tag-xenial tag-focal-usr-local tag-bionic-usr-local tag-xenial-usr-local
+TAGS:=tag-focal tag-bionic tag-jammy tag-focal-usr-local tag-bionic-usr-local tag-jammy-usr-local
 .PHONY: tag $(TAGS)
 
 tag: $(TAGS)
@@ -56,17 +56,17 @@ tag-focal:
 	docker tag "stkaes/logjam-tools:focal-latest" "stkaes/logjam-tools:focal-$(TAG)"
 tag-bionic:
 	docker tag "stkaes/logjam-tools:bionic-latest" "stkaes/logjam-tools:bionic-$(TAG)"
-tag-xenial:
-	docker tag "stkaes/logjam-tools:xenial-latest" "stkaes/logjam-tools:xenial-$(TAG)"
+tag-jammy:
+	docker tag "stkaes/logjam-tools:jammy-latest" "stkaes/logjam-tools:jammy-$(TAG)"
 tag-focal-usr-local:
 	docker tag "stkaes/logjam-tools:focal-usr-local-latest" "stkaes/logjam-tools:focal-usr-local-$(TAG)"
 tag-bionic-usr-local:
 	docker tag "stkaes/logjam-tools:bionic-usr-local-latest" "stkaes/logjam-tools:bionic-usr-local-$(TAG)"
-tag-xenial-usr-local:
-	docker tag "stkaes/logjam-tools:xenial-usr-local-latest" "stkaes/logjam-tools:xenial-usr-local-$(TAG)"
+tag-jammy-usr-local:
+	docker tag "stkaes/logjam-tools:jammy-usr-local-latest" "stkaes/logjam-tools:jammy-usr-local-$(TAG)"
 
 
-PUSHES:=push-focal push-bionic push-xenial push-focal-usr-local push-bionic-usr-local push-xenial-usr-local
+PUSHES:=push-focal push-bionic push-jammy push-focal-usr-local push-bionic-usr-local push-jammy-usr-local
 .PHONY: push $(PUSHES)
 
 push: $(PUSHES)
@@ -75,17 +75,17 @@ push-focal:
 	docker push "stkaes/logjam-tools:focal-$(TAG)"
 push-bionic:
 	docker push "stkaes/logjam-tools:bionic-$(TAG)"
-push-xenial:
-	docker push "stkaes/logjam-tools:xenial-$(TAG)"
+push-jammy:
+	docker push "stkaes/logjam-tools:jammy-$(TAG)"
 push-focal-usr-local:
 	docker push "stkaes/logjam-tools:focal-usr-local-$(TAG)"
 push-bionic-usr-local:
 	docker push "stkaes/logjam-tools:bionic-usr-local-$(TAG)"
-push-xenial-usr-local:
-	docker push "stkaes/logjam-tools:xenial-usr-local-$(TAG)"
+push-jammy-usr-local:
+	docker push "stkaes/logjam-tools:jammy-usr-local-$(TAG)"
 
 
-PACKAGES:=package-focal package-focal-usr-local package-bionic package-bionic-usr-local package-xenial package-xenial-usr-local
+PACKAGES:=package-focal package-focal-usr-local package-bionic package-bionic-usr-local package-jammy package-jammy-usr-local
 .PHONY: packages $(PACKAGES)
 
 packages: $(PACKAGES)
@@ -102,25 +102,25 @@ package-focal:
 package-bionic:
 	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:bionic-latest build_tools.rb
 	mkdir -p packages/ubuntu/bionic && mv *.deb packages/ubuntu/bionic
-package-xenial:
-	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:xenial-latest build_tools.rb
-	mkdir -p packages/ubuntu/xenial && mv *.deb packages/ubuntu/xenial
+package-jammy:
+	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:jammy-latest build_tools.rb
+	mkdir -p packages/ubuntu/jammy && mv *.deb packages/ubuntu/jammy
 package-focal-usr-local:
 	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:focal-usr-local-latest build_tools.rb
 	mkdir -p packages/ubuntu/focal && mv *.deb packages/ubuntu/focal
 package-bionic-usr-local:
 	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:bionic-usr-local-latest build_tools.rb
 	mkdir -p packages/ubuntu/bionic && mv *.deb packages/ubuntu/bionic
-package-xenial-usr-local:
-	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:xenial-usr-local-latest build_tools.rb
-	mkdir -p packages/ubuntu/xenial && mv *.deb packages/ubuntu/xenial
+package-jammy-usr-local:
+	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) --update=always stkaes/logjam-tools:jammy-usr-local-latest build_tools.rb
+	mkdir -p packages/ubuntu/jammy && mv *.deb packages/ubuntu/jammy
 
 
 LOGJAM_PACKAGE_HOST:=railsexpress.de
 LOGJAM_PACKAGE_USER:=uploader
 
-.PHONY: publish publish-focal publish-bionic publish-xenial publish-focal-usr-local publish-bionic-usr-local publish-xenial-usr-local
-publish: publish-focal publish-bionic publish-xenial publish-focal-usr-local publish-bionic-usr-local publish-xenial-usr-local
+.PHONY: publish publish-focal publish-bionic publish-jammy publish-focal-usr-local publish-bionic-usr-local publish-jammy-usr-local
+publish: publish-focal publish-bionic publish-jammy publish-focal-usr-local publish-bionic-usr-local publish-jammy-usr-local
 
 VERSION:=$(shell cat VERSION.txt)
 PACKAGE_NAME:=logjam-tools_$(VERSION)_amd64.deb
@@ -142,8 +142,8 @@ publish-focal:
 publish-bionic:
 	$(call upload-package,bionic,$(PACKAGE_NAME))
 
-publish-xenial:
-	$(call upload-package,xenial,$(PACKAGE_NAME))
+publish-jammy:
+	$(call upload-package,jammy,$(PACKAGE_NAME))
 
 publish-focal-usr-local:
 	$(call upload-package,focal,$(PACKAGE_NAME_USR_LOCAL))
@@ -151,8 +151,8 @@ publish-focal-usr-local:
 publish-bionic-usr-local:
 	$(call upload-package,bionic,$(PACKAGE_NAME_USR_LOCAL))
 
-publish-xenial-usr-local:
-	$(call upload-package,xenial,$(PACKAGE_NAME_USR_LOCAL))
+publish-jammy-usr-local:
+	$(call upload-package,jammy,$(PACKAGE_NAME_USR_LOCAL))
 
 .PHONY: all
 all: containers tag push release packages publish
