@@ -15,7 +15,7 @@ class << self
   prepend LogSystemCommands
 end
 
-UBUNTU_VERSIONS = %w(focal bionic xenial)
+UBUNTU_VERSIONS = %w(jammy focal bionic)
 PACKAGES_BUILT_FOR_USR_LOCAL = [:libs, :tools]
 PREFIXES = { :opt => "/opt/logjam", :local => "/usr/local" }
 SUFFIXES = { :opt => "", :local => "-usr-local" }
