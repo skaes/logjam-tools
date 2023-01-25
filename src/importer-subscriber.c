@@ -45,26 +45,6 @@ typedef struct {
 
 
 static
-zlist_t* extract_devices_from_config(zconfig_t* config)
-{
-    zlist_t *devices = zlist_new();
-    zconfig_t *bindings = zconfig_locate(config, "frontend/endpoints/bindings");
-    assert(bindings);
-    zconfig_t *binding = zconfig_child(bindings);
-    while (binding) {
-        char *spec = zconfig_value(binding);
-        if (streq(spec, "")) {
-            if (verbose)
-                printf("[I] subscriber: ignoring empty SUB socket binding\n");
-        } else {
-            zlist_append(devices, spec);
-        }
-        binding = zconfig_next(binding);
-    }
-    return devices;
-}
-
-static
 zsock_t* subscriber_sub_socket_new(zconfig_t* config, zlist_t* devices, size_t id)
 {
     zsock_t *socket = zsock_new(ZMQ_SUB);
@@ -375,24 +355,16 @@ int actor_command(zloop_t *loop, zsock_t *socket, void *callback_data)
 static
 subscriber_state_t* subscriber_state_new(zconfig_t* config, size_t id, zlist_t *devices)
 {
-    // figure out devices specs
-    if (devices == NULL)
-        devices = zlist_new();
-    if (zlist_size(devices) == 0) {
-        zlist_destroy(&devices);
-        devices = extract_devices_from_config(config);
-    }
-    if (zlist_size(devices) == 0)
-        zlist_append(devices, augment_zmq_connection_spec("localhost", sub_port));
-
     //create the state
     subscriber_state_t *state = zmalloc(sizeof(*state));
     state->id = id;
     snprintf(state->me, 16, "subscriber[%zu]", id);
     state->devices = devices;
-    state->sub_socket = subscriber_sub_socket_new(config, state->devices, state->id);
-    state->tracker = device_tracker_new(devices, state->sub_socket);
-    if (state->id == 0) {
+    if (zlist_size(devices) > 0) {
+        state->sub_socket = subscriber_sub_socket_new(config, state->devices, state->id);
+        state->tracker = device_tracker_new(devices, state->sub_socket);
+    }
+    if (state->id == 0 && run_as_device) {
         state->pull_socket = subscriber_pull_socket_new(config, id);
         state->router_socket = subscriber_router_socket_new(config, id);
         if (replay_router_msgs)
@@ -407,12 +379,9 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
 {
     subscriber_state_t *state = *state_p;
     zsock_destroy(&state->sub_socket);
-    if (state->id == 0) {
-        zsock_destroy(&state->pull_socket);
-        zsock_destroy(&state->router_socket);
-        if (replay_router_msgs)
-            zsock_destroy(&state->replay_socket);
-    }
+    zsock_destroy(&state->pull_socket);
+    zsock_destroy(&state->router_socket);
+    zsock_destroy(&state->replay_socket);
     zsock_destroy(&state->push_socket);
     device_tracker_destroy(&state->tracker);
     *state_p = NULL;
@@ -509,7 +478,7 @@ int timer_function(zloop_t *loop, int timer_id, void* arg)
     rc = zloop_reader(loop, state->sub_socket, read_request_and_forward, state);
     assert(rc == 0);
 
-    if (state->id == 0) {
+    if (state->id == 0 && run_as_device) {
         // setup handler for the router socket
         rc = zloop_reader(loop, state->router_socket, read_router_request_forward, state);
         assert(rc == 0);

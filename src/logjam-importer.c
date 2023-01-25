@@ -13,6 +13,7 @@ int router_port = -1;
 int sub_port = -1;
 int replay_port = -1;
 int metrics_port = -1;
+int run_as_device = 0;
 char metrics_address[256] = {0};
 char* live_stream_connection_spec = NULL;
 char* unknown_streams_collector_connection_spec = NULL;
@@ -341,6 +342,26 @@ void process_arguments(int argc, char * const *argv)
         indexer_opts = 0;
 }
 
+static
+zlist_t* extract_devices_from_config(zconfig_t* config)
+{
+    zlist_t *devices = zlist_new();
+    zconfig_t *bindings = zconfig_locate(config, "frontend/endpoints/bindings");
+    assert(bindings);
+    zconfig_t *binding = zconfig_child(bindings);
+    while (binding) {
+        char *spec = zconfig_value(binding);
+        if (streq(spec, "")) {
+            if (verbose)
+                printf("[I] ignoring empty SUB socket binding in config\n");
+        } else {
+            zlist_append(devices, spec);
+        }
+        binding = zconfig_next(binding);
+    }
+    return devices;
+}
+
 int main(int argc, char * const *argv)
 {
     // don't buffer stdout and stderr
@@ -375,6 +396,15 @@ int main(int argc, char * const *argv)
     // load config
     zconfig_t* config = zconfig_load((char*)config_file_name);
     // zconfig_print(config);
+
+    // determine whether we are supposed to run as a device
+    if (hosts == NULL) {
+        hosts = extract_devices_from_config(config);
+    }
+    if (zlist_size(hosts) == 0) {
+        run_as_device = 1;
+        num_subscribers = 1;
+    }
 
     if (live_stream_connection_spec == NULL)
         live_stream_connection_spec = zconfig_resolve(config, "frontend/endpoints/livestream/pub", DEFAULT_LIVE_STREAM_CONNECTION);

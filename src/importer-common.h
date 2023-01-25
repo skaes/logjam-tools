@@ -51,6 +51,7 @@ extern int pull_port;
 extern int sub_port;
 extern int replay_port;
 extern int replay_router_msgs;
+extern int run_as_device;
 extern int rcv_hwm;
 extern int snd_hwm;
 extern zlist_t* hosts;
