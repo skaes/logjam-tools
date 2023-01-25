@@ -122,7 +122,6 @@ void process_arguments(int argc, char * const *argv)
         { "io-threads",       required_argument, 0, 'i' },
         { "live-stream",      required_argument, 0, 'l' },
         { "prom-export",      required_argument, 0, 'x' },
-        { "output-port",      required_argument, 0, 'P' },
         { "replay-port",      required_argument, 0, 'Y' },
         { "replay",           no_argument,       0, 'y' },
         { "quiet",            no_argument,       0, 'q' },
