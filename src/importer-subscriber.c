@@ -362,8 +362,8 @@ subscriber_state_t* subscriber_state_new(zconfig_t* config, size_t id, zlist_t *
     state->devices = devices;
     if (zlist_size(devices) > 0) {
         state->sub_socket = subscriber_sub_socket_new(config, state->devices, state->id);
-        state->tracker = device_tracker_new(devices, state->sub_socket);
     }
+    state->tracker = device_tracker_new(devices, state->sub_socket);
     if (state->id == 0 && run_as_device) {
         state->pull_socket = subscriber_pull_socket_new(config, id);
         state->router_socket = subscriber_router_socket_new(config, id);
@@ -390,6 +390,9 @@ void subscriber_state_destroy(subscriber_state_t **state_p)
 static
 void update_subscriptions(subscriber_state_t *state, zlist_t *subscriptions)
 {
+    if (state->sub_socket == NULL)
+        return;
+
     const char* pattern = get_subscription_pattern();
     if (streq(pattern, "")) {
         // no pattern set, we only need to subscribe once at startup
@@ -474,9 +477,11 @@ int timer_function(zloop_t *loop, int timer_id, void* arg)
     rc = zloop_reader(loop, pipe, actor_command, state);
     assert(rc == 0);
 
-     // setup handler for the sub socket
-    rc = zloop_reader(loop, state->sub_socket, read_request_and_forward, state);
-    assert(rc == 0);
+    // setup handler for the sub socket
+    if (state->sub_socket) {
+        rc = zloop_reader(loop, state->sub_socket, read_request_and_forward, state);
+        assert(rc == 0);
+    }
 
     if (state->id == 0 && run_as_device) {
         // setup handler for the router socket
