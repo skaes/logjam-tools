@@ -114,7 +114,6 @@ void process_arguments(int argc, char * const *argv)
 
     static struct option long_options[] = {
         { "config",           required_argument, 0, 'c' },
-        { "device-id",        required_argument, 0, 'd' },
         { "device-port",      required_argument, 0, 'D' },
         { "dryrun",           no_argument,       0, 'n' },
         { "help",             no_argument,       0,  0  },
