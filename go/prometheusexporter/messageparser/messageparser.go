@@ -2,7 +2,6 @@ package messageparser
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -46,7 +45,10 @@ func New(options Options) *MessageParser {
 	p.deviceSpecs = make([]string, 0)
 	for _, s := range strings.Split(p.opts.Devices, ",") {
 		if s != "" {
-			p.deviceSpecs = append(p.deviceSpecs, fmt.Sprintf("tcp://%s", s))
+			if !strings.HasPrefix(s, "tcp://") {
+				s = "tcp://" + s
+			}
+			p.deviceSpecs = append(p.deviceSpecs, s)
 		}
 	}
 	log.Info("device-specs: %s", strings.Join(p.deviceSpecs, ","))
