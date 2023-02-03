@@ -186,7 +186,9 @@ int read_msg_and_forward(zloop_t *loop, zsock_t *socket, void *callback_data)
                     reason, stream_name);
             break;
         }
+        free(reason);
         free(stream_name);
+        zmsg_destroy(&msg);
     }
     return 0;
 }
