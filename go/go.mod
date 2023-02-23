@@ -18,7 +18,7 @@ require (
 	github.com/stretchr/testify v1.8.0
 	github.com/xojoc/useragent v0.0.0-20200116211053-1ec61d55e8fe
 	go.mongodb.org/mongo-driver v1.10.1
-	golang.org/x/text v0.3.7
+	golang.org/x/text v0.3.8
 	gopkg.in/tylerb/graceful.v1 v1.2.15
 )
 
