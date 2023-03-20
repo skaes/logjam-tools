@@ -1,7 +1,5 @@
 FROM buildpack-deps:bionic-scm as builder
 
-COPY sources.list.bionic /etc/apt/sources.list
-
 RUN apt-get update -y && apt-get install apt-transport-https ca-certificates -y
 RUN echo 'deb [trusted=yes] https://railsexpress.de/packages/ubuntu/bionic ./' >> /etc/apt/sources.list
 
@@ -37,8 +35,6 @@ FROM ubuntu:bionic
 ARG prefix
 COPY --from=builder $prefix $prefix
 LABEL maintainer "Stefan Kaes <skaes@railsexpress.de>"
-
-COPY sources.list.bionic /etc/apt/sources.list
 
 RUN apt-get update && \
         apt-get install -y libc6 zlib1g openssl libuuid1 libcurl4 && \
