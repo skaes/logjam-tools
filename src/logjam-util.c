@@ -1014,6 +1014,79 @@ void append_null_byte(zchunk_t* buffer)
     zchunk_append(buffer, "", 1);
 }
 
+char* replace_keywords(const char *str, zlist_t *keywords, zchunk_t *buffer) {
+    const char* ptr = str;
+    size_t len = strlen(str);
+    zchunk_ensure_size(buffer, 10*len + 1);
+    char* output = (char*)zchunk_data(buffer);
+    char* out_ptr = output;
+    int found = 0;
+    int changed = 0;
+    while (*ptr != '\0') {
+        if (*ptr == ' ' || *ptr == ';') {
+            *out_ptr++ = *ptr++;
+            continue;
+        }
+        const char* keyword = zlist_first(keywords);
+        while (keyword) {
+            size_t keyword_len = strlen(keyword);
+            if (strncmp(ptr, keyword, keyword_len) == 0 && ptr[keyword_len] == '=') {
+                const char* value_start = ptr + keyword_len + 1;
+                while (*value_start != '\0' && !isspace(*value_start) && *value_start != ';') {
+                    value_start++;
+                }
+                ptr = value_start;
+                *out_ptr = '\0';
+                out_ptr = stpcpy(out_ptr, keyword);
+                out_ptr = stpcpy(out_ptr, "=[FILTERED]");
+                changed = found = 1;
+                break;
+            }
+            keyword = zlist_next(keywords);
+        }
+        if (!found) {
+            *out_ptr++ = *ptr++;
+        } else {
+            found = 0;
+        }
+    }
+    if (!changed) return NULL;
+
+    *out_ptr = '\0';
+    return output;
+}
+
+void filter_sensitive_cookies(json_object *request, zlist_t *keywords, zchunk_t *buffer) {
+    json_object *request_info;
+    if (!json_object_object_get_ex(request, "request_info", &request_info))
+        return;
+
+    json_object *headers;
+    if (!json_object_object_get_ex(request_info, "headers", &headers))
+        return;
+
+    bool has_cookie = false;
+    json_object_object_foreach(headers, key, value) {
+        if (strcasecmp(key, "cookie") == 0) {
+            has_cookie = true;
+            break;
+        }
+    }
+
+    if (!has_cookie)
+        return;
+
+    if (json_type_string != json_object_get_type(value))
+        return;
+
+    const char* cookie_str = json_object_get_string(value);
+    char *new_str = replace_keywords(cookie_str, keywords, buffer);
+
+    if (new_str) {
+        json_object_object_add(headers, key, json_object_new_string(new_str));
+    }
+}
+
 static void test_uint64wrap (int verbose)
 {
     uint64_t i = 0xffffffffffffffff;
@@ -1172,6 +1245,55 @@ static void test_compression_decompression (int verbose)
     }
 }
 
+void test_keyword_replacement (int verbose) {
+    zlist_t *keywords = zlist_new();
+    char *data;
+    char *result;
+    char *expected;
+    zchunk_t *buffer = zchunk_new(NULL, 1024);
+
+    data = "foo=bar";
+    result = replace_keywords(data, keywords, buffer);
+    expected = NULL;
+    assert(result == expected);
+
+    zlist_append(keywords, "foo");
+    zlist_append(keywords, "baz");
+
+    data = "foo=123456789123456789";
+    expected = "foo=[FILTERED]";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "foo=123";
+    expected = "foo=[FILTERED]";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "foo=123; ";
+    expected = "foo=[FILTERED]; ";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "foo=123; fum=larifari";
+    expected = "foo=[FILTERED]; fum=larifari";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "fum=larifari; foo=123";
+    expected = "fum=larifari; foo=[FILTERED]";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "foo=123; baz=456";
+    expected = "foo=[FILTERED]; baz=[FILTERED]";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    zlist_destroy(&keywords);
+    zchunk_destroy(&buffer);
+}
+
 void logjam_util_test (int verbose)
 {
     printf (" * logjam-utils: ");
@@ -1188,6 +1310,7 @@ void logjam_util_test (int verbose)
     test_extract_app_env (verbose);
     test_extract_app_env_rid (verbose);
     test_compression_decompression (verbose);
+    test_keyword_replacement (verbose);
 
     printf ("OK\n");
 }

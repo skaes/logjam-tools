@@ -27,12 +27,14 @@ typedef struct {
     zhash_t *metrics_collections;
     zhash_t *jse_collections;
     zhash_t *events_collections;
-    zsock_t *pipe;         // actor command pipe
+    zsock_t *pipe;                 // actor command pipe
     zsock_t *pull_socket;
     zsock_t *live_stream_socket;
-    int updates_count;     // updates performend since last tick
-    int update_time;       // processing time since last tick (micro seconds)
-    int updates_failed;    // how many updates failed
+    int updates_count;             // updates performend since last tick
+    int update_time;               // processing time since last tick (micro seconds)
+    int updates_failed;            // how many updates failed
+    zlist_t *sensitive_cookies;    // list of cookies which must be obfuscated
+    zchunk_t *obfuscation_buffer;  // buffer for cookie obfuscator
 } request_writer_state_t;
 
 
@@ -386,6 +388,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         size_t n = 1024;
         char context[n];
         snprintf(context, n, "%s:%s", db_name, request_id);
+        filter_sensitive_cookies(request, state->sensitive_cookies, state->obfuscation_buffer);
         json_object_to_bson(context, request, document);
     }
 
@@ -658,6 +661,9 @@ request_writer_state_t* request_writer_state_new(zconfig_t *config, size_t id)
     state->metrics_collections = zhash_new();
     state->jse_collections = zhash_new();
     state->events_collections = zhash_new();
+    const char* cookies = zconfig_resolve(config, "/frontend/sensitive_cookies", NULL);
+    state->sensitive_cookies = split_delimited_string(cookies);
+    state->obfuscation_buffer = zchunk_new(NULL, 1024);
     return state;
 }
 
@@ -672,6 +678,8 @@ void request_writer_state_destroy(request_writer_state_t **state_p)
     zhash_destroy(&state->metrics_collections);
     zhash_destroy(&state->jse_collections);
     zhash_destroy(&state->events_collections);
+    zlist_destroy(&state->sensitive_cookies);
+    zchunk_destroy(&state->obfuscation_buffer);
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state->mongo_clients[i]);
     }
