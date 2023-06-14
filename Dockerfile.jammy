@@ -1,4 +1,5 @@
-FROM buildpack-deps:jammy-scm as builder
+ARG arch
+FROM ${arch}buildpack-deps:jammy-scm as builder
 
 RUN apt-get update -y && apt-get install apt-transport-https ca-certificates -y
 RUN echo 'deb [trusted=yes] https://railsexpress.de/packages/ubuntu/jammy ./' >> /etc/apt/sources.list
@@ -32,7 +33,7 @@ WORKDIR /logjam-tools
 ARG prefix
 RUN sh autogen.sh --prefix=$prefix && make clean && make && make check && make install
 
-FROM ubuntu:jammy
+FROM ${arch}ubuntu:jammy
 ARG prefix
 COPY --from=builder $prefix $prefix
 LABEL maintainer "Stefan Kaes <skaes@railsexpress.de>"
