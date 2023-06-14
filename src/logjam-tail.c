@@ -103,7 +103,7 @@ void print_usage(char * const *argv)
 
 void process_arguments(int argc, char * const *argv)
 {
-    char c;
+    int c;
     int longindex = 0;
     opterr = 0;
 

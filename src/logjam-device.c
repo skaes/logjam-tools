@@ -581,7 +581,7 @@ static void print_usage(char * const *argv)
 
 static void process_arguments(int argc, char * const *argv)
 {
-    char c;
+    int c;
     char *v;
     int longindex = 0;
     opterr = 0;
