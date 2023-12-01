@@ -170,6 +170,11 @@ void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, cons
     char safe_key[4*n+1];
     int len = copy_replace_dots_and_dollars(safe_key, key);
 
+    // ignore illegal empty strings, as they are no accepted by mongodb.
+    if (len == 0) {
+        return;
+    }
+
     if (!bson_utf8_validate(safe_key, len, false)) {
         char tmp[6*len+1];
         len = convert_to_win1252(safe_key, len, tmp);
