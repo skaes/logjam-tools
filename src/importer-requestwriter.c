@@ -372,7 +372,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         if (request_id==NULL || strlen(request_id) != 32) {
             // this can't be a UUID
             fprintf(stderr, "[E] invalid request_id: %s (stream: %s)\n", request_id, stream_info->key);
-            dump_json_object(stderr, "[E]", request);
+            dump_json_object_limiting_log_lines(stderr, "[E]", request, 10);
             request_id = NULL;
             request_id_obj = NULL;
         } else {
@@ -408,13 +408,10 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            size_t n;
-            char* bjs = bson_as_json(document, &n);
             fprintf(stderr,
-                    "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n"
-                    "[E] document size: %zu; value: %s\n",
-                    request_id, db_name, error.code, error.message, n, bjs);
-            bson_free(bjs);
+                    "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n",
+                    request_id, db_name, error.code, error.message);
+            dump_json_object_limiting_log_lines(stderr, "[E]", request, 10);
             update_failed = true;
             state->updates_failed++;
         }
