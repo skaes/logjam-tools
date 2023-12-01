@@ -576,17 +576,24 @@ void dump_json_object_limiting_log_lines(FILE *f, const char* prefix, json_objec
 {
     json_object *lines = NULL;
     json_object *new_lines = NULL;
+    if (max_lines % 2 == 1)
+        max_lines++;
     if (json_object_object_get_ex(jobj, "lines", &lines) && json_object_is_type(lines, json_type_array)) {
         int len = json_object_array_length(lines);
         if (len > max_lines) {
             json_object_get(lines);
             new_lines = json_object_new_array();
-            for (int i = 0; i < max_lines; i++) {
+            for (int i = 0; i < max_lines / 2; i++) {
                 json_object *elem = json_object_array_get_idx(lines, i);
                 json_object_get(elem);
                 json_object_array_add(new_lines, elem);
             }
-            json_object_array_add(new_lines, json_object_new_string("LINES DROPPED BY IMPORTER"));
+            json_object_array_add(new_lines, json_object_new_string("... LINES DROPPED BY IMPORTER ..."));
+            for (int i = len - max_lines / 2; i < len; i++) {
+                json_object *elem = json_object_array_get_idx(lines, i);
+                json_object_get(elem);
+                json_object_array_add(new_lines, elem);
+            }
             json_object_object_add(jobj, "lines", new_lines);
         }
     }
