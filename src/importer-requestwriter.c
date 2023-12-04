@@ -394,10 +394,10 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         char context[n];
         snprintf(context, n, "%s:%s", db_name, request_id);
         filter_sensitive_cookies(request, state->sensitive_cookies, state->obfuscation_buffer);
-        json_object* old_lines = limit_log_lines(request, 5000);
+        json_object* old_lines = limit_log_lines(request, 10000);
         if (old_lines) {
-             fprintf(stdout, "[D] limited log lines on request with rid '%s'\n", request_id);
-             dump_json_object(stdout, "[D]", request);
+             fprintf(stderr, "[W] limited log lines on request with rid '%s'\n", request_id);
+             dump_json_object_limiting_log_lines(stderr, "[W]", request, 5);
              // dump_json_object(stdout, "[D]", old_lines);
              json_object_put(old_lines);
         }
