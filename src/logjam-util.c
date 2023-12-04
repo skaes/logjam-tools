@@ -589,11 +589,12 @@ json_object* limit_log_lines(json_object *jobj, int max_lines)
         json_object_get(lines);
         json_object *elem;
 
-        json_object *new_lines = json_object_new_array();
+        json_object *new_lines = json_object_new_array_ext(max_lines);
+        int j = 0;
         for (int i = 0; i < max_lines / 2; i++) {
             elem = json_object_array_get_idx(lines, i);
             json_object_get(elem);
-            json_object_array_add(new_lines, elem);
+            json_object_array_put_idx(new_lines, j++, elem);
         }
 
         // copy line object, replacing the log text
@@ -602,12 +603,12 @@ json_object* limit_log_lines(json_object *jobj, int max_lines)
         if (json_object_is_type(elem, json_type_array) && (json_object_array_length(elem) >= 3)) {
             json_object_array_put_idx(elem, 2, json_object_new_string("... LINES DROPPED BY IMPORTER ..."));
         }
-        json_object_array_add(new_lines, elem);
+        json_object_array_put_idx(new_lines, j++, elem);
 
         for (int i = len - max_lines / 2 ; i < len; i++) {
             elem = json_object_array_get_idx(lines, i);
             json_object_get(elem);
-            json_object_array_add(new_lines, elem);
+            json_object_array_put_idx(new_lines, j++, elem);
         }
         json_object_object_add(jobj, "lines", new_lines);
 
