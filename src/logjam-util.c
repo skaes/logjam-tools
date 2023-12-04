@@ -572,36 +572,60 @@ void dump_json_object(FILE *f, const char* prefix, json_object *jobj)
     // don't try to free the json string. it will crash.
 }
 
-void dump_json_object_limiting_log_lines(FILE *f, const char* prefix, json_object *jobj, int max_lines)
+// Limit number of log lines. Returns a pointer to the old array of
+// log lines if it was replaced. Caller needs to free old lines.
+json_object* limit_log_lines(json_object *jobj, int max_lines)
 {
     json_object *lines = NULL;
-    json_object *new_lines = NULL;
-    if (max_lines % 2 == 1)
+
+    if (max_lines % 2 == 0)
         max_lines++;
+
     if (json_object_object_get_ex(jobj, "lines", &lines) && json_object_is_type(lines, json_type_array)) {
         int len = json_object_array_length(lines);
-        if (len > max_lines) {
-            json_object_get(lines);
-            new_lines = json_object_new_array();
-            for (int i = 0; i < max_lines / 2; i++) {
-                json_object *elem = json_object_array_get_idx(lines, i);
-                json_object_get(elem);
-                json_object_array_add(new_lines, elem);
-            }
-            json_object_array_add(new_lines, json_object_new_string("... LINES DROPPED BY IMPORTER ..."));
-            for (int i = len - max_lines / 2; i < len; i++) {
-                json_object *elem = json_object_array_get_idx(lines, i);
-                json_object_get(elem);
-                json_object_array_add(new_lines, elem);
-            }
-            json_object_object_add(jobj, "lines", new_lines);
+        if (len <= max_lines) return NULL;
+
+        // increment ref counter so caller can add it back.
+        json_object_get(lines);
+        json_object *elem;
+
+        json_object *new_lines = json_object_new_array();
+        for (int i = 0; i < max_lines / 2; i++) {
+            elem = json_object_array_get_idx(lines, i);
+            json_object_get(elem);
+            json_object_array_add(new_lines, elem);
         }
+
+        // copy line object, replacing the log text
+        elem = json_object_array_get_idx(lines, max_lines / 2);
+        json_object_get(elem);
+        if (json_object_is_type(elem, json_type_array) && (json_object_array_length(elem) >= 3)) {
+            json_object_array_put_idx(elem, 2, json_object_new_string("... LINES DROPPED BY IMPORTER ..."));
+        }
+        json_object_array_add(new_lines, elem);
+
+        for (int i = len - max_lines / 2 ; i < len; i++) {
+            elem = json_object_array_get_idx(lines, i);
+            json_object_get(elem);
+            json_object_array_add(new_lines, elem);
+        }
+        json_object_object_add(jobj, "lines", new_lines);
+
+        return lines;
     }
-    dump_json_object(f, prefix, jobj);
-    if (new_lines)
-        json_object_object_add(jobj, "lines", lines);
+
+    return NULL;
 }
 
+void dump_json_object_limiting_log_lines(FILE *f, const char* prefix, json_object *jobj, int max_lines)
+{
+    json_object *lines = limit_log_lines(jobj, max_lines);
+
+    dump_json_object(f, prefix, jobj);
+
+    if (lines)
+        json_object_object_add(jobj, "lines", lines);
+}
 
 static void print_msg(byte* data, size_t size, const char *prefix, FILE *file)
 {
