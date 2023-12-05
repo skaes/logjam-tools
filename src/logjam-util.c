@@ -6,6 +6,35 @@
 #include <lz4.h>
 #include "logjam-util.h"
 
+const int debug_utf8 = 0;
+
+const char *bit_rep[16] = {
+    [ 0] = "0000", [ 1] = "0001", [ 2] = "0010", [ 3] = "0011",
+    [ 4] = "0100", [ 5] = "0101", [ 6] = "0110", [ 7] = "0111",
+    [ 8] = "1000", [ 9] = "1001", [10] = "1010", [11] = "1011",
+    [12] = "1100", [13] = "1101", [14] = "1110", [15] = "1111",
+};
+
+static void print_byte(uint8_t byte)
+{
+    if (debug_utf8)
+        printf("%s%s", bit_rep[byte >> 4], bit_rep[byte & 0x0F]);
+}
+
+static void print_bytes(const char* str, int n)
+{
+    if (debug_utf8) {
+        uint8_t c;
+        if (n==-1)
+            n = strlen(str);
+        while ( (c=*(str++)) && n--) {
+            print_byte(c);
+            printf(" ");
+        }
+        printf("\n");
+    }
+}
+
 int malloc_trim_frequency = 0;
 
 time_t get_iso_date_info(char today[ISO_DATE_STR_LEN], char tomorrow[ISO_DATE_STR_LEN])
@@ -1122,26 +1151,43 @@ void filter_sensitive_cookies(json_object *request, zlist_t *keywords, zchunk_t 
 // Find first correct UTF8 character position before buf[n], where n is greater than 3.
 size_t find_utf8_offset(const char *buf, size_t n)
 {
-    assert(n>3);
-    // we might need to look 3 bytes back
-    const char *b = buf + n - 3;
+    // First CP, Last CP, Byte 1,  Byte 2,  Byte 3,  Byte 4
+    // U+0000	 U+007F	  0xxxxxxx
+    // U+0080	 U+07FF	  110xxxxx 10xxxxxx
+    // U+0800	 U+FFFF	  1110xxxx 10xxxxxx 10xxxxxx
+    // U+10000	 U+10FFFF 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+
+    // 0x80 = 10000000
+    // 0x40 = 01000000
+    // 0xc0 = 11000000
+    // 0xe0 = 11100000
+    // 0xf0 = 11110000
+
+    assert(n>4);
+    // we might need to look 4 bytes back
+    const char *b = buf + n - 4;
     // is the last byte part of a multi-byte sequence?
-    if (b[2] & 0x80) {
-        // Is the last byte in buffer the first byte in a new multi-byte sequence?
-        if (b[2] & 0x40) return n - 1;
-        // Is it a 3 byte sequence?
-        else if ((b[1] & 0xe0) == 0xe0) return n - 2;
-        // Is it a 4 byte sequence?
-        else if ((b[0] & 0xf0) == 0xf0) return n - 3;
+    if (b[3] & 0x80) {
+        // Is the last byte in buffer the start of a multi byte sequence?
+        if ((b[3] & 0xc0) == 0xc0) return n - 1;
+        // Does the second to last byte in buffer start a 3 or 4 byte sequences?
+        else if ((b[2] & 0xe0) == 0xe0) return n - 2;
+        // Does the second to last byte in buffer start a 2 byte sequences?
+        else if ((b[2] & 0xc0) == 0xc0) return n;
+        // Does the third to last byte start a 4 byte sequence?
+        else if ((b[1] & 0xf0) == 0xf0) return n - 3;
+        // Does the third to last byte start a 3 byte sequence?
+        else if ((b[1] & 0xe0) == 0xe0) return n;
+        // Does the fourth to last byte start a 4 byte sequence?
+        else if ((b[0] & 0xf0) == 0xf0) return n;
         // Should not happen, invalid utf8.
         else {
-            printf("Invalid utf-8!!: %s\n", buf);
             // Find first ASCII character from the end position.
             while ( (*b & 0x80) && (b != buf) ) b--;
             return b - buf;
         }
     }
-    // it's an ASCII char
+    // The last byte of buf is  an ASCII char.
     return n;
 }
 
@@ -1303,7 +1349,7 @@ static void test_compression_decompression (int verbose)
     }
 }
 
-void test_keyword_replacement (int verbose) {
+static void test_keyword_replacement (int verbose) {
     zlist_t *keywords = zlist_new();
     char *data;
     char *result;
@@ -1355,18 +1401,93 @@ void test_keyword_replacement (int verbose) {
 void test_finding_utf8_offsets( int verbose )
 {
     int result;
-    const char* data = "abcde";
-    result = find_utf8_offset(data, 4);
-    assert(result == 4);
+    const char* data = "abcdef";
+    if (debug_utf8)
+        printf("%.*s\n", 6, data);
+    print_bytes(data, -1);
+    result = find_utf8_offset(data, 5);
+    assert(result == 5);
 
-    data = "hugöä";
-    result = find_utf8_offset(data, 4);
-    assert(result == 3);
+    // two byte sequences
+    data = "labx-äba";
+    print_bytes(data, -1);
 
-    // Invalid UTF8
-    data = "Hugo 巴伐利亚 Schnugo";
+    result = find_utf8_offset(data, 5);
+    if (debug_utf8)
+        printf("limit: 5, result=%d: '%.*s', expected=5: '%.*s'\n", result, result, data, 5, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 6);
+    if (debug_utf8)
+        printf("limit: 6, result=%d: '%.*s', expected=5: '%.*s'\n", result, result, data, 5, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 7);
+    if (debug_utf8)
+        printf("limit: 7, result=%d: '%.*s', expected=7: '%.*s'\n", result, result, data, 7, data);
+    assert(result == 7);
+
     result = find_utf8_offset(data, 8);
-    assert(result == 4);
+    if (debug_utf8)
+        printf("limit: 8, result=%d: '%.*s', expected=8: '%.*s'\n", result, result, data, 8, data);
+    assert(result == 8);
+
+    // 3 byte sequences
+    data = "labx-巴伐利亚!";
+    if (debug_utf8)
+        printf("%.*s\n", 18, data);
+    print_bytes(data, -1);
+    result = find_utf8_offset(data, 5);
+    if (debug_utf8)
+        printf("limit 5, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 6);
+    if (debug_utf8)
+        printf("limit 6, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 7);
+    if (debug_utf8)
+        printf("limit 7, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 8);
+    if (debug_utf8)
+        printf("limit 8, result=%d: '%.*s, expected 8'\n", result, result, data);
+    assert(result == 8);
+
+    // 4 byte sequence
+    data = "labx-𨉟!";
+    if (debug_utf8)
+        printf("%.*s\n", 10, data);
+    print_bytes(data, -1);
+
+    result = find_utf8_offset(data, 5);
+    if (debug_utf8)
+        printf("limit 5, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 6);
+    if (debug_utf8)
+        printf("limit 6, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 7);
+    if (debug_utf8)
+        printf("limit 7, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 8);
+    if (debug_utf8)
+        printf("limit 8, result=%d: '%.*s, expected 8'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 9);
+    if (debug_utf8)
+        printf("limit 9, result=%d: '%.*s, expected 9'\n", result, result, data);
+    assert(result == 9);
+
 }
 
 void logjam_util_test (int verbose)
