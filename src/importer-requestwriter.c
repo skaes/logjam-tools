@@ -109,37 +109,11 @@ mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t
     return collection;
 }
 
-// Find first correct UTF8 character position before buf[n], where n is greater than 3.
-static
-size_t find_utf8_offset(const char *buf, size_t n)
-{
-    assert(n>3);
-    // we might need to look 3 bytes back
-    const char *b = buf + n - 3;
-    // is the last byte part of a multi-byte sequence?
-    if (b[2] & 0x80) {
-        // Is the last byte in buffer the first byte in a new multi-byte sequence?
-        if (b[2] & 0x40) return n - 1;
-        // Is it a 3 byte sequence?
-        else if ((b[1] & 0xe0) == 0xe0) return n - 2;
-        // Is it a 4 byte sequence?
-        else if ((b[0] & 0xf0) == 0xf0) return n - 3;
-        // Should not happen, invalid utf8.
-        else {
-            // Find first ASCII character from the end position.
-            while ( (*b & 0x80) && (b != buf) ) b--;
-            return buf - b;
-        }
-    }
-    // it's an ASCII char
-    return n;
-}
-
 #define MAX_STRING_VALUE_SIZE 10000
 
 // limit string values to MAX_STRING_VALUE_SIZE bytes
 static
-int limit_json_string_value_length(const char* str, int n, char** copy)
+int limit_utf8_string_length(const char* str, int n, char** copy)
 {
     if (n <= MAX_STRING_VALUE_SIZE+16)
         return n;
@@ -216,7 +190,7 @@ void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, cons
         const char *str = json_object_get_string(val);
         size_t n = json_object_get_string_len(val);
         char *copy = NULL;
-        n = limit_json_string_value_length(str, n, &copy);
+        n = limit_utf8_string_length(str, n, &copy);
         if (copy)
             str = copy;
         if (bson_utf8_validate(str, n, false /* disallow embedded null characters */)) {
@@ -793,4 +767,20 @@ zactor_t* request_writer_new(zconfig_t *config, size_t id)
 {
     request_writer_state_t *state = request_writer_state_new(config, id);
     return zactor_new(request_writer, state);
+}
+
+void test_finding_utf8_offset(int verbose)
+{
+
+}
+
+void request_writer_test (int verbose)
+{
+    printf (" * logjam-request-writer: ");
+    if (verbose)
+        printf("\n");
+
+    test_finding_utf8_offset (verbose);
+
+    printf ("OK\n");
 }

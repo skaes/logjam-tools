@@ -1119,6 +1119,32 @@ void filter_sensitive_cookies(json_object *request, zlist_t *keywords, zchunk_t 
     }
 }
 
+// Find first correct UTF8 character position before buf[n], where n is greater than 3.
+size_t find_utf8_offset(const char *buf, size_t n)
+{
+    assert(n>3);
+    // we might need to look 3 bytes back
+    const char *b = buf + n - 3;
+    // is the last byte part of a multi-byte sequence?
+    if (b[2] & 0x80) {
+        // Is the last byte in buffer the first byte in a new multi-byte sequence?
+        if (b[2] & 0x40) return n - 1;
+        // Is it a 3 byte sequence?
+        else if ((b[1] & 0xe0) == 0xe0) return n - 2;
+        // Is it a 4 byte sequence?
+        else if ((b[0] & 0xf0) == 0xf0) return n - 3;
+        // Should not happen, invalid utf8.
+        else {
+            printf("Invalid utf-8!!: %s\n", buf);
+            // Find first ASCII character from the end position.
+            while ( (*b & 0x80) && (b != buf) ) b--;
+            return b - buf;
+        }
+    }
+    // it's an ASCII char
+    return n;
+}
+
 static void test_uint64wrap (int verbose)
 {
     uint64_t i = 0xffffffffffffffff;
@@ -1326,6 +1352,23 @@ void test_keyword_replacement (int verbose) {
     zchunk_destroy(&buffer);
 }
 
+void test_finding_utf8_offsets( int verbose )
+{
+    int result;
+    const char* data = "abcde";
+    result = find_utf8_offset(data, 4);
+    assert(result == 4);
+
+    data = "hugöä";
+    result = find_utf8_offset(data, 4);
+    assert(result == 3);
+
+    // Invalid UTF8
+    data = "Hugo 巴伐利亚 Schnugo";
+    result = find_utf8_offset(data, 8);
+    assert(result == 4);
+}
+
 void logjam_util_test (int verbose)
 {
     printf (" * logjam-utils: ");
@@ -1343,6 +1386,7 @@ void logjam_util_test (int verbose)
     test_extract_app_env_rid (verbose);
     test_compression_decompression (verbose);
     test_keyword_replacement (verbose);
+    test_finding_utf8_offsets (verbose);
 
     printf ("OK\n");
 }
