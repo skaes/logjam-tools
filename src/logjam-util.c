@@ -426,8 +426,8 @@ void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *
     }
 }
 
-// we give up if the buffer needs to be larger than 10MB
-const size_t max_buffer_size = 32 * 1024 * 1024;
+// we give up if the buffer needs to be larger than 64MB
+const size_t max_buffer_size = 64 * 1024 * 1024;
 
 int decompress_frame_gzip(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
 {
@@ -479,6 +479,13 @@ int decompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body,
         zchunk_resize(buffer, next_size);
         dest_size = next_size;
         dest = (char*) zchunk_data(buffer);
+    }
+    if (uncompressed_length > dest_size) {
+        fprintf(stderr,
+                "[E] failed to increase buffer size for snappy_uncompress. required: %zu, actual: %zu\n. max buffer size: %zu",
+                uncompressed_length,
+                dest_size,
+                max_buffer_size);
     }
     assert(dest_size >= uncompressed_length);
 
