@@ -159,8 +159,14 @@ func (c *Collector) hasKnownActions() bool {
 
 func (c *Collector) ServeAppMetrics(w http.ResponseWriter, r *http.Request) {
 	c.RequestHandler.ServeHTTP(w, r)
-	contentLength := w.Header()["Content-Length"][0]
-	if contentLength == "0" && c.hasKnownActions() {
+	contentLengthHeader := w.Header()["Content-Length"]
+	if len(contentLengthHeader) == 0 {
+		// Apparently the content length header is no longer set with the latest
+		// dependendcy updates and that crashes the response writer. I leave the
+		// code below in just in case it comes back.
+		return
+	}
+	if contentLengthHeader[0] == "0" && c.hasKnownActions() {
 		atomic.AddUint64(&stats.Stats.EmptyMetricsResponse, 1)
 		log.Error("prometheus erroneously served empty response for stream %s", c.appEnv())
 	}
