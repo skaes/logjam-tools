@@ -767,7 +767,7 @@ int dump_message_payload (zmsg_t *self, FILE *file, zchunk_t *buffer)
         size_t body_len;
         int rc = decompress_frame(frame, compression_method, buffer, &body, &body_len);
         if (rc == 0) {
-            fprintf(stderr, "[E] decompressor: could not decompress payload from\n");
+            fprintf(stderr, "[E] dump_message_payload: could not decompress message frame\n");
             return -1;
         }
         if (fwrite (body, body_len, 1, file) != 1)
