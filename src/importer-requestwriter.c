@@ -27,12 +27,14 @@ typedef struct {
     zhash_t *metrics_collections;
     zhash_t *jse_collections;
     zhash_t *events_collections;
-    zsock_t *pipe;         // actor command pipe
+    zsock_t *pipe;                 // actor command pipe
     zsock_t *pull_socket;
     zsock_t *live_stream_socket;
-    int updates_count;     // updates performend since last tick
-    int update_time;       // processing time since last tick (micro seconds)
-    int updates_failed;    // how many updates failed
+    int updates_count;             // updates performend since last tick
+    int update_time;               // processing time since last tick (micro seconds)
+    int updates_failed;            // how many updates failed
+    zlist_t *sensitive_cookies;    // list of cookies which must be obfuscated
+    zchunk_t *obfuscation_buffer;  // buffer for cookie obfuscator
 } request_writer_state_t;
 
 
@@ -107,37 +109,11 @@ mongoc_collection_t* request_writer_get_events_collection(request_writer_state_t
     return collection;
 }
 
-// Find first correct UTF8 character position before buf[n], where n is greater than 3.
-static
-size_t find_utf8_offset(const char *buf, size_t n)
-{
-    assert(n>3);
-    // we might need to look 3 bytes back
-    const char *b = buf + n - 3;
-    // is the last byte part of a multi-byte sequence?
-    if (b[2] & 0x80) {
-        // Is the last byte in buffer the first byte in a new multi-byte sequence?
-        if (b[2] & 0x40) return n - 1;
-        // Is it a 3 byte sequence?
-        else if ((b[1] & 0xe0) == 0xe0) return n - 2;
-        // Is it a 4 byte sequence?
-        else if ((b[0] & 0xf0) == 0xf0) return n - 3;
-        // Should not happen, invalid utf8.
-        else {
-            // Find first ASCII character from the end position.
-            while ( (*b & 0x80) && (b != buf) ) b--;
-            return buf - b;
-        }
-    }
-    // it's an ASCII char
-    return n;
-}
-
 #define MAX_STRING_VALUE_SIZE 10000
 
 // limit string values to MAX_STRING_VALUE_SIZE bytes
 static
-int limit_json_string_value_length(const char* str, int n, char** copy)
+int limit_utf8_string_length(const char* str, int n, char** copy)
 {
     if (n <= MAX_STRING_VALUE_SIZE+16)
         return n;
@@ -167,6 +143,11 @@ void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, cons
     size_t n = strlen(key);
     char safe_key[4*n+1];
     int len = copy_replace_dots_and_dollars(safe_key, key);
+
+    // ignore illegal empty strings, as they are no accepted by mongodb.
+    if (len == 0) {
+        return;
+    }
 
     if (!bson_utf8_validate(safe_key, len, false)) {
         char tmp[6*len+1];
@@ -209,7 +190,7 @@ void json_key_to_bson_key(const char* context, bson_t *b, json_object *val, cons
         const char *str = json_object_get_string(val);
         size_t n = json_object_get_string_len(val);
         char *copy = NULL;
-        n = limit_json_string_value_length(str, n, &copy);
+        n = limit_utf8_string_length(str, n, &copy);
         if (copy)
             str = copy;
         if (bson_utf8_validate(str, n, false /* disallow embedded null characters */)) {
@@ -365,7 +346,7 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         if (request_id==NULL || strlen(request_id) != 32) {
             // this can't be a UUID
             fprintf(stderr, "[E] invalid request_id: %s (stream: %s)\n", request_id, stream_info->key);
-            dump_json_object(stderr, "[E]", request);
+            dump_json_object_limiting_log_lines(stderr, "[E]", request, 10);
             request_id = NULL;
             request_id_obj = NULL;
         } else {
@@ -386,6 +367,14 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
         size_t n = 1024;
         char context[n];
         snprintf(context, n, "%s:%s", db_name, request_id);
+        filter_sensitive_cookies(request, state->sensitive_cookies, state->obfuscation_buffer);
+        json_object* old_lines = limit_log_lines(request, 10000);
+        if (old_lines) {
+             fprintf(stderr, "[W] limited log lines on request with rid '%s'\n", request_id);
+             dump_json_object_limiting_log_lines(stderr, "[W]", request, 5);
+             // dump_json_object(stdout, "[D]", old_lines);
+             json_object_put(old_lines);
+        }
         json_object_to_bson(context, request, document);
     }
 
@@ -400,13 +389,10 @@ json_object* store_request(const char* db_name, stream_info_t* stream_info, json
     if (!dryrun) {
         bson_error_t error;
         if (!mongoc_collection_insert(requests_collection, MONGOC_INSERT_NONE, document, wc_no_wait, &error)) {
-            size_t n;
-            char* bjs = bson_as_json(document, &n);
             fprintf(stderr,
-                    "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n"
-                    "[E] document size: %zu; value: %s\n",
-                    request_id, db_name, error.code, error.message, n, bjs);
-            bson_free(bjs);
+                    "[E] insert failed for request document with rid '%s' on %s: (%d) %s\n",
+                    request_id, db_name, error.code, error.message);
+            dump_json_object_limiting_log_lines(stderr, "[E]", request, 10);
             update_failed = true;
             state->updates_failed++;
         }
@@ -658,6 +644,9 @@ request_writer_state_t* request_writer_state_new(zconfig_t *config, size_t id)
     state->metrics_collections = zhash_new();
     state->jse_collections = zhash_new();
     state->events_collections = zhash_new();
+    const char* cookies = zconfig_resolve(config, "/frontend/sensitive_cookies", NULL);
+    state->sensitive_cookies = split_delimited_string(cookies);
+    state->obfuscation_buffer = zchunk_new(NULL, 1024);
     return state;
 }
 
@@ -672,6 +661,8 @@ void request_writer_state_destroy(request_writer_state_t **state_p)
     zhash_destroy(&state->metrics_collections);
     zhash_destroy(&state->jse_collections);
     zhash_destroy(&state->events_collections);
+    zlist_destroy(&state->sensitive_cookies);
+    zchunk_destroy(&state->obfuscation_buffer);
     for (int i=0; i<num_databases; i++) {
         mongoc_client_destroy(state->mongo_clients[i]);
     }
@@ -776,4 +767,20 @@ zactor_t* request_writer_new(zconfig_t *config, size_t id)
 {
     request_writer_state_t *state = request_writer_state_new(config, id);
     return zactor_new(request_writer, state);
+}
+
+void test_finding_utf8_offset(int verbose)
+{
+
+}
+
+void request_writer_test (int verbose)
+{
+    printf (" * logjam-request-writer: ");
+    if (verbose)
+        printf("\n");
+
+    test_finding_utf8_offset (verbose);
+
+    printf ("OK\n");
 }

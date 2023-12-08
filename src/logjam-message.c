@@ -150,7 +150,7 @@ zchunk_t* sort_headers(zhash_t *headers) {
 }
 
 
-gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t *stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *buffer, zhash_t *header_fields)
+gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t *stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *buffer, zhash_t *header_fields, zlist_t *sensitive_cookies, zchunk_t *obfuscation_buffer)
 {
     json_object *obj = NULL, *http_request = NULL, *lines = NULL;
     const char *host = "Not found", *action = "";
@@ -266,6 +266,8 @@ gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *t
     if (json_object_object_get_ex (request, "total_time", &obj)) {
         gelf_message_add_json_object (gelf_msg, "_total_time", obj);
     }
+
+    filter_sensitive_cookies(request, sensitive_cookies, obfuscation_buffer);
 
     if (json_object_object_get_ex (request, "request_info", &http_request)) {
         if (json_object_object_get_ex (http_request, "method", &obj)) {

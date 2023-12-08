@@ -139,6 +139,7 @@ extern json_object* parse_json_data(const char *json_data, size_t json_data_len,
 
 extern void dump_json_object(FILE *f, const char* prefix, json_object *jobj);
 extern void dump_json_object_limiting_log_lines(FILE *f, const char* prefix, json_object *jobj, int max_lines);
+extern json_object* limit_log_lines(json_object *jobj, int max_lines);
 
 extern void my_zframe_fprint(zframe_t *self, const char *prefix, FILE *file);
 
@@ -248,6 +249,10 @@ extern bool is_mobile_app(const char* stream_name);
 extern void ensure_chunk_can_take(zchunk_t* buffer, size_t data_size);
 extern void append_line(zchunk_t* buffer, const char* format, ...);
 extern void append_null_byte(zchunk_t* buffer);
+
+extern void filter_sensitive_cookies(json_object *request, zlist_t *keywords, zchunk_t *buffer);
+extern char* replace_keywords(const char *str, zlist_t *keywords, zchunk_t *buffer);
+extern size_t find_utf8_offset(const char *buf, size_t n);
 
 #ifdef __cplusplus
 }

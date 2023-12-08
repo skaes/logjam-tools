@@ -6,6 +6,35 @@
 #include <lz4.h>
 #include "logjam-util.h"
 
+const int debug_utf8 = 0;
+
+const char *bit_rep[16] = {
+    [ 0] = "0000", [ 1] = "0001", [ 2] = "0010", [ 3] = "0011",
+    [ 4] = "0100", [ 5] = "0101", [ 6] = "0110", [ 7] = "0111",
+    [ 8] = "1000", [ 9] = "1001", [10] = "1010", [11] = "1011",
+    [12] = "1100", [13] = "1101", [14] = "1110", [15] = "1111",
+};
+
+static void print_byte(uint8_t byte)
+{
+    if (debug_utf8)
+        printf("%s%s", bit_rep[byte >> 4], bit_rep[byte & 0x0F]);
+}
+
+static void print_bytes(const char* str, int n)
+{
+    if (debug_utf8) {
+        uint8_t c;
+        if (n==-1)
+            n = strlen(str);
+        while ( (c=*(str++)) && n--) {
+            print_byte(c);
+            printf(" ");
+        }
+        printf("\n");
+    }
+}
+
 int malloc_trim_frequency = 0;
 
 time_t get_iso_date_info(char today[ISO_DATE_STR_LEN], char tomorrow[ISO_DATE_STR_LEN])
@@ -397,8 +426,8 @@ void compress_message_data(int compression_method, zchunk_t* buffer, zmq_msg_t *
     }
 }
 
-// we give up if the buffer needs to be larger than 10MB
-const size_t max_buffer_size = 32 * 1024 * 1024;
+// we give up if the buffer needs to be larger than 64MB
+const size_t max_buffer_size = 64 * 1024 * 1024;
 
 int decompress_frame_gzip(zframe_t *body_frame, zchunk_t *buffer, char **body, size_t* body_len)
 {
@@ -450,6 +479,13 @@ int decompress_frame_snappy(zframe_t *body_frame, zchunk_t *buffer, char **body,
         zchunk_resize(buffer, next_size);
         dest_size = next_size;
         dest = (char*) zchunk_data(buffer);
+    }
+    if (uncompressed_length > dest_size) {
+        fprintf(stderr,
+                "[E] failed to increase buffer size for snappy_uncompress. required: %zu, actual: %zu\n. max buffer size: %zu",
+                uncompressed_length,
+                dest_size,
+                max_buffer_size);
     }
     assert(dest_size >= uncompressed_length);
 
@@ -572,29 +608,61 @@ void dump_json_object(FILE *f, const char* prefix, json_object *jobj)
     // don't try to free the json string. it will crash.
 }
 
-void dump_json_object_limiting_log_lines(FILE *f, const char* prefix, json_object *jobj, int max_lines)
+// Limit number of log lines. Returns a pointer to the old array of
+// log lines if it was replaced. Caller needs to free old lines.
+json_object* limit_log_lines(json_object *jobj, int max_lines)
 {
     json_object *lines = NULL;
-    json_object *new_lines = NULL;
+
+    if (max_lines % 2 == 0)
+        max_lines++;
+
     if (json_object_object_get_ex(jobj, "lines", &lines) && json_object_is_type(lines, json_type_array)) {
         int len = json_object_array_length(lines);
-        if (len > max_lines) {
-            json_object_get(lines);
-            new_lines = json_object_new_array();
-            for (int i = 0; i < max_lines; i++) {
-                json_object *elem = json_object_array_get_idx(lines, i);
-                json_object_get(elem);
-                json_object_array_add(new_lines, elem);
-            }
-            json_object_array_add(new_lines, json_object_new_string("LINES DROPPED BY IMPORTER"));
-            json_object_object_add(jobj, "lines", new_lines);
+        if (len <= max_lines) return NULL;
+
+        // increment ref counter so caller can add it back.
+        json_object_get(lines);
+        json_object *elem;
+
+        json_object *new_lines = json_object_new_array_ext(max_lines);
+        int j = 0;
+        for (int i = 0; i < max_lines / 2; i++) {
+            elem = json_object_array_get_idx(lines, i);
+            json_object_get(elem);
+            json_object_array_put_idx(new_lines, j++, elem);
         }
+
+        // copy line object, replacing the log text
+        elem = json_object_array_get_idx(lines, max_lines / 2);
+        json_object_get(elem);
+        if (json_object_is_type(elem, json_type_array) && (json_object_array_length(elem) >= 3)) {
+            json_object_array_put_idx(elem, 2, json_object_new_string("... LINES DROPPED BY IMPORTER ..."));
+        }
+        json_object_array_put_idx(new_lines, j++, elem);
+
+        for (int i = len - max_lines / 2 ; i < len; i++) {
+            elem = json_object_array_get_idx(lines, i);
+            json_object_get(elem);
+            json_object_array_put_idx(new_lines, j++, elem);
+        }
+        json_object_object_add(jobj, "lines", new_lines);
+
+        return lines;
     }
-    dump_json_object(f, prefix, jobj);
-    if (new_lines)
-        json_object_object_add(jobj, "lines", lines);
+
+    return NULL;
 }
 
+void dump_json_object_limiting_log_lines(FILE *f, const char* prefix, json_object *jobj, int max_lines)
+{
+    json_object *lines = limit_log_lines(jobj, max_lines);
+
+    dump_json_object(f, prefix, jobj);
+
+    if (lines)
+        json_object_object_add(jobj, "lines", lines);
+}
 
 static void print_msg(byte* data, size_t size, const char *prefix, FILE *file)
 {
@@ -699,7 +767,7 @@ int dump_message_payload (zmsg_t *self, FILE *file, zchunk_t *buffer)
         size_t body_len;
         int rc = decompress_frame(frame, compression_method, buffer, &body, &body_len);
         if (rc == 0) {
-            fprintf(stderr, "[E] decompressor: could not decompress payload from\n");
+            fprintf(stderr, "[E] dump_message_payload: could not decompress message frame\n");
             return -1;
         }
         if (fwrite (body, body_len, 1, file) != 1)
@@ -1014,6 +1082,122 @@ void append_null_byte(zchunk_t* buffer)
     zchunk_append(buffer, "", 1);
 }
 
+char* replace_keywords(const char *str, zlist_t *keywords, zchunk_t *buffer) {
+    const char* ptr = str;
+    size_t len = strlen(str);
+    zchunk_ensure_size(buffer, 10*len + 1);
+    char* output = (char*)zchunk_data(buffer);
+    char* out_ptr = output;
+    int found = 0;
+    int changed = 0;
+    while (*ptr != '\0') {
+        if (*ptr == ' ' || *ptr == ';') {
+            *out_ptr++ = *ptr++;
+            continue;
+        }
+        const char* keyword = zlist_first(keywords);
+        while (keyword) {
+            size_t keyword_len = strlen(keyword);
+            if (strncmp(ptr, keyword, keyword_len) == 0 && ptr[keyword_len] == '=') {
+                const char* value_start = ptr + keyword_len + 1;
+                while (*value_start != '\0' && !isspace(*value_start) && *value_start != ';') {
+                    value_start++;
+                }
+                ptr = value_start;
+                *out_ptr = '\0';
+                out_ptr = stpcpy(out_ptr, keyword);
+                out_ptr = stpcpy(out_ptr, "=[FILTERED]");
+                changed = found = 1;
+                break;
+            }
+            keyword = zlist_next(keywords);
+        }
+        if (!found) {
+            *out_ptr++ = *ptr++;
+        } else {
+            found = 0;
+        }
+    }
+    if (!changed) return NULL;
+
+    *out_ptr = '\0';
+    return output;
+}
+
+void filter_sensitive_cookies(json_object *request, zlist_t *keywords, zchunk_t *buffer) {
+    json_object *request_info;
+    if (!json_object_object_get_ex(request, "request_info", &request_info))
+        return;
+
+    json_object *headers;
+    if (!json_object_object_get_ex(request_info, "headers", &headers))
+        return;
+
+    bool has_cookie = false;
+    json_object_object_foreach(headers, key, value) {
+        if (strcasecmp(key, "cookie") == 0) {
+            has_cookie = true;
+            break;
+        }
+    }
+
+    if (!has_cookie)
+        return;
+
+    if (json_type_string != json_object_get_type(value))
+        return;
+
+    const char* cookie_str = json_object_get_string(value);
+    char *new_str = replace_keywords(cookie_str, keywords, buffer);
+
+    if (new_str) {
+        json_object_object_add(headers, key, json_object_new_string(new_str));
+    }
+}
+
+// Find first correct UTF8 character position before buf[n], where n is greater than 3.
+size_t find_utf8_offset(const char *buf, size_t n)
+{
+    // First CP, Last CP, Byte 1,  Byte 2,  Byte 3,  Byte 4
+    // U+0000	 U+007F	  0xxxxxxx
+    // U+0080	 U+07FF	  110xxxxx 10xxxxxx
+    // U+0800	 U+FFFF	  1110xxxx 10xxxxxx 10xxxxxx
+    // U+10000	 U+10FFFF 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
+
+    // 0x80 = 10000000
+    // 0x40 = 01000000
+    // 0xc0 = 11000000
+    // 0xe0 = 11100000
+    // 0xf0 = 11110000
+
+    assert(n>4);
+    // we might need to look 4 bytes back
+    const char *b = buf + n - 4;
+    // is the last byte part of a multi-byte sequence?
+    if (b[3] & 0x80) {
+        // Is the last byte in buffer the start of a multi byte sequence?
+        if ((b[3] & 0xc0) == 0xc0) return n - 1;
+        // Does the second to last byte in buffer start a 3 or 4 byte sequences?
+        else if ((b[2] & 0xe0) == 0xe0) return n - 2;
+        // Does the second to last byte in buffer start a 2 byte sequences?
+        else if ((b[2] & 0xc0) == 0xc0) return n;
+        // Does the third to last byte start a 4 byte sequence?
+        else if ((b[1] & 0xf0) == 0xf0) return n - 3;
+        // Does the third to last byte start a 3 byte sequence?
+        else if ((b[1] & 0xe0) == 0xe0) return n;
+        // Does the fourth to last byte start a 4 byte sequence?
+        else if ((b[0] & 0xf0) == 0xf0) return n;
+        // Should not happen, invalid utf8.
+        else {
+            // Find first ASCII character from the end position.
+            while ( (*b & 0x80) && (b != buf) ) b--;
+            return b - buf;
+        }
+    }
+    // The last byte of buf is  an ASCII char.
+    return n;
+}
+
 static void test_uint64wrap (int verbose)
 {
     uint64_t i = 0xffffffffffffffff;
@@ -1172,6 +1356,147 @@ static void test_compression_decompression (int verbose)
     }
 }
 
+static void test_keyword_replacement (int verbose) {
+    zlist_t *keywords = zlist_new();
+    char *data;
+    char *result;
+    char *expected;
+    zchunk_t *buffer = zchunk_new(NULL, 1024);
+
+    data = "foo=bar";
+    result = replace_keywords(data, keywords, buffer);
+    expected = NULL;
+    assert(result == expected);
+
+    zlist_append(keywords, "foo");
+    zlist_append(keywords, "baz");
+
+    data = "foo=123456789123456789";
+    expected = "foo=[FILTERED]";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "foo=123";
+    expected = "foo=[FILTERED]";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "foo=123; ";
+    expected = "foo=[FILTERED]; ";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "foo=123; fum=larifari";
+    expected = "foo=[FILTERED]; fum=larifari";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "fum=larifari; foo=123";
+    expected = "fum=larifari; foo=[FILTERED]";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    data = "foo=123; baz=456";
+    expected = "foo=[FILTERED]; baz=[FILTERED]";
+    result = replace_keywords(data, keywords, buffer);
+    assert(streq(result, expected));
+
+    zlist_destroy(&keywords);
+    zchunk_destroy(&buffer);
+}
+
+void test_finding_utf8_offsets( int verbose )
+{
+    int result;
+    const char* data = "abcdef";
+    if (debug_utf8)
+        printf("%.*s\n", 6, data);
+    print_bytes(data, -1);
+    result = find_utf8_offset(data, 5);
+    assert(result == 5);
+
+    // two byte sequences
+    data = "labx-äba";
+    print_bytes(data, -1);
+
+    result = find_utf8_offset(data, 5);
+    if (debug_utf8)
+        printf("limit: 5, result=%d: '%.*s', expected=5: '%.*s'\n", result, result, data, 5, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 6);
+    if (debug_utf8)
+        printf("limit: 6, result=%d: '%.*s', expected=5: '%.*s'\n", result, result, data, 5, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 7);
+    if (debug_utf8)
+        printf("limit: 7, result=%d: '%.*s', expected=7: '%.*s'\n", result, result, data, 7, data);
+    assert(result == 7);
+
+    result = find_utf8_offset(data, 8);
+    if (debug_utf8)
+        printf("limit: 8, result=%d: '%.*s', expected=8: '%.*s'\n", result, result, data, 8, data);
+    assert(result == 8);
+
+    // 3 byte sequences
+    data = "labx-巴伐利亚!";
+    if (debug_utf8)
+        printf("%.*s\n", 18, data);
+    print_bytes(data, -1);
+    result = find_utf8_offset(data, 5);
+    if (debug_utf8)
+        printf("limit 5, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 6);
+    if (debug_utf8)
+        printf("limit 6, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 7);
+    if (debug_utf8)
+        printf("limit 7, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 8);
+    if (debug_utf8)
+        printf("limit 8, result=%d: '%.*s, expected 8'\n", result, result, data);
+    assert(result == 8);
+
+    // 4 byte sequence
+    data = "labx-𨉟!";
+    if (debug_utf8)
+        printf("%.*s\n", 10, data);
+    print_bytes(data, -1);
+
+    result = find_utf8_offset(data, 5);
+    if (debug_utf8)
+        printf("limit 5, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 6);
+    if (debug_utf8)
+        printf("limit 6, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 7);
+    if (debug_utf8)
+        printf("limit 7, result=%d: '%.*s, expected 5'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 8);
+    if (debug_utf8)
+        printf("limit 8, result=%d: '%.*s, expected 8'\n", result, result, data);
+    assert(result == 5);
+
+    result = find_utf8_offset(data, 9);
+    if (debug_utf8)
+        printf("limit 9, result=%d: '%.*s, expected 9'\n", result, result, data);
+    assert(result == 9);
+
+}
+
 void logjam_util_test (int verbose)
 {
     printf (" * logjam-utils: ");
@@ -1188,6 +1513,8 @@ void logjam_util_test (int verbose)
     test_extract_app_env (verbose);
     test_extract_app_env_rid (verbose);
     test_compression_decompression (verbose);
+    test_keyword_replacement (verbose);
+    test_finding_utf8_offsets (verbose);
 
     printf ("OK\n");
 }

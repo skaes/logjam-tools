@@ -217,8 +217,8 @@ void unknown_streams_collector_actor_fn(zsock_t *pipe, void *args)
     rc = zloop_reader(loop, state->pull_socket, read_msg_and_forward, state);
     assert(rc == 0);
 
-    // log and reset unknown streams every minute
-    rc = zloop_timer(loop, 60000, 0, timer_event, state);
+    // log and reset unknown streams every 10 minutes
+    rc = zloop_timer(loop, 600 * 1000, 0, timer_event, state);
     assert(rc != -1);
 
     // run the loop

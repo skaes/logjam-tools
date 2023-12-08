@@ -18,6 +18,8 @@ typedef struct {
     size_t gelf_bytes;                      // size of uncompressed GELF messages
     size_t ticks;
     bool received_term_cmd;
+    zlist_t* sensitive_cookies;
+    zchunk_t *obfuscation_buffer;
 } parser_state_t;
 
 
@@ -81,7 +83,7 @@ int process_message(zloop_t *loop, zsock_t *socket, void *arg)
     gelf_message *gelf_msg = NULL;
 
     if (logjam_msg && !zsys_interrupted) {
-        gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer, state->headers);
+        gelf_msg = logjam_message_to_gelf (logjam_msg, state->tokener, state->stream_info_cache, state->decompression_buffer, state->scratch_buffer, state->headers, state->sensitive_cookies, state->obfuscation_buffer);
         // gelf message can be null for unknown streams or unparseable json
         if (gelf_msg == NULL) {
             goto cleanup;
@@ -182,6 +184,9 @@ parser_state_t* parser_state_new(zconfig_t* config, size_t id)
     state->tokener = json_tokener_new();
     state->stream_info_cache = zhash_new();
     state->headers = default_headers_hash();
+    const char* cookies = zconfig_resolve(config, "/frontend/sensitive_cookies", NULL);
+    state->sensitive_cookies = split_delimited_string(cookies);
+    state->obfuscation_buffer = zchunk_new(NULL, 1024);
     load_headers(state);
     return state;
 }
@@ -198,6 +203,8 @@ void parser_state_destroy(parser_state_t **state_p)
     zhash_destroy(&state->headers);
     json_tokener_free(state->tokener);
     zhash_destroy(&state->stream_info_cache);
+    zlist_destroy(&state->sensitive_cookies);
+    zchunk_destroy(&state->obfuscation_buffer);
     free(state);
     *state_p = NULL;
 }

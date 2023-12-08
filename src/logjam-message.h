@@ -13,7 +13,7 @@ typedef struct {
 
 logjam_message* logjam_message_read(zsock_t *receiver);
 
-gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t* stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *scratch_buffer, zhash_t *header_fields);
+gelf_message* logjam_message_to_gelf(logjam_message *logjam_msg, json_tokener *tokener, zhash_t* stream_info_cache, zchunk_t *decompression_buffer, zchunk_t *scratch_buffer, zhash_t *header_fields, zlist_t *sensitive_cookies, zchunk_t *buffer);
 
 void logjam_message_destroy(logjam_message **msg);
 
