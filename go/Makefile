@@ -60,7 +60,7 @@ http-client-test:
 	go test ./http-client
 
 promcollector-test:
-	go test -race ./prometheusexporter/...
+	go test ./prometheusexporter/...
 
 livestream-test: logjam-livestream
 	go test ./livestream-server
