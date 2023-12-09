@@ -728,11 +728,6 @@ func (c *Collector) deleteLabels(name string, labels prometheus.Labels) bool {
 }
 
 func (c *Collector) copyWithoutActionLabel(a string) bool {
-	if c.opts.Verbose {
-		log.Info("removing action: %s", a)
-	}
-	delete(c.knownActions, a)
-	atomic.StoreInt32(&c.knownActionsSize, int32(len(c.knownActions)))
 	mfs, err := c.registry.Gather()
 	if err != nil {
 		log.Error("could not gather metric families for deletion: %s", err)
@@ -771,6 +766,11 @@ func (c *Collector) actionRegistryHandler() {
 			threshold := time.Now().Add(-1 * time.Duration(c.opts.CleanAfter) * time.Minute)
 			for a, v := range c.knownActions {
 				if v.Before(threshold) {
+					if c.opts.Verbose {
+						log.Info("removing action: %s", a)
+					}
+					delete(c.knownActions, a)
+					atomic.StoreInt32(&c.knownActionsSize, int32(len(c.knownActions)))
 					c.copyWithoutActionLabel(a)
 				}
 			}
