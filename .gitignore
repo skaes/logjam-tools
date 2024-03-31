@@ -69,3 +69,4 @@ docker-token
 railsexpress-key
 secrets.tar
 Gemfile.lock
+importer.conf
