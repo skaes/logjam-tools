@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -193,7 +193,7 @@ func retrieveStreams(url string) map[string]stream {
 		logError("could not retrieve streams from %s: %s", url, err)
 		return nil
 	}
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != 200 {
 		logError("unexpected response: %d", res.Status)
@@ -388,7 +388,7 @@ func backupDatabases(dbs []*databaseInfo) {
 }
 
 func removeExpiredBackups() {
-	files, err := ioutil.ReadDir(opts.BackupDir)
+	files, err := os.ReadDir(opts.BackupDir)
 	if err != nil {
 		logError("could not read backup dir: %s", err)
 		return

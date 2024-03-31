@@ -2,7 +2,7 @@ package util
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"math"
 	"net/http"
 
@@ -30,7 +30,7 @@ func RetrieveResources(url, env string) *Resources {
 		log.Error("could not retrieve resources: %s", err)
 		return nil
 	}
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != 200 {
 		log.Error("unexpected response: %d", res.Status)

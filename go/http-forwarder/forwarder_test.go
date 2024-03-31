@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -77,7 +76,7 @@ func TestForwarder(t *testing.T) {
 
 				So(err, ShouldBeNil)
 				So(res.StatusCode, ShouldEqual, 202)
-				body, err = ioutil.ReadAll(res.Body)
+				body, err = io.ReadAll(res.Body)
 				So(err, ShouldBeNil)
 				So(string(body), ShouldEqual, "")
 
@@ -108,7 +107,7 @@ func TestForwarder(t *testing.T) {
 
 			So(err, ShouldBeNil)
 			So(res.StatusCode, ShouldEqual, 415)
-			io.Copy(ioutil.Discard, res.Body)
+			io.Copy(io.Discard, res.Body)
 		})
 	})
 
@@ -137,7 +136,7 @@ func TestForwarder(t *testing.T) {
 
 				So(err, ShouldBeNil)
 				So(res.StatusCode, ShouldEqual, 202)
-				body, err = ioutil.ReadAll(res.Body)
+				body, err = io.ReadAll(res.Body)
 				So(err, ShouldBeNil)
 				So(string(body), ShouldEqual, "")
 
@@ -168,7 +167,7 @@ func TestForwarder(t *testing.T) {
 
 			So(err, ShouldBeNil)
 			So(res.StatusCode, ShouldEqual, 415)
-			io.Copy(ioutil.Discard, res.Body)
+			io.Copy(io.Discard, res.Body)
 		})
 
 		Convey("missing app", func() {
@@ -182,7 +181,7 @@ func TestForwarder(t *testing.T) {
 
 			So(err, ShouldBeNil)
 			So(res.StatusCode, ShouldEqual, 400)
-			io.Copy(ioutil.Discard, res.Body)
+			io.Copy(io.Discard, res.Body)
 		})
 
 		Convey("missing env", func() {
@@ -196,7 +195,7 @@ func TestForwarder(t *testing.T) {
 
 			So(err, ShouldBeNil)
 			So(res.StatusCode, ShouldEqual, 400)
-			io.Copy(ioutil.Discard, res.Body)
+			io.Copy(io.Discard, res.Body)
 		})
 	})
 
@@ -225,7 +224,7 @@ func TestForwarder(t *testing.T) {
 
 				So(err, ShouldBeNil)
 				So(res.StatusCode, ShouldEqual, 202)
-				body, err = ioutil.ReadAll(res.Body)
+				body, err = io.ReadAll(res.Body)
 				So(err, ShouldBeNil)
 				So(string(body), ShouldEqual, "")
 
@@ -257,7 +256,7 @@ func TestForwarder(t *testing.T) {
 
 			So(err, ShouldBeNil)
 			So(res.StatusCode, ShouldEqual, 415)
-			io.Copy(ioutil.Discard, res.Body)
+			io.Copy(io.Discard, res.Body)
 		})
 	})
 

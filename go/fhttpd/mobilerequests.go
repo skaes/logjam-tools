@@ -1,7 +1,7 @@
 package main
 
 import (
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	"github.com/skaes/logjam-tools/go/fhttpd/stats"
@@ -10,7 +10,7 @@ import (
 
 func serveMobileMetrics(w http.ResponseWriter, r *http.Request) {
 	defer stats.RecordRequestStats(r)
-	bytes, err := ioutil.ReadAll(r.Body)
+	bytes, err := io.ReadAll(r.Body)
 	r.Body.Close()
 	if err != nil {
 		writeErrorResponse(w, err.Error())

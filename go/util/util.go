@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"strings"
@@ -85,7 +84,7 @@ func Decompress(data []byte, method uint8) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		decompressed, err := ioutil.ReadAll(reader)
+		decompressed, err := io.ReadAll(reader)
 		if err != nil {
 			return nil, err
 		}
