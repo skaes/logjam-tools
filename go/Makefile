@@ -76,3 +76,7 @@ fhttpd-test: fhttpd/*
 
 formats-test: formats/*
 	go test ./formats/*
+
+.PHONY: lint
+lint:
+	staticcheck ./...
