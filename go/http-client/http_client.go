@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -53,10 +53,10 @@ func (hc *HttpClient) SendEvent(event *LogjamEvent) error {
 	if err != nil {
 		return err
 	}
-	buf, _ := ioutil.ReadAll(response.Body)
+	buf, _ := io.ReadAll(response.Body)
 	response.Body.Close()
 	if response.StatusCode >= 202 && response.StatusCode < 300 {
 		return nil
 	}
-	return fmt.Errorf("Unexpected response from logjam endpoint: status: %d, msg: %s ", response.StatusCode, string(buf))
+	return fmt.Errorf("unexpected response from logjam endpoint: status: %d, msg: %s ", response.StatusCode, string(buf))
 }

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"os"
 	"os/signal"
 	"strings"
@@ -85,7 +84,7 @@ func Decompress(data []byte, method uint8) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		decompressed, err := ioutil.ReadAll(reader)
+		decompressed, err := io.ReadAll(reader)
 		if err != nil {
 			return nil, err
 		}
@@ -144,7 +143,7 @@ func ParseRequestId(id string) (rid *RequestId, err error) {
 	slices := strings.Split(id, "-")
 	n := len(slices)
 	if n < 3 {
-		err = fmt.Errorf("Wrong request id format: %s", id)
+		err = fmt.Errorf("wrong request id format: %s", id)
 		return
 	}
 	rid = &RequestId{
@@ -236,14 +235,14 @@ func ReadMsg(r io.Reader) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := make([][]byte, frameCount, frameCount)
+	res := make([][]byte, frameCount)
 	for i := int64(0); i < frameCount; i++ {
 		var frameSize int64
 		err := binary.Read(r, binary.LittleEndian, &frameSize)
 		if err != nil {
 			return nil, err
 		}
-		frameData := make([]byte, frameSize, frameSize)
+		frameData := make([]byte, frameSize)
 		_, err = io.ReadFull(r, frameData)
 		if err != nil {
 			return nil, err

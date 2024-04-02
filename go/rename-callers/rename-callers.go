@@ -28,8 +28,8 @@ var opts struct {
 }
 
 var (
-	rc       = int(0)
-	verbose  = false
+	rc = int(0)
+	// verbose  = false
 	dryrun   = false
 	toDate   time.Time
 	fromDate time.Time
@@ -56,7 +56,7 @@ func initialize() {
 		logError("arguments are not supported")
 		os.Exit(1)
 	}
-	verbose = opts.Verbose
+	// verbose = opts.Verbose
 	dryrun = opts.Dryrun
 	if opts.ToDate != "" && opts.BeforeDate != "" {
 		logError("you can only specify one of --before-date or --to-date")
@@ -126,10 +126,10 @@ func logError(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
-func logWarn(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("%s WARN %s\n", time.Now().Format(time.StampMicro), format)
-	fmt.Fprintf(os.Stderr, finalFormat, args...)
-}
+// func logWarn(format string, args ...interface{}) {
+//	finalFormat := fmt.Sprintf("%s WARN %s\n", time.Now().Format(time.StampMicro), format)
+//	fmt.Fprintf(os.Stderr, finalFormat, args...)
+// }
 
 func parseDatabaseName(db string) *databaseInfo {
 	re := regexp.MustCompile(`^logjam-(.+)-([^-]+)-(\d\d\d\d-\d\d-\d\d)$`)
@@ -180,15 +180,15 @@ func getDatabases() []*databaseInfo {
 
 func renameCallersAndSendersInCollection(db *mongo.Database, collectionName string) bool {
 	collection := db.Collection(collectionName)
-	filter := bson.D{{"$or",
-		bson.A{
-			bson.D{{"callers", bson.D{{"$exists", 1}}}},
-			bson.D{{"senders", bson.D{{"$exists", 1}}}},
+	filter := bson.D{
+		{Key: "$or", Value: bson.A{
+			bson.D{{Key: "callers", Value: bson.D{{Key: "$exists", Value: 1}}}},
+			bson.D{{Key: "senders", Value: bson.D{{Key: "$exists", Value: 1}}}},
 		}},
 	}
 	projection := bson.D{
-		{"callers", 1},
-		{"senders", 1},
+		{Key: "callers", Value: 1},
+		{Key: "senders", Value: 1},
 	}
 	cursor, err := collection.Find(context.Background(), filter, options.Find().SetProjection(projection))
 	if err != nil {
@@ -225,8 +225,8 @@ func renameCallersAndSendersInCollection(db *mongo.Database, collectionName stri
 		}
 		if len(deletions) > 0 {
 			operation := mongo.NewUpdateOneModel()
-			operation.SetFilter(bson.D{{"_id", doc["_id"]}})
-			operation.SetUpdate(bson.D{{"$inc", increments}, {"$unset", deletions}})
+			operation.SetFilter(bson.D{{Key: "_id", Value: doc["_id"]}})
+			operation.SetUpdate(bson.D{{Key: "$inc", Value: increments}, {Key: "$unset", Value: deletions}})
 			operations = append(operations, operation)
 		}
 	}
@@ -262,8 +262,8 @@ func scheduleBackup(databaseName string) error {
 	metadata := client.Database("logjam-global").Collection("metadata")
 	_, err := metadata.UpdateOne(
 		context.Background(),
-		bson.D{{"name", "scheduled-backups"}},
-		bson.D{{"$addToSet", bson.D{{"value", databaseName}}}},
+		bson.D{{Key: "name", Value: "scheduled-backups"}},
+		bson.D{{Key: "$addToSet", Value: bson.D{{Key: "value", Value: databaseName}}}},
 		options.Update().SetUpsert(true),
 	)
 	return err

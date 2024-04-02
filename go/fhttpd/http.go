@@ -86,7 +86,7 @@ func parseQuery(r *http.Request) (stringMap, error) {
 		case 0:
 			sm[k] = ""
 		default:
-			return sm, fmt.Errorf("Parameter %s specified more than once", k)
+			return sm, fmt.Errorf("parameter %s specified more than once", k)
 		}
 	}
 	return sm, nil

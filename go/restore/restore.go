@@ -36,7 +36,7 @@ var opts struct {
 
 var (
 	rc                = int(0)
-	verbose           = false
+	// verbose           = false
 	dryrun            = false
 	toDate            time.Time
 	fromDate          time.Time
@@ -61,7 +61,7 @@ func initialize() {
 		logError("backup directory does not exist")
 		os.Exit(1)
 	}
-	verbose = opts.Verbose
+	// verbose = opts.Verbose
 	dryrun = opts.Dryrun
 	if opts.ToDate != "" && opts.BeforeDate != "" {
 		logError("you can only specify one of --before-date or --to-date")

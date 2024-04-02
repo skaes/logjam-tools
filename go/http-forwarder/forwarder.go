@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"os"
 	"os/signal"
@@ -40,7 +39,7 @@ var opts struct {
 }
 
 var (
-	verbose     bool
+	// verbose     bool
 	quiet       bool
 	outputSpec  string
 	compression byte
@@ -110,7 +109,7 @@ var wg sync.WaitGroup
 
 type (
 	stringMap map[string]interface{}
-	stringSet map[string]bool
+	// stringSet map[string]bool
 )
 
 func (sm stringMap) DeleteString(k string) string {
@@ -161,10 +160,10 @@ func serveEvents(w http.ResponseWriter, r *http.Request) {
 		recordFailure()
 		w.WriteHeader(415)
 		io.WriteString(w, "Content-Type needs to be application/json\n")
-		io.Copy(ioutil.Discard, r.Body)
+		io.Copy(io.Discard, r.Body)
 		return
 	}
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		recordFailure()
 		w.WriteHeader(500)
@@ -234,10 +233,10 @@ func serveLogs(w http.ResponseWriter, r *http.Request) {
 		recordFailure()
 		w.WriteHeader(415)
 		io.WriteString(w, "Content-Type needs to be application/json\n")
-		io.Copy(ioutil.Discard, r.Body)
+		io.Copy(io.Discard, r.Body)
 		return
 	}
-	body, err := ioutil.ReadAll(r.Body)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		recordFailure()
 		w.WriteHeader(500)
@@ -340,7 +339,7 @@ func main() {
 	log.Info("%s starting", os.Args[0])
 	initialize()
 	outputSpec = fmt.Sprintf("tcp://%s:%d", opts.BindIP, opts.OutputPort)
-	verbose = opts.Verbose
+	// verbose = opts.Verbose
 	quiet = opts.Quiet
 	log.Info("device-id: %d", opts.DeviceId)
 	log.Info("output-spec: %s", outputSpec)

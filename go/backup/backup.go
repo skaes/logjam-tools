@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -193,7 +193,7 @@ func retrieveStreams(url string) map[string]stream {
 		logError("could not retrieve streams from %s: %s", url, err)
 		return nil
 	}
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != 200 {
 		logError("unexpected response: %d", res.Status)
@@ -356,7 +356,7 @@ func backupRequests(db string) {
 }
 
 func backupDatabase(db *databaseInfo) {
-	if db.Name == "logjam-global" || strings.Index(db.Name, "logjam-development") != -1 {
+	if db.Name == "logjam-global" || strings.Contains(db.Name, "logjam-development") {
 		return
 	}
 	if db.Date.Before(fromDate) || db.Date.After(toDate) {
@@ -388,7 +388,7 @@ func backupDatabases(dbs []*databaseInfo) {
 }
 
 func removeExpiredBackups() {
-	files, err := ioutil.ReadDir(opts.BackupDir)
+	files, err := os.ReadDir(opts.BackupDir)
 	if err != nil {
 		logError("could not read backup dir: %s", err)
 		return
@@ -427,10 +427,10 @@ func getScheduledBackups() {
 	scheduledBackups = make(map[string]bool)
 	metadata := client.Database("logjam-global").Collection("metadata")
 	var doc struct {
-		Name  string   `bson: "name"`
-		Value []string `bson: "value"`
+		Name  string   `bson:"name"`
+		Value []string `bson:"value"`
 	}
-	err := metadata.FindOne(context.Background(), bson.D{{"name", "scheduled-backups"}}).Decode(&doc)
+	err := metadata.FindOne(context.Background(), bson.D{{Key: "name", Value: "scheduled-backups"}}).Decode(&doc)
 	if err != nil {
 		logWarn("could not retrieve/decode scheduled backups: %s", err)
 		return
@@ -445,8 +445,8 @@ func unscheduleBackup(db string) error {
 	metadata := client.Database("logjam-global").Collection("metadata")
 	_, err := metadata.UpdateOne(
 		context.Background(),
-		bson.D{{"name", "scheduled-backups"}},
-		bson.D{{"$pull", bson.D{{"value", db}}}},
+		bson.D{{Key: "name", Value: "scheduled-backups"}},
+		bson.D{{Key: "$pull", Value: bson.D{{Key: "value", Value: db}}}},
 	)
 	return err
 }

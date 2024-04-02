@@ -2,7 +2,7 @@ package util
 
 import (
 	"encoding/json"
-	"io/ioutil"
+	"io"
 	"net/http"
 
 	log "github.com/skaes/logjam-tools/go/logging"
@@ -81,7 +81,7 @@ func RetrieveStreams(url, env string) map[string]*Stream {
 		log.Error("could not retrieve stream: %s", err)
 		return nil
 	}
-	body, err := ioutil.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
 	res.Body.Close()
 	if res.StatusCode != 200 {
 		log.Error("unexpected response: %d", res.Status)

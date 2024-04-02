@@ -41,18 +41,18 @@ func extractFrontendData(r *http.Request) (stringMap, *util.RequestId, error) {
 
 	// check protocol version
 	if sm["v"] == nil {
-		return sm, nil, errors.New("Missing protocol version number: v=1")
+		return sm, nil, errors.New("missing protocol version number: v=1")
 	}
 	if sm["v"].(int) != 1 {
-		return sm, nil, fmt.Errorf("Unsupported protocol version: v=%d", sm["v"].(int))
+		return sm, nil, fmt.Errorf("unsupported protocol version: v=%d", sm["v"].(int))
 	}
 	// check logjam_action
 	if sm["logjam_action"] == nil {
-		return sm, nil, errors.New("Missing field: logjam_action")
+		return sm, nil, errors.New("missing field: logjam_action")
 	}
 	// check request_id
 	if sm["logjam_request_id"] == nil {
-		return sm, nil, errors.New("Missing field: logjam_request_id")
+		return sm, nil, errors.New("missing field: logjam_request_id")
 	}
 	id := sm["logjam_request_id"].(string)
 	// extract app and environment

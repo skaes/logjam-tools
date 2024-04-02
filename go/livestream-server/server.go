@@ -33,7 +33,7 @@ var opts struct {
 	KeyFile      string `short:"k" long:"key-file" env:"LOGJAM_KEY_FILE" description:"key file to use"`
 }
 
-var channelBlocked = errors.New("channel blocked")
+var errChannelBlocked = errors.New("channel blocked")
 var verbose = false
 
 //**********************************************************************************
@@ -96,11 +96,20 @@ func (b *StringRing) Send(c chan string) (err error) {
 		case c <- s:
 		default:
 			if err == nil {
-				err = channelBlocked
+				err = errChannelBlocked
 			}
 		}
 	})
 	return err
+}
+
+// DumpBuffer can be used for debugging purposes
+func (b *StringRing) DumpBuffer() {
+	fmt.Println("===============")
+	fmt.Printf("b.last: %d\n", b.last)
+	fmt.Printf("b.size: %d\n", b.size)
+	fmt.Printf("b.buf:  %v\n", b.buf)
+	fmt.Println("===============")
 }
 
 //**********************************************************************************
@@ -203,7 +212,7 @@ func (ai *AppInfo) SendToWebSockets(data string) (err error) {
 		select {
 		case c <- data:
 		default:
-			err = channelBlocked
+			err = errChannelBlocked
 		}
 	}
 	return
@@ -216,7 +225,7 @@ func (ai *AppInfo) SendLastAnomalyMsg(c chan string) (err error) {
 	select {
 	case c <- ai.lastAnomalyMsg:
 	default:
-		err = channelBlocked
+		err = errChannelBlocked
 	}
 	return
 }

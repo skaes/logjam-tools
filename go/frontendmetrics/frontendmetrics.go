@@ -74,14 +74,14 @@ func makeRelative(a []int64, base int64) {
 	}
 }
 
-func allZero(a []int64) bool {
-	for _, v := range a {
-		if v != 0 {
-			return false
-		}
-	}
-	return true
-}
+// func allZero(a []int64) bool {
+//		for _, v := range a {
+//			if v != 0 {
+//				return false
+//			}
+//		}
+//		return true
+// }
 
 func sortedAscending(a []int64, n int) bool {
 	for i := 1; i < n; i++ {
@@ -92,24 +92,24 @@ func sortedAscending(a []int64, n int) bool {
 	return true
 }
 
-func logTimings(t []int64) {
-	fmt.Printf("navigationStart:            %d\n", t[0])
-	fmt.Printf("fetchStart:                 %d\n", t[1])
-	fmt.Printf("domainLookupStart:          %d\n", t[2])
-	fmt.Printf("domainLookupEnd:            %d\n", t[3])
-	fmt.Printf("connectStart:               %d\n", t[4])
-	fmt.Printf("connectEnd:                 %d\n", t[5])
-	fmt.Printf("requestStart:               %d\n", t[6])
-	fmt.Printf("responseStart:              %d\n", t[7])
-	fmt.Printf("responseEnd:                %d\n", t[8])
-	fmt.Printf("domLoading:                 %d\n", t[9])
-	fmt.Printf("domInteractive:             %d\n", t[10])
-	fmt.Printf("domContentLoadedEventStart: %d\n", t[11])
-	fmt.Printf("domContentLoadedEventEnd:   %d\n", t[12])
-	fmt.Printf("domComplete:                %d\n", t[13])
-	fmt.Printf("loadEventStart:             %d\n", t[14])
-	fmt.Printf("loadEventEnd:               %d\n", t[15])
-}
+// func logTimings(t []int64) {
+//	fmt.Printf("navigationStart:            %d\n", t[0])
+//	fmt.Printf("fetchStart:                 %d\n", t[1])
+//	fmt.Printf("domainLookupStart:          %d\n", t[2])
+//	fmt.Printf("domainLookupEnd:            %d\n", t[3])
+//	fmt.Printf("connectStart:               %d\n", t[4])
+//	fmt.Printf("connectEnd:                 %d\n", t[5])
+//	fmt.Printf("requestStart:               %d\n", t[6])
+//	fmt.Printf("responseStart:              %d\n", t[7])
+//	fmt.Printf("responseEnd:                %d\n", t[8])
+//	fmt.Printf("domLoading:                 %d\n", t[9])
+//	fmt.Printf("domInteractive:             %d\n", t[10])
+//	fmt.Printf("domContentLoadedEventStart: %d\n", t[11])
+//	fmt.Printf("domContentLoadedEventEnd:   %d\n", t[12])
+//	fmt.Printf("domComplete:                %d\n", t[13])
+//	fmt.Printf("loadEventStart:             %d\n", t[14])
+//	fmt.Printf("loadEventEnd:               %d\n", t[15])
+// }
 
 // ExtractPageTimings builds a Timings object from the rts parameters received from the browser.
 func ExtractPageTimings(rts string) (*Timings, error) {

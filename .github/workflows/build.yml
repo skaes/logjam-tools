@@ -13,20 +13,20 @@ jobs:
 
     strategy:
       matrix:
-        os: [bionic, focal, jammy]
+        os: [focal, jammy]
         arch: ["amd64", "arm64"]
         location: ["", "-usr-local"]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Ruby
         uses: ruby/setup-ruby@v1
         with:
-          ruby-version: "3.2.2"
+          ruby-version: "3.2.3"
 
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@v3
 
       - name: Install gems
         run: bundle install
