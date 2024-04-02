@@ -143,7 +143,7 @@ func ParseRequestId(id string) (rid *RequestId, err error) {
 	slices := strings.Split(id, "-")
 	n := len(slices)
 	if n < 3 {
-		err = fmt.Errorf("Wrong request id format: %s", id)
+		err = fmt.Errorf("wrong request id format: %s", id)
 		return
 	}
 	rid = &RequestId{

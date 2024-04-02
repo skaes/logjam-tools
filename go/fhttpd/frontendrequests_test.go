@@ -116,7 +116,7 @@ func TestExtractFrontendData(t *testing.T) {
 		}
 
 		_, logjamRequestId, err := extractFrontendData(req)
-		assert.EqualError(t, err, "Missing protocol version number: v=1")
+		assert.EqualError(t, err, "missing protocol version number: v=1")
 		assert.Nil(t, logjamRequestId)
 	})
 
@@ -136,7 +136,7 @@ func TestExtractFrontendData(t *testing.T) {
 		}
 
 		_, logjamRequestId, err := extractFrontendData(req)
-		assert.EqualError(t, err, "Unsupported protocol version: v=2")
+		assert.EqualError(t, err, "unsupported protocol version: v=2")
 		assert.Nil(t, logjamRequestId)
 	})
 
@@ -155,7 +155,7 @@ func TestExtractFrontendData(t *testing.T) {
 		}
 
 		_, logjamRequestId, err := extractFrontendData(req)
-		assert.EqualError(t, err, "Missing field: logjam_action")
+		assert.EqualError(t, err, "missing field: logjam_action")
 		assert.Nil(t, logjamRequestId)
 	})
 
@@ -174,7 +174,7 @@ func TestExtractFrontendData(t *testing.T) {
 		}
 
 		_, logjamRequestId, err := extractFrontendData(req)
-		assert.EqualError(t, err, "Missing field: logjam_request_id")
+		assert.EqualError(t, err, "missing field: logjam_request_id")
 		assert.Nil(t, logjamRequestId)
 	})
 }

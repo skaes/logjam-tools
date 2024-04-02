@@ -58,5 +58,5 @@ func (hc *HttpClient) SendEvent(event *LogjamEvent) error {
 	if response.StatusCode >= 202 && response.StatusCode < 300 {
 		return nil
 	}
-	return fmt.Errorf("Unexpected response from logjam endpoint: status: %d, msg: %s ", response.StatusCode, string(buf))
+	return fmt.Errorf("unexpected response from logjam endpoint: status: %d, msg: %s ", response.StatusCode, string(buf))
 }
