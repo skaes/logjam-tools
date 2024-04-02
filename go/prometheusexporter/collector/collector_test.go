@@ -146,13 +146,12 @@ func TestExtractingSingleWebVital(t *testing.T) {
 	}
 	c := New(s.AppEnv(), &s, options)
 
-	rk := "webvitals"
 	data := make(map[string]interface{})
 	data["logjam_request_id"] = "some-app-preview-55fffeee333"
 	data["logjam_action"] = "someAction#call"
 	data["metrics"] = []map[string]float64{{"lcp": 1.3}}
 
-	got := c.processWebVitalsMessage(rk, data)
+	got := c.processWebVitalsMessage(data)
 	wantedlcp := 1.3
 	want := &metric{
 		kind: 4, props: map[string]string{
@@ -187,13 +186,12 @@ func TestExtractingMultiWebVitals(t *testing.T) {
 	}
 	c := New(s.AppEnv(), &s, options)
 
-	rk := "webvitals"
 	data := make(map[string]interface{})
 	data["logjam_request_id"] = "some-app-preview-55fffeee333"
 	data["logjam_action"] = "someAction#call"
 	data["metrics"] = []map[string]float64{{"fid": 0.24}, {"lcp": 1.3}, {"cls": 0.42}}
 
-	got := c.processWebVitalsMessage(rk, data)
+	got := c.processWebVitalsMessage(data)
 	wantedfid := 0.24
 	wantedlcp := 1.3
 	wantedcls := 0.42
@@ -234,14 +232,13 @@ func TestWebVitalsWithUserAgent(t *testing.T) {
 	c := New(s.AppEnv(), &s, options)
 
 	t.Run("ForOpera", func(t *testing.T) {
-		rk := "webvitals"
 		data := make(map[string]interface{})
 		data["logjam_request_id"] = "some-app-preview-55fffeee333"
 		data["logjam_action"] = "someAction#call"
 		data["user_agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.85 Safari/537.36 OPR/76.0.4017.94"
 		data["metrics"] = []map[string]float64{{"fid": 0.24}, {"lcp": 1.3}, {"cls": 0.42}}
 
-		got := c.processWebVitalsMessage(rk, data)
+		got := c.processWebVitalsMessage(data)
 		wantedfid := 0.24
 		wantedlcp := 1.3
 		wantedcls := 0.42
@@ -264,14 +261,13 @@ func TestWebVitalsWithUserAgent(t *testing.T) {
 	})
 
 	t.Run("ForChrome", func(t *testing.T) {
-		rk := "webvitals"
 		data := make(map[string]interface{})
 		data["logjam_request_id"] = "some-app-preview-55fffeee333"
 		data["logjam_action"] = "someAction#call"
 		data["user_agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.77 Safari/537.36"
 		data["metrics"] = []map[string]float64{{"fid": 0.24}, {"lcp": 1.3}, {"cls": 0.42}}
 
-		got := c.processWebVitalsMessage(rk, data)
+		got := c.processWebVitalsMessage(data)
 		wantedfid := 0.24
 		wantedlcp := 1.3
 		wantedcls := 0.42

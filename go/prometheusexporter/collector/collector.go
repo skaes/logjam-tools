@@ -980,13 +980,13 @@ func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{
 	var m *metric
 	switch {
 	case strings.HasPrefix(routingKey, logsRoutingKey):
-		m = c.processLogMessage(routingKey, data)
+		m = c.processLogMessage(data)
 	case strings.HasPrefix(routingKey, pageRoutingKey) && c.opts.ProcessFHTTPDMetrics:
-		m = c.processPageMessage(routingKey, data)
+		m = c.processPageMessage(data)
 	case strings.HasPrefix(routingKey, ajaxRoutingKey) && c.opts.ProcessFHTTPDMetrics:
-		m = c.processAjaxMessage(routingKey, data)
+		m = c.processAjaxMessage(data)
 	case strings.HasPrefix(routingKey, webvitalsRoutingKey) && c.opts.ProcessFHTTPDMetrics:
-		m = c.processWebVitalsMessage(routingKey, data)
+		m = c.processWebVitalsMessage(data)
 	}
 	if c.opts.Debug {
 		s := spew.Sdump(m)
@@ -997,7 +997,7 @@ func (c *Collector) ProcessMessage(routingKey string, data map[string]interface{
 	}
 }
 
-func (c *Collector) processLogMessage(routingKey string, data map[string]interface{}) *metric {
+func (c *Collector) processLogMessage(data map[string]interface{}) *metric {
 	p := make(map[string]string)
 	p["app"] = c.app
 	p["env"] = c.env
@@ -1045,7 +1045,7 @@ func (c *Collector) processLogMessage(routingKey string, data map[string]interfa
 	return &metric{kind: logMetric, props: p, value: totalTime, timeMetrics: timeMetrics, counterMetrics: counterMetrics, maxLogLevel: strconv.Itoa(level), exceptions: exceptions}
 }
 
-func (c *Collector) processPageMessage(routingKey string, data map[string]interface{}) *metric {
+func (c *Collector) processPageMessage(data map[string]interface{}) *metric {
 	rts := extractString(data, "rts", "")
 	p := make(map[string]string)
 	p["app"] = c.app
@@ -1068,7 +1068,7 @@ func (c *Collector) processPageMessage(routingKey string, data map[string]interf
 	return &metric{kind: pageMetric, props: p, value: float64(timings.PageTime) / 1000}
 }
 
-func (c *Collector) processWebVitalsMessage(routingKey string, data map[string]interface{}) *metric {
+func (c *Collector) processWebVitalsMessage(data map[string]interface{}) *metric {
 	p := make(map[string]string)
 	p["app"] = c.app
 	p["env"] = c.env
@@ -1099,7 +1099,7 @@ func (c *Collector) processWebVitalsMessage(routingKey string, data map[string]i
 	return &metric{kind: webvitalsMetric, props: p, webvitals: webVitals.Metrics}
 }
 
-func (c *Collector) processAjaxMessage(routingKey string, data map[string]interface{}) *metric {
+func (c *Collector) processAjaxMessage(data map[string]interface{}) *metric {
 	rts := extractString(data, "rts", "")
 	p := make(map[string]string)
 	p["app"] = c.app
