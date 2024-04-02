@@ -24,7 +24,7 @@ func TestExtractingMetricNames(t *testing.T) {
 	if kind != "distribution" {
 		t.Errorf("could not extract metric kind %s", "summary")
 	}
-	metric, kind = extractLogjamMetricFromName("logjam:action:db_time_murks_seconds")
+	metric, _ = extractLogjamMetricFromName("logjam:action:db_time_murks_seconds")
 	if metric != "" {
 		t.Errorf("should return exmpty string when extracting metric name")
 	}

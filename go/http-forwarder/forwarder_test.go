@@ -44,7 +44,7 @@ func TestForwarder(t *testing.T) {
 	}()
 
 	Convey("liveness handler", t, func() {
-		req, err := http.NewRequest("GET", server.URL+"/alive.txt", nil)
+		req, _ := http.NewRequest("GET", server.URL+"/alive.txt", nil)
 		res, err := server.Client().Do(req)
 
 		So(err, ShouldBeNil)
@@ -101,7 +101,7 @@ func TestForwarder(t *testing.T) {
 		})
 
 		Convey("wrong content type", func() {
-			req, err := http.NewRequest("POST", server.URL+"/logjam/events/app/env", bytes.NewReader(body))
+			req, _ := http.NewRequest("POST", server.URL+"/logjam/events/app/env", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "text/plain")
 			res, err := server.Client().Do(req)
 
@@ -161,7 +161,7 @@ func TestForwarder(t *testing.T) {
 		})
 
 		Convey("wrong content type", func() {
-			req, err := http.NewRequest("POST", server.URL+"/logjam/events", bytes.NewReader(body))
+			req, _ := http.NewRequest("POST", server.URL+"/logjam/events", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "text/plain")
 			res, err := server.Client().Do(req)
 
@@ -175,7 +175,7 @@ func TestForwarder(t *testing.T) {
 			body, err := json.Marshal(event)
 			So(err, ShouldBeNil)
 
-			req, err := http.NewRequest("POST", server.URL+"/logjam/events", bytes.NewReader(body))
+			req, _ := http.NewRequest("POST", server.URL+"/logjam/events", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			res, err := server.Client().Do(req)
 
@@ -189,7 +189,7 @@ func TestForwarder(t *testing.T) {
 			body, err := json.Marshal(event)
 			So(err, ShouldBeNil)
 
-			req, err := http.NewRequest("POST", server.URL+"/logjam/events", bytes.NewReader(body))
+			req, _ := http.NewRequest("POST", server.URL+"/logjam/events", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			res, err := server.Client().Do(req)
 
@@ -250,7 +250,7 @@ func TestForwarder(t *testing.T) {
 		})
 
 		Convey("wrong content type", func() {
-			req, err := http.NewRequest("POST", server.URL+"/logjam/logs/app/env", bytes.NewReader(body))
+			req, _ := http.NewRequest("POST", server.URL+"/logjam/logs/app/env", bytes.NewReader(body))
 			req.Header.Set("Content-Type", "text/plain")
 			res, err := server.Client().Do(req)
 
