@@ -23,14 +23,14 @@ import (
 	"github.com/xojoc/useragent"
 )
 
-var logLevelNames = []string{
-	"Debug",   // 0
-	"Info",    // 1
-	"Warn",    // 2
-	"Error",   // 3
-	"Fatal",   // 4
-	"Unknown", // 5
-}
+// var logLevelNames = []string{
+// 	"Debug",   // 0
+// 	"Info",    // 1
+// 	"Warn",    // 2
+// 	"Error",   // 3
+// 	"Fatal",   // 4
+// 	"Unknown", // 5
+// }
 
 const (
 	logLevelInfo    = 1

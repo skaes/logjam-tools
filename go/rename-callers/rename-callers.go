@@ -28,8 +28,8 @@ var opts struct {
 }
 
 var (
-	rc       = int(0)
-	verbose  = false
+	rc = int(0)
+	// verbose  = false
 	dryrun   = false
 	toDate   time.Time
 	fromDate time.Time
@@ -56,7 +56,7 @@ func initialize() {
 		logError("arguments are not supported")
 		os.Exit(1)
 	}
-	verbose = opts.Verbose
+	// verbose = opts.Verbose
 	dryrun = opts.Dryrun
 	if opts.ToDate != "" && opts.BeforeDate != "" {
 		logError("you can only specify one of --before-date or --to-date")
@@ -126,10 +126,10 @@ func logError(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, finalFormat, args...)
 }
 
-func logWarn(format string, args ...interface{}) {
-	finalFormat := fmt.Sprintf("%s WARN %s\n", time.Now().Format(time.StampMicro), format)
-	fmt.Fprintf(os.Stderr, finalFormat, args...)
-}
+// func logWarn(format string, args ...interface{}) {
+//	finalFormat := fmt.Sprintf("%s WARN %s\n", time.Now().Format(time.StampMicro), format)
+//	fmt.Fprintf(os.Stderr, finalFormat, args...)
+// }
 
 func parseDatabaseName(db string) *databaseInfo {
 	re := regexp.MustCompile(`^logjam-(.+)-([^-]+)-(\d\d\d\d-\d\d-\d\d)$`)

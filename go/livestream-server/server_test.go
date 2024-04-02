@@ -11,14 +11,6 @@ import (
 	"time"
 )
 
-func (b *StringRing) dumpBuffer() {
-	fmt.Println("===============")
-	fmt.Printf("b.last: %d\n", b.last)
-	fmt.Printf("b.size: %d\n", b.size)
-	fmt.Printf("b.buf:  %v\n", b.buf)
-	fmt.Println("===============")
-}
-
 func (b *StringRing) content() []string {
 	result := make([]string, 0, b.size)
 	b.ForEach(func(_ int, s string) {

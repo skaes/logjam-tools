@@ -33,7 +33,7 @@ var opts struct {
 }
 
 var (
-	verbose     bool
+	// verbose     bool
 	quiet       bool
 	outputSpec  string
 	compression byte
@@ -90,7 +90,7 @@ func main() {
 	log.Info("%s starting", os.Args[0])
 	parseArgs()
 	outputSpec = fmt.Sprintf("tcp://*:%d", opts.OutputPort)
-	verbose = opts.Verbose
+	// verbose = opts.Verbose
 	quiet = opts.Quiet
 	log.Info("device-id: %d", opts.DeviceId)
 	log.Info("output-spec: %s", outputSpec)

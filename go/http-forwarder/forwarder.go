@@ -39,7 +39,7 @@ var opts struct {
 }
 
 var (
-	verbose     bool
+	// verbose     bool
 	quiet       bool
 	outputSpec  string
 	compression byte
@@ -109,7 +109,7 @@ var wg sync.WaitGroup
 
 type (
 	stringMap map[string]interface{}
-	stringSet map[string]bool
+	// stringSet map[string]bool
 )
 
 func (sm stringMap) DeleteString(k string) string {
@@ -339,7 +339,7 @@ func main() {
 	log.Info("%s starting", os.Args[0])
 	initialize()
 	outputSpec = fmt.Sprintf("tcp://%s:%d", opts.BindIP, opts.OutputPort)
-	verbose = opts.Verbose
+	// verbose = opts.Verbose
 	quiet = opts.Quiet
 	log.Info("device-id: %d", opts.DeviceId)
 	log.Info("output-spec: %s", outputSpec)

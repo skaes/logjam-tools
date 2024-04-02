@@ -103,6 +103,15 @@ func (b *StringRing) Send(c chan string) (err error) {
 	return err
 }
 
+// DumpBuffer can be used for debugging purposes
+func (b *StringRing) DumpBuffer() {
+	fmt.Println("===============")
+	fmt.Printf("b.last: %d\n", b.last)
+	fmt.Printf("b.size: %d\n", b.size)
+	fmt.Printf("b.buf:  %v\n", b.buf)
+	fmt.Println("===============")
+}
+
 //**********************************************************************************
 // Buffer of float64s.
 // Incidentally, it shares the bufSize constant of 60, which
