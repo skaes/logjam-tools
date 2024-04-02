@@ -57,7 +57,7 @@ func serve(w http.ResponseWriter, r *http.Request, h collectormanager.MetricsReq
 	}
 	t := time.Now()
 	app, env := getAppEnv(r)
-	defer func() { stats.ObserveScrapeDuration(app, env, time.Now().Sub(t)) }()
+	defer func() { stats.ObserveScrapeDuration(app, env, time.Since(t)) }()
 	servefn(w, r)
 }
 
