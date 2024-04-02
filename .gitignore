@@ -70,3 +70,5 @@ railsexpress-key
 secrets.tar
 Gemfile.lock
 importer.conf
+.vscode
+*.code-workspace
