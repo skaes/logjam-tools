@@ -427,8 +427,8 @@ func getScheduledBackups() {
 	scheduledBackups = make(map[string]bool)
 	metadata := client.Database("logjam-global").Collection("metadata")
 	var doc struct {
-		Name  string   `bson: "name"`
-		Value []string `bson: "value"`
+		Name  string   `bson:"name"`
+		Value []string `bson:"value"`
 	}
 	err := metadata.FindOne(context.Background(), bson.D{{"name", "scheduled-backups"}}).Decode(&doc)
 	if err != nil {
