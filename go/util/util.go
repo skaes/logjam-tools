@@ -235,14 +235,14 @@ func ReadMsg(r io.Reader) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	res := make([][]byte, frameCount, frameCount)
+	res := make([][]byte, frameCount)
 	for i := int64(0); i < frameCount; i++ {
 		var frameSize int64
 		err := binary.Read(r, binary.LittleEndian, &frameSize)
 		if err != nil {
 			return nil, err
 		}
-		frameData := make([]byte, frameSize, frameSize)
+		frameData := make([]byte, frameSize)
 		_, err = io.ReadFull(r, frameData)
 		if err != nil {
 			return nil, err
