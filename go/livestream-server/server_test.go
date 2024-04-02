@@ -64,12 +64,11 @@ func TestStringRing(t *testing.T) {
 	}
 
 	b = newStringRing()
-	results := []string{}
 	for i := 0; i < 61; i++ {
 		b.Add(strconv.Itoa(i))
 	}
 
-	results = makeSlice(1, 60)
+	results := makeSlice(1, 60)
 	// b.dumpBuffer()
 	if !b.hasContent(results) {
 		t.Error("Adding 61 elements is broken: ", b.content())
