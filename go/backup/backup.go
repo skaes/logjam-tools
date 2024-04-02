@@ -430,7 +430,7 @@ func getScheduledBackups() {
 		Name  string   `bson:"name"`
 		Value []string `bson:"value"`
 	}
-	err := metadata.FindOne(context.Background(), bson.D{{"name", "scheduled-backups"}}).Decode(&doc)
+	err := metadata.FindOne(context.Background(), bson.D{{Key: "name", Value: "scheduled-backups"}}).Decode(&doc)
 	if err != nil {
 		logWarn("could not retrieve/decode scheduled backups: %s", err)
 		return
@@ -445,8 +445,8 @@ func unscheduleBackup(db string) error {
 	metadata := client.Database("logjam-global").Collection("metadata")
 	_, err := metadata.UpdateOne(
 		context.Background(),
-		bson.D{{"name", "scheduled-backups"}},
-		bson.D{{"$pull", bson.D{{"value", db}}}},
+		bson.D{{Key: "name", Value: "scheduled-backups"}},
+		bson.D{{Key: "$pull", Value: bson.D{{Key: "value", Value: db}}}},
 	)
 	return err
 }

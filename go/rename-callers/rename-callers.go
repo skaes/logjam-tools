@@ -180,15 +180,15 @@ func getDatabases() []*databaseInfo {
 
 func renameCallersAndSendersInCollection(db *mongo.Database, collectionName string) bool {
 	collection := db.Collection(collectionName)
-	filter := bson.D{{"$or",
-		bson.A{
-			bson.D{{"callers", bson.D{{"$exists", 1}}}},
-			bson.D{{"senders", bson.D{{"$exists", 1}}}},
+	filter := bson.D{
+		{Key: "$or", Value: bson.A{
+			bson.D{{Key: "callers", Value: bson.D{{Key: "$exists", Value: 1}}}},
+			bson.D{{Key: "senders", Value: bson.D{{Key: "$exists", Value: 1}}}},
 		}},
 	}
 	projection := bson.D{
-		{"callers", 1},
-		{"senders", 1},
+		{Key: "callers", Value: 1},
+		{Key: "senders", Value: 1},
 	}
 	cursor, err := collection.Find(context.Background(), filter, options.Find().SetProjection(projection))
 	if err != nil {
@@ -225,8 +225,8 @@ func renameCallersAndSendersInCollection(db *mongo.Database, collectionName stri
 		}
 		if len(deletions) > 0 {
 			operation := mongo.NewUpdateOneModel()
-			operation.SetFilter(bson.D{{"_id", doc["_id"]}})
-			operation.SetUpdate(bson.D{{"$inc", increments}, {"$unset", deletions}})
+			operation.SetFilter(bson.D{{Key: "_id", Value: doc["_id"]}})
+			operation.SetUpdate(bson.D{{Key: "$inc", Value: increments}, {Key: "$unset", Value: deletions}})
 			operations = append(operations, operation)
 		}
 	}
@@ -262,8 +262,8 @@ func scheduleBackup(databaseName string) error {
 	metadata := client.Database("logjam-global").Collection("metadata")
 	_, err := metadata.UpdateOne(
 		context.Background(),
-		bson.D{{"name", "scheduled-backups"}},
-		bson.D{{"$addToSet", bson.D{{"value", databaseName}}}},
+		bson.D{{Key: "name", Value: "scheduled-backups"}},
+		bson.D{{Key: "$addToSet", Value: bson.D{{Key: "value", Value: databaseName}}}},
 		options.Update().SetUpsert(true),
 	)
 	return err
