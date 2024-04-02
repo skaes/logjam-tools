@@ -25,6 +25,10 @@ uninstall-local:
 check-local:
 	$(MAKE) -C go $(MFLAGS) check
 
+.PHONY: vet lint
+vet lint:
+	$(MAKE) -C go $(MFLAGS) $@
+
 tag:
 	git tag -f $(shell cat VERSION.txt)
 

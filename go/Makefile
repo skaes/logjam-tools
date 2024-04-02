@@ -77,6 +77,10 @@ fhttpd-test: fhttpd/*
 formats-test: formats/*
 	go test ./formats/*
 
-.PHONY: lint
+GO_STATIC_CHECKS = vet lint
+.PHONY: $(GO_STATIC_CHECKS)
+
+vet:
+	go vet ./...
 lint:
 	staticcheck ./...
