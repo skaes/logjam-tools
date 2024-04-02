@@ -356,7 +356,7 @@ func backupRequests(db string) {
 }
 
 func backupDatabase(db *databaseInfo) {
-	if db.Name == "logjam-global" || strings.Index(db.Name, "logjam-development") != -1 {
+	if db.Name == "logjam-global" || strings.Contains(db.Name, "logjam-development") {
 		return
 	}
 	if db.Date.Before(fromDate) || db.Date.After(toDate) {

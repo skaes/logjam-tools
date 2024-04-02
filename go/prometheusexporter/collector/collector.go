@@ -1162,7 +1162,7 @@ func extractAction(request map[string]interface{}) string {
 			action = "Unknown#unknown_method"
 		}
 	}
-	if strings.Index(action, "#") == -1 {
+	if !strings.Contains(action, "#") {
 		action += "#unknown_method"
 	} else if strings.Index(action, "#") == len(action)-1 {
 		action += "unknown_method"
