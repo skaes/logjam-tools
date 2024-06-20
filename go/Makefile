@@ -16,6 +16,8 @@ GO_TARGETS = $(GO_INSTALL_TARGETS) $(GO_NOINSTALL_TARGETS)
 
 all: $(GO_TARGETS)
 
+.PHONY: clean install uninstall
+
 clean:
 	rm -f $(GO_TARGETS)
 
@@ -53,7 +55,7 @@ logjam-rename-callers: rename-callers/rename-callers.go
 	go build -o $@ $<
 
 GO_TESTS = promcollector-test livestream-test util-test frontendmetrics-test fhttpd-test formats-test
-.PHONY: $(GO_TESTS)
+.PHONY: check $(GO_TESTS)
 check: $(GO_TESTS)
 
 http-client-test:
@@ -84,3 +86,7 @@ vet:
 	go vet ./...
 lint:
 	staticcheck ./...
+
+.PHONY: update-deps
+update-deps:
+	go get -u ./...
