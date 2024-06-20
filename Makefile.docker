@@ -91,16 +91,16 @@ override V:=
 endif
 
 package-focal:
-	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:focal-latest-$(ARCH) build_tools.rb
+	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:focal-latest-$(ARCH)
 	mkdir -p packages/ubuntu/focal && mv *.deb packages/ubuntu/focal
 package-jammy:
-	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:jammy-latest-$(ARCH) build_tools.rb
+	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:jammy-latest-$(ARCH)
 	mkdir -p packages/ubuntu/jammy && mv *.deb packages/ubuntu/jammy
 package-focal-usr-local:
-	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:focal-usr-local-latest-$(ARCH) build_tools.rb
+	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:focal-usr-local-latest-$(ARCH)
 	mkdir -p packages/ubuntu/focal && mv *.deb packages/ubuntu/focal
 package-jammy-usr-local:
-	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:jammy-usr-local-latest-$(ARCH) build_tools.rb
+	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:jammy-usr-local-latest-$(ARCH)
 	mkdir -p packages/ubuntu/jammy && mv *.deb packages/ubuntu/jammy
 
 
