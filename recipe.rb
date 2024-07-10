@@ -19,7 +19,7 @@ vendor "skaes@railsexpress.de"
 
 files "#{prefix}/bin/logjam-*"
 
-depends "logjam-libs#{suffix}", ">= 0.10-1"
+depends "logjam-libs#{suffix}", ">= 0.12.0"
 
 case codename
 when "bionic"
@@ -28,6 +28,8 @@ when "focal"
   depends "libicu66"
 when "jammy"
   depends "libicu70"
+when "noble"
+  depends "libicu74"
 end
 
 apt_setup "apt-get update -y && apt-get install apt-transport-https ca-certificates -y"
