@@ -162,3 +162,14 @@ publish-noble-usr-local:
 
 .PHONY: all
 all: containers tag push release packages publish
+
+.PHONY: show-focal show-jammy show-noble
+show-focal:
+	docker run --rm -it -v `pwd`/packages/ubuntu/focal:/src ubuntu:focal bash -c 'dpkg -I /src/logjam-tools_$(VERSION)_$(ARCH).deb'
+	docker run --rm -it -v `pwd`/packages/ubuntu/focal:/src ubuntu:focal bash -c 'dpkg -c /src/logjam-tools_$(VERSION)_$(ARCH).deb'
+show-jammy:
+	docker run --rm -it -v `pwd`/packages/ubuntu/jammy:/src ubuntu:jammy bash -c 'dpkg -I /src/logjam-tools_$(VERSION)_$(ARCH).deb'
+	docker run --rm -it -v `pwd`/packages/ubuntu/jammy:/src ubuntu:jammy bash -c 'dpkg -c /src/logjam-tools_$(VERSION)_$(ARCH).deb'
+show-noble:
+	docker run --rm -it -v `pwd`/packages/ubuntu/noble:/src ubuntu:noble bash -c 'dpkg -I /src/logjam-tools_$(VERSION)_$(ARCH).deb'
+	docker run --rm -it -v `pwd`/packages/ubuntu/noble:/src ubuntu:noble bash -c 'dpkg -c /src/logjam-tools_$(VERSION)_$(ARCH).deb'
