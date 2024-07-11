@@ -1,8 +1,8 @@
 ARG arch
-FROM ${arch}buildpack-deps:jammy-scm as builder
+FROM ${arch}buildpack-deps:noble-scm as builder
 
 RUN apt-get update -y && apt-get install apt-transport-https ca-certificates -y
-RUN echo 'deb [trusted=yes] https://railsexpress.de/packages/ubuntu/jammy ./' >> /etc/apt/sources.list
+RUN echo 'deb [trusted=yes] https://railsexpress.de/packages/ubuntu/noble ./' >> /etc/apt/sources.list
 
 ARG suffix
 ENV DEBIAN_FRONTEND=noninteractive
@@ -33,7 +33,7 @@ WORKDIR /logjam-tools
 ARG prefix
 RUN sh autogen.sh --prefix=$prefix && make clean && make && make check && make install
 
-FROM ${arch}ubuntu:jammy
+FROM ${arch}ubuntu:noble
 ARG prefix
 COPY --from=builder $prefix $prefix
 LABEL maintainer "Stefan Kaes <skaes@railsexpress.de>"
