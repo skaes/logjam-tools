@@ -1,5 +1,5 @@
 ARG arch
-FROM ${arch}buildpack-deps:bionic-scm as builder
+FROM ${arch}buildpack-deps:bionic-scm AS builder
 
 RUN apt-get update -y && apt-get install apt-transport-https ca-certificates -y
 RUN echo 'deb [trusted=yes] https://railsexpress.de/packages/ubuntu/bionic ./' >> /etc/apt/sources.list
