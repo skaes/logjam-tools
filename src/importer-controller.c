@@ -320,7 +320,7 @@ int collect_stats_and_forward(zloop_t *loop, int timer_id, void *arg)
             zmsg_destroy(&response);
         }
     }
-    if (messages_received > 0)
+    if (messages_received > 0 && state->subscriber_watchdog)
         zstr_send(state->subscriber_watchdog, "tick");
 
     zstr_send(state->tracker, "tick");
