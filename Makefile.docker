@@ -12,9 +12,11 @@ ARCH := amd64
 
 ifeq ($(ARCH),)
 PLATFORM :=
+DPLATFORM :=
 LIBARCH :=
 else
 PLATFORM := --platform $(ARCH)
+DPLATFORM := --platform linux/$(ARCH)
 LIBARCH := $(ARCH:arm64=arm64v8)/
 endif
 
@@ -24,17 +26,17 @@ CONTAINERS:=container-focal container-jammy container-noble container-focal-usr-
 containers: $(CONTAINERS)
 
 container-focal:
-	docker build -t "stkaes/logjam-tools:focal-latest-$(ARCH)" -f Dockerfile.focal --build-arg prefix=/opt/logjam --build-arg suffix="" --build-arg arch=$(LIBARCH) .
+	docker build -t "stkaes/logjam-tools:focal-latest-$(ARCH)" -f Dockerfile.focal $(DPLATFORM) --build-arg prefix=/opt/logjam --build-arg suffix="" --build-arg arch=$(LIBARCH) .
 container-jammy:
-	docker build -t "stkaes/logjam-tools:jammy-latest-$(ARCH)" -f Dockerfile.jammy --build-arg prefix=/opt/logjam --build-arg suffix="" --build-arg arch=$(LIBARCH) .
+	docker build -t "stkaes/logjam-tools:jammy-latest-$(ARCH)" -f Dockerfile.jammy $(DPLATFORM) --build-arg prefix=/opt/logjam --build-arg suffix="" --build-arg arch=$(LIBARCH) .
 container-noble:
-	docker build -t "stkaes/logjam-tools:noble-latest-$(ARCH)" -f Dockerfile.noble --build-arg prefix=/opt/logjam --build-arg suffix="" --build-arg arch=$(LIBARCH) .
+	docker build -t "stkaes/logjam-tools:noble-latest-$(ARCH)" -f Dockerfile.noble $(DPLATFORM) --build-arg prefix=/opt/logjam --build-arg suffix="" --build-arg arch=$(LIBARCH) .
 container-focal-usr-local:
-	docker build -t "stkaes/logjam-tools:focal-usr-local-latest-$(ARCH)" -f Dockerfile.focal --build-arg prefix=/usr/local --build-arg suffix="-usr-local" --build-arg arch=$(LIBARCH) .
+	docker build -t "stkaes/logjam-tools:focal-usr-local-latest-$(ARCH)" -f Dockerfile.focal $(DPLATFORM) --build-arg prefix=/usr/local --build-arg suffix="-usr-local" --build-arg arch=$(LIBARCH) .
 container-jammy-usr-local:
-	docker build -t "stkaes/logjam-tools:jammy-usr-local-latest-$(ARCH)" -f Dockerfile.jammy --build-arg prefix=/usr/local --build-arg suffix="-usr-local" --build-arg arch=$(LIBARCH) .
+	docker build -t "stkaes/logjam-tools:jammy-usr-local-latest-$(ARCH)" -f Dockerfile.jammy $(DPLATFORM) --build-arg prefix=/usr/local --build-arg suffix="-usr-local" --build-arg arch=$(LIBARCH) .
 container-noble-usr-local:
-	docker build -t "stkaes/logjam-tools:noble-usr-local-latest-$(ARCH)" -f Dockerfile.noble --build-arg prefix=/usr/local --build-arg suffix="-usr-local" --build-arg arch=$(LIBARCH) .
+	docker build -t "stkaes/logjam-tools:noble-usr-local-latest-$(ARCH)" -f Dockerfile.noble $(DPLATFORM) --build-arg prefix=/usr/local --build-arg suffix="-usr-local" --build-arg arch=$(LIBARCH) .
 
 TAG ?= latest
 VERSION ?= $(cat VERSION.txt)
