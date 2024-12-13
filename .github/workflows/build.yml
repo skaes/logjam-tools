@@ -36,11 +36,11 @@ jobs:
 
       - name: Setup docker credentials
         run: echo ${{ secrets.DOCKER_TOKEN }} | docker login -u stkaes --password-stdin
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && startsWith(github.ref, 'refs/tags/v')
 
       - name: Push container to docker registry
         run: make -f Makefile.docker push-${{ matrix.os }}${{ matrix.location }} ARCH=${{ matrix.arch }}
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && startsWith(github.ref, 'refs/tags/v')
 
       - name: Setup SSH credentials
         run: |
@@ -56,8 +56,8 @@ jobs:
           END
         env:
           SSH_KEY: ${{ secrets.RAILSEXPRESS_SSH_KEY }}
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && startsWith(github.ref, 'refs/tags/v')
 
       - name: Upload the package
         run: make -f Makefile.docker publish-${{ matrix.os }}${{ matrix.location }} ARCH=${{ matrix.arch }}
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master' && startsWith(github.ref, 'refs/tags/v')
