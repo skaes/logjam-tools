@@ -29,8 +29,10 @@ check-local:
 vet lint:
 	$(MAKE) -C go $(MFLAGS) $@
 
+TAG := v$(shell cat VERSION.txt)
+
 tag:
-	git tag -f $(shell cat VERSION.txt)
+	git tag -f $(TAG)
 
 release: tag
-	git push && git push --tags
+	git push origin -f $(TAG)
