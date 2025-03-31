@@ -39,7 +39,7 @@ container-noble-usr-local:
 	docker build -t "stkaes/logjam-tools:noble-usr-local-latest-$(ARCH)" -f Dockerfile.noble $(DPLATFORM) --build-arg prefix=/usr/local --build-arg suffix="-usr-local" --build-arg arch=$(LIBARCH) .
 
 TAG ?= latest
-VERSION ?= $(cat VERSION.txt)
+VERSION ?= $(shell cat VERSION.txt)
 
 RELEASE:=release-focal release-jammy release-noble release-focal-usr-local release-jammy-usr-local release-noble-usr-local
 .PHONY: release $(RELEASE)
@@ -135,7 +135,6 @@ PUBLISHES:=publish-focal publish-jammy publish-noble publish-focal-usr-local pub
 .PHONY: publish $(PUBLISHES)
 publish: $(PUBLISHES)
 
-VERSION:=$(shell cat VERSION.txt)
 PACKAGE_NAME:=logjam-tools_$(VERSION)_$(ARCH).deb
 PACKAGE_NAME_USR_LOCAL:=logjam-tools-usr-local_$(VERSION)_$(ARCH).deb
 
