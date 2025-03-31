@@ -19,7 +19,7 @@ vendor "skaes@railsexpress.de"
 
 files "#{prefix}/bin/logjam-*"
 
-depends "logjam-libs#{suffix}", ">= 0.12.0"
+depends "logjam-libs#{suffix}", ">= 0.13.0"
 
 case codename
 when "bionic"
