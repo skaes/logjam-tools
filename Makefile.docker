@@ -20,19 +20,15 @@ DPLATFORM := --platform linux/$(ARCH)
 LIBARCH := $(ARCH:arm64=arm64v8)/
 endif
 
-CONTAINERS:=container-focal container-jammy container-noble container-focal-usr-local container-jammy-usr-local container-noble-usr-local
+CONTAINERS:=container-jammy container-noble container-jammy-usr-local container-noble-usr-local
 .PHONY: containers $(CONTAINERS)
 
 containers: $(CONTAINERS)
 
-container-focal:
-	docker build -t "stkaes/logjam-tools:focal-latest-$(ARCH)" -f Dockerfile.focal $(DPLATFORM) --build-arg prefix=/opt/logjam --build-arg suffix="" --build-arg arch=$(LIBARCH) .
 container-jammy:
 	docker build -t "stkaes/logjam-tools:jammy-latest-$(ARCH)" -f Dockerfile.jammy $(DPLATFORM) --build-arg prefix=/opt/logjam --build-arg suffix="" --build-arg arch=$(LIBARCH) .
 container-noble:
 	docker build -t "stkaes/logjam-tools:noble-latest-$(ARCH)" -f Dockerfile.noble $(DPLATFORM) --build-arg prefix=/opt/logjam --build-arg suffix="" --build-arg arch=$(LIBARCH) .
-container-focal-usr-local:
-	docker build -t "stkaes/logjam-tools:focal-usr-local-latest-$(ARCH)" -f Dockerfile.focal $(DPLATFORM) --build-arg prefix=/usr/local --build-arg suffix="-usr-local" --build-arg arch=$(LIBARCH) .
 container-jammy-usr-local:
 	docker build -t "stkaes/logjam-tools:jammy-usr-local-latest-$(ARCH)" -f Dockerfile.jammy $(DPLATFORM) --build-arg prefix=/usr/local --build-arg suffix="-usr-local" --build-arg arch=$(LIBARCH) .
 container-noble-usr-local:
@@ -41,63 +37,51 @@ container-noble-usr-local:
 TAG ?= latest
 VERSION ?= $(shell cat VERSION.txt)
 
-RELEASE:=release-focal release-jammy release-noble release-focal-usr-local release-jammy-usr-local release-noble-usr-local
+RELEASE:=release-jammy release-noble release-jammy-usr-local release-noble-usr-local
 .PHONY: release $(RELEASE)
 
 release: $(RELEASE)
 
-release-focal:
-	$(MAKE) $(MFLAGS) tag-focal push-focal TAG=$(VERSION) ARCH=$(ARCH)
 release-jammy:
 	$(MAKE) $(MFLAGS) tag-jammy push-jammy TAG=$(VERSION) ARCH=$(ARCH)
 release-noble:
 	$(MAKE) $(MFLAGS) tag-noble push-noble TAG=$(VERSION) ARCH=$(ARCH)
-release-focal-usr-local:
-	$(MAKE) $(MFLAGS) tag-focal-usr-local push-focal-usr-local TAG=$(VERSION) ARCH=$(ARCH)
 release-jammy-usr-local:
 	$(MAKE) $(MFLAGS) tag-jammy-usr-local push-jammy-usr-local TAG=$(VERSION) ARCH=$(ARCH)
 release-noble-usr-local:
 	$(MAKE) $(MFLAGS) tag-noble-usr-local push-noble-usr-local TAG=$(VERSION) ARCH=$(ARCH)
 
-TAGS:=tag-focal tag-jammy tag-noble tag-focal-usr-local tag-jammy-usr-local tag-noble-usr-local
+TAGS:=tag-jammy tag-noble tag-jammy-usr-local tag-noble-usr-local
 .PHONY: tag $(TAGS)
 
 tag: $(TAGS)
 
-tag-focal:
-	docker tag "stkaes/logjam-tools:focal-latest-$(ARCH)" "stkaes/logjam-tools:focal-$(TAG)-$(ARCH)"
 tag-jammy:
 	docker tag "stkaes/logjam-tools:jammy-latest-$(ARCH)" "stkaes/logjam-tools:jammy-$(TAG)-$(ARCH)"
 tag-noble:
 	docker tag "stkaes/logjam-tools:noble-latest-$(ARCH)" "stkaes/logjam-tools:noble-$(TAG)-$(ARCH)"
-tag-focal-usr-local:
-	docker tag "stkaes/logjam-tools:focal-usr-local-latest-$(ARCH)" "stkaes/logjam-tools:focal-usr-local-$(TAG)-$(ARCH)"
 tag-jammy-usr-local:
 	docker tag "stkaes/logjam-tools:jammy-usr-local-latest-$(ARCH)" "stkaes/logjam-tools:jammy-usr-local-$(TAG)-$(ARCH)"
 tag-noble-usr-local:
 	docker tag "stkaes/logjam-tools:noble-usr-local-latest-$(ARCH)" "stkaes/logjam-tools:noble-usr-local-$(TAG)-$(ARCH)"
 
 
-PUSHES:=push-focal push-jammy push-noble push-focal-usr-local push-jammy-usr-local push-noble-usr-local
+PUSHES:=push-jammy push-noble push-jammy-usr-local push-noble-usr-local
 .PHONY: push $(PUSHES)
 
 push: $(PUSHES)
 
-push-focal:
-	docker push "stkaes/logjam-tools:focal-$(TAG)-$(ARCH)"
 push-jammy:
 	docker push "stkaes/logjam-tools:jammy-$(TAG)-$(ARCH)"
 push-noble:
 	docker push "stkaes/logjam-tools:noble-$(TAG)-$(ARCH)"
-push-focal-usr-local:
-	docker push "stkaes/logjam-tools:focal-usr-local-$(TAG)-$(ARCH)"
 push-jammy-usr-local:
 	docker push "stkaes/logjam-tools:jammy-usr-local-$(TAG)-$(ARCH)"
 push-noble-usr-local:
 	docker push "stkaes/logjam-tools:noble-usr-local-$(TAG)-$(ARCH)"
 
 
-PACKAGES:=package-focal package-focal-usr-local package-jammy package-jammy-usr-local package-noble package-noble-usr-local
+PACKAGES:=package-jammy package-jammy-usr-local package-noble package-noble-usr-local
 .PHONY: packages $(PACKAGES)
 
 packages: $(PACKAGES)
@@ -108,18 +92,12 @@ else
 override V:=
 endif
 
-package-focal:
-	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:focal-latest-$(ARCH)
-	mkdir -p packages/ubuntu/focal && mv *.deb packages/ubuntu/focal
 package-jammy:
 	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:jammy-latest-$(ARCH)
 	mkdir -p packages/ubuntu/jammy && mv *.deb packages/ubuntu/jammy
 package-noble:
 	LOGJAM_PREFIX=/opt/logjam bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:noble-latest-$(ARCH)
 	mkdir -p packages/ubuntu/noble && mv *.deb packages/ubuntu/noble
-package-focal-usr-local:
-	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:focal-usr-local-latest-$(ARCH)
-	mkdir -p packages/ubuntu/focal && mv *.deb packages/ubuntu/focal
 package-jammy-usr-local:
 	LOGJAM_PREFIX=/usr/local bundle exec fpm-fry cook $(V) $(PLATFORM) --update=always stkaes/logjam-tools:jammy-usr-local-latest-$(ARCH)
 	mkdir -p packages/ubuntu/jammy && mv *.deb packages/ubuntu/jammy
@@ -131,7 +109,7 @@ package-noble-usr-local:
 LOGJAM_PACKAGE_HOST:=railsexpress.de
 LOGJAM_PACKAGE_USER:=uploader
 
-PUBLISHES:=publish-focal publish-jammy publish-noble publish-focal-usr-local publish-jammy-usr-local publish-noble-usr-local
+PUBLISHES:=publish-jammy publish-noble publish-jammy-usr-local publish-noble-usr-local
 .PHONY: publish $(PUBLISHES)
 publish: $(PUBLISHES)
 
@@ -148,14 +126,10 @@ else\
 fi
 endef
 
-publish-focal:
-	$(call upload-package,focal,$(PACKAGE_NAME))
 publish-jammy:
 	$(call upload-package,jammy,$(PACKAGE_NAME))
 publish-noble:
 	$(call upload-package,noble,$(PACKAGE_NAME))
-publish-focal-usr-local:
-	$(call upload-package,focal,$(PACKAGE_NAME_USR_LOCAL))
 publish-jammy-usr-local:
 	$(call upload-package,jammy,$(PACKAGE_NAME_USR_LOCAL))
 publish-noble-usr-local:
@@ -164,10 +138,7 @@ publish-noble-usr-local:
 .PHONY: all
 all: containers tag push release packages publish
 
-.PHONY: show-focal show-jammy show-noble
-show-focal:
-	docker run --rm -it -v `pwd`/packages/ubuntu/focal:/src ubuntu:focal bash -c 'dpkg -I /src/logjam-tools_$(VERSION)_$(ARCH).deb'
-	docker run --rm -it -v `pwd`/packages/ubuntu/focal:/src ubuntu:focal bash -c 'dpkg -c /src/logjam-tools_$(VERSION)_$(ARCH).deb'
+.PHONY: show-jammy show-noble
 show-jammy:
 	docker run --rm -it -v `pwd`/packages/ubuntu/jammy:/src ubuntu:jammy bash -c 'dpkg -I /src/logjam-tools_$(VERSION)_$(ARCH).deb'
 	docker run --rm -it -v `pwd`/packages/ubuntu/jammy:/src ubuntu:jammy bash -c 'dpkg -c /src/logjam-tools_$(VERSION)_$(ARCH).deb'

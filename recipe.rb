@@ -22,10 +22,6 @@ files "#{prefix}/bin/logjam-*"
 depends "logjam-libs#{suffix}", ">= 0.13.0"
 
 case codename
-when "bionic"
-  depends "libicu60"
-when "focal"
-  depends "libicu66"
 when "jammy"
   depends "libicu70"
 when "noble"
