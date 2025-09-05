@@ -35,4 +35,4 @@ tag:
 	git tag -f $(TAG)
 
 release: tag
-	git push origin -f $(TAG)
+	git push -f origin HEAD refs/tags/$(TAG)
